@@ -37,6 +37,27 @@ namespace RockEngine.Vulkan.VkBuilders
                 return new VulkanShaderModule(_vk, shaderModule, _device);
             }
         }
+/*
+        public VulkanShaderModule Build(string filePath, CancellationToken cancellationToken = default)
+        {
+            var shaderCode =  File.ReadAllBytes(filePath, cancellationToken);
+
+            var pShaderCode = CreateMemoryHandle(shaderCode);
+            cancellationToken.ThrowIfCancellationRequested();
+            unsafe
+            {
+                var shaderModuleCreateInfo = new ShaderModuleCreateInfo
+                {
+                    SType = StructureType.ShaderModuleCreateInfo,
+                    CodeSize = (nuint)shaderCode.Length,
+                    PCode = (uint*)pShaderCode.Pointer
+                };
+
+                _vk.CreateShaderModule(_device.Device, in shaderModuleCreateInfo, null, out var shaderModule)
+                    .ThrowCode($"Failed to create shader module: {filePath}");
+                return new VulkanShaderModule(_vk, shaderModule, _device);
+            }
+        }*/
     }
 
 }

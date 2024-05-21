@@ -102,8 +102,13 @@ namespace RockEngine.Vulkan
             _framebufferResized = true;
         }
 
-        private async Task DrawFrame(double obj)
+        private void DrawFrame(double obj)
         {
+            int width = _window.Size.X, height = _window.Size.Y;
+            if (width == 0 || height == 0)
+            {
+                return; // Skip rendering if the window is minimized
+            }
             var fence = _inFlightFences[_currentFrame].Fence;
             var commandBuffer = _commandBuffers[_currentFrame];
             var imageAvailableSemaphore = _imageAvailableSemaphores[_currentFrame];
@@ -122,9 +127,10 @@ namespace RockEngine.Vulkan
                     .ThrowCode("failed to acquire swap chain image!", Result.SuboptimalKhr, Result.ErrorOutOfDateKhr);
             if (result == Result.ErrorOutOfDateKhr )
             {
-                await RecreateSwapChain();
+                RecreateSwapChain();
                 return;
             }
+            
             // Reset fence only if we are submiting work
             _api.ResetFences(_logicalDevice.Device, 1, in fence);
 
@@ -174,12 +180,51 @@ namespace RockEngine.Vulkan
             if (result == Result.ErrorOutOfDateKhr || result == Result.SuboptimalKhr || _framebufferResized)
             {
                 _framebufferResized = false;
-                await RecreateSwapChain();
+                RecreateSwapChain();
             }
 
             _currentFrame = (_currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
 
         }
+        private unsafe void RecordCommandBuffer(VulkanCommandBuffer buffer, uint imageIndex)
+        {
+
+            var beginInfo = new CommandBufferBeginInfo
+            {
+                SType = StructureType.CommandBufferBeginInfo,
+                Flags = CommandBufferUsageFlags.None, // Adjust based on your needs
+                PInheritanceInfo = (CommandBufferInheritanceInfo*)IntPtr.Zero // Only relevant for secondary command buffers
+            };
+
+            _api.BeginCommandBuffer(buffer.CommandBuffer, &beginInfo)
+                .ThrowCode("Failed to begin recording command buffer!");
+
+            ClearValue cv = new ClearValue(color: new ClearColorValue() { Float32_0 = 0, Float32_1 = 0, Float32_2 = 0, Float32_3 = 1 });
+            var renderPassInfo = new RenderPassBeginInfo
+            {
+                SType = StructureType.RenderPassBeginInfo,
+                RenderPass = _renderPass.RenderPass, // Your VulkanRenderPass object
+                Framebuffer = _swapchainFramebuffers[imageIndex].Framebuffer, // Array or collection of VulkanFramebuffer objects
+                RenderArea = new Rect2D { Offset = new Offset2D(0, 0), Extent = _swapchain.Extent },
+                ClearValueCount = 1,
+                PClearValues = &cv // Define clearColor as in the example
+            };
+            var viewport = Viewport;
+            var scissor = new Rect2D() { Extent = new Extent2D((uint?)_window.Size.X, (uint?)_window.Size.Y), };
+            _api.CmdSetViewport(buffer.CommandBuffer, 0, 1, ref viewport);
+            _api.CmdSetScissor(buffer.CommandBuffer, 0, 1, ref scissor);
+
+            _api.CmdBeginRenderPass(buffer.CommandBuffer, &renderPassInfo, SubpassContents.Inline);
+            _api.CmdBindPipeline(buffer.CommandBuffer, PipelineBindPoint.Graphics, _pipeline.Pipeline);
+            var vertexBuffer = _vertexBuffer.Buffer;
+            ulong offset = 0;
+            _api.CmdBindVertexBuffers(buffer.CommandBuffer, 0, 1, in vertexBuffer, in offset);
+            _api.CmdDraw(buffer.CommandBuffer, vertexCount: (uint)_triangleVertice.Length, instanceCount: 1, firstVertex: 0, firstInstance: 0);
+            _api.CmdEndRenderPass(buffer.CommandBuffer);
+            _api.EndCommandBuffer(buffer.CommandBuffer)
+                .ThrowCode("Failed to record command buffer!");
+        }
+
 
         private async Task Window_Load()
         {
@@ -196,10 +241,7 @@ namespace RockEngine.Vulkan
 
             CreateSyncObject();
 
-            _window.Render += async (s) =>
-            {
-                await DrawFrame(s);
-            };
+            _window.Render += DrawFrame;
         }
 
         private void CreateVertexBuffer()
@@ -295,43 +337,6 @@ namespace RockEngine.Vulkan
             _commandBuffers = cbBuilder.Build(MAX_FRAMES_IN_FLIGHT);
         }
 
-        private unsafe void RecordCommandBuffer(VulkanCommandBuffer buffer, uint imageIndex)
-        {
-            var beginInfo = new CommandBufferBeginInfo
-            {
-                SType = StructureType.CommandBufferBeginInfo,
-                Flags = CommandBufferUsageFlags.None, // Adjust based on your needs
-                PInheritanceInfo = (CommandBufferInheritanceInfo*)IntPtr.Zero // Only relevant for secondary command buffers
-            };
-
-            _api.BeginCommandBuffer(buffer.CommandBuffer, &beginInfo)
-                .ThrowCode("Failed to begin recording command buffer!");
-
-            ClearValue cv = new ClearValue(color: new ClearColorValue() { Float32_0 = 0, Float32_1 = 0, Float32_2 = 0, Float32_3 = 1 });
-            var renderPassInfo = new RenderPassBeginInfo
-            {
-                SType = StructureType.RenderPassBeginInfo,
-                RenderPass = _renderPass.RenderPass, // Your VulkanRenderPass object
-                Framebuffer = _swapchainFramebuffers[imageIndex].Framebuffer, // Array or collection of VulkanFramebuffer objects
-                RenderArea = new Rect2D { Offset = new Offset2D(0, 0), Extent = _swapchain.Extent },
-                ClearValueCount = 1,
-                PClearValues = &cv // Define clearColor as in the example
-            };
-            var viewport = Viewport;
-            var scissor = new Rect2D() { Extent = new Extent2D((uint?)_window.Size.X, (uint?)_window.Size.Y), };
-            _api.CmdSetViewport(buffer.CommandBuffer, 0, 1, ref viewport);
-            _api.CmdSetScissor(buffer.CommandBuffer, 0, 1, ref scissor);
-
-            _api.CmdBeginRenderPass(buffer.CommandBuffer, &renderPassInfo, SubpassContents.Inline);
-            _api.CmdBindPipeline(buffer.CommandBuffer, PipelineBindPoint.Graphics, _pipeline.Pipeline);
-            var vertexBuffer = _vertexBuffer.Buffer;
-            ulong offset = 0;
-            _api.CmdBindVertexBuffers(buffer.CommandBuffer, 0, 1, in vertexBuffer, in offset);
-            _api.CmdDraw(buffer.CommandBuffer, vertexCount: (uint)_triangleVertice.Length, instanceCount: 1, firstVertex: 0, firstInstance: 0);
-            _api.CmdEndRenderPass(buffer.CommandBuffer);
-            _api.EndCommandBuffer(buffer.CommandBuffer)
-                .ThrowCode("Failed to record command buffer!");
-        }
 
         private unsafe void CreateRenderPass()
         {
@@ -449,20 +454,17 @@ namespace RockEngine.Vulkan
             _swapchain.CreateImageViews();
         }
 
-        private async Task RecreateSwapChain()
+        private void RecreateSwapChain()
         {
             var glfwApi = Glfw.GetApi();
             int width = _window.Size.X, height = _window.Size.Y;
-
-            while (width == 0 || height == 0)
+            unsafe
             {
-                unsafe
+                while (width == 0 || height == 0)
                 {
                     glfwApi.GetFramebufferSize((WindowHandle*)_window.Handle, out width, out height);
+                    glfwApi.WaitEvents();
                 }
-
-                glfwApi.WaitEvents();
-                await Task.Delay(1);
             }
 
             _api.DeviceWaitIdle(_logicalDevice.Device);

@@ -82,6 +82,7 @@ namespace RockEngine.Vulkan.VkObjects
                 {
                     unsafe
                     {
+                        _api.FreeMemory(_device.Device, _deviceMemory, null);
                         _api.DestroyBuffer(_device.Device, _buffer, null);
                     }
                     _buffer = default;
