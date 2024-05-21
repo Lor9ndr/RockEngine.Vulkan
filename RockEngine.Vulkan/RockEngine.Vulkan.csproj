@@ -1,0 +1,35 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Silk.NET.Core" Version="2.21.0" />
+    <PackageReference Include="Silk.NET.Vulkan" Version="2.21.0" />
+    <PackageReference Include="Silk.NET.Vulkan.Extensions.EXT" Version="2.21.0" />
+    <PackageReference Include="Silk.NET.Vulkan.Extensions.KHR" Version="2.21.0" />
+    <PackageReference Include="Silk.NET.Windowing" Version="2.21.0" />
+    <PackageReference Include="Silk.NET.Windowing.Common" Version="2.21.0" />
+  </ItemGroup>
+
+
+  <ItemGroup>
+    <ShaderFiles Include="**\*.vert" />
+    <ShaderFiles Include="**\*.frag" />
+  </ItemGroup>
+
+  
+  <Target Name="PostBuild" AfterTargets="PostBuildEvent">
+    <!-- Echo each shader file found -->
+    <Message Importance="high" Text="Compiling shader file: %(ShaderFiles.FullPath)" />
+
+    <!-- Compile each shader file individually -->
+    <Exec Command="glslc.exe %(ShaderFiles.FullPath) -o %(ShaderFiles.FullPath).spv" />
+  </Target>
+
+</Project>
