@@ -2,7 +2,7 @@
 
 namespace RockEngine.Vulkan.VkObjects
 {
-    internal class VulkanCommandPool:VkObject
+    public class VulkanCommandPool:VkObject
     {
         private readonly Vk _api;
         private readonly VulkanLogicalDevice _device;

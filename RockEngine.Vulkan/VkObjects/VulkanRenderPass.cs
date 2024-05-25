@@ -1,17 +1,17 @@
-﻿using Silk.NET.Vulkan;
+﻿using RockEngine.Vulkan.VulkanInitilizers;
+
+using Silk.NET.Vulkan;
 
 namespace RockEngine.Vulkan.VkObjects
 {
     internal class VulkanRenderPass : VkObject
     {
-        private readonly Vk _api;
-        private readonly VulkanLogicalDevice _device;
+        private readonly VulkanContext _context;
         private readonly RenderPass _renderPass;
 
-        public VulkanRenderPass(Vk api, VulkanLogicalDevice device, RenderPass renderPass)
+        public VulkanRenderPass(VulkanContext context, RenderPass renderPass)
         {
-            _api = api;
-            _device = device;
+            _context = context;
             _renderPass = renderPass;
 
         }
@@ -29,7 +29,7 @@ namespace RockEngine.Vulkan.VkObjects
 
                 unsafe
                 {
-                    _api.DestroyRenderPass(_device.Device, _renderPass, null);
+                    _context.Api.DestroyRenderPass(_context.Device.Device, _renderPass, null);
                 }
 
                 _disposed = true;

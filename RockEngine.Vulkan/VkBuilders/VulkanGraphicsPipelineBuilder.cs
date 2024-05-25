@@ -1,5 +1,6 @@
 ﻿using RockEngine.Vulkan.Helpers;
 using RockEngine.Vulkan.VkObjects;
+using RockEngine.Vulkan.VulkanInitilizers;
 
 using Silk.NET.Vulkan;
 
@@ -11,8 +12,6 @@ namespace RockEngine.Vulkan.VkBuilders
     internal class GraphicsPipelineBuilder:DisposableBuilder
     {
         private MemoryHandle _entryPoint;
-        private readonly Vk _vk;
-        private readonly VulkanLogicalDevice _device;
         private readonly VulkanRenderPass _renderPass;
         private VulkanPipelineLayout _pipelineLayout;
         private PipelineStageBuilder _pipelineStageBuilder = new PipelineStageBuilder();
@@ -24,11 +23,9 @@ namespace RockEngine.Vulkan.VkBuilders
         private VulkanColorBlendStateBuilder _colorBlendStateBuilder;
         private VulkanDynamicStateBuilder _dynamicStateBuilder;
 
-        public GraphicsPipelineBuilder(Vk vk, VulkanLogicalDevice device, VulkanRenderPass renderPass)
+        public GraphicsPipelineBuilder(VulkanRenderPass renderPass)
         {
             _entryPoint = CreateMemoryHandle(Encoding.ASCII.GetBytes("main"));
-            _vk = vk;
-            _device = device;
             _renderPass = renderPass;
         }
 
@@ -92,7 +89,7 @@ namespace RockEngine.Vulkan.VkBuilders
         /// so you have not dispose them after all
         /// </summary>
         /// <returns>disposable pipeline wrapper</returns>
-        public unsafe VulkanPipeline Build()
+        public unsafe VulkanPipeline Build(VulkanContext context)
         {
             ArgumentNullException.ThrowIfNull(_pipelineLayout);
             ArgumentNullException.ThrowIfNull(_pipelineStageBuilder);
@@ -130,9 +127,9 @@ namespace RockEngine.Vulkan.VkBuilders
             };
             try
             {
-                _vk.CreateGraphicsPipelines(_device.Device, default, 1, in ci, null, out Pipeline pipeline)
+                context.Api.CreateGraphicsPipelines(context.Device.Device, default, 1, in ci, null, out Pipeline pipeline)
                     .ThrowCode("Failed to create pipeline");
-                return new VulkanPipeline(_vk, _device, pipeline); // Placeholder return, replace with actual pipeline creation result
+                return new VulkanPipeline(context, pipeline); // Placeholder return, replace with actual pipeline creation result
             }
             finally
             {

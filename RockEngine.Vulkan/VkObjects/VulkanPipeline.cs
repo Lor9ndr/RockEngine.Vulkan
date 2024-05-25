@@ -1,18 +1,18 @@
-﻿using Silk.NET.Vulkan;
+﻿using RockEngine.Vulkan.VulkanInitilizers;
+
+using Silk.NET.Vulkan;
 
 namespace RockEngine.Vulkan.VkObjects
 {
     internal class VulkanPipeline : VkObject
     {
-        private readonly Vk _api;
-        private readonly VulkanLogicalDevice _device;
+        private readonly VulkanContext _context;
         private readonly Pipeline _pipeline;
         public Pipeline Pipeline => _pipeline;
 
-        public VulkanPipeline(Vk api, VulkanLogicalDevice device, Pipeline pipeline)
+        public VulkanPipeline(VulkanContext context, Pipeline pipeline)
         {
-            _api = api;
-            _device = device;
+            _context = context;
             _pipeline = pipeline;
         }
 
@@ -29,7 +29,7 @@ namespace RockEngine.Vulkan.VkObjects
 
                 unsafe
                 {
-                    _api.DestroyPipeline(_device.Device, _pipeline, null);
+                    _context.Api.DestroyPipeline(_context.Device.Device, _pipeline, null);
                 }
                 _disposed = true;
             }

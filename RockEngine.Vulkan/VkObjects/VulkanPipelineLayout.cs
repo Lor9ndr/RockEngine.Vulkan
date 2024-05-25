@@ -1,20 +1,20 @@
-﻿using Silk.NET.Vulkan;
+﻿using RockEngine.Vulkan.VulkanInitilizers;
+
+using Silk.NET.Vulkan;
 
 namespace RockEngine.Vulkan.VkObjects
 {
     internal class VulkanPipelineLayout:VkObject
     {
-        private readonly Vk _api;
         private PipelineLayout _layout;
-        private readonly VulkanLogicalDevice _device;
+        private readonly VulkanContext _context;
 
         public PipelineLayout Layout => _layout;
 
-        public VulkanPipelineLayout(Vk api, PipelineLayout layout, VulkanLogicalDevice device)
+        public VulkanPipelineLayout(VulkanContext context, PipelineLayout layout)
         {
-            _api = api;
             _layout = layout;
-            _device = device;
+            _context = context;
         }
 
         protected override void Dispose(bool disposing)
@@ -33,7 +33,7 @@ namespace RockEngine.Vulkan.VkObjects
                 {
                     unsafe
                     {
-                        _api.DestroyPipelineLayout(_device.Device, _layout, null);
+                        _context.Api.DestroyPipelineLayout(_context.Device.Device, _layout, null);
                     }
                     _layout = default;
                 }

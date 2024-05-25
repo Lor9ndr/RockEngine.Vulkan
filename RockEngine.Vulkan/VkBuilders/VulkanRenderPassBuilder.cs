@@ -1,5 +1,6 @@
 ﻿using RockEngine.Vulkan.Helpers;
 using RockEngine.Vulkan.VkObjects;
+using RockEngine.Vulkan.VulkanInitilizers;
 
 using Silk.NET.Vulkan;
 
@@ -7,16 +8,15 @@ namespace RockEngine.Vulkan.VkBuilders
 {
     internal class VulkanRenderPassBuilder
     {
-        private readonly Vk _vk;
-        private readonly VulkanLogicalDevice _device;
-        private List<AttachmentDescription> _attachments = new List<AttachmentDescription>();
-        private List<SubpassDescription> _subpasses = new List<SubpassDescription>();
-        private List<SubpassDependency> _dependencies = new List<SubpassDependency>();
+        private readonly List<AttachmentDescription> _attachments = new List<AttachmentDescription>();
+        private readonly List<SubpassDescription> _subpasses = new List<SubpassDescription>();
+        private readonly List<SubpassDependency> _dependencies = new List<SubpassDependency>();
 
-        public VulkanRenderPassBuilder(Vk vk, VulkanLogicalDevice device)
+        private readonly VulkanContext _context;
+
+        public VulkanRenderPassBuilder(VulkanContext context)
         {
-            _vk = vk;
-            _device = device;
+            _context = context;
         }
 
         public VulkanRenderPassBuilder AddAttachment(AttachmentDescription attachment)
@@ -59,14 +59,14 @@ namespace RockEngine.Vulkan.VkBuilders
                                 DependencyCount = (uint)_dependencies.Count,
                                 PDependencies = dependency
                             };
-                            _vk.CreateRenderPass(_device.Device, in renderPassInfo, null, out renderPass)
+                            _context.Api.CreateRenderPass(_context.Device.Device, in renderPassInfo, null, out renderPass)
                                 .ThrowCode("Failed to create render pass.");
                         }
                     }
                 }
             }
 
-            return new VulkanRenderPass(_vk, _device, renderPass);
+            return new VulkanRenderPass(_context, renderPass);
         }
     }
 }

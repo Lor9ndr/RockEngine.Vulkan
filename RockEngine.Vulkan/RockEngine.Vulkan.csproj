@@ -23,6 +23,11 @@
     <ShaderFiles Include="**\*.frag" />
   </ItemGroup>
 
+
+  <ItemGroup>
+    <Folder Include="Assets\" />
+  </ItemGroup>
+
   
   <Target Name="PostBuild" AfterTargets="PostBuildEvent">
     <!-- Echo each shader file found -->

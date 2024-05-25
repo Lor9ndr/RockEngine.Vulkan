@@ -1,20 +1,20 @@
 ﻿using Silk.NET.Vulkan.Extensions.KHR;
 using Silk.NET.Vulkan;
 using RockEngine.Vulkan.Helpers;
+using RockEngine.Vulkan.VulkanInitilizers;
 
 namespace RockEngine.Vulkan.VkObjects
 {
     public class VulkanSwapchain : VkObject
     {
-        private readonly Vk _api;
         private readonly KhrSwapchain _khrSwapchain;
 
-        private readonly Device _device;
         private readonly Image[] _images;
         private readonly Format _format;
         private SwapchainKHR _swapchain;
         private readonly Extent2D _extent;
         private ImageView[] _swapChainImageViews;
+        private readonly VulkanContext _context;
 
         public SwapchainKHR Swapchain => _swapchain;
         public KhrSwapchain SwapchainApi => _khrSwapchain;
@@ -24,11 +24,10 @@ namespace RockEngine.Vulkan.VkObjects
 
         public ImageView[] SwapChainImageViews => _swapChainImageViews;
 
-        public VulkanSwapchain(Vk api, Device device, SwapchainKHR swapchain, KhrSwapchain khrSwapchainApi, Image[] images, Format format, Extent2D extent)
+        public VulkanSwapchain(VulkanContext context, SwapchainKHR swapchain, KhrSwapchain khrSwapchainApi, Image[] images, Format format, Extent2D extent)
         {
             _swapChainImageViews = new ImageView[images.Length];
-            _api = api;
-            _device = device;
+            _context = context;
             _swapchain = swapchain;
             _khrSwapchain = khrSwapchainApi;
             _images = images;
@@ -64,7 +63,7 @@ namespace RockEngine.Vulkan.VkObjects
                     }
                 };
 
-                _api.CreateImageView(_device, ref createInfo, null, out var imageView)
+                _context.Api.CreateImageView(_context.Device.Device, ref createInfo, null, out var imageView)
                     .ThrowCode("Failed to create image views!");
 
                 _swapChainImageViews[i] = imageView;
@@ -84,13 +83,13 @@ namespace RockEngine.Vulkan.VkObjects
                 // Set large fields to null.
                 if (_swapchain.Handle != 0)
                 {
-                    _khrSwapchain.DestroySwapchain(_device, _swapchain, null);
+                    _khrSwapchain.DestroySwapchain(_context.Device.Device, _swapchain, null);
                     _swapchain = default;
                     if (_swapChainImageViews.Length != 0)
                     {
                         foreach (var imageView in _swapChainImageViews)
                         {
-                            _api.DestroyImageView(_device, imageView, null);
+                            _context.Api.DestroyImageView(_context.Device.Device, imageView, null);
                         }
                     }
                 }
