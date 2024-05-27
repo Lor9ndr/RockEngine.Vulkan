@@ -3,16 +3,16 @@ using Silk.NET.Vulkan.Extensions.KHR;
 
 namespace RockEngine.Vulkan.VkObjects
 {
-    public class VulkanSurface : VkObject
+    public class SurfaceWrapper : VkObject
     {
         private readonly Vk _api;
         private readonly KhrSurface _khrSurface;
-        private readonly VulkanInstance _instance;
+        private readonly InstanceWrapper _instance;
         private SurfaceKHR _surface;
         public SurfaceKHR Surface => _surface;
         public KhrSurface SurfaceApi => _khrSurface;
 
-        public VulkanSurface(Vk api, VulkanInstance instance, SurfaceKHR surface, KhrSurface khrSurfaceApi)
+        public SurfaceWrapper(Vk api, InstanceWrapper instance, SurfaceKHR surface, KhrSurface khrSurfaceApi)
         {
             _api = api;
             _instance = instance;
@@ -42,7 +42,7 @@ namespace RockEngine.Vulkan.VkObjects
         }
 
         // Override finalizer only if 'Dispose(bool disposing)' has code to free unmanaged resources
-        ~VulkanSurface()
+        ~SurfaceWrapper()
         {
             // Do not change this code. Put cleanup code in 'Dispose(bool disposing)' method
             Dispose(disposing: false);

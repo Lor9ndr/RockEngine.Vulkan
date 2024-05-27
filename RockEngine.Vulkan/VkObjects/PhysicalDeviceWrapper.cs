@@ -2,14 +2,14 @@
 
 namespace RockEngine.Vulkan.VkObjects
 {
-    public partial class VulkanPhysicalDevice : VkObject
+    public partial class PhysicalDeviceWrapper : VkObject
     {
         private PhysicalDevice _physicalDevice;
         private readonly Vk _api;
 
         public PhysicalDevice VulkanObject => _physicalDevice;
 
-        public VulkanPhysicalDevice(PhysicalDevice physicalDevice, Vk api)
+        public PhysicalDeviceWrapper(PhysicalDevice physicalDevice, Vk api)
         {
             _physicalDevice = physicalDevice;
             _api = api;

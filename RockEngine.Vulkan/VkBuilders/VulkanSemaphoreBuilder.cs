@@ -8,15 +8,15 @@ namespace RockEngine.Vulkan.VkBuilders
     internal class VulkanSemaphoreBuilder : DisposableBuilder
     {
         private readonly Vk _api;
-        private readonly VulkanLogicalDevice _device;
+        private readonly LogicalDeviceWrapper _device;
 
-        public VulkanSemaphoreBuilder(Vk api, VulkanLogicalDevice device)
+        public VulkanSemaphoreBuilder(Vk api, LogicalDeviceWrapper device)
         {
             _api = api;
             _device = device;
         }
 
-        public VulkanSemaphore Build()
+        public SemaphoreWrapper Build()
         {
             SemaphoreCreateInfo ci = new SemaphoreCreateInfo()
             {
@@ -26,7 +26,7 @@ namespace RockEngine.Vulkan.VkBuilders
             {
                 _api.CreateSemaphore(_device.Device, in ci, null, out var semaphore)
                     .ThrowCode("Failed to create semaphore");
-                return new VulkanSemaphore(_api, _device, semaphore);
+                return new SemaphoreWrapper(_api, _device, semaphore);
             }
         }
     }

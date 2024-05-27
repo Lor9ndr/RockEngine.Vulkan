@@ -8,14 +8,14 @@ namespace RockEngine.Vulkan.VkBuilders
     internal class VulkanFramebufferBuilder : DisposableBuilder
     {
         private readonly Vk _api;
-        private readonly VulkanLogicalDevice _device;
+        private readonly LogicalDeviceWrapper _device;
         private List<ImageView> _attachments = new List<ImageView>();
-        private VulkanRenderPass _renderPass;
+        private RenderPassWrapper _renderPass;
         private uint _width;
         private uint _height;
         private uint _layersCount;
 
-        public VulkanFramebufferBuilder(Vk api, VulkanLogicalDevice device)
+        public VulkanFramebufferBuilder(Vk api, LogicalDeviceWrapper device)
         {
             _api = api;
             _device = device;
@@ -27,7 +27,7 @@ namespace RockEngine.Vulkan.VkBuilders
             return this;
         }
 
-        public VulkanFramebufferBuilder WithRenderPass(VulkanRenderPass renderPass)
+        public VulkanFramebufferBuilder WithRenderPass(RenderPassWrapper renderPass)
         {
             _renderPass = renderPass;
             return this;
@@ -50,7 +50,7 @@ namespace RockEngine.Vulkan.VkBuilders
             _layersCount = count;
             return this;
         }
-        public unsafe VulkanFramebuffer Build()
+        public unsafe FramebufferWrapper Build()
         {
             FramebufferCreateInfo ci = new FramebufferCreateInfo()
             {
@@ -64,7 +64,7 @@ namespace RockEngine.Vulkan.VkBuilders
             };
             _api.CreateFramebuffer(_device.Device, in ci, null, out Framebuffer framebuffer)
                 .ThrowCode("Failed to create framebuffer");
-            return new VulkanFramebuffer(_api, _device, framebuffer);
+            return new FramebufferWrapper(_api, _device, framebuffer);
         }
     }
 }

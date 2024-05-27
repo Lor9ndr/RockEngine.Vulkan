@@ -11,19 +11,19 @@ namespace RockEngine.Vulkan.VulkanInitilizers
     public class CommandPoolManager : IDisposable
     {
         private readonly VulkanContext _context;
-        private readonly ConcurrentDictionary<int, VulkanCommandPool> _commandPools;
+        private readonly ConcurrentDictionary<int, CommandPoolWrapper> _commandPools;
 
         public CommandPoolManager(VulkanContext context)
         {
             _context = context;
-            _commandPools = new ConcurrentDictionary<int, VulkanCommandPool>();
+            _commandPools = new ConcurrentDictionary<int, CommandPoolWrapper>();
         }
 
-        public VulkanCommandPool GetCommandPool()
+        public CommandPoolWrapper GetCommandPool()
         {
             int threadId = Environment.CurrentManagedThreadId;
 
-            if (!_commandPools.TryGetValue(threadId, out VulkanCommandPool commandPool))
+            if (!_commandPools.TryGetValue(threadId, out CommandPoolWrapper commandPool))
             {
                 commandPool = CreateCommandPool();
                 _commandPools[threadId] = commandPool;
@@ -32,7 +32,7 @@ namespace RockEngine.Vulkan.VulkanInitilizers
             return commandPool;
         }
 
-        private VulkanCommandPool CreateCommandPool()
+        private CommandPoolWrapper CreateCommandPool()
         {
             using var cpBuilder = new VulkanCommandPoolBuilder(_context.Api, _context.Device);
             var commandPool = cpBuilder

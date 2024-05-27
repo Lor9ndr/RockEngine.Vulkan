@@ -2,20 +2,20 @@
 
 namespace RockEngine.Vulkan.VkObjects
 {
-    internal class VulkanShaderModule : VkObject
+    internal class FenceWrapper : VkObject
     {
         private readonly Vk _api;
-        private readonly ShaderModule _module;
-        private readonly VulkanLogicalDevice _device;
-        public ShaderModule Module => _module;
+        private readonly LogicalDeviceWrapper _device;
+        private readonly Fence _fence;
 
-        public VulkanShaderModule(Vk api, ShaderModule module, VulkanLogicalDevice device)
+        public FenceWrapper(Vk api, LogicalDeviceWrapper device, Fence fence)
         {
             _api = api;
-            _module = module;
             _device = device;
+            _fence = fence;
         }
 
+        public Fence Fence => _fence;
 
         protected override void Dispose(bool disposing)
         {
@@ -26,12 +26,9 @@ namespace RockEngine.Vulkan.VkObjects
                     // Dispose managed state (managed objects).
                 }
 
-                if (_module.Handle != default)
+                unsafe
                 {
-                    unsafe
-                    {
-                        _api.DestroyShaderModule(_device.Device, _module, null);
-                    }
+                    _api.DestroyFence(_device.Device, _fence, null);
                 }
 
                 _disposed = true;

@@ -10,13 +10,13 @@ namespace RockEngine.Vulkan.VkBuilders
     internal class VulkanBufferBuilder : DisposableBuilder
     {
         private readonly Vk _api;
-        private readonly VulkanLogicalDevice _device;
+        private readonly LogicalDeviceWrapper _device;
         private SharingMode _mode;
         private ulong _size;
         private BufferUsageFlags _usage;
         private MemoryPropertyFlags _propertyFlags;
 
-        public VulkanBufferBuilder(Vk api, VulkanLogicalDevice device)
+        public VulkanBufferBuilder(Vk api, LogicalDeviceWrapper device)
         {
             _api = api;
             _device = device;
@@ -31,7 +31,7 @@ namespace RockEngine.Vulkan.VkBuilders
             return this;
         }
 
-        public VulkanBuffer Build()
+        public BufferWrapper Build()
         {
             BufferCreateInfo ci = new BufferCreateInfo()
             {
@@ -55,7 +55,7 @@ namespace RockEngine.Vulkan.VkBuilders
                 _api.AllocateMemory(_device.Device, ref allocInfo, null, out DeviceMemory deviceMemory)
                     .ThrowCode("Failed to allocate buffer memory");
                 _api.BindBufferMemory(_device.Device, buffer, deviceMemory,0);
-                var bufferWrapper = new VulkanBuffer(_api, _device, buffer, deviceMemory);
+                var bufferWrapper = new BufferWrapper(_api, _device, buffer, deviceMemory);
                 return bufferWrapper;
             }
         }

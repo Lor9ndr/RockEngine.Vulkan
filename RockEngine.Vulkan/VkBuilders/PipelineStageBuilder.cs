@@ -18,7 +18,7 @@ namespace RockEngine.Vulkan.VkBuilders
         /// <param name="module"></param>
         /// <param name="entryPoint"></param>
         /// <returns>chaining</returns>
-        public unsafe PipelineStageBuilder AddStage(ShaderStageFlags stage, VulkanShaderModule module, byte* entryPoint)
+        public unsafe PipelineStageBuilder AddStage(ShaderStageFlags stage, ShaderModuleWrapper module, byte* entryPoint)
         {
             _stages.Add(new PipelineShaderStageCreateInfo
             {

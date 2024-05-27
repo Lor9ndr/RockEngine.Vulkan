@@ -15,7 +15,7 @@ namespace RockEngine.Vulkan.VkBuilders
             _instance = instance;
         }
 
-        public VulkanPhysicalDevice Build()
+        public PhysicalDeviceWrapper Build()
         {
             Span<PhysicalDevice> empty = new Span<PhysicalDevice>();
             Span<uint> cnt = stackalloc uint[1];
@@ -30,7 +30,7 @@ namespace RockEngine.Vulkan.VkBuilders
             // For simplicity, just select the first device
             PhysicalDevice selectedDevice = devices[0];
 
-            return new VulkanPhysicalDevice(selectedDevice, _api);
+            return new PhysicalDeviceWrapper(selectedDevice, _api);
         }
     }
 }

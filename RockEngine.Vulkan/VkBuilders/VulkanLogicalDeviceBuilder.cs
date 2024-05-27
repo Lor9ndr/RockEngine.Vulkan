@@ -18,11 +18,11 @@ namespace RockEngine.Vulkan.VkBuilders
         }
 
         private readonly Vk _api;
-        private readonly VulkanPhysicalDevice _physicalDevice;
-        private readonly VulkanSurface _surface;
+        private readonly PhysicalDeviceWrapper _physicalDevice;
+        private readonly SurfaceWrapper _surface;
         private string[]? _extensions;
 
-        public VulkanLogicalDeviceBuilder(Vk api, VulkanPhysicalDevice physicalDevice, VulkanSurface surface)
+        public VulkanLogicalDeviceBuilder(Vk api, PhysicalDeviceWrapper physicalDevice, SurfaceWrapper surface)
         {
             _api = api;
             _physicalDevice = physicalDevice;
@@ -76,7 +76,7 @@ namespace RockEngine.Vulkan.VkBuilders
         }
 
 
-        public unsafe VulkanLogicalDevice Build()
+        public unsafe LogicalDeviceWrapper Build()
         {
             var indices = FindQueueFamilies(_api, _physicalDevice.VulkanObject, _surface);
 
@@ -126,10 +126,10 @@ namespace RockEngine.Vulkan.VkBuilders
                 SilkMarshal.Free((nint)deviceCreateInfo.PpEnabledExtensionNames);
             }
 
-            return new VulkanLogicalDevice(_api, logicalDevice, graphicsQueue, presentQueue, indices, _physicalDevice);
+            return new LogicalDeviceWrapper(_api, logicalDevice, graphicsQueue, presentQueue, indices, _physicalDevice);
         }
 
-        private unsafe QueueFamilyIndices FindQueueFamilies(Vk api, PhysicalDevice device, VulkanSurface surface)
+        private unsafe QueueFamilyIndices FindQueueFamilies(Vk api, PhysicalDevice device, SurfaceWrapper surface)
         {
             QueueFamilyIndices indices = new QueueFamilyIndices();
 

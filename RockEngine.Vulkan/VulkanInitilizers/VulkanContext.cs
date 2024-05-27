@@ -13,10 +13,11 @@ namespace RockEngine.Vulkan.VulkanInitilizers
     public unsafe class VulkanContext : IDisposable
     {
         public Vk Api { get; private set; }
-        public VulkanInstance Instance { get; private set; }
-        public VulkanLogicalDevice Device { get; private set; }
-        public VulkanSurface Surface { get; private set; }
+        public InstanceWrapper Instance { get; private set; }
+        public LogicalDeviceWrapper Device { get; private set; }
+        public SurfaceWrapper Surface { get; private set; }
         public CommandPoolManager CommandPoolManager { get; private set;}
+        public static Mutex QueueMutex = new Mutex();
 
         private readonly IWindow _window;
         private readonly string[] _validationLayers = ["VK_LAYER_KHRONOS_validation"];
@@ -31,7 +32,7 @@ namespace RockEngine.Vulkan.VulkanInitilizers
             CommandPoolManager = new CommandPoolManager(this);
         }
 
-        public VulkanCommandPool GetOrCreateCommandPool()
+        public CommandPoolWrapper GetOrCreateCommandPool()
         {
             return CommandPoolManager.GetCommandPool();
         }

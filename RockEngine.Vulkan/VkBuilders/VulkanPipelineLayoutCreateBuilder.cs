@@ -9,7 +9,7 @@ namespace RockEngine.Vulkan.VkBuilders
     internal class VulkanPipelineLayoutCreateBuilder
     {
 
-        public VulkanPipelineLayout Build(VulkanContext context)
+        public PipelineLayoutWrapper Build(VulkanContext context)
         {
             PipelineLayoutCreateInfo pipelineLayoutCreateInfo = new PipelineLayoutCreateInfo()
             {
@@ -19,7 +19,7 @@ namespace RockEngine.Vulkan.VkBuilders
             {
                 context.Api.CreatePipelineLayout(context.Device.Device, ref pipelineLayoutCreateInfo, null, out var pipelineLayout)
                     .ThrowCode("Failed to create pipeline layout");
-                return new VulkanPipelineLayout(context, pipelineLayout);
+                return new PipelineLayoutWrapper(context, pipelineLayout);
             }
         }
     }

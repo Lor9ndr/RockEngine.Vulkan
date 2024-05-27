@@ -42,7 +42,7 @@ namespace RockEngine.Vulkan.VkBuilders
             return this;
         }
 
-        public unsafe VulkanInstance Build(ref InstanceCreateInfo instanceInfo)
+        public unsafe InstanceWrapper Build(ref InstanceCreateInfo instanceInfo)
         {
             if (_enableValidationLayers && !CheckValidationLayerSupport(_api))
             {
@@ -79,14 +79,14 @@ namespace RockEngine.Vulkan.VkBuilders
                 var value = _debugUtilsMessengerCreateInfoEXT.Value;
                 instanceInfo.PNext = &value;
             }
-            VulkanInstance instanceWrapper;
+            InstanceWrapper instanceWrapper;
 
             var result = _api.CreateInstance(in instanceInfo, null, out Instance instance);
             if (result != Result.Success)
             {
                 throw new Exception($"Failed to create instance: {result}");
             }
-            instanceWrapper = new VulkanInstance(instance, _api);
+            instanceWrapper = new InstanceWrapper(instance, _api);
             if (validationLayerNames != null)
             {
                 UnmanagedExtensions.FreeUnmanagedArray(validationLayerNames, _validationLayers!.Length);
@@ -105,7 +105,7 @@ namespace RockEngine.Vulkan.VkBuilders
 
             return instanceWrapper;
         }
-        unsafe Result CreateDebugUtilsMessenger(Vk api, VulkanInstance instance, DebugUtilsMessengerCreateInfoEXT ci, out DebugUtilsMessengerEXT messenger)
+        unsafe Result CreateDebugUtilsMessenger(Vk api, InstanceWrapper instance, DebugUtilsMessengerCreateInfoEXT ci, out DebugUtilsMessengerEXT messenger)
         {
             nint vkCreateDebugUtilsMessengerEXTPtr = api.GetInstanceProcAddr(instance.Instance, CREATE_DEBUG_UTILS_MESSENGER);
             if (vkCreateDebugUtilsMessengerEXTPtr == nint.Zero)

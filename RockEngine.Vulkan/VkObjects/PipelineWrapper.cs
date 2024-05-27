@@ -4,22 +4,22 @@ using Silk.NET.Vulkan;
 
 namespace RockEngine.Vulkan.VkObjects
 {
-    internal class VulkanRenderPass : VkObject
+    public class PipelineWrapper : VkObject
     {
         private readonly VulkanContext _context;
-        private readonly RenderPass _renderPass;
+        private readonly Pipeline _pipeline;
+        public Pipeline Pipeline => _pipeline;
 
-        public VulkanRenderPass(VulkanContext context, RenderPass renderPass)
+        public PipelineWrapper(VulkanContext context, Pipeline pipeline)
         {
             _context = context;
-            _renderPass = renderPass;
-
+            _pipeline = pipeline;
         }
 
-        public RenderPass RenderPass => _renderPass;
 
         protected override void Dispose(bool disposing)
         {
+
             if (!_disposed)
             {
                 if (disposing)
@@ -29,9 +29,8 @@ namespace RockEngine.Vulkan.VkObjects
 
                 unsafe
                 {
-                    _context.Api.DestroyRenderPass(_context.Device.Device, _renderPass, null);
+                    _context.Api.DestroyPipeline(_context.Device.Device, _pipeline, null);
                 }
-
                 _disposed = true;
             }
         }

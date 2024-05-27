@@ -8,9 +8,9 @@ namespace RockEngine.Vulkan.VkBuilders
     {
         private FenceCreateFlags _flags;
         private readonly Vk _api;
-        private readonly VulkanLogicalDevice _device;
+        private readonly LogicalDeviceWrapper _device;
 
-        public VulkanFenceBuilder(Vk api, VulkanLogicalDevice device)
+        public VulkanFenceBuilder(Vk api, LogicalDeviceWrapper device)
         {
             _api = api;
             _device = device;
@@ -21,7 +21,7 @@ namespace RockEngine.Vulkan.VkBuilders
             return this;
         }
 
-        public VulkanFence Build()
+        public FenceWrapper Build()
         {
             FenceCreateInfo ci = new FenceCreateInfo()
             {
@@ -31,7 +31,7 @@ namespace RockEngine.Vulkan.VkBuilders
             unsafe
             {
                 _api.CreateFence(_device.Device, in ci, null, out Fence fence);
-                return new VulkanFence(_api, _device, fence);
+                return new FenceWrapper(_api, _device, fence);
             }
         }
     }

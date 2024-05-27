@@ -4,14 +4,14 @@ using Silk.NET.Vulkan;
 
 namespace RockEngine.Vulkan.VkObjects
 {
-    internal class VulkanPipelineLayout:VkObject
+    internal class PipelineLayoutWrapper:VkObject
     {
         private PipelineLayout _layout;
         private readonly VulkanContext _context;
 
         public PipelineLayout Layout => _layout;
 
-        public VulkanPipelineLayout(VulkanContext context, PipelineLayout layout)
+        public PipelineLayoutWrapper(VulkanContext context, PipelineLayout layout)
         {
             _layout = layout;
             _context = context;

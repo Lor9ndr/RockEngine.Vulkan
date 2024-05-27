@@ -43,7 +43,7 @@ namespace RockEngine.Vulkan.Helpers
             return false;
         }
 
-        public static unsafe SwapChainSupportDetails QuerySwapChainSupport(PhysicalDevice device, VulkanSurface surface)
+        public static unsafe SwapChainSupportDetails QuerySwapChainSupport(PhysicalDevice device, SurfaceWrapper surface)
         {
             SwapChainSupportDetails details = new SwapChainSupportDetails();
             surface.SurfaceApi.GetPhysicalDeviceSurfaceCapabilities(device, surface.Surface, out details.Capabilities);

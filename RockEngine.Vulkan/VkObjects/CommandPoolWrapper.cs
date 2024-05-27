@@ -2,20 +2,19 @@
 
 namespace RockEngine.Vulkan.VkObjects
 {
-    internal class VulkanFence : VkObject
+    public class CommandPoolWrapper:VkObject
     {
         private readonly Vk _api;
-        private readonly VulkanLogicalDevice _device;
-        private readonly Fence _fence;
+        private readonly LogicalDeviceWrapper _device;
+        private readonly CommandPool _commandPool;
+        public CommandPool CommandPool => _commandPool;
 
-        public VulkanFence(Vk api, VulkanLogicalDevice device, Fence fence)
+        public CommandPoolWrapper(Vk api, LogicalDeviceWrapper device, CommandPool commandPool)
         {
             _api = api;
             _device = device;
-            _fence = fence;
+            _commandPool = commandPool;
         }
-
-        public Fence Fence => _fence;
 
         protected override void Dispose(bool disposing)
         {
@@ -28,7 +27,7 @@ namespace RockEngine.Vulkan.VkObjects
 
                 unsafe
                 {
-                    _api.DestroyFence(_device.Device, _fence, null);
+                    _api.DestroyCommandPool(_device.Device, _commandPool, null);
                 }
 
                 _disposed = true;

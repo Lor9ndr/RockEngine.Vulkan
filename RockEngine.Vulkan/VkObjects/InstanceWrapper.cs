@@ -4,13 +4,13 @@ using System.Runtime.InteropServices;
 
 namespace RockEngine.Vulkan.VkObjects
 {
-    public class VulkanInstance : VkObject
+    public class InstanceWrapper : VkObject
     {
         private Instance _instance;
         private readonly Vk _api;
         public DebugUtilsMessengerEXT? DebugMessenger { get; set; }
 
-        public VulkanInstance(Instance instance, Vk api)
+        public InstanceWrapper(Instance instance, Vk api)
         {
             _instance = instance;
             _api = api;

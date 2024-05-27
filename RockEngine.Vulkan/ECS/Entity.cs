@@ -1,37 +1,76 @@
-﻿namespace RockEngine.Vulkan.ECS
+﻿using RockEngine.Vulkan.VkObjects;
+using RockEngine.Vulkan.VulkanInitilizers;
+
+namespace RockEngine.Vulkan.ECS
 {
     public class Entity
     {
         public string Name;
         public Transform Transform;
-        private readonly Dictionary<Type, Component> _components = new Dictionary<Type, Component>();
+        private readonly List<Component> _components = new List<Component>();
+        private bool _isInitialized = false;
 
         public Entity()
         {
             Name = "Entity";
-            Transform = AddComponent(new Transform());
+            Transform = AddComponent(null, new Transform()).GetAwaiter().GetResult();
         }
 
-        public T AddComponent<T>(T component) where T : Component
+        public async Task<T> AddComponent<T>(VulkanContext context,T component) where T : Component
         {
-            _components[typeof(T)] = component;
+            _components.Add(component);
+
+            if (_isInitialized)
+            {
+                await component.OnInitializedAsync(context).ConfigureAwait(false);
+            }
             return component;
         }
 
         public T GetComponent<T>() where T : Component
         {
-            if(!_components.TryGetValue(typeof(T), out var component))
-            {
-                throw new Exception($"Failed to find a component of type {typeof(T)}");
-            }
-            return (T)component;
+            return (T)_components.OfType<T>().First();
         }
 
-        public async Task Update()
+        public async Task InitalizeAsync(VulkanContext context)
         {
-            foreach (var item in _components)
+            if (_isInitialized)
             {
-                await item.Value.Update();
+                return;
+            }
+            var tsks = new Task[_components.Count];
+            for (int i = 0; i < _components.Count; i++)
+            {
+                Component item = _components[i];
+                tsks[i] = item.OnInitializedAsync(context);
+            }
+            await Task.WhenAll(tsks).
+                ConfigureAwait(false);
+            _isInitialized = true;
+        }
+
+        public async Task Update(double time, VulkanContext context, CommandBufferWrapper commandBuffer)
+        {
+            for (int i = 0; i < _components.Count; i++)
+            {
+                Component? item = _components[i];
+                await item.UpdateAsync(time, context, commandBuffer);
+            }
+        }
+
+        public void Render(VulkanContext context, CommandBufferWrapper commandBuffer)
+        {
+            foreach (var item in _components.OfType<IRenderableComponent>())
+            {
+                item.Render(context, commandBuffer);
+            }
+        }
+
+        public void Dispose()
+        {
+            foreach (var item in _components.OfType<IDisposable>())
+            {
+                item.Dispose();
             }
         }
     }

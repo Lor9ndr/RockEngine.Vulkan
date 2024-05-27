@@ -5,7 +5,7 @@ using RockEngine.Vulkan.VulkanInitilizers;
 
 namespace RockEngine.Vulkan.VkObjects
 {
-    public class VulkanSwapchain : VkObject
+    public class SwapchainWrapper : VkObject
     {
         private readonly KhrSwapchain _khrSwapchain;
 
@@ -24,7 +24,7 @@ namespace RockEngine.Vulkan.VkObjects
 
         public ImageView[] SwapChainImageViews => _swapChainImageViews;
 
-        public VulkanSwapchain(VulkanContext context, SwapchainKHR swapchain, KhrSwapchain khrSwapchainApi, Image[] images, Format format, Extent2D extent)
+        public SwapchainWrapper(VulkanContext context, SwapchainKHR swapchain, KhrSwapchain khrSwapchainApi, Image[] images, Format format, Extent2D extent)
         {
             _swapChainImageViews = new ImageView[images.Length];
             _context = context;
@@ -98,7 +98,7 @@ namespace RockEngine.Vulkan.VkObjects
             }
         }
 
-        ~VulkanSwapchain()
+        ~SwapchainWrapper()
         {
             Dispose(disposing: false);
         }

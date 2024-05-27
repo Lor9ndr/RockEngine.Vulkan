@@ -1,24 +1,18 @@
 ﻿using RockEngine.Vulkan.VkObjects;
 using RockEngine.Vulkan.VulkanInitilizers;
 
-using System.Numerics;
-
 namespace RockEngine.Vulkan.ECS
 {
-    public class Transform : Component
+    internal class Camera : Component
     {
-        public Vector3 Position { get; set; }
-        public Quaternion Rotation { get; set; } = Quaternion.Identity;
-        public Vector3 Scale { get; set; } = Vector3.One;
-
         public override Task OnInitializedAsync(VulkanContext context)
         {
-            return Task.CompletedTask;
+            throw new NotImplementedException();
         }
 
         public override Task UpdateAsync(double time, VulkanContext context, CommandBufferWrapper commandBuffer)
         {
-            return Task.CompletedTask;
+            throw new NotImplementedException();
         }
     }
 }

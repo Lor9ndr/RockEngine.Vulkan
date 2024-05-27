@@ -23,7 +23,7 @@ namespace RockEngine.Vulkan.VkBuilders
             return this;
         }
 
-        public VulkanCommandBuffer Build()
+        public CommandBufferWrapper Build()
         {
             var createdCommandPool = _context.GetOrCreateCommandPool();
             CommandBufferAllocateInfo ai = new CommandBufferAllocateInfo()
@@ -35,9 +35,9 @@ namespace RockEngine.Vulkan.VkBuilders
             };
             _context.Api.AllocateCommandBuffers(_context.Device.Device, in ai, out CommandBuffer cb)
                 .ThrowCode("Failed to allocate command buffer");
-            return new VulkanCommandBuffer(_context, cb, createdCommandPool);
+            return new CommandBufferWrapper(_context, ref cb, createdCommandPool);
         }
-        public VulkanCommandBuffer[] Build(uint count)
+        public CommandBufferWrapper[] Build(uint count)
         {
             var commandPool = _context.GetOrCreateCommandPool();
             ReadOnlySpan<CommandBufferAllocateInfo> refAi = [new CommandBufferAllocateInfo()
@@ -53,10 +53,10 @@ namespace RockEngine.Vulkan.VkBuilders
             _context.Api.AllocateCommandBuffers(_context.Device.Device, refAi, commandBuffersArr)
                 .ThrowCode("Failed to allocate command buffer");
 
-            VulkanCommandBuffer[] vulkanCommandBuffers = new VulkanCommandBuffer[count];
+            CommandBufferWrapper[] vulkanCommandBuffers = new CommandBufferWrapper[count];
             for (int i = 0; i < commandBuffersArr.Length; i++)
             {
-                vulkanCommandBuffers[i] = new VulkanCommandBuffer(_context, commandBuffersArr[i], commandPool);
+                vulkanCommandBuffers[i] = new CommandBufferWrapper(_context, ref commandBuffersArr[i], commandPool);
             }
 
             return vulkanCommandBuffers;

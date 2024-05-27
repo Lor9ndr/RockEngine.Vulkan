@@ -1,4 +1,6 @@
 ﻿using RockEngine.Vulkan.Helpers;
+using RockEngine.Vulkan.VkBuilders;
+using RockEngine.Vulkan.VulkanInitilizers;
 
 using Silk.NET.Vulkan;
 
@@ -8,17 +10,17 @@ using Buffer = Silk.NET.Vulkan.Buffer;
 
 namespace RockEngine.Vulkan.VkObjects
 {
-    internal class VulkanBuffer : VkObject
+    public class BufferWrapper : VkObject
     {
         private readonly Vk _api;
-        private readonly VulkanLogicalDevice _device;
+        private readonly LogicalDeviceWrapper _device;
         private Buffer _buffer;
         private readonly DeviceMemory _deviceMemory;
 
         public Buffer Buffer => _buffer;
         private static readonly SemaphoreSlim _semaphore = new SemaphoreSlim(1, 1);
 
-        public VulkanBuffer(Vk api, VulkanLogicalDevice device, Buffer buffer, DeviceMemory deviceMemory)
+        public BufferWrapper(Vk api, LogicalDeviceWrapper device, Buffer buffer, DeviceMemory deviceMemory)
         {
             _api = api;
             _device = device;
@@ -26,7 +28,7 @@ namespace RockEngine.Vulkan.VkObjects
             _deviceMemory = deviceMemory;
         }
 
-        public void Bind(VulkanCommandBuffer commandBuffer)
+        public void Bind(CommandBufferWrapper commandBuffer)
         {
             ulong offset = 0;
             _api.CmdBindVertexBuffers(commandBuffer.CommandBuffer, 0, 1, in _buffer, in offset);
@@ -42,6 +44,48 @@ namespace RockEngine.Vulkan.VkObjects
             Marshal.Copy(byteArray, 0, dataPtr, byteArray.Length);
 
             _api.UnmapMemory(_device.Device, _deviceMemory);
+        }
+
+        public void CopyBuffer(VulkanContext context, BufferWrapper dstBuffer, ulong size)
+        {
+            CommandBufferWrapper commandBuffer = new VulkanCommandBufferBuilder(context)
+                .WithLevel(CommandBufferLevel.Primary)
+                .Build();
+
+            commandBuffer.Begin(new CommandBufferBeginInfo
+            {
+                SType = StructureType.CommandBufferBeginInfo,
+                Flags = CommandBufferUsageFlags.OneTimeSubmitBit
+            });
+
+            commandBuffer.CopyBuffer(this, dstBuffer, size);
+
+            commandBuffer.End();
+
+            unsafe
+            {
+                var buffer = commandBuffer.CommandBuffer;
+                SubmitInfo submitInfo = new SubmitInfo()
+                {
+                    SType = StructureType.SubmitInfo,
+                    CommandBufferCount = 1,
+                    PCommandBuffers = &buffer
+                };
+                VulkanContext.QueueMutex.WaitOne();
+                try
+                {
+                    context.Api.QueueSubmit(context.Device.GraphicsQueue, 1, &submitInfo, default);
+                    context.Api.QueueWaitIdle(context.Device.GraphicsQueue);
+                }
+                finally
+                {
+                    VulkanContext.QueueMutex.ReleaseMutex();
+                }
+
+
+            }
+
+            commandBuffer.Dispose();
         }
 
         private unsafe IntPtr MapMemory(ulong bufferSize, ulong offset)

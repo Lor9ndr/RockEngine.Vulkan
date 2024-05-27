@@ -9,7 +9,12 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="PropertyChanged.Fody" Version="4.1.0" />
     <PackageReference Include="Silk.NET.Core" Version="2.21.0" />
+    <PackageReference Include="Silk.NET.Input" Version="2.21.0" />
+    <PackageReference Include="Silk.NET.Input.Common" Version="2.21.0" />
+    <PackageReference Include="Silk.NET.Input.Glfw" Version="2.21.0" />
+    <PackageReference Include="Silk.NET.SPIRV.Reflect" Version="2.21.0" />
     <PackageReference Include="Silk.NET.Vulkan" Version="2.21.0" />
     <PackageReference Include="Silk.NET.Vulkan.Extensions.EXT" Version="2.21.0" />
     <PackageReference Include="Silk.NET.Vulkan.Extensions.KHR" Version="2.21.0" />
@@ -21,11 +26,6 @@
   <ItemGroup>
     <ShaderFiles Include="**\*.vert" />
     <ShaderFiles Include="**\*.frag" />
-  </ItemGroup>
-
-
-  <ItemGroup>
-    <Folder Include="Assets\" />
   </ItemGroup>
 
   

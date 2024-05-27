@@ -12,8 +12,8 @@ namespace RockEngine.Vulkan.VkBuilders
     internal class GraphicsPipelineBuilder:DisposableBuilder
     {
         private MemoryHandle _entryPoint;
-        private readonly VulkanRenderPass _renderPass;
-        private VulkanPipelineLayout _pipelineLayout;
+        private readonly RenderPassWrapper _renderPass;
+        private PipelineLayoutWrapper _pipelineLayout;
         private PipelineStageBuilder _pipelineStageBuilder = new PipelineStageBuilder();
         private VulkanPipelineVertexInputStateBuilder _vertexInputStateBuilder;
         private VulkanInputAssemblyBuilder _inputAssemblyBuilder;
@@ -23,15 +23,15 @@ namespace RockEngine.Vulkan.VkBuilders
         private VulkanColorBlendStateBuilder _colorBlendStateBuilder;
         private VulkanDynamicStateBuilder _dynamicStateBuilder;
 
-        public GraphicsPipelineBuilder(VulkanRenderPass renderPass)
+        public GraphicsPipelineBuilder(RenderPassWrapper renderPass)
         {
             _entryPoint = CreateMemoryHandle(Encoding.ASCII.GetBytes("main"));
             _renderPass = renderPass;
         }
 
-        public unsafe GraphicsPipelineBuilder WithShaderModule(ShaderStageFlags stage, VulkanShaderModule shaderModule)
+        public unsafe GraphicsPipelineBuilder WithShaderModule(ShaderModuleWrapper shaderModule)
         {
-            _pipelineStageBuilder.AddStage(stage, shaderModule, (byte*)_entryPoint.Pointer);
+            _pipelineStageBuilder.AddStage(shaderModule.Stage, shaderModule, (byte*)_entryPoint.Pointer);
             return this;
         }
 
@@ -77,7 +77,7 @@ namespace RockEngine.Vulkan.VkBuilders
             return this;
         }
 
-        public GraphicsPipelineBuilder WithPipelineLayout(VulkanPipelineLayout pipelineLayout)
+        public GraphicsPipelineBuilder WithPipelineLayout(PipelineLayoutWrapper pipelineLayout)
         {
             _pipelineLayout = pipelineLayout;
             return this;
@@ -89,7 +89,7 @@ namespace RockEngine.Vulkan.VkBuilders
         /// so you have not dispose them after all
         /// </summary>
         /// <returns>disposable pipeline wrapper</returns>
-        public unsafe VulkanPipeline Build(VulkanContext context)
+        public unsafe PipelineWrapper Build(VulkanContext context)
         {
             ArgumentNullException.ThrowIfNull(_pipelineLayout);
             ArgumentNullException.ThrowIfNull(_pipelineStageBuilder);
@@ -129,7 +129,7 @@ namespace RockEngine.Vulkan.VkBuilders
             {
                 context.Api.CreateGraphicsPipelines(context.Device.Device, default, 1, in ci, null, out Pipeline pipeline)
                     .ThrowCode("Failed to create pipeline");
-                return new VulkanPipeline(context, pipeline); // Placeholder return, replace with actual pipeline creation result
+                return new PipelineWrapper(context, pipeline); // Placeholder return, replace with actual pipeline creation result
             }
             finally
             {

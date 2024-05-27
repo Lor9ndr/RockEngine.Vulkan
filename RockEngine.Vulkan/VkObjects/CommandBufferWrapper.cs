@@ -4,13 +4,13 @@ using Silk.NET.Vulkan;
 
 namespace RockEngine.Vulkan.VkObjects
 {
-    internal class VulkanCommandBuffer : VkObject, IBegginable<CommandBufferBeginInfo>
+    public class CommandBufferWrapper : VkObject, IBegginable<CommandBufferBeginInfo>
     {
         private readonly VulkanContext _context;
         public readonly  CommandBuffer CommandBuffer;
-        private readonly VulkanCommandPool _commandPool;
+        private readonly CommandPoolWrapper _commandPool;
 
-        public VulkanCommandBuffer(VulkanContext context, CommandBuffer commandBuffer, VulkanCommandPool commandPool)
+        public CommandBufferWrapper(VulkanContext context, ref CommandBuffer commandBuffer, CommandPoolWrapper commandPool)
         {
             _context = context;
             CommandBuffer = commandBuffer;
@@ -27,7 +27,7 @@ namespace RockEngine.Vulkan.VkObjects
             _context.Api.EndCommandBuffer(CommandBuffer);
         }
         
-        public void CopyBuffer(VulkanBuffer srcBuffer, VulkanBuffer dstBuffer, ulong size)
+        public void CopyBuffer(BufferWrapper srcBuffer, BufferWrapper dstBuffer, ulong size)
         {
             BufferCopy bufferCopy = new BufferCopy()
             {

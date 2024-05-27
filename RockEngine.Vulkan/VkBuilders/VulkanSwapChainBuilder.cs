@@ -2,11 +2,8 @@
 using RockEngine.Vulkan.VkObjects;
 using RockEngine.Vulkan.VulkanInitilizers;
 
-using Silk.NET.Core.Native;
 using Silk.NET.Vulkan;
 using Silk.NET.Vulkan.Extensions.KHR;
-
-using System.Runtime.InteropServices;
 
 namespace RockEngine.Vulkan.VkBuilders
 {
@@ -22,7 +19,7 @@ namespace RockEngine.Vulkan.VkBuilders
             return this;
         }
 
-        public unsafe VulkanSwapchain Build(VulkanContext context)
+        public unsafe SwapchainWrapper Build(VulkanContext context)
         {
             // Assume SwapChainSupportDetails, ChooseSwapSurfaceFormat, ChooseSwapPresentMode, and ChooseSwapExtent are implemented
             var swapChainSupport = VkHelper.QuerySwapChainSupport(context.Device.PhysicalDevice.VulkanObject, context.Surface);
@@ -82,7 +79,7 @@ namespace RockEngine.Vulkan.VkBuilders
             var images = new Image[countImages];
             swapchainApi.GetSwapchainImages(context.Device.Device, swapChain, &countImages, images);
 
-            return new VulkanSwapchain(context, swapChain, swapchainApi, images, surfaceFormat.Format, extent);
+            return new SwapchainWrapper(context, swapChain, swapchainApi, images, surfaceFormat.Format, extent);
         }
 
         private Extent2D ChooseSwapExtent(SurfaceCapabilitiesKHR capabilities, uint width, uint height)

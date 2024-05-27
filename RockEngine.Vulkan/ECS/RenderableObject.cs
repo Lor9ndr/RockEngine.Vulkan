@@ -4,6 +4,8 @@ using RockEngine.Vulkan.VulkanInitilizers;
 
 using Silk.NET.Vulkan;
 
+using System;
+using System.Threading.Tasks;
 
 namespace RockEngine.Vulkan.ECS
 {
@@ -12,8 +14,10 @@ namespace RockEngine.Vulkan.ECS
         public Vertex[] Vertices { get; private set; }
         public uint[]? Indicies { get; private set; }
 
-        private VulkanBuffer _vertexBuffer;
-        private VulkanBuffer? _indexBuffer;
+        private BufferWrapper _vertexBuffer;
+        private BufferWrapper? _indexBuffer;
+        private bool _isReady = false;
+        private static readonly Mutex _queueMutex = new Mutex();
 
         public RenderableObject(Vertex[] vertices, uint[]? indicies = null)
         {
@@ -26,11 +30,11 @@ namespace RockEngine.Vulkan.ECS
             ulong vertexBufferSize = (ulong)(Vertices.Length * Vertex.Size);
 
             // Create Staging Buffer for Vertex Data
-            VulkanBuffer stagingBuffer = new VulkanBufferBuilder(context.Api, context.Device)
+           using BufferWrapper stagingBuffer = new VulkanBufferBuilder(context.Api, context.Device)
                 .Configure(SharingMode.Exclusive, vertexBufferSize, BufferUsageFlags.TransferSrcBit, MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit)
                 .Build();
 
-           await stagingBuffer.SendDataAsync(Vertices).ConfigureAwait(false);
+            await stagingBuffer.SendDataAsync(Vertices).ConfigureAwait(false);
 
             // Create Vertex Buffer with Device Local Memory
             _vertexBuffer = new VulkanBufferBuilder(context.Api, context.Device)
@@ -38,16 +42,15 @@ namespace RockEngine.Vulkan.ECS
                 .Build();
 
             // Copy Data from Staging Buffer to Vertex Buffer
-            CopyBuffer(context, stagingBuffer, _vertexBuffer, vertexBufferSize);
+            stagingBuffer.CopyBuffer(context, _vertexBuffer, vertexBufferSize);
 
-            stagingBuffer.Dispose();
 
             if (Indicies != null)
             {
                 ulong indexBufferSize = (ulong)(Indicies.Length * sizeof(uint));
 
                 // Create Staging Buffer for Index Data
-                VulkanBuffer stagingIndexBuffer = new VulkanBufferBuilder(context.Api, context.Device)
+                BufferWrapper stagingIndexBuffer = new VulkanBufferBuilder(context.Api, context.Device)
                     .Configure(SharingMode.Exclusive, indexBufferSize, BufferUsageFlags.TransferSrcBit, MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit)
                     .Build();
 
@@ -59,49 +62,21 @@ namespace RockEngine.Vulkan.ECS
                     .Build();
 
                 // Copy Data from Staging Buffer to Index Buffer
-                CopyBuffer(context, stagingIndexBuffer, _indexBuffer, indexBufferSize);
+                stagingIndexBuffer.CopyBuffer(context, _indexBuffer, indexBufferSize);
+               
 
                 stagingIndexBuffer.Dispose();
             }
+            _isReady = true;
         }
 
-        private void CopyBuffer(VulkanContext context, VulkanBuffer srcBuffer, VulkanBuffer dstBuffer, ulong size)
-        {
-            VulkanCommandBuffer commandBuffer = new VulkanCommandBufferBuilder(context)
-                .WithLevel(CommandBufferLevel.Primary)
-                .Build();
+        
 
-            commandBuffer.Begin(new CommandBufferBeginInfo
-            {
-                SType = StructureType.CommandBufferBeginInfo,
-                Flags = CommandBufferUsageFlags.OneTimeSubmitBit
-            });
-
-            commandBuffer.CopyBuffer(srcBuffer, dstBuffer, size);
-
-            commandBuffer.End();
-
-            unsafe
-            {
-                var buffer = commandBuffer.CommandBuffer;
-                SubmitInfo submitInfo = new SubmitInfo()
-                {
-                    SType = StructureType.SubmitInfo,
-                    CommandBufferCount = 1,
-                    PCommandBuffers = &buffer
-                };
-                context.Api.QueueSubmit(context.Device.GraphicsQueue, 1, [submitInfo], default);
-            }
-
-            context.Api.QueueWaitIdle(context.Device.GraphicsQueue);
-            commandBuffer.Dispose();
-        }
-
-        public void BindBuffers(VulkanContext context,VulkanCommandBuffer commandBuffer)
+        public void BindBuffers(VulkanContext context, CommandBufferWrapper commandBuffer)
         {
             var buffer = _vertexBuffer.Buffer;
             ulong offset = 0;
-            context.Api.CmdBindVertexBuffers(commandBuffer.CommandBuffer, 0, 1, in buffer,  in offset);
+            context.Api.CmdBindVertexBuffers(commandBuffer.CommandBuffer, 0, 1, in buffer, in offset);
 
             if (_indexBuffer != null)
             {
@@ -109,8 +84,12 @@ namespace RockEngine.Vulkan.ECS
             }
         }
 
-        public void Draw(VulkanContext context,VulkanCommandBuffer commandBuffer)
+        public void Draw(VulkanContext context, CommandBufferWrapper commandBuffer)
         {
+            if (!_isReady)
+            {
+                return;
+            }
             _vertexBuffer.Bind(commandBuffer);
             if (_indexBuffer != null)
             {
@@ -126,6 +105,7 @@ namespace RockEngine.Vulkan.ECS
         {
             _vertexBuffer.Dispose();
             _indexBuffer?.Dispose();
+            _isReady = false;
         }
     }
 }

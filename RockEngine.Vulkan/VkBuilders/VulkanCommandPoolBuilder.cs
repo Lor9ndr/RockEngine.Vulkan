@@ -7,11 +7,11 @@ namespace RockEngine.Vulkan.VkBuilders
     internal class VulkanCommandPoolBuilder : DisposableBuilder
     {
         private readonly Vk _api;
-        private readonly VulkanLogicalDevice _device;
+        private readonly LogicalDeviceWrapper _device;
         private CommandPoolCreateFlags _flags;
         private uint _queueFamilyIndex;
 
-        public VulkanCommandPoolBuilder(Vk api, VulkanLogicalDevice device)
+        public VulkanCommandPoolBuilder(Vk api, LogicalDeviceWrapper device)
         {
             _api = api;
             _device = device;
@@ -29,7 +29,7 @@ namespace RockEngine.Vulkan.VkBuilders
             return this;
         }
 
-        public VulkanCommandPool Build()
+        public CommandPoolWrapper Build()
         {
             CommandPoolCreateInfo ci = new CommandPoolCreateInfo()
             {
@@ -41,7 +41,7 @@ namespace RockEngine.Vulkan.VkBuilders
             {
                 _api.CreateCommandPool(_device.Device, in ci, null, out CommandPool cp)
                     .ThrowCode("Failed to create command pool");
-                return new VulkanCommandPool(_api, _device, cp);
+                return new CommandPoolWrapper(_api, _device, cp);
             }
 
         }

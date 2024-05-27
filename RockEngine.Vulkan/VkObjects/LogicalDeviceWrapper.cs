@@ -4,14 +4,14 @@ using Silk.NET.Vulkan;
 
 namespace RockEngine.Vulkan.VkObjects
 {
-    public class VulkanLogicalDevice : VkObject
+    public class LogicalDeviceWrapper : VkObject
     {
         private Device _device;
         private readonly Vk _api;
         private readonly Queue _presentQueue;
         private readonly Queue _graphicsQueue;
         internal readonly QueueFamilyIndices QueueFamilyIndices;
-        private readonly VulkanPhysicalDevice _physicalDevice;
+        private readonly PhysicalDeviceWrapper _physicalDevice;
 
         public Device Device => _device;
 
@@ -19,9 +19,9 @@ namespace RockEngine.Vulkan.VkObjects
 
         public Queue GraphicsQueue => _graphicsQueue;
 
-        public VulkanPhysicalDevice PhysicalDevice => _physicalDevice;
+        public PhysicalDeviceWrapper PhysicalDevice => _physicalDevice;
 
-        internal VulkanLogicalDevice(Vk api, Device device, Queue graphicsQueue, Queue presentQueue, QueueFamilyIndices indices, VulkanPhysicalDevice physicalDevice)
+        internal LogicalDeviceWrapper(Vk api, Device device, Queue graphicsQueue, Queue presentQueue, QueueFamilyIndices indices, PhysicalDeviceWrapper physicalDevice)
         {
             _api = api;
             _device = device;

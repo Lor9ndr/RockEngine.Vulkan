@@ -38,7 +38,7 @@ namespace RockEngine.Vulkan.VkBuilders
         }
 
 
-        public VulkanRenderPass Build()
+        public RenderPassWrapper Build()
         {
             RenderPass renderPass;
             unsafe
@@ -66,7 +66,7 @@ namespace RockEngine.Vulkan.VkBuilders
                 }
             }
 
-            return new VulkanRenderPass(_context, renderPass);
+            return new RenderPassWrapper(_context, renderPass);
         }
     }
 }

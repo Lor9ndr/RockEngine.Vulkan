@@ -1,19 +1,21 @@
 ﻿using Silk.NET.Vulkan;
 
+using Semaphore = Silk.NET.Vulkan.Semaphore;
+
 namespace RockEngine.Vulkan.VkObjects
 {
-    internal class VulkanFramebuffer : VkObject
+    internal class SemaphoreWrapper : VkObject
     {
+        private readonly Semaphore _semaphore;
         private readonly Vk _api;
-        private readonly VulkanLogicalDevice _device;
-        private readonly Framebuffer _framebuffer;
-        public Framebuffer Framebuffer => _framebuffer;
+        private readonly LogicalDeviceWrapper _device;
+        public Semaphore Semaphore => _semaphore;
 
-        public VulkanFramebuffer(Vk api, VulkanLogicalDevice device, Framebuffer framebuffer)
+        public SemaphoreWrapper(Vk api, LogicalDeviceWrapper device, Semaphore semaphore)
         {
+            _semaphore = semaphore;
             _api = api;
             _device = device;
-            _framebuffer = framebuffer;
         }
 
 
@@ -28,7 +30,7 @@ namespace RockEngine.Vulkan.VkObjects
 
                 unsafe
                 {
-                    _api.DestroyFramebuffer(_device.Device, _framebuffer, null);
+                    _api.DestroySemaphore(_device.Device, _semaphore, null);
                 }
 
                 _disposed = true;
