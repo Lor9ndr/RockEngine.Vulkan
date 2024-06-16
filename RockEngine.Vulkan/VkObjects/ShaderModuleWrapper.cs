@@ -1,38 +1,41 @@
 ﻿using Silk.NET.Vulkan;
 using Silk.NET.SPIRV.Reflect;
 using DescriptorType = Silk.NET.SPIRV.Reflect.DescriptorType;
+using RockEngine.Vulkan.VulkanInitilizers;
+using RockEngine.Vulkan.Helpers;
+using RockEngine.Vulkan.VkObjects.Reflected;
+using System.Runtime.InteropServices;
+using Silk.NET.Core.Native;
 
 namespace RockEngine.Vulkan.VkObjects
 {
-    internal class ShaderModuleWrapper : VkObject
+    public class ShaderModuleWrapper : VkObject<ShaderModule>
     {
-        private readonly Vk _api;
-        private readonly ShaderModule _module;
-        private readonly LogicalDeviceWrapper _device;
+        private readonly VulkanContext _context;
         private readonly ShaderStageFlags _stage;
-        private readonly List<ShaderVariable> _variables;
-        private readonly List<UniformBufferObject> _ubos;
-        private readonly List<SamplerObject> _samplers;
-        private readonly List<ImageObject> _images;
+
+        private readonly List<ShaderVariableReflected> _variables = new List<ShaderVariableReflected>();
+        private readonly List<UniformBufferObjectReflected> _reflectedUbos = new List<UniformBufferObjectReflected>();
+        private readonly List<SamplerObjectReflected> _samplers = new List<SamplerObjectReflected>();
+        private readonly List<ImageObjectReflected> _images = new List<ImageObjectReflected>();
+        private readonly List<PushConstantRange> _constantRanges = new List<PushConstantRange>();
+        private readonly List<DescriptorSetLayoutReflected> _descriptorSetLayouts = new List<DescriptorSetLayoutReflected>();
+
         private readonly ReflectShaderModule _reflectShaderModule;
 
-        public ShaderModule Module => _module;
         public ShaderStageFlags Stage => _stage;
-        public IReadOnlyList<ShaderVariable> Variables => _variables;
-        public IReadOnlyList<UniformBufferObject> UBOs => _ubos;
-        public IReadOnlyList<SamplerObject> Samplers => _samplers;
-        public IReadOnlyList<ImageObject> Images => _images;
+        public IReadOnlyList<ShaderVariableReflected> Variables => _variables;
+        public IReadOnlyList<UniformBufferObjectReflected> ReflectedUbos => _reflectedUbos;
+        public IReadOnlyList<SamplerObjectReflected> Samplers => _samplers;
+        public IReadOnlyList<ImageObjectReflected> Images => _images;
+        public IReadOnlyList<PushConstantRange> ConstantRanges => _constantRanges;
 
-        public ShaderModuleWrapper(Vk api, ShaderModule module, LogicalDeviceWrapper device, ShaderStageFlags stage, ref ReflectShaderModule reflectShaderModule)
+        public ShaderModuleWrapper(VulkanContext context, ShaderModule module, ShaderStageFlags stage, ref ReflectShaderModule reflectShaderModule)
+            :base(module)
         {
-            _api = api;
-            _module = module;
-            _device = device;
+            _context = context;
             _stage = stage;
-            _variables = new List<ShaderVariable>();
-            _ubos = new List<UniformBufferObject>();
-            _samplers = new List<SamplerObject>();
-            _images = new List<ImageObject>();
+
             _reflectShaderModule = reflectShaderModule;
 
             // Initialize shader reflection to populate variables and UBOs
@@ -42,7 +45,6 @@ namespace RockEngine.Vulkan.VkObjects
         private unsafe void ReflectShader()
         {
             var reflectorApi = Reflect.GetApi();
-
             // Extract shader variables
             uint variableCount = 0;
             reflectorApi.EnumerateInputVariables(in _reflectShaderModule, &variableCount, null);
@@ -54,10 +56,11 @@ namespace RockEngine.Vulkan.VkObjects
                 for (int i = 0; i < variableCount; i++)
                 {
                     var variable = variables[i];
-                    _variables.Add(new ShaderVariable
+                    _variables.Add(new ShaderVariableReflected
                     {
-                        Name = new string((sbyte*)variable->Name),
+                        Name = Marshal.PtrToStringAnsi((IntPtr)variable->Name),
                         Location = variable->Location,
+                        ShaderStage = Stage,
                         Type = MapShaderVariableType(variable->TypeDescription)
                     });
                 }
@@ -65,45 +68,110 @@ namespace RockEngine.Vulkan.VkObjects
 
             // Extract descriptor sets
             uint descriptorSetCount = 0;
-            reflectorApi.EnumerateDescriptorSets(in _reflectShaderModule, &descriptorSetCount, null);
-            var descriptorSets = new ReflectDescriptorSet*[descriptorSetCount];
-            fixed (ReflectDescriptorSet** iDescriptorSet = descriptorSets)
-            {
-                reflectorApi.EnumerateDescriptorSets(in _reflectShaderModule, &descriptorSetCount, iDescriptorSet);
+            ReflectDescriptorSet** descriptorSets = null;
+            reflectorApi.EnumerateDescriptorSets(in _reflectShaderModule, ref descriptorSetCount, descriptorSets);
+            // Allocate memory for the descriptor sets
+            descriptorSets = (ReflectDescriptorSet**)SilkMarshal.Allocate((int)descriptorSetCount * sizeof(ReflectDescriptorSet*));
 
-                for (int i = 0; i < descriptorSetCount; i++)
+            reflectorApi.EnumerateDescriptorSets(in _reflectShaderModule, ref descriptorSetCount, descriptorSets);
+
+            for (int i = 0; i < descriptorSetCount; i++)
+            {
+                var descriptorSet = descriptorSets[i];
+                var bindings = new List<DescriptorSetLayoutBinding>();
+
+                for (int j = 0; j < descriptorSet->BindingCount; j++)
                 {
-                    var descriptorSet = descriptorSets[i];
-                    for (int j = 0; j < descriptorSet->BindingCount; j++)
+                    var binding = descriptorSet->Bindings[j];
+                    bindings.Add(new DescriptorSetLayoutBinding
                     {
-                        var binding = descriptorSet->Bindings[j];
-                        switch (binding->DescriptorType)
+                        Binding = binding->Binding,
+                        DescriptorType = (Silk.NET.Vulkan.DescriptorType)binding->DescriptorType,
+                        DescriptorCount = binding->Count,
+                        StageFlags = _stage,
+                    });
+
+                    if (binding->DescriptorType == DescriptorType.UniformBuffer)
+                    {
+                        string name = SilkMarshal.PtrToString((nint)binding->Name);
+
+                        _reflectedUbos.Add(new UniformBufferObjectReflected
                         {
-                            case DescriptorType.UniformBuffer:
-                                _ubos.Add(new UniformBufferObject
-                                {
-                                    Name = new string((char*)binding->Name),
-                                    Binding = binding->Binding,
-                                    Size = binding->Block.Size
-                                });
-                                break;
-                            case DescriptorType.Sampler:
-                                _samplers.Add(new SamplerObject
-                                {
-                                    Name = new string((char*)binding->Name),
-                                    Binding = binding->Binding
-                                });
-                                break;
-                            case DescriptorType.SampledImage:
-                                _images.Add(new ImageObject
-                                {
-                                    Name = new string((char*)binding->Name),
-                                    Binding = binding->Binding
-                                });
-                                break;
-                                // Add other descriptor types as needed
-                        }
+                            Name = name,
+                            Binding = binding->Binding,
+                            Size = binding->Block.Size,
+                            Set = binding->Set,
+                            ShaderStage = _stage
+                        });
                     }
+                }
+
+                _descriptorSetLayouts.Add(new DescriptorSetLayoutReflected
+                {
+                    Bindings = bindings
+                });
+            }
+
+            SilkMarshal.Free((nint)descriptorSets);
+            // Extract push constants
+            uint pushConstantCount = 0;
+            reflectorApi.EnumeratePushConstantBlocks(in _reflectShaderModule, &pushConstantCount, null);
+            var pushConstants = new BlockVariable*[pushConstantCount];
+            fixed (BlockVariable** iPushConstant = pushConstants)
+            {
+                reflectorApi.EnumeratePushConstantBlocks(in _reflectShaderModule, &pushConstantCount, iPushConstant);
+
+                for (int i = 0; i < pushConstantCount; i++)
+                {
+                    var pushConstant = pushConstants[i];
+                    _constantRanges.Add(new PushConstantRange
+                    {
+                        StageFlags = _stage,
+                        Offset = pushConstant->Offset,
+                        Size = pushConstant->Size
+                    });
+                }
+            }
+        }
+        static unsafe string ConvertBytePointerToString(byte* bytePointer)
+        {
+            if (bytePointer == null)
+            {
+                return string.Empty;
+            }
+
+            int length = 16;
+            while (bytePointer[length] != 0)
+            {
+                length++;
+            }
+
+            return new string((sbyte*)bytePointer, 0, length);
+        }
+
+        public static async Task<ShaderModuleWrapper> CreateAsync(VulkanContext context, string path, ShaderStageFlags stage, CancellationToken cancellationToken = default)
+        {
+            var shaderCode = await File.ReadAllBytesAsync(path, cancellationToken)
+               .ConfigureAwait(false);
+
+            cancellationToken.ThrowIfCancellationRequested();
+            unsafe
+            {
+                fixed (byte* pshaderCode = shaderCode)
+                {
+                    var shaderModuleCreateInfo = new ShaderModuleCreateInfo
+                    {
+                        SType = StructureType.ShaderModuleCreateInfo,
+                        CodeSize = (nuint)shaderCode.Length,
+                        PCode = (uint*)pshaderCode
+                    };
+                    context.Api.CreateShaderModule(context.Device, in shaderModuleCreateInfo, null, out var shaderModule)
+                        .ThrowCode($"Failed to create shader module: {path}");
+                    var reflectorApi = Reflect.GetApi();
+                    var reflected = new ReflectShaderModule();
+                    reflectorApi.CreateShaderModule((nuint)shaderCode.Length, pshaderCode, ref reflected);
+
+                    return new ShaderModuleWrapper(context, shaderModule, stage, ref reflected);
                 }
             }
         }
@@ -150,8 +218,7 @@ namespace RockEngine.Vulkan.VkObjects
 
             throw new NotSupportedException($"Unsupported shader variable type with traits: {traits}");
         }
-
-        protected override void Dispose(bool disposing)
+        protected unsafe override void Dispose(bool disposing)
         {
             if (!_disposed)
             {
@@ -160,53 +227,15 @@ namespace RockEngine.Vulkan.VkObjects
                     // Dispose managed state (managed objects).
                 }
 
-                if (_module.Handle != default)
+                if (_vkObject.Handle != default)
                 {
-                    unsafe
-                    {
-                        _api.DestroyShaderModule(_device.Device, _module, null);
-                    }
+                    _context.Api.DestroyShaderModule(_context.Device, _vkObject, null);
                 }
+
+               
 
                 _disposed = true;
             }
-        }
-
-        internal class ShaderVariable
-        {
-            public string Name { get; set; }
-            public uint Location { get; set; }
-            public ShaderVariableType Type { get; set; }
-        }
-
-        internal class UniformBufferObject
-        {
-            public string Name { get; set; }
-            public uint Binding { get; set; }
-            public uint Size { get; set; }
-        }
-
-        internal class SamplerObject
-        {
-            public string Name { get; set; }
-            public uint Binding { get; set; }
-        }
-
-        internal class ImageObject
-        {
-            public string Name { get; set; }
-            public uint Binding { get; set; }
-        }
-
-        internal enum ShaderVariableType
-        {
-            Float,
-            Vec2,
-            Vec3,
-            Vec4,
-            Mat4,
-            Int,
-            // Add other types as needed
         }
     }
 }

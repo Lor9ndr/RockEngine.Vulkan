@@ -7,7 +7,6 @@ using System.Collections.Concurrent;
 
 namespace RockEngine.Vulkan.VulkanInitilizers
 {
-
     public class CommandPoolManager : IDisposable
     {
         private readonly VulkanContext _context;
@@ -34,13 +33,13 @@ namespace RockEngine.Vulkan.VulkanInitilizers
 
         private CommandPoolWrapper CreateCommandPool()
         {
-            using var cpBuilder = new VulkanCommandPoolBuilder(_context.Api, _context.Device);
-            var commandPool = cpBuilder
-                .WithFlags(CommandPoolCreateFlags.ResetCommandBufferBit)
-                .WithQueueFamilyIndex(_context.Device.QueueFamilyIndices.GraphicsFamily.Value)
-                .Build();
-
-            return commandPool;
+            CommandPoolCreateInfo ci = new CommandPoolCreateInfo()
+            {
+                SType = StructureType.CommandPoolCreateInfo,
+                Flags = CommandPoolCreateFlags.ResetCommandBufferBit,
+                QueueFamilyIndex = _context.Device.QueueFamilyIndices.GraphicsFamily.Value
+            };
+            return CommandPoolWrapper.Create(_context, in ci);
         }
 
         public void Dispose()

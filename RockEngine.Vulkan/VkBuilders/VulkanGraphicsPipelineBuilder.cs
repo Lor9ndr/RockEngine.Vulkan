@@ -5,14 +5,17 @@ using RockEngine.Vulkan.VulkanInitilizers;
 using Silk.NET.Vulkan;
 
 using System.Buffers;
+using System.Collections.Generic;
 using System.Text;
 
 namespace RockEngine.Vulkan.VkBuilders
 {
-    internal class GraphicsPipelineBuilder:DisposableBuilder
+    public class GraphicsPipelineBuilder : DisposableBuilder
     {
         private MemoryHandle _entryPoint;
-        private readonly RenderPassWrapper _renderPass;
+        private readonly VulkanContext _context;
+        private readonly string _name;
+        private RenderPassWrapper _renderPass;
         private PipelineLayoutWrapper _pipelineLayout;
         private PipelineStageBuilder _pipelineStageBuilder = new PipelineStageBuilder();
         private VulkanPipelineVertexInputStateBuilder _vertexInputStateBuilder;
@@ -21,12 +24,20 @@ namespace RockEngine.Vulkan.VkBuilders
         private VulkanRasterizerBuilder _rasterizerBuilder;
         private VulkanMultisampleStateInfoBuilder _multisampleStateBuilder;
         private VulkanColorBlendStateBuilder _colorBlendStateBuilder;
-        private VulkanDynamicStateBuilder _dynamicStateBuilder;
+        private PipelineDynamicStateBuilder _dynamicStateBuilder;
+        private Dictionary<string, DescriptorSetLayout> _ubos = new Dictionary<string, DescriptorSetLayout>();
 
-        public GraphicsPipelineBuilder(RenderPassWrapper renderPass)
+        public GraphicsPipelineBuilder(VulkanContext context, string name)
         {
             _entryPoint = CreateMemoryHandle(Encoding.ASCII.GetBytes("main"));
+            _context = context;
+            _name = name;
+        }
+
+        public GraphicsPipelineBuilder AddRenderPass(RenderPassWrapper renderPass)
+        {
             _renderPass = renderPass;
+            return this;
         }
 
         public unsafe GraphicsPipelineBuilder WithShaderModule(ShaderModuleWrapper shaderModule)
@@ -71,7 +82,7 @@ namespace RockEngine.Vulkan.VkBuilders
             return this;
         }
 
-        public GraphicsPipelineBuilder WithDynamicState(VulkanDynamicStateBuilder dynamicStateBuilder)
+        public GraphicsPipelineBuilder WithDynamicState(PipelineDynamicStateBuilder dynamicStateBuilder)
         {
             _dynamicStateBuilder = dynamicStateBuilder;
             return this;
@@ -83,13 +94,21 @@ namespace RockEngine.Vulkan.VkBuilders
             return this;
         }
 
+        public GraphicsPipelineBuilder AddUbo(string name, DescriptorSetLayout ubo)
+        {
+            _ubos[name] = ubo;
+            return this;
+        }
+
+
         /// <summary>
         /// Building the whole pipeline
         /// after finishing disposing layout and all the builders that are sended into it
-        /// so you have not dispose them after all
+        /// so you have not dispose them after all.
+        /// Also adds the pipeline to the <see cref="VulkanContext.PipelineManager"/> by <see cref="PipelineManager.AddPipeline(PipelineWrapper)"/>
         /// </summary>
         /// <returns>disposable pipeline wrapper</returns>
-        public unsafe PipelineWrapper Build(VulkanContext context)
+        public unsafe PipelineWrapper Build()
         {
             ArgumentNullException.ThrowIfNull(_pipelineLayout);
             ArgumentNullException.ThrowIfNull(_pipelineStageBuilder);
@@ -121,15 +140,19 @@ namespace RockEngine.Vulkan.VkBuilders
                 PMultisampleState = (PipelineMultisampleStateCreateInfo*)pMultisample.Pointer,
                 PRasterizationState = (PipelineRasterizationStateCreateInfo*)pRasterizer.Pointer,
                 PViewportState = (PipelineViewportStateCreateInfo*)pvpState.Pointer,
-                Layout = _pipelineLayout.Layout,
-                RenderPass = _renderPass.RenderPass,
+                Layout = _pipelineLayout,
+                RenderPass = _renderPass,
                 Subpass = 0,
             };
             try
             {
-                context.Api.CreateGraphicsPipelines(context.Device.Device, default, 1, in ci, null, out Pipeline pipeline)
+                _context.Api.CreateGraphicsPipelines(_context.Device, default, 1, in ci, null, out Pipeline pipeline)
                     .ThrowCode("Failed to create pipeline");
-                return new PipelineWrapper(context, pipeline); // Placeholder return, replace with actual pipeline creation result
+
+                var pipelineWrapper = new PipelineWrapper(_context, _name, pipeline, _pipelineLayout, _renderPass);
+
+                _context.PipelineManager.AddPipeline(pipelineWrapper);
+                return pipelineWrapper;
             }
             finally
             {
@@ -141,7 +164,6 @@ namespace RockEngine.Vulkan.VkBuilders
                 _multisampleStateBuilder.Dispose();
                 _rasterizerBuilder.Dispose();
                 _viewportStateBuilder.Dispose();
-                _pipelineLayout.Dispose();
             }
         }
     }

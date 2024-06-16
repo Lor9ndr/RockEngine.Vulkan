@@ -1,13 +1,10 @@
 ﻿using RockEngine.Vulkan.VkObjects;
 
-using Silk.NET.Core;
 using Silk.NET.Vulkan;
 
-using System;
 using System.Runtime.InteropServices;
 using System.Text;
 
-using static RockEngine.Vulkan.VkBuilders.VulkanLogicalDeviceBuilder;
 
 namespace RockEngine.Vulkan.Helpers
 {
@@ -43,7 +40,7 @@ namespace RockEngine.Vulkan.Helpers
             return false;
         }
 
-        public static unsafe SwapChainSupportDetails QuerySwapChainSupport(PhysicalDevice device, SurfaceWrapper surface)
+        public static unsafe SwapChainSupportDetails QuerySwapChainSupport(PhysicalDevice device, ISurfaceHandler surface)
         {
             SwapChainSupportDetails details = new SwapChainSupportDetails();
             surface.SurfaceApi.GetPhysicalDeviceSurfaceCapabilities(device, surface.Surface, out details.Capabilities);

@@ -15,12 +15,18 @@ namespace RockEngine.Vulkan.VulkanInitilizers
         public Vk Api { get; private set; }
         public InstanceWrapper Instance { get; private set; }
         public LogicalDeviceWrapper Device { get; private set; }
-        public SurfaceWrapper Surface { get; private set; }
+        public ISurfaceHandler Surface { get; private set; }
         public CommandPoolManager CommandPoolManager { get; private set;}
-        public static Mutex QueueMutex = new Mutex();
+        public DescriptorPoolFactory DescriptorPoolFactory { get; }
+        public PipelineManager PipelineManager { get; }
+
+        public readonly Mutex QueueMutex = new Mutex();
 
         private readonly IWindow _window;
         private readonly string[] _validationLayers = ["VK_LAYER_KHRONOS_validation"];
+
+        public const int MAX_FRAMES_IN_FLIGHT = 2;
+        public int CurrentFrame { get; private set;}
 
         public VulkanContext(IWindow window, string appName)
         {
@@ -30,6 +36,14 @@ namespace RockEngine.Vulkan.VulkanInitilizers
             CreateSurface();
             CreateDevice();
             CommandPoolManager = new CommandPoolManager(this);
+            PipelineManager = new PipelineManager(this);
+            DescriptorPoolFactory = new DescriptorPoolFactory(this);
+        }
+
+
+        public void SwapFrame()
+        {
+            CurrentFrame = (CurrentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
         }
 
         public CommandPoolWrapper GetOrCreateCommandPool()
@@ -79,17 +93,13 @@ namespace RockEngine.Vulkan.VulkanInitilizers
 
         private void CreateSurface()
         {
-            Surface = new VulkanSurfaceBuilder(Instance, Api, _window)
-                .Build();
+            Surface = GlfwSurfaceHandler.CreateSurface(_window, this);
         }
 
         private void CreateDevice()
         {
-            var device = new VulkanPhysicalDeviceBuilder(Api, Instance.Instance)
-              .Build();
-            Device = new VulkanLogicalDeviceBuilder(Api, device, Surface)
-                .WithExtensions(KhrSwapchain.ExtensionName)
-                .Build();
+            var device = PhysicalDeviceWrapper.Create(this);
+            Device = LogicalDeviceWrapper.Create(Api, device, Surface, KhrSwapchain.ExtensionName);
         }
 
         unsafe Bool32 DebugCallback(DebugUtilsMessageSeverityFlagsEXT severity,
@@ -127,7 +137,7 @@ namespace RockEngine.Vulkan.VulkanInitilizers
             // Throw an exception if severity is ErrorBitEXT
             if (severity == DebugUtilsMessageSeverityFlagsEXT.ErrorBitExt)
             {
-                throw new Exception($"Vulkan Error: {message}");
+               throw new Exception($"Vulkan Error: {message}");
             }
 
             return new Bool32(true);
@@ -135,9 +145,11 @@ namespace RockEngine.Vulkan.VulkanInitilizers
 
         public void Dispose()
         {
+            DescriptorPoolFactory.Dispose();
             CommandPoolManager.Dispose();
-            Device.Dispose();
+            PipelineManager.Dispose();
             Surface.Dispose();
+            Device.Dispose();
             Instance.Dispose();
         }
     }

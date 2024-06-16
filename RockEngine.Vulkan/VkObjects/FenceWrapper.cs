@@ -1,21 +1,27 @@
-﻿using Silk.NET.Vulkan;
+﻿using RockEngine.Vulkan.Helpers;
+using RockEngine.Vulkan.VulkanInitilizers;
+
+using Silk.NET.Vulkan;
 
 namespace RockEngine.Vulkan.VkObjects
 {
-    internal class FenceWrapper : VkObject
+    internal class FenceWrapper : VkObject<Fence>
     {
-        private readonly Vk _api;
-        private readonly LogicalDeviceWrapper _device;
-        private readonly Fence _fence;
+        private readonly VulkanContext _context;
 
-        public FenceWrapper(Vk api, LogicalDeviceWrapper device, Fence fence)
+        public FenceWrapper(VulkanContext context, in Fence fence)
+            :base(fence)
         {
-            _api = api;
-            _device = device;
-            _fence = fence;
+            _context = context;
         }
 
-        public Fence Fence => _fence;
+        public unsafe static FenceWrapper Create(VulkanContext context, in FenceCreateInfo fenceCreateInfo)
+        {
+            context.Api.CreateFence(context.Device, in fenceCreateInfo, null, out Fence fence)
+                .ThrowCode("Failed to create fence.");
+
+            return new FenceWrapper(context, in fence);
+        }
 
         protected override void Dispose(bool disposing)
         {
@@ -28,7 +34,7 @@ namespace RockEngine.Vulkan.VkObjects
 
                 unsafe
                 {
-                    _api.DestroyFence(_device.Device, _fence, null);
+                    _context.Api.DestroyFence(_context.Device, _vkObject, null);
                 }
 
                 _disposed = true;

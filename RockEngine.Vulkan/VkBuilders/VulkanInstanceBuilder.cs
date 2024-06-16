@@ -107,13 +107,13 @@ namespace RockEngine.Vulkan.VkBuilders
         }
         unsafe Result CreateDebugUtilsMessenger(Vk api, InstanceWrapper instance, DebugUtilsMessengerCreateInfoEXT ci, out DebugUtilsMessengerEXT messenger)
         {
-            nint vkCreateDebugUtilsMessengerEXTPtr = api.GetInstanceProcAddr(instance.Instance, CREATE_DEBUG_UTILS_MESSENGER);
+            nint vkCreateDebugUtilsMessengerEXTPtr = api.GetInstanceProcAddr(instance, CREATE_DEBUG_UTILS_MESSENGER);
             if (vkCreateDebugUtilsMessengerEXTPtr == nint.Zero)
             {
                 throw new Exception("Failed to load vkCreateDebugUtilsMessengerEXT");
             }
             var del = Marshal.GetDelegateForFunctionPointer<CreateDebugUtilsMessengerDelegate>(vkCreateDebugUtilsMessengerEXTPtr);
-            return del(instance.Instance, &ci, null, out messenger);
+            return del(instance, &ci, null, out messenger);
         }
 
         unsafe delegate Result CreateDebugUtilsMessengerDelegate(Instance instance, DebugUtilsMessengerCreateInfoEXT* ci, void* userData, out DebugUtilsMessengerEXT messenger);

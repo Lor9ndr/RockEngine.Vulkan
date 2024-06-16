@@ -24,7 +24,7 @@ namespace RockEngine.Vulkan.VkBuilders
             {
                 SType = StructureType.PipelineShaderStageCreateInfo,
                 Stage = stage,
-                Module = module.Module,
+                Module = module,
                 PName = entryPoint
             });
             return this; // Return the builder for chaining

@@ -4,7 +4,7 @@ using System.Buffers;
 
 namespace RockEngine.Vulkan.VkBuilders
 {
-    internal class VulkanPipelineVertexInputStateBuilder : DisposableBuilder
+    public class VulkanPipelineVertexInputStateBuilder : DisposableBuilder
     {
         private readonly List<VertexInputBindingDescription> _vertexBindingDescriptions = new List<VertexInputBindingDescription>();
         private readonly List<VertexInputAttributeDescription> _attributeDescription = new List<VertexInputAttributeDescription>();

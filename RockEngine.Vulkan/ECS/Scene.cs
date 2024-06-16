@@ -42,33 +42,33 @@ namespace RockEngine.Vulkan.ECS
             _entities.Add(entity);
             if (_isInitalized)
             {
-                await entity.InitalizeAsync(context);
+                await entity.InitializeAsync(context);
             }
-        }
-        public async Task IntializeAsync(VulkanContext context)
-        {
-            var tsks = new Task[_entities.Count];
-            for (int i = 0; i < _entities.Count; i++)
-            {
-                Entity? item = _entities[i];
-                tsks[i] = item.InitalizeAsync(context);
-            }
-            await Task.WhenAll(tsks);
         }
 
-        public void Render(VulkanContext context, CommandBufferWrapper commandBuffer)
+        public async Task InitializeAsync(VulkanContext context)
         {
             foreach (var item in _entities)
             {
-                item.Render(context, commandBuffer);
+                await item.InitializeAsync(context);
+            }
+            _isInitalized = true;
+        }
+        
+
+        public async Task RenderAsync(VulkanContext context, CommandBufferWrapper commandBuffer)
+        {
+            foreach (var item in _entities)
+            {
+                await item.RenderAsync(context, commandBuffer);
             }
         }
 
-        internal async Task Update(double time, VulkanContext context, CommandBufferWrapper commandBuffer)
+        internal void Update(double time)
         {
-            foreach (var entity in _entities)
+            foreach (var item in _entities)
             {
-                await entity.Update(time, context, commandBuffer);
+                item.Update(time);
             }
         }
 

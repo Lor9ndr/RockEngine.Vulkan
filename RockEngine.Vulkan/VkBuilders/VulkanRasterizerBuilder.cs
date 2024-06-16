@@ -5,7 +5,7 @@ using System.Buffers;
 
 namespace RockEngine.Vulkan.VkBuilders
 {
-    internal class VulkanRasterizerBuilder : DisposableBuilder
+    public class VulkanRasterizerBuilder : DisposableBuilder
     {
         private Bool32 _depthClamp = false;
         private Bool32 _rasterDiscard = false;

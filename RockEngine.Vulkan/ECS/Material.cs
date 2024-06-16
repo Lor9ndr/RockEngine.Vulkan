@@ -8,12 +8,13 @@ namespace RockEngine.Vulkan.ECS
     // pipeline has not to be hardcoded, pass params to the constructor
     internal class Material : Component
     {
-        public override Task OnInitializedAsync(VulkanContext context)
+        public Material(Entity entity) : base(entity)
         {
-            throw new NotImplementedException();
         }
 
-        public override Task UpdateAsync(double time, VulkanContext context, CommandBufferWrapper commandBuffer)
+        public override int Order => 0;
+
+        public override Task OnInitializedAsync(VulkanContext context)
         {
             throw new NotImplementedException();
         }

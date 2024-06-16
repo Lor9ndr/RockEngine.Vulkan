@@ -4,7 +4,7 @@ using System.Buffers;
 
 namespace RockEngine.Vulkan.VkBuilders
 {
-    internal class VulkanColorBlendStateBuilder : DisposableBuilder
+    public class VulkanColorBlendStateBuilder : DisposableBuilder
     {
         private LogicOp _op;
         private List<PipelineColorBlendAttachmentState> _attachments = new List<PipelineColorBlendAttachmentState>();

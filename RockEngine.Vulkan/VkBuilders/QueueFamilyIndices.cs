@@ -1,6 +1,6 @@
 ﻿namespace RockEngine.Vulkan.VkBuilders
 {
-    internal struct QueueFamilyIndices
+    public struct QueueFamilyIndices
     {
         public uint? PresentFamily { get;set;} = null;
         public uint? GraphicsFamily { get; set; } = null;

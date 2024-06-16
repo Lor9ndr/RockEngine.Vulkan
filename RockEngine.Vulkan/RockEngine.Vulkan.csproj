@@ -9,6 +9,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="ImGui.NET" Version="1.89.9.4" />
     <PackageReference Include="PropertyChanged.Fody" Version="4.1.0" />
     <PackageReference Include="Silk.NET.Core" Version="2.21.0" />
     <PackageReference Include="Silk.NET.Input" Version="2.21.0" />
@@ -20,6 +21,8 @@
     <PackageReference Include="Silk.NET.Vulkan.Extensions.KHR" Version="2.21.0" />
     <PackageReference Include="Silk.NET.Windowing" Version="2.21.0" />
     <PackageReference Include="Silk.NET.Windowing.Common" Version="2.21.0" />
+    <PackageReference Include="SimpleInjector" Version="5.4.6" />
+    <PackageReference Include="SkiaSharp" Version="2.88.8" />
   </ItemGroup>
 
 

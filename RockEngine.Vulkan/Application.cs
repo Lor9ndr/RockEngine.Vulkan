@@ -1,11 +1,10 @@
 ﻿using RockEngine.Vulkan.Assets;
+using RockEngine.Vulkan.DI;
 using RockEngine.Vulkan.ECS;
-using RockEngine.Vulkan.Helpers;
-using RockEngine.Vulkan.VkBuilders;
-using RockEngine.Vulkan.VkObjects;
+using RockEngine.Vulkan.Rendering;
+using RockEngine.Vulkan.Utils;
 using RockEngine.Vulkan.VulkanInitilizers;
 
-using Silk.NET.GLFW;
 using Silk.NET.Input;
 using Silk.NET.Vulkan;
 using Silk.NET.Windowing;
@@ -16,34 +15,14 @@ namespace RockEngine.Vulkan
 {
     public class Application : IDisposable
     {
-        [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE1006:Стили именования", Justification = "<Ожидание>")]
-        private const int MAX_FRAMES_IN_FLIGHT = 2;
-        private int _currentFrame = 0;
-
         private readonly Vk _api = Vk.GetApi();
         private IWindow _window;
-        private SwapchainWrapper _swapchain;
-        private RenderPassWrapper _renderPass;
-        private PipelineLayoutWrapper _pipelineLayout;
-        private PipelineWrapper _pipeline;
-        private FramebufferWrapper[] _swapchainFramebuffers;
-        private CommandBufferWrapper[] _commandBuffers;
-        private SemaphoreWrapper[] _imageAvailableSemaphores;
-        private SemaphoreWrapper[] _renderFinishedSemaphores;
-        private FenceWrapper[] _inFlightFences;
-        private bool _framebufferResized = false;
-        private Vertex[] _triangleVertice = new Vertex[]
-        {
-            new Vertex(new Vector2(0.0f, -0.5f), new Vector3(1.0f, 1.0f, 1.0f)),
-            new Vertex(new Vector2(0.5f, 0.5f), new Vector3(0.0f, 1.0f, 1.0f)),
-            new Vertex(new Vector2(-0.5f, 0.5f), new Vector3(1.0f, 0.0f, 1.0f))
-        };
         private VulkanContext _context;
         private Project _project;
         private AssetManager _assetManager;
         private IInputContext _inputContext;
-
-        private Viewport Viewport => new Viewport() { Width = _window.Size.X, Height = _window.Size.Y, MaxDepth = 1.0f };
+        private GlfwSurfaceHandler _surface;
+        private BaseRenderer _baseRenderer;
 
         public CancellationTokenSource CancellationTokenSource { get; private set; }
         public CancellationToken CancellationToken { get; private set; }
@@ -56,6 +35,7 @@ namespace RockEngine.Vulkan
 
         public async Task RunAsync()
         {
+            IoC.Register();
             _window = Window.Create(WindowOptions.DefaultVulkan);
             _window.Title = "RockEngine";
             _window.Load += async () =>
@@ -71,12 +51,9 @@ namespace RockEngine.Vulkan
                 }
             };
             _window.Closing += Dispose;
-            _window.Resize += WindowResized;
-           
 
             try
             {
-                // Assuming _window.Run() must be run on a background thread and cannot be awaited
                 await Task.Run(() => _window.Run(), CancellationToken);
             }
             catch (OperationCanceledException)
@@ -89,159 +66,11 @@ namespace RockEngine.Vulkan
             }
 
         }
-
-        private void WindowResized(Silk.NET.Maths.Vector2D<int> obj)
-        {
-            _framebufferResized = true;
-        }
-        private async Task Update(double obj)
-        {
-            var commandBuffer = _commandBuffers[_currentFrame];
-            await _project.CurrentScene.Update(obj,_context, commandBuffer);
-        }
+      
 
         private void DrawFrame(double obj)
         {
-            int width = _window.Size.X, height = _window.Size.Y;
-            if (width == 0 || height == 0)
-            {
-                return; // Skip rendering if the window is minimized
-            }
-
-            var fence = _inFlightFences[_currentFrame].Fence;
-            var commandBuffer = _commandBuffers[_currentFrame];
-            var imageAvailableSemaphore = _imageAvailableSemaphores[_currentFrame];
-            var renderFinishedSemaphore = _renderFinishedSemaphores[_currentFrame];
-
-            _api.WaitForFences(_context.Device.Device, 1, in fence, true, ulong.MaxValue);
-
-            uint imageIndex = 0;
-            var result = _swapchain.SwapchainApi.AcquireNextImage(
-                _context.Device.Device,
-                _swapchain.Swapchain,
-                ulong.MaxValue,
-                imageAvailableSemaphore.Semaphore,
-                default,
-                ref imageIndex)
-                    .ThrowCode("failed to acquire swap chain image!", Result.SuboptimalKhr, Result.ErrorOutOfDateKhr);
-            if (result == Result.ErrorOutOfDateKhr)
-            {
-                RecreateSwapChain();
-                return;
-            }
-
-            // Reset fence only if we are submitting work
-            _api.ResetFences(_context.Device.Device, 1, in fence);
-            VulkanContext.QueueMutex.WaitOne();
-            try
-            {
-                _api.ResetCommandBuffer(commandBuffer.CommandBuffer, CommandBufferResetFlags.None);
-                RecordCommandBuffer(commandBuffer, imageIndex);
-
-            }
-            finally
-            {
-                VulkanContext.QueueMutex.ReleaseMutex();
-            }
-
-            using var pwaitSemaphores = new Memory<Silk.NET.Vulkan.Semaphore>(new[] { imageAvailableSemaphore.Semaphore }).Pin();
-            using var pSignalSemaphores = new Memory<Silk.NET.Vulkan.Semaphore>(new[] { renderFinishedSemaphore.Semaphore }).Pin();
-
-            using var pwaitStages = new Memory<PipelineStageFlags>(new[] { PipelineStageFlags.ColorAttachmentOutputBit }).Pin();
-            var buffer = commandBuffer.CommandBuffer;
-            unsafe
-            {
-                SubmitInfo submitInfo = new SubmitInfo()
-                {
-                    SType = StructureType.SubmitInfo,
-                    PWaitSemaphores = (Silk.NET.Vulkan.Semaphore*)pwaitSemaphores.Pointer,
-                    WaitSemaphoreCount = 1,
-                    PWaitDstStageMask = (PipelineStageFlags*)pwaitStages.Pointer,
-                    CommandBufferCount = 1,
-                    PCommandBuffers = &buffer,
-                    SignalSemaphoreCount = 1,
-                    PSignalSemaphores = (Silk.NET.Vulkan.Semaphore*)pSignalSemaphores.Pointer
-                };
-
-                // Lock the mutex before submitting to the queue
-                VulkanContext.QueueMutex.WaitOne();
-                try
-                {
-                    _api.QueueSubmit(_context.Device.GraphicsQueue, 1, ref submitInfo, fence)
-                        .ThrowCode("Failed to submit draw command buffer!");
-
-                    using var pswapchains = new Memory<SwapchainKHR>(new[] { _swapchain.Swapchain }).Pin();
-
-                    PresentInfoKHR presentInfo = new PresentInfoKHR()
-                    {
-                        SType = StructureType.PresentInfoKhr,
-                        WaitSemaphoreCount = 1,
-                        PWaitSemaphores = (Silk.NET.Vulkan.Semaphore*)pSignalSemaphores.Pointer,
-                        SwapchainCount = 1,
-                        PSwapchains = (SwapchainKHR*)pswapchains.Pointer,
-                        PImageIndices = &imageIndex,
-                        PResults = null
-                    };
-                    result = _swapchain.SwapchainApi.QueuePresent(_context.Device.PresentQueue, &presentInfo)
-                        .ThrowCode("Failed to queue present", Result.SuboptimalKhr, Result.ErrorOutOfDateKhr);
-                }
-                finally
-                {
-                    // Release the mutex
-                    VulkanContext.QueueMutex.ReleaseMutex();
-                }
-            }
-
-            if (result == Result.ErrorOutOfDateKhr || result == Result.SuboptimalKhr || _framebufferResized)
-            {
-                _framebufferResized = false;
-                RecreateSwapChain();
-            }
-
-            _currentFrame = (_currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
-        }
-
-
-        private unsafe void RecordCommandBuffer(CommandBufferWrapper commandBuffer, uint imageIndex)
-        {
-            var beginInfo = new CommandBufferBeginInfo
-            {
-                SType = StructureType.CommandBufferBeginInfo,
-                Flags = CommandBufferUsageFlags.None,
-                PInheritanceInfo = default // Only relevant for secondary command buffers
-            };
-
-            _api.BeginCommandBuffer(commandBuffer.CommandBuffer, &beginInfo)
-                .ThrowCode("Failed to begin recording command buffer!");
-
-            ClearValue cv = new ClearValue(color: new ClearColorValue() { Float32_0 = 0, Float32_1 = 0, Float32_2 = 0, Float32_3 = 1 });
-            var renderPassInfo = new RenderPassBeginInfo
-            {
-                SType = StructureType.RenderPassBeginInfo,
-                RenderPass = _renderPass.RenderPass,
-                Framebuffer = _swapchainFramebuffers[imageIndex].Framebuffer,
-                RenderArea = new Rect2D { Offset = new Offset2D(0, 0), Extent = _swapchain.Extent },
-                ClearValueCount = 1,
-                PClearValues = &cv
-            };
-
-            var viewport = Viewport;
-            var scissor = new Rect2D() { Extent = new Extent2D((uint)_window.Size.X, (uint)_window.Size.Y) };
-
-            _api.CmdSetViewport(commandBuffer.CommandBuffer, 0, 1, ref viewport);
-            _api.CmdSetScissor(commandBuffer.CommandBuffer, 0, 1, ref scissor);
-
-            // Start of renderpass
-            _api.CmdBeginRenderPass(commandBuffer.CommandBuffer, &renderPassInfo, SubpassContents.Inline);
-            _api.CmdBindPipeline(commandBuffer.CommandBuffer, PipelineBindPoint.Graphics, _pipeline.Pipeline);
-
-            _project.CurrentScene.Render(_context, commandBuffer);
-
-            // Ending of renderpass
-            _api.CmdEndRenderPass(commandBuffer.CommandBuffer);
-
-            _api.EndCommandBuffer(commandBuffer.CommandBuffer)
-                .ThrowCode("Failed to record command buffer!");
+            _baseRenderer.Render(obj, _project);
         }
 
         private async Task Window_Load()
@@ -252,230 +81,45 @@ namespace RockEngine.Vulkan
             _project = await _assetManager.CreateProjectAsync("Sandbox", "F:\\RockEngine.Vulkan\\RockEngine.Vulkan\\bin\\Debug\\net8.0\\Sandbox.asset", CancellationToken);
             var scene = _project.Scenes[0];
             var savingTask =  _assetManager.SaveAssetAsync(scene, CancellationToken);
-            var entity = new Entity();
-
-
-            CreateSwapChain();
-            CreateRenderPass();
-            await CreateGraphicsPipeline(CancellationToken)
-                .ConfigureAwait(false);
-            CreateFramebuffers();
-            CreateCommandPool();
-
-            CreateSyncObject();
-
-            _window.Update += async (s) =>
-            {
-                await Update(s);
-            };
+            _surface = GlfwSurfaceHandler.CreateSurface(_window, _context);
+            
+            _baseRenderer = new BaseRenderer(_context, _surface);
+            await _baseRenderer.InitializeAsync().ConfigureAwait(false);
+            _window.Update += Update;
             _window.Render += DrawFrame;
 
-
             await savingTask;
-            await entity.AddComponent(_context, new MeshComponent(_triangleVertice));
+            var camera = new Entity();
+            await camera.AddComponent(_context,
+                new DebugCamera(_inputContext, MathHelper.DegreesToRadians(90), _window.Size.X / _window.Size.Y, 0.1f, 1000,camera));
+            await scene.AddEntity(context: _context, camera);
+            var debug = camera.GetComponent<DebugCamera>();
+
+            var entity = new Entity();
+            await entity.AddComponent(_context, new MeshComponent(entity, DefaultMesh.CubeVertices));
+            entity.Transform.Scale = new Vector3(10,10,10);
             await scene.AddEntity(_context, entity);
-            await scene.IntializeAsync(_context);
+
+            await scene.InitializeAsync(_context);
         }
 
-
-        private void CreateSyncObject()
+        private void Update(double time)
         {
-            VulkanSemaphoreBuilder semaphoreBuilder = new VulkanSemaphoreBuilder(_api, _context.Device);
-            VulkanFenceBuilder fenceBuilder = new VulkanFenceBuilder(_api, _context.Device)
-               .WithFlags(FenceCreateFlags.SignaledBit);
-
-            _imageAvailableSemaphores = new SemaphoreWrapper[MAX_FRAMES_IN_FLIGHT];
-            _renderFinishedSemaphores = new SemaphoreWrapper[MAX_FRAMES_IN_FLIGHT];
-            _inFlightFences = new FenceWrapper[MAX_FRAMES_IN_FLIGHT];
-
-            for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
-            {
-                _imageAvailableSemaphores[i] = semaphoreBuilder.Build();
-                _renderFinishedSemaphores[i] = semaphoreBuilder.Build();
-                _inFlightFences[i] = fenceBuilder.Build();
-            }
-        }
-
-        private void CreateCommandPool()
-        {
-            using var cbBuilder = new VulkanCommandBufferBuilder(_context)
-                .WithLevel(CommandBufferLevel.Primary);
-
-            _commandBuffers = cbBuilder.Build(MAX_FRAMES_IN_FLIGHT);
-        }
-
-        private unsafe void CreateRenderPass()
-        {
-            VulkanRenderPassBuilder builder = new VulkanRenderPassBuilder(_context);
-            AttachmentDescription attachment = new AttachmentDescription()
-            {
-                Format = _swapchain.Format,
-                Samples = SampleCountFlags.Count1Bit,
-                LoadOp = AttachmentLoadOp.Clear,
-                StoreOp = AttachmentStoreOp.Store,
-                StencilLoadOp = AttachmentLoadOp.DontCare,
-                StencilStoreOp = AttachmentStoreOp.DontCare,
-                InitialLayout = ImageLayout.Undefined,
-                FinalLayout = ImageLayout.PresentSrcKhr
-            };
-
-            AttachmentReference attachmentReference = new AttachmentReference()
-            {
-                Attachment = 0,
-                Layout = ImageLayout.ColorAttachmentOptimal
-            };
-
-            SubpassDescription description = new SubpassDescription()
-            {
-                PipelineBindPoint = PipelineBindPoint.Graphics,
-                ColorAttachmentCount = 1,
-                PColorAttachments = &attachmentReference
-            };
-
-            _renderPass = builder
-                 .AddSubpass(description)
-                 .AddAttachment(attachment)
-                 .AddDependency(new SubpassDependency()
-                 {
-                     SrcSubpass = Vk.SubpassExternal,
-                     DstSubpass = 0,
-                     SrcStageMask = PipelineStageFlags.ColorAttachmentOutputBit,
-                     SrcAccessMask = AccessFlags.None,
-                     DstStageMask = PipelineStageFlags.ColorAttachmentOutputBit,
-                     DstAccessMask = AccessFlags.ColorAttachmentWriteBit,
-                 })
-                 .Build();
-        }
-
-        private void CreateFramebuffers()
-        {
-            _swapchainFramebuffers = new FramebufferWrapper[_swapchain.SwapChainImageViews.Length];
-            for (int i = 0; i < _swapchain.Images.Length; i++)
-            {
-                using var builder = new VulkanFramebufferBuilder(_api, _context.Device)
-                    .AddAttachment(_swapchain.SwapChainImageViews[i])
-                    .WithRenderPass(_renderPass)
-                    .WithWidth(_swapchain.Extent.Width)
-                    .WithHeight(_swapchain.Extent.Height)
-                    .WithLayersCount(1);
-
-                _swapchainFramebuffers[i] = builder.Build();
-            }
-        }
-
-        private async Task CreateGraphicsPipeline(CancellationToken token = default)
-        {
-            // Initialize the shader module builder
-            using var shaderModuleBuilder = new VulkanShaderModuleBuilder(_api, _context.Device);
-
-            // Load the vertex shader
-            var vertexShaderModuleTask = shaderModuleBuilder.Build("..\\..\\..\\Shaders\\Shader.vert.spv", ShaderStageFlags.VertexBit, token)
-                .ConfigureAwait(false);
-            // Load the fragment shader
-            var fragmentShaderModuleTask = shaderModuleBuilder.Build("..\\..\\..\\Shaders\\Shader.frag.spv", ShaderStageFlags.FragmentBit, token)
-                .ConfigureAwait(false);
-            _pipelineLayout = new VulkanPipelineLayoutCreateBuilder()
-                             .Build(_context);
-            var colorBlendAttachment = new VulkanColorBlendAttachmentBuilder()
-                  .Build(false,
-                  ColorComponentFlags.RBit |
-                      ColorComponentFlags.GBit |
-                      ColorComponentFlags.BBit |
-                      ColorComponentFlags.ABit);
-           using var vertexShaderModule = await vertexShaderModuleTask;
-           using var fragmentShaderModule = await fragmentShaderModuleTask;
-            using GraphicsPipelineBuilder pBuilder = new GraphicsPipelineBuilder(_renderPass)
-                .WithPipelineLayout(_pipelineLayout)
-
-                .WithDynamicState(new VulkanDynamicStateBuilder()
-                    .AddState(DynamicState.Viewport)
-                    .AddState(DynamicState.Scissor))
-
-                .WithMultisampleState(new VulkanMultisampleStateInfoBuilder()
-                    .Configure(false, SampleCountFlags.Count1Bit))
-
-                .WithRasterizer(new VulkanRasterizerBuilder())
-
-                .WithColorBlendState(new VulkanColorBlendStateBuilder()
-                    .Configure(LogicOp.Copy)
-                    .AddAttachment(colorBlendAttachment))
-
-                .WithInputAssembly(new VulkanInputAssemblyBuilder().Configure())
-
-                .WithVertexInputState(new VulkanPipelineVertexInputStateBuilder()
-                    .Add(Vertex.GetBindingDescription(), Vertex.GetAttributeDescriptions()))
-
-                .WithShaderModule(vertexShaderModule)
-                .WithShaderModule(fragmentShaderModule)
-
-                .WithViewportState(new VulkanViewportStateInfoBuilder()
-                    .AddViewport(new Viewport())
-                    .AddScissors(new Rect2D()));
-
-            _pipeline = pBuilder.Build(_context);
-        }
-
-        private void CreateSwapChain()
-        {
-            _swapchain = new VulkanSwapChainBuilder()
-                .WithSize((uint)_window.Size.X, (uint)_window.Size.Y)
-                .Build(_context);
-            _swapchain.CreateImageViews();
-        }
-
-        private void RecreateSwapChain()
-        {
-            var glfwApi = Glfw.GetApi();
-            int width = _window.Size.X, height = _window.Size.Y;
-            unsafe
-            {
-                while (width == 0 || height == 0)
-                {
-                    glfwApi.GetFramebufferSize((WindowHandle*)_window.Handle, out width, out height);
-                    glfwApi.WaitEvents();
-                }
-            }
-
-            _api.DeviceWaitIdle(_context.Device.Device);
-            CleanupSwapChain();
-            CreateSwapChain();
-            CreateFramebuffers();
-        }
-
-        private void CleanupSwapChain()
-        {
-            for (int i = 0; i < _swapchainFramebuffers.Length; i++)
-            {
-                _swapchainFramebuffers[i].Dispose();
-            }
-            _swapchain.Dispose();
+           _project.CurrentScene.Update(time);
         }
 
         public void Dispose()
         {
             CancellationTokenSource.Cancel();
+            _api.DeviceWaitIdle(_context.Device);
 
-            _api.DeviceWaitIdle(_context.Device.Device);
+            _baseRenderer.Dispose();
+            IoC.Container.Dispose();
 
-            CleanupSwapChain();
-
-            foreach (var semaphore in _imageAvailableSemaphores)
-            {
-                semaphore.Dispose();
-            }
-            foreach (var semaphore in _renderFinishedSemaphores)
-            {
-                semaphore.Dispose();
-            }
-            foreach (var fence in _inFlightFences)
-            {
-                fence.Dispose();
-            }
-            _pipeline.Dispose();
-            _pipelineLayout.Dispose();
-            _renderPass.Dispose();
             _project.Dispose();
+            _inputContext.Dispose();
             _context.Dispose();
+            GC.SuppressFinalize(this);
         }
     }
 }

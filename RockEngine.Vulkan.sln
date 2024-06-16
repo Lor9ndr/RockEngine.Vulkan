@@ -5,7 +5,7 @@ VisualStudioVersion = 17.9.34714.143
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "RockEngine.Vulkan", "RockEngine.Vulkan\RockEngine.Vulkan.csproj", "{2219DF0A-CB08-4355-B92D-A0ADB5BF0F80}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RockEngine.Benchmarks", "RockEngine.Benchmarks\RockEngine.Benchmarks.csproj", "{BF64A07D-6AD4-498E-9933-85FB00B3A8BB}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "RockEngine.Benchmarks", "RockEngine.Benchmarks\RockEngine.Benchmarks.csproj", "{BF64A07D-6AD4-498E-9933-85FB00B3A8BB}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

@@ -5,7 +5,7 @@ using System.Buffers;
 
 namespace RockEngine.Vulkan.VkBuilders
 {
-    internal class VulkanInputAssemblyBuilder: DisposableBuilder
+    public class VulkanInputAssemblyBuilder: DisposableBuilder
     {
         private Bool32 _primRestart;
         private PrimitiveTopology _topology;

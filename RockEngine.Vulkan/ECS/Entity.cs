@@ -1,22 +1,33 @@
 ﻿using RockEngine.Vulkan.VkObjects;
 using RockEngine.Vulkan.VulkanInitilizers;
 
+using Silk.NET.Vulkan;
+
 namespace RockEngine.Vulkan.ECS
 {
     public class Entity
     {
         public string Name;
         public Transform Transform;
-        private readonly List<Component> _components = new List<Component>();
+        private List<Component> _components = new List<Component>();
         private bool _isInitialized = false;
 
         public Entity()
         {
             Name = "Entity";
-            Transform = AddComponent(null, new Transform()).GetAwaiter().GetResult();
+            Transform = AddComponent(null, new Transform(this)).GetAwaiter().GetResult();
         }
 
-        public async Task<T> AddComponent<T>(VulkanContext context,T component) where T : Component
+        public async Task InitializeAsync(VulkanContext context)
+        {
+            foreach (var item in _components)
+            {
+                await item.OnInitializedAsync(context);
+            }
+            _isInitialized = true;
+        }
+
+        public async Task<T> AddComponent<T>(VulkanContext context, T component) where T : Component
         {
             _components.Add(component);
 
@@ -24,6 +35,7 @@ namespace RockEngine.Vulkan.ECS
             {
                 await component.OnInitializedAsync(context).ConfigureAwait(false);
             }
+            _components = _components.OrderBy(s=>s.Order).ToList();
             return component;
         }
 
@@ -32,37 +44,18 @@ namespace RockEngine.Vulkan.ECS
             return (T)_components.OfType<T>().First();
         }
 
-        public async Task InitalizeAsync(VulkanContext context)
+
+        public async Task RenderAsync(VulkanContext context, CommandBufferWrapper commandBuffer)
         {
-            if (_isInitialized)
+            if (!_isInitialized)
             {
                 return;
             }
-            var tsks = new Task[_components.Count];
-            for (int i = 0; i < _components.Count; i++)
-            {
-                Component item = _components[i];
-                tsks[i] = item.OnInitializedAsync(context);
-            }
-            await Task.WhenAll(tsks).
-                ConfigureAwait(false);
-            _isInitialized = true;
-        }
 
-        public async Task Update(double time, VulkanContext context, CommandBufferWrapper commandBuffer)
-        {
-            for (int i = 0; i < _components.Count; i++)
+            foreach (var item in _components.OfType<IRenderable>())
             {
-                Component? item = _components[i];
-                await item.UpdateAsync(time, context, commandBuffer);
-            }
-        }
+                await item.RenderAsync(context, commandBuffer);
 
-        public void Render(VulkanContext context, CommandBufferWrapper commandBuffer)
-        {
-            foreach (var item in _components.OfType<IRenderableComponent>())
-            {
-                item.Render(context, commandBuffer);
             }
         }
 
@@ -71,6 +64,15 @@ namespace RockEngine.Vulkan.ECS
             foreach (var item in _components.OfType<IDisposable>())
             {
                 item.Dispose();
+            }
+            _isInitialized = false;
+        }
+
+        internal void Update(double time)
+        {
+            foreach (var item in _components)
+            {
+                item.Update(time);
             }
         }
     }

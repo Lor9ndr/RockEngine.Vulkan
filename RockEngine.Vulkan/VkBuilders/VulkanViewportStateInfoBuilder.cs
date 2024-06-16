@@ -4,7 +4,7 @@ using System.Buffers;
 
 namespace RockEngine.Vulkan.VkBuilders
 {
-    internal class VulkanViewportStateInfoBuilder : DisposableBuilder
+    public class VulkanViewportStateInfoBuilder : DisposableBuilder
     {
         public List<Rect2D> _scissors = new List<Rect2D>();
         public List<Viewport> _viewports = new List<Viewport>();

@@ -5,11 +5,11 @@ using RockEngine.Vulkan.VulkanInitilizers;
 
 namespace RockEngine.Vulkan.VkObjects
 {
-    public class SwapchainWrapper : VkObject
+    public class SwapchainWrapper : VkObject<SwapchainKHR>
     {
         private readonly KhrSwapchain _khrSwapchain;
 
-        private readonly Image[] _images;
+        private readonly Silk.NET.Vulkan.Image[] _images;
         private readonly Format _format;
         private SwapchainKHR _swapchain;
         private readonly Extent2D _extent;
@@ -18,13 +18,14 @@ namespace RockEngine.Vulkan.VkObjects
 
         public SwapchainKHR Swapchain => _swapchain;
         public KhrSwapchain SwapchainApi => _khrSwapchain;
-        public Image[] Images => _images;
+        public Silk.NET.Vulkan.Image[] Images => _images;
         public Format Format => _format;
         public Extent2D Extent => _extent;
 
         public ImageView[] SwapChainImageViews => _swapChainImageViews;
 
-        public SwapchainWrapper(VulkanContext context, SwapchainKHR swapchain, KhrSwapchain khrSwapchainApi, Image[] images, Format format, Extent2D extent)
+        public SwapchainWrapper(VulkanContext context, SwapchainKHR swapchain, KhrSwapchain khrSwapchainApi, Silk.NET.Vulkan.Image[] images, Format format, Extent2D extent)
+            :base(swapchain)
         {
             _swapChainImageViews = new ImageView[images.Length];
             _context = context;
@@ -33,13 +34,123 @@ namespace RockEngine.Vulkan.VkObjects
             _images = images;
             _format = format;
             _extent = extent;
+            CreateImageViews();
         }
 
-        public unsafe void CreateImageViews()
+        public unsafe static SwapchainWrapper Create(VulkanContext context, ISurfaceHandler surface, uint width, uint height)
+        {
+            // Assume SwapChainSupportDetails, ChooseSwapSurfaceFormat, ChooseSwapPresentMode, and ChooseSwapExtent are implemented
+            var swapChainSupport = VkHelper.QuerySwapChainSupport(context.Device.PhysicalDevice, context.Surface);
+            var surfaceFormat = ChooseSwapSurfaceFormat(swapChainSupport.Formats);
+            var presentMode = ChooseSwapPresentMode(swapChainSupport.PresentModes);
+            var extent = ChooseSwapExtent(swapChainSupport.Capabilities, width, height);
+
+            uint imageCount = swapChainSupport.Capabilities.MinImageCount + 1;
+            if (swapChainSupport.Capabilities.MaxImageCount > 0 && imageCount > swapChainSupport.Capabilities.MaxImageCount)
+            {
+                imageCount = swapChainSupport.Capabilities.MaxImageCount;
+            }
+
+            var createInfo = new SwapchainCreateInfoKHR
+            {
+                SType = StructureType.SwapchainCreateInfoKhr,
+                Surface = context.Surface.Surface,
+                MinImageCount = imageCount,
+                ImageFormat = surfaceFormat.Format,
+                ImageColorSpace = surfaceFormat.ColorSpace,
+                ImageExtent = extent,
+                ImageArrayLayers = 1,
+                ImageUsage = ImageUsageFlags.ColorAttachmentBit,
+                PreTransform = swapChainSupport.Capabilities.CurrentTransform,
+                CompositeAlpha = CompositeAlphaFlagsKHR.OpaqueBitKhr,
+                PresentMode = presentMode,
+                Clipped = Vk.True,
+                OldSwapchain = default
+            };
+
+            // Handle queue family indices
+            if (context.Device.QueueFamilyIndices.GraphicsFamily != context.Device.QueueFamilyIndices.PresentFamily)
+            {
+                uint[] queueFamilyIndices = new uint[2] { context.Device.QueueFamilyIndices.GraphicsFamily.Value, context.Device.QueueFamilyIndices.PresentFamily.Value };
+                fixed (uint* pQueueFamilyIndices = queueFamilyIndices)
+                {
+                    createInfo.ImageSharingMode = SharingMode.Concurrent;
+                    createInfo.QueueFamilyIndexCount = 2;
+                    createInfo.PQueueFamilyIndices = pQueueFamilyIndices;
+                }
+            }
+            else
+            {
+                createInfo.ImageSharingMode = SharingMode.Exclusive;
+            }
+
+            var swapchainApi = new KhrSwapchain(context.Api.Context);
+            var result = swapchainApi.CreateSwapchain(context.Device, in createInfo, null, out var swapChain);
+
+            if (result != Result.Success)
+            {
+                throw new Exception("Failed to create swap chain");
+            }
+
+            uint countImages = 0;
+            swapchainApi.GetSwapchainImages(context.Device, swapChain, &countImages, null);
+            var images = new Silk.NET.Vulkan.Image[countImages];
+            swapchainApi.GetSwapchainImages(context.Device, swapChain, &countImages, images);
+
+            return new SwapchainWrapper(context, swapChain, swapchainApi, images, surfaceFormat.Format, extent);
+        }
+
+        private static Extent2D ChooseSwapExtent(SurfaceCapabilitiesKHR capabilities, uint width, uint height)
+        {
+            if (capabilities.CurrentExtent.Width != uint.MaxValue)
+            {
+                return capabilities.CurrentExtent;
+            }
+            else
+            {
+                Extent2D actualExtent = new Extent2D
+                {
+                    Width = Math.Max(capabilities.MinImageExtent.Width, Math.Min(capabilities.MaxImageExtent.Width, width)),
+                    Height = Math.Max(capabilities.MinImageExtent.Height, Math.Min(capabilities.MaxImageExtent.Height, height))
+                };
+
+                return actualExtent;
+            }
+        }
+
+        private static PresentModeKHR ChooseSwapPresentMode(PresentModeKHR[] availablePresentModes)
+        {
+            foreach (var availablePresentMode in availablePresentModes)
+            {
+                if (availablePresentMode == PresentModeKHR.MailboxKhr)
+                {
+                    return availablePresentMode;
+                }
+            }
+
+            // FIFO is always available as per Vulkan spec
+            return PresentModeKHR.FifoKhr;
+        }
+
+        private static SurfaceFormatKHR ChooseSwapSurfaceFormat(SurfaceFormatKHR[] availableFormats)
+        {
+            foreach (var availableFormat in availableFormats)
+            {
+                if (availableFormat.Format == Format.B8G8R8A8Srgb && availableFormat.ColorSpace == ColorSpaceKHR.SpaceSrgbNonlinearKhr)
+                {
+                    return availableFormat;
+                }
+            }
+
+            // If the preferred format is not found, return the first format available
+            return availableFormats[0];
+        }
+
+        private unsafe void CreateImageViews()
         {
             for (int i = 0; i < _images.Length; i++)
             {
-                Image image = _images[i];
+                Silk.NET.Vulkan.Image image = _images[i];
                 var createInfo = new ImageViewCreateInfo
                 {
                     SType = StructureType.ImageViewCreateInfo,
@@ -63,7 +174,7 @@ namespace RockEngine.Vulkan.VkObjects
                     }
                 };
 
-                _context.Api.CreateImageView(_context.Device.Device, ref createInfo, null, out var imageView)
+                _context.Api.CreateImageView(_context.Device, ref createInfo, null, out var imageView)
                     .ThrowCode("Failed to create image views!");
 
                 _swapChainImageViews[i] = imageView;
@@ -83,13 +194,13 @@ namespace RockEngine.Vulkan.VkObjects
                 // Set large fields to null.
                 if (_swapchain.Handle != 0)
                 {
-                    _khrSwapchain.DestroySwapchain(_context.Device.Device, _swapchain, null);
+                    _khrSwapchain.DestroySwapchain(_context.Device, _swapchain, null);
                     _swapchain = default;
                     if (_swapChainImageViews.Length != 0)
                     {
                         foreach (var imageView in _swapChainImageViews)
                         {
-                            _context.Api.DestroyImageView(_context.Device.Device, imageView, null);
+                            _context.Api.DestroyImageView(_context.Device, imageView, null);
                         }
                     }
                 }

@@ -1,34 +1,54 @@
-﻿using RockEngine.Vulkan.VkObjects;
+﻿using RockEngine.Vulkan.DI;
+using RockEngine.Vulkan.Rendering.ComponentRenderers;
+using RockEngine.Vulkan.Rendering.ComponentRenderers.Factories;
+using RockEngine.Vulkan.VkObjects;
 using RockEngine.Vulkan.VulkanInitilizers;
+
+using SimpleInjector.Lifestyles;
 
 namespace RockEngine.Vulkan.ECS
 {
-    public class MeshComponent : Component, IRenderableComponent, IDisposable
+    public class MeshComponent : Component, IRenderableComponent<MeshComponent>, IDisposable
     {
         private readonly RenderableObject _renderableObject;
-        public MeshComponent(Vertex[] vertices, uint[]? indices = null)
+        private MeshComponentRenderer _renderer;
+
+        public Vertex[] Vertices => _renderableObject.Vertices;
+        public uint[]? Indicies => _renderableObject.Indicies;
+
+        public IComponentRenderer<MeshComponent> Renderer => _renderer;
+
+        public override int Order => 100;
+
+        public MeshComponent(Entity entity, Vertex[] vertices, uint[]? indices = null)
+            :base(entity)
         {
-            _renderableObject = new RenderableObject(vertices,indices);
+            _renderableObject = new RenderableObject(vertices, indices);
         }
-       
 
         public override async Task OnInitializedAsync(VulkanContext context)
         {
-            await _renderableObject.CreateBuffersAsync(context).ConfigureAwait(false);
+            using (AsyncScopedLifestyle.BeginScope(IoC.Container))
+            {
+                var factory = IoC.Container.GetInstance<MeshComponentRendererFactory>();
+                _renderer = factory.Get(this);
+                await _renderer.InitializeAsync(this, context).ConfigureAwait(false);
+            }
+            IsInitialized = true;
         }
 
-        public void Render(VulkanContext context, CommandBufferWrapper commandBuffer)
+        public async Task RenderAsync(VulkanContext context, CommandBufferWrapper commandBuffer)
         {
-            _renderableObject.Draw(context, commandBuffer);
+            if (!IsInitialized)
+            {
+                return;
+            }
+            await _renderer.RenderAsync(this, context, commandBuffer);
         }
 
-        public override Task UpdateAsync(double time, VulkanContext context, CommandBufferWrapper commandBuffer)
-        {
-            return Task.CompletedTask;
-        }
         public void Dispose()
         {
-            _renderableObject.Dispose();
+            _renderer.Dispose();
         }
     }
 }

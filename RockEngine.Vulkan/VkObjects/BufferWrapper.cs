@@ -1,142 +1,205 @@
 ﻿using RockEngine.Vulkan.Helpers;
-using RockEngine.Vulkan.VkBuilders;
 using RockEngine.Vulkan.VulkanInitilizers;
 
 using Silk.NET.Vulkan;
 
+using System;
 using System.Runtime.InteropServices;
 
 using Buffer = Silk.NET.Vulkan.Buffer;
 
 namespace RockEngine.Vulkan.VkObjects
 {
-    public class BufferWrapper : VkObject
+    public class BufferWrapper : VkObject<Buffer>
     {
-        private readonly Vk _api;
-        private readonly LogicalDeviceWrapper _device;
-        private Buffer _buffer;
-        private readonly DeviceMemory _deviceMemory;
+        private readonly VulkanContext _context;
+        private DeviceMemory _deviceMemory;
+        private ulong _size;
 
-        public Buffer Buffer => _buffer;
-        private static readonly SemaphoreSlim _semaphore = new SemaphoreSlim(1, 1);
+        public ulong Size => _size;
 
-        public BufferWrapper(Vk api, LogicalDeviceWrapper device, Buffer buffer, DeviceMemory deviceMemory)
+        public DeviceMemory DeviceMemory => _deviceMemory;
+
+        public BufferWrapper(VulkanContext context, in Buffer bufferNative, DeviceMemory deviceMemory, ulong size)
+            :base(in bufferNative)
         {
-            _api = api;
-            _device = device;
-            _buffer = buffer;
+            _context = context;
             _deviceMemory = deviceMemory;
+            _size = size;
         }
 
-        public void Bind(CommandBufferWrapper commandBuffer)
+        public BufferWrapper(VulkanContext context, in Buffer bufferNative, MemoryPropertyFlags memoryFlag)
+            : base(in bufferNative)
+
+        {
+            _context = context;
+            AllocateMemory(memoryFlag);
+        }
+
+        public unsafe void AllocateMemory(MemoryPropertyFlags memoryFlag)
+        {
+            if (_deviceMemory != default)
+            {
+                throw new Exception("Memory is already allocated for that buffer");
+            }
+            var memoryRequirements = _context.Api.GetBufferMemoryRequirements(_context.Device, _vkObject);
+
+            _deviceMemory = DeviceMemory.Allocate(_context, memoryRequirements, memoryFlag);
+        }
+     
+        public void BindVertexBuffer(CommandBufferWrapper commandBuffer)
         {
             ulong offset = 0;
-            _api.CmdBindVertexBuffers(commandBuffer.CommandBuffer, 0, 1, in _buffer, in offset);
+            _context.Api.CmdBindVertexBuffers(commandBuffer, 0, 1, in _vkObject, in offset);
+        }
+        public void BindIndexBuffer(CommandBufferWrapper commandBuffer)
+        {
+            _context.Api.CmdBindIndexBuffer(commandBuffer, _vkObject, 0, IndexType.Uint32);
         }
 
         public async Task SendDataAsync<T>(T[] data, ulong offset = 0) where T : struct
         {
             ulong bufferSize = (ulong)(data.Length * Marshal.SizeOf<T>());
 
-            IntPtr dataPtr = MapMemory(bufferSize, offset);
+            MapMemory(bufferSize, offset, out var dataPtr);
 
             byte[] byteArray = await StructArrayToByteArrayAsync(data);
             Marshal.Copy(byteArray, 0, dataPtr, byteArray.Length);
 
-            _api.UnmapMemory(_device.Device, _deviceMemory);
+            _context.Api.UnmapMemory(_context.Device, _deviceMemory);
         }
 
-        public void CopyBuffer(VulkanContext context, BufferWrapper dstBuffer, ulong size)
+        public async Task SendDataAsync<T>(T data, ulong offset = 0) where T : struct
         {
-            CommandBufferWrapper commandBuffer = new VulkanCommandBufferBuilder(context)
-                .WithLevel(CommandBufferLevel.Primary)
-                .Build();
+            ulong bufferSize = (ulong)Marshal.SizeOf<T>();
 
-            commandBuffer.Begin(new CommandBufferBeginInfo
+            MapMemory(bufferSize, offset, out var dataPtr);
+
+            byte[] byteArray = await StructArrayToByteArrayAsync(data);
+            Marshal.Copy(byteArray, 0, dataPtr, byteArray.Length);
+
+            _context.Api.UnmapMemory(_context.Device, _deviceMemory);
+        }
+
+        public unsafe void CopyBuffer(VulkanContext context, BufferWrapper dstBuffer, ulong size)
+        {
+            context.QueueMutex.WaitOne();
+            try
             {
-                SType = StructureType.CommandBufferBeginInfo,
-                Flags = CommandBufferUsageFlags.OneTimeSubmitBit
-            });
+                var commandPool = context.GetOrCreateCommandPool();
+                var commandBufferAllocateInfoo = new CommandBufferAllocateInfo()
+                {
+                    SType = StructureType.CommandBufferAllocateInfo,
+                    Level= CommandBufferLevel.Primary,
+                    CommandPool = commandPool,
+                    CommandBufferCount = 1
+                };
+                using CommandBufferWrapper commandBuffer = CommandBufferWrapper.Create(context,ref commandBufferAllocateInfoo, commandPool);
 
-            commandBuffer.CopyBuffer(this, dstBuffer, size);
+                commandBuffer.Begin(new CommandBufferBeginInfo
+                {
+                    SType = StructureType.CommandBufferBeginInfo,
+                    Flags = CommandBufferUsageFlags.OneTimeSubmitBit
+                });
 
-            commandBuffer.End();
+                commandBuffer.CopyBuffer(this, dstBuffer, size);
 
-            unsafe
-            {
-                var buffer = commandBuffer.CommandBuffer;
+                commandBuffer.End();
+                var buffer = (CommandBuffer)commandBuffer;
                 SubmitInfo submitInfo = new SubmitInfo()
                 {
                     SType = StructureType.SubmitInfo,
                     CommandBufferCount = 1,
                     PCommandBuffers = &buffer
                 };
-                VulkanContext.QueueMutex.WaitOne();
-                try
-                {
-                    context.Api.QueueSubmit(context.Device.GraphicsQueue, 1, &submitInfo, default);
-                    context.Api.QueueWaitIdle(context.Device.GraphicsQueue);
-                }
-                finally
-                {
-                    VulkanContext.QueueMutex.ReleaseMutex();
-                }
+                context.Api.QueueSubmit(context.Device.GraphicsQueue, 1, &submitInfo, default);
+                context.Api.QueueWaitIdle(context.Device.GraphicsQueue);
+            }
+            finally
+            {
+                context.QueueMutex.ReleaseMutex();
+            }
+        }
 
+        public unsafe void MapMemory(ulong bufferSize, ulong offset, out IntPtr pData)
+        {
+            void* mappedMemory = null;
+            _context.Api.MapMemory(_context.Device, _deviceMemory, offset, bufferSize, 0, &mappedMemory)
+                .ThrowCode("Failed to map memory");
+            pData = new IntPtr(mappedMemory);
+        }
 
+        public unsafe void MapMemory(out IntPtr pData)
+        {
+            void* mappedMemory = null;
+            _context.Api.MapMemory(_context.Device, _deviceMemory, 0, _size, 0, &mappedMemory)
+                .ThrowCode("Failed to map memory");
+            pData = new IntPtr(mappedMemory);
+        }
+
+        public static ValueTask<byte[]> StructArrayToByteArrayAsync<T>(T data) where T : struct
+        {
+            int size = Marshal.SizeOf<T>();
+            byte[] byteArray = new byte[size];
+            IntPtr ptr = Marshal.AllocHGlobal(size);
+
+            try
+            {
+                Marshal.StructureToPtr(data, ptr, true);
+                Marshal.Copy(ptr, byteArray, 0, size);
+            }
+            finally
+            {
+                Marshal.FreeHGlobal(ptr);
             }
 
-            commandBuffer.Dispose();
+            return new ValueTask<byte[]>(byteArray);
         }
 
-        private unsafe IntPtr MapMemory(ulong bufferSize, ulong offset)
+        public static Task<byte[]> StructArrayToByteArrayAsync<T>(T[] data) where T : struct
         {
-            IntPtr dataPtr;
-            void* mappedMemory = null;
-            _api.MapMemory(_device.Device, _deviceMemory, offset, bufferSize, 0, &mappedMemory)
-                .ThrowCode("Failed to map memory");
-            dataPtr = new IntPtr(mappedMemory);
-            return dataPtr;
-        }
+            int size = Marshal.SizeOf<T>();
+            byte[] byteArray = new byte[data.Length * size];
+            IntPtr ptr = Marshal.AllocHGlobal(size);
 
-        public static  Task<byte[]> StructArrayToByteArrayAsync<T>(T[] data) where T : struct
-        {
-            return Task.Run(async () =>
+            try
             {
-                await _semaphore.WaitAsync();
-                try
+                Parallel.For(0, data.Length, i =>
                 {
-                    int size = Marshal.SizeOf<T>();
-                    byte[] byteArray = new byte[data.Length * size];
-                    IntPtr ptr = Marshal.AllocHGlobal(size);
-
+                    IntPtr localPtr = Marshal.AllocHGlobal(size);
                     try
                     {
-                        var tasks = new List<Task>();
-
-                        for (int i = 0; i < data.Length; i++)
-                        {
-                            int index = i; // Capture the current value of i
-                            tasks.Add(Task.Run(() =>
-                            {
-                                Marshal.StructureToPtr(data[index], ptr, true);
-                                Marshal.Copy(ptr, byteArray, index * size, size);
-                            }));
-                        }
-
-                        await Task.WhenAll(tasks);
+                        Marshal.StructureToPtr(data[i], localPtr, true);
+                        Marshal.Copy(localPtr, byteArray, i * size, size);
                     }
                     finally
                     {
-                        Marshal.FreeHGlobal(ptr);
+                        Marshal.FreeHGlobal(localPtr);
                     }
+                });
+            }
+            finally
+            {
+                Marshal.FreeHGlobal(ptr);
+            }
 
-                    return byteArray;
-                }
-                finally
-                {
-                    _semaphore.Release();
-                }
-            });
+            return Task.FromResult(byteArray);
+        }
+
+        public static BufferWrapper Create(VulkanContext context, in BufferCreateInfo ci, MemoryPropertyFlags flags)
+        {
+            unsafe
+            {
+                context.Api.CreateBuffer(context.Device, in ci, null, out Buffer buffer)
+                    .ThrowCode("Failed to create buffer");
+                var memoryRequirements = context.Api.GetBufferMemoryRequirements(context.Device, buffer);
+
+               var deviceMemory = DeviceMemory.Allocate(context, memoryRequirements, flags);
+
+                context.Api.BindBufferMemory(context.Device, buffer, deviceMemory, 0);
+
+                return new BufferWrapper(context, buffer, deviceMemory, memoryRequirements.Size);
+            }
         }
 
         protected override void Dispose(bool disposing)
@@ -150,14 +213,14 @@ namespace RockEngine.Vulkan.VkObjects
 
                 // Free unmanaged resources (unmanaged objects) and override a finalizer below.
                 // Set large fields to null.
-                if (_buffer.Handle != 0)
+                if (_vkObject.Handle != 0)
                 {
                     unsafe
                     {
-                        _api.FreeMemory(_device.Device, _deviceMemory, null);
-                        _api.DestroyBuffer(_device.Device, _buffer, null);
+                        _deviceMemory.Dispose();
+                        _context.Api.DestroyBuffer(_context.Device, _vkObject, null);
                     }
-                    _buffer = default;
+                    _vkObject = default;
                 }
 
                 _disposed = true;

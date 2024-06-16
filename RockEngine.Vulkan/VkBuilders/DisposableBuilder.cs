@@ -2,7 +2,7 @@
 
 namespace RockEngine.Vulkan.VkBuilders
 {
-    internal abstract class DisposableBuilder : IDisposable
+    public abstract class DisposableBuilder : IDisposable
     {
         protected List<MemoryHandle> _memory = new List<MemoryHandle>();
 
@@ -41,7 +41,8 @@ namespace RockEngine.Vulkan.VkBuilders
             Dispose(disposing: true);
             GC.SuppressFinalize(this);
         }
-        protected MemoryHandle CreateMemoryHandle<T>(T[] value)
+
+        protected MemoryHandle CreateMemoryHandle<T>(params T[] value)
         {
             var memHandle = value.AsMemory().Pin();
             _memory.Add(memHandle);

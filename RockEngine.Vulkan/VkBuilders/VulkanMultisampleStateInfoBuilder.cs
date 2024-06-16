@@ -5,7 +5,7 @@ using System.Buffers;
 
 namespace RockEngine.Vulkan.VkBuilders
 {
-    internal class VulkanMultisampleStateInfoBuilder : DisposableBuilder
+    public class VulkanMultisampleStateInfoBuilder : DisposableBuilder
     {
         private Bool32 _sampleShading;
         private SampleCountFlags _rasterSamples;

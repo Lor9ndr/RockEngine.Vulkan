@@ -1,8 +1,16 @@
 ﻿namespace RockEngine.Vulkan.VkObjects
 {
-    public abstract class VkObject : IDisposable
+    public abstract class VkObject<T> : IDisposable
     {
+        protected T _vkObject;
         protected bool _disposed;
+        public T VkObjectNative =>_vkObject;
+
+        protected VkObject(in T vkObject)
+        {
+            _vkObject = vkObject;
+        }
+
         protected abstract void Dispose(bool disposing);
 
 
@@ -19,5 +27,6 @@
             Dispose(disposing: true);
             GC.SuppressFinalize(this);
         }
+        public static implicit operator T(VkObject<T> value) => value._vkObject;
     }
 }
