@@ -173,11 +173,7 @@ namespace RockEngine.Vulkan.VkObjects
                         LayerCount = 1
                     }
                 };
-
-                _context.Api.CreateImageView(_context.Device, ref createInfo, null, out var imageView)
-                    .ThrowCode("Failed to create image views!");
-
-                _swapChainImageViews[i] = imageView;
+                _swapChainImageViews[i] = ImageView.Create(_context, in createInfo);
             }
         }
 
@@ -194,15 +190,16 @@ namespace RockEngine.Vulkan.VkObjects
                 // Set large fields to null.
                 if (_swapchain.Handle != 0)
                 {
-                    _khrSwapchain.DestroySwapchain(_context.Device, _swapchain, null);
-                    _swapchain = default;
                     if (_swapChainImageViews.Length != 0)
                     {
                         foreach (var imageView in _swapChainImageViews)
                         {
-                            _context.Api.DestroyImageView(_context.Device, imageView, null);
+                            imageView.Dispose();
                         }
                     }
+                    _khrSwapchain.DestroySwapchain(_context.Device, _swapchain, null);
+                    _swapchain = default;
+                    
                 }
 
                 _disposed = true;

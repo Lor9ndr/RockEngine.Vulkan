@@ -18,30 +18,9 @@ namespace RockEngine.Vulkan.VkObjects
             _context = context;
         }
 
-        public unsafe static Image Create(VulkanContext context, uint width, uint height, Format format)
+        public unsafe static Image Create(VulkanContext context, in ImageCreateInfo ci)
         {
-            // Create the Vulkan image
-            var imageInfo = new ImageCreateInfo
-            {
-                SType = StructureType.ImageCreateInfo,
-                ImageType = ImageType.Type2D,
-                Format = format,
-                Extent = new Extent3D
-                {
-                    Width = width,
-                    Height = height,
-                    Depth = 1
-                },
-                MipLevels = 1,
-                ArrayLayers = 1,
-                Samples = SampleCountFlags.Count1Bit,
-                Tiling = ImageTiling.Optimal,
-                Usage = ImageUsageFlags.TransferDstBit | ImageUsageFlags.SampledBit,
-                SharingMode = SharingMode.Exclusive,
-                InitialLayout = ImageLayout.Undefined
-            };
-
-            context.Api.CreateImage(context.Device, in imageInfo, null, out var vkImage)
+            context.Api.CreateImage(context.Device, in ci, null, out var vkImage)
                 .ThrowCode("Failed to create image!");
             context.Api.GetImageMemoryRequirements(context.Device, vkImage, out var memRequirements);
 

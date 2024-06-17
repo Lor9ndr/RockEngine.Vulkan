@@ -14,9 +14,8 @@ namespace RockEngine.Vulkan.VkObjects
     {
         private readonly VulkanContext _context;
         private DeviceMemory _deviceMemory;
-        private ulong _size;
 
-        public ulong Size => _size;
+        public ulong Size => _deviceMemory.Size;
 
         public DeviceMemory DeviceMemory => _deviceMemory;
 
@@ -25,15 +24,6 @@ namespace RockEngine.Vulkan.VkObjects
         {
             _context = context;
             _deviceMemory = deviceMemory;
-            _size = size;
-        }
-
-        public BufferWrapper(VulkanContext context, in Buffer bufferNative, MemoryPropertyFlags memoryFlag)
-            : base(in bufferNative)
-
-        {
-            _context = context;
-            AllocateMemory(memoryFlag);
         }
 
         public unsafe void AllocateMemory(MemoryPropertyFlags memoryFlag)
@@ -59,9 +49,7 @@ namespace RockEngine.Vulkan.VkObjects
 
         public async Task SendDataAsync<T>(T[] data, ulong offset = 0) where T : struct
         {
-            ulong bufferSize = (ulong)(data.Length * Marshal.SizeOf<T>());
-
-            MapMemory(bufferSize, offset, out var dataPtr);
+            MapMemory(Size, offset, out var dataPtr);
 
             byte[] byteArray = await StructArrayToByteArrayAsync(data);
             Marshal.Copy(byteArray, 0, dataPtr, byteArray.Length);
@@ -69,6 +57,13 @@ namespace RockEngine.Vulkan.VkObjects
             _context.Api.UnmapMemory(_context.Device, _deviceMemory);
         }
 
+        /// <summary>
+        /// Sends data, no need to pre map the buffer, it is already done here
+        /// </summary>
+        /// <typeparam name="T">type of data is sending, struct only</typeparam>
+        /// <param name="data">value of the data</param>
+        /// <param name="offset">offset from 0 to size of data</param>
+        /// <returns></returns>
         public async Task SendDataAsync<T>(T data, ulong offset = 0) where T : struct
         {
             ulong bufferSize = (ulong)Marshal.SizeOf<T>();
@@ -78,8 +73,10 @@ namespace RockEngine.Vulkan.VkObjects
             byte[] byteArray = await StructArrayToByteArrayAsync(data);
             Marshal.Copy(byteArray, 0, dataPtr, byteArray.Length);
 
-            _context.Api.UnmapMemory(_context.Device, _deviceMemory);
+            UnmapMemory();
         }
+
+        public void UnmapMemory() => _deviceMemory.Unmap();
 
         public unsafe void CopyBuffer(VulkanContext context, BufferWrapper dstBuffer, ulong size)
         {
@@ -121,27 +118,21 @@ namespace RockEngine.Vulkan.VkObjects
             }
         }
 
-        public unsafe void MapMemory(ulong bufferSize, ulong offset, out IntPtr pData)
+        public void MapMemory(ulong bufferSize, ulong offset, out nint pData)
         {
-            void* mappedMemory = null;
-            _context.Api.MapMemory(_context.Device, _deviceMemory, offset, bufferSize, 0, &mappedMemory)
-                .ThrowCode("Failed to map memory");
-            pData = new IntPtr(mappedMemory);
+            _deviceMemory.MapMemory(bufferSize, offset, out pData);
         }
 
-        public unsafe void MapMemory(out IntPtr pData)
+        public unsafe void MapMemory(out nint pData)
         {
-            void* mappedMemory = null;
-            _context.Api.MapMemory(_context.Device, _deviceMemory, 0, _size, 0, &mappedMemory)
-                .ThrowCode("Failed to map memory");
-            pData = new IntPtr(mappedMemory);
+           _deviceMemory.MapMemory(out pData);
         }
 
         public static ValueTask<byte[]> StructArrayToByteArrayAsync<T>(T data) where T : struct
         {
             int size = Marshal.SizeOf<T>();
             byte[] byteArray = new byte[size];
-            IntPtr ptr = Marshal.AllocHGlobal(size);
+            nint ptr = Marshal.AllocHGlobal(size);
 
             try
             {
@@ -160,13 +151,13 @@ namespace RockEngine.Vulkan.VkObjects
         {
             int size = Marshal.SizeOf<T>();
             byte[] byteArray = new byte[data.Length * size];
-            IntPtr ptr = Marshal.AllocHGlobal(size);
+            nint ptr = Marshal.AllocHGlobal(size);
 
             try
             {
                 Parallel.For(0, data.Length, i =>
                 {
-                    IntPtr localPtr = Marshal.AllocHGlobal(size);
+                    nint localPtr = Marshal.AllocHGlobal(size);
                     try
                     {
                         Marshal.StructureToPtr(data[i], localPtr, true);

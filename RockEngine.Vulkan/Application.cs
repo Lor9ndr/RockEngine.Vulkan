@@ -21,7 +21,6 @@ namespace RockEngine.Vulkan
         private Project _project;
         private AssetManager _assetManager;
         private IInputContext _inputContext;
-        private GlfwSurfaceHandler _surface;
         private BaseRenderer _baseRenderer;
 
         public CancellationTokenSource CancellationTokenSource { get; private set; }
@@ -81,9 +80,8 @@ namespace RockEngine.Vulkan
             _project = await _assetManager.CreateProjectAsync("Sandbox", "F:\\RockEngine.Vulkan\\RockEngine.Vulkan\\bin\\Debug\\net8.0\\Sandbox.asset", CancellationToken);
             var scene = _project.Scenes[0];
             var savingTask =  _assetManager.SaveAssetAsync(scene, CancellationToken);
-            _surface = GlfwSurfaceHandler.CreateSurface(_window, _context);
             
-            _baseRenderer = new BaseRenderer(_context, _surface);
+            _baseRenderer = new BaseRenderer(_context,_context.Surface);
             await _baseRenderer.InitializeAsync().ConfigureAwait(false);
             _window.Update += Update;
             _window.Render += DrawFrame;

@@ -10,8 +10,8 @@ namespace RockEngine.Vulkan.VkObjects
         private readonly VulkanContext _context;
         private readonly CommandPoolWrapper _commandPool;
 
-        public CommandBufferWrapper(VulkanContext context, ref CommandBuffer commandBuffer, CommandPoolWrapper commandPool)
-            :base(ref commandBuffer)
+        public CommandBufferWrapper(VulkanContext context, in CommandBuffer commandBuffer, CommandPoolWrapper commandPool)
+            :base(in commandBuffer)
         {
             _context = context;
             _commandPool = commandPool;
@@ -74,12 +74,12 @@ namespace RockEngine.Vulkan.VkObjects
             _context.Api.CmdBindIndexBuffer(_vkObject, indexBuffer, offset, indexType);
         }
 
-        public static CommandBufferWrapper Create(VulkanContext context, ref CommandBufferAllocateInfo ai, CommandPoolWrapper commandPool)
+        public static CommandBufferWrapper Create(VulkanContext context, in CommandBufferAllocateInfo ai, CommandPoolWrapper commandPool)
         {
             context.Api.AllocateCommandBuffers(context.Device, in ai, out CommandBuffer cb)
                 .ThrowCode("Failed to allocate command buffer");
 
-            return new CommandBufferWrapper(context, ref cb, commandPool);
+            return new CommandBufferWrapper(context, in cb, commandPool);
         }
 
         protected override void Dispose(bool disposing)

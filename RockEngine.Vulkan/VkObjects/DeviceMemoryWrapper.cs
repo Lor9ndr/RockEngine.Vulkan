@@ -8,13 +8,17 @@ namespace RockEngine.Vulkan.VkObjects
     {
         private readonly VulkanContext _context;
         private readonly Silk.NET.Vulkan.DeviceMemory _memory;
+        private readonly ulong _size;
+        public ulong Size => _size;
 
-        private DeviceMemory(VulkanContext context, Silk.NET.Vulkan.DeviceMemory memory)
+        private DeviceMemory(VulkanContext context, Silk.NET.Vulkan.DeviceMemory memory, ulong size)
             :base(memory)
         {
             _context = context;
             _memory = memory;
+            _size = size;
         }
+
 
         public static unsafe DeviceMemory Allocate(VulkanContext context, MemoryRequirements memRequirements, MemoryPropertyFlags properties)
         {
@@ -28,8 +32,9 @@ namespace RockEngine.Vulkan.VkObjects
            context.Api.AllocateMemory(context.Device, in allocInfo, null, out var memory)
                 .ThrowCode("Failed to allocate memory!");
 
-            return new DeviceMemory(context, memory);
+            return new DeviceMemory(context, memory, memRequirements.Size);
         }
+
 
         private static uint FindMemoryType(VulkanContext context, uint typeFilter, MemoryPropertyFlags properties)
         {
@@ -42,6 +47,26 @@ namespace RockEngine.Vulkan.VkObjects
                 }
             }
             throw new InvalidOperationException("Failed to find suitable memory type.");
+        }
+        public unsafe void MapMemory(ulong bufferSize, ulong offset, out IntPtr pData)
+        {
+            void* mappedMemory = null;
+            _context.Api.MapMemory(_context.Device, _vkObject, offset, bufferSize, 0, &mappedMemory)
+                .ThrowCode("Failed to map memory");
+            pData = new nint(mappedMemory);
+        }
+
+        public unsafe void MapMemory(out IntPtr pData)
+        {
+            void* mappedMemory = null;
+            _context.Api.MapMemory(_context.Device, _vkObject, 0, _size, 0, &mappedMemory)
+                .ThrowCode("Failed to map memory");
+            pData = new nint(mappedMemory);
+        }
+
+        public void Unmap()
+        {
+            _context.Api.UnmapMemory(_context.Device, _vkObject);
         }
 
         protected override unsafe void Dispose(bool disposing)

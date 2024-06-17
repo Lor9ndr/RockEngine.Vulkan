@@ -291,7 +291,7 @@ namespace RockEngine.Vulkan.Rendering
             _swapchainFramebuffers = new FramebufferWrapper[_swapchain.SwapChainImageViews.Length];
             for (int i = 0; i < _swapchain.Images.Length; i++)
             {
-                var attachment = _swapchain.SwapChainImageViews[i];
+                var attachment = _swapchain.SwapChainImageViews[i].VkObjectNative;
                 FramebufferCreateInfo fci = new FramebufferCreateInfo()
                 {
                      SType = StructureType.FramebufferCreateInfo,
@@ -329,25 +329,25 @@ namespace RockEngine.Vulkan.Rendering
             // Define descriptor set layout bindings for both camera and model
             DescriptorSetLayoutBinding[] camBindings = new DescriptorSetLayoutBinding[1]
             {
-        new DescriptorSetLayoutBinding
-        {
-            Binding = 0,
-            DescriptorCount = 1,
-            DescriptorType = Silk.NET.Vulkan.DescriptorType.UniformBuffer,
-            StageFlags = ShaderStageFlags.VertexBit
-        }
+                new DescriptorSetLayoutBinding
+                {
+                    Binding = 0,
+                    DescriptorCount = 1,
+                    DescriptorType = DescriptorType.UniformBuffer,
+                    StageFlags = ShaderStageFlags.VertexBit
+                }
             };
             var camLayout = CreateDescriptorLayout(camBindings);
 
             DescriptorSetLayoutBinding[] modelBindings = new DescriptorSetLayoutBinding[1]
             {
-        new DescriptorSetLayoutBinding
-        {
-            Binding = 0,
-            DescriptorCount = 1,
-            DescriptorType = Silk.NET.Vulkan.DescriptorType.UniformBuffer,
-            StageFlags = ShaderStageFlags.VertexBit
-        }
+                new DescriptorSetLayoutBinding
+                {
+                    Binding = 0,
+                    DescriptorCount = 1,
+                    DescriptorType = DescriptorType.UniformBuffer,
+                    StageFlags = ShaderStageFlags.VertexBit
+                }
             };
             var modelLayout = CreateDescriptorLayout(modelBindings);
 
