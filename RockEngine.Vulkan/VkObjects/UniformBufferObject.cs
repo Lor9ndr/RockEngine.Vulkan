@@ -10,6 +10,7 @@ namespace RockEngine.Vulkan.VkObjects
         private readonly BufferWrapper _uniformBuffer;
         private readonly ulong _size;
         private readonly string _name;
+        private DescriptorSet _descriptorSet;
 
         public BufferWrapper UniformBuffer => _uniformBuffer;
         public ulong Size => _size;
@@ -36,7 +37,7 @@ namespace RockEngine.Vulkan.VkObjects
             var ubo = new UniformBufferObject(context, uniformBuffer, size, name);
             return ubo;
         }
-     
+
 
         public unsafe void Dispose()
         {

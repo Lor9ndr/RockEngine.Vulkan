@@ -1,9 +1,13 @@
-﻿using Silk.NET.Vulkan;
+﻿using RockEngine.Vulkan.VkObjects.Reflected;
+
+using Silk.NET.Vulkan;
 
 namespace RockEngine.Vulkan.VkObjects
 {
     internal class DescriptorSetLayoutReflected
     {
-        public List<DescriptorSetLayoutBinding> Bindings { get; set; }
+        internal uint Set;
+
+        public List<DescriptorSetLayoutBindingReflected> Bindings { get; set; }
     }
 }

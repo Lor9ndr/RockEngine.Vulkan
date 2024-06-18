@@ -6,11 +6,11 @@ namespace RockEngine.Vulkan.Helpers
     {
         public static Result ThrowCode(this Result result, string message)
         {
-            if (result == Result.Success)
+            return result switch
             {
-                return result;
-            }
-            throw new Exception(message + Environment.NewLine + result);
+                Result.Success => result,
+                _ => throw new Exception(message + Environment.NewLine + result),
+            };
         }
         public static Result ThrowCode(this Result result, Result additionalCheck, string message)
         {

@@ -1,22 +1,44 @@
-﻿using RockEngine.Vulkan.VkObjects;
+﻿using RockEngine.Vulkan.DI;
+using RockEngine.Vulkan.Rendering.ComponentRenderers;
+using RockEngine.Vulkan.VkObjects;
 using RockEngine.Vulkan.VulkanInitilizers;
 
 namespace RockEngine.Vulkan.ECS
 {
-    // Should send ubos, textures and so on
-    // has to have pipeline that will be created on InitializedAsync method 
-    // pipeline has not to be hardcoded, pass params to the constructor
-    internal class Material : Component
+    public class Material : Component, IRenderableComponent<Material>, IDisposable
     {
-        public Material(Entity entity) : base(entity)
-        {
-        }
+        private IComponentRenderer<Material> _renderer;
+        private readonly Texture _texture;
 
         public override int Order => 0;
 
-        public override Task OnInitializedAsync(VulkanContext context)
+        public IComponentRenderer<Material> Renderer => _renderer;
+
+        public Texture Texture => _texture;
+
+        public Material(Entity entity, Texture t) 
+            : base(entity)
         {
-            throw new NotImplementedException();
+            _texture = t;
+        }
+
+
+        public override async Task OnInitializedAsync(VulkanContext context)
+        {
+            _renderer = IoC.Container.GetRenderer<Material>();
+            await _renderer.InitializeAsync(this, context)
+                .ConfigureAwait(false);
+            IsInitialized = true;
+        }
+
+        public Task RenderAsync(VulkanContext context, CommandBufferWrapper commandBuffer)
+        {
+            return _renderer.RenderAsync(this, context, commandBuffer);
+        }
+
+        public void Dispose()
+        {
+            _texture.Dispose();
         }
     }
 }

@@ -34,6 +34,7 @@ namespace RockEngine.Vulkan.VkObjects.Reflected
         public required string Name { get; set; }
         public uint Binding { get; set; }
         public ShaderStageFlags ShaderStage { get; set;}
+        public uint Set { get; internal set; }
     }
 
     public struct ImageObjectReflected
@@ -41,6 +42,7 @@ namespace RockEngine.Vulkan.VkObjects.Reflected
         public required string Name { get; set; }
         public uint Binding { get; set; }
         public ShaderStageFlags ShaderStage { get; set;}
+        public uint Set { get; internal set; }
     }
 
     public enum ShaderVariableType

@@ -3,6 +3,7 @@ using RockEngine.Vulkan.DI;
 using RockEngine.Vulkan.ECS;
 using RockEngine.Vulkan.Rendering;
 using RockEngine.Vulkan.Utils;
+using RockEngine.Vulkan.VkObjects;
 using RockEngine.Vulkan.VulkanInitilizers;
 
 using Silk.NET.Input;
@@ -83,9 +84,10 @@ namespace RockEngine.Vulkan
             
             _baseRenderer = new BaseRenderer(_context,_context.Surface);
             await _baseRenderer.InitializeAsync().ConfigureAwait(false);
+
+
             _window.Update += Update;
             _window.Render += DrawFrame;
-
             await savingTask;
             var camera = new Entity();
             await camera.AddComponent(_context,
@@ -94,11 +96,14 @@ namespace RockEngine.Vulkan
             var debug = camera.GetComponent<DebugCamera>();
 
             var entity = new Entity();
-            await entity.AddComponent(_context, new MeshComponent(entity, DefaultMesh.CubeVertices));
+            await entity.AddComponent(_context, new MeshComponent(entity, DefaultMesh.PlaneVertices, DefaultMesh.PlaneIndices));
+            await entity.AddComponent(_context, new Material(entity, await Texture.FromFileAsync(_context, "C:\\Users\\Админис\\Desktop\\texture.jpg",CancellationToken)));
             entity.Transform.Scale = new Vector3(10,10,10);
             await scene.AddEntity(_context, entity);
 
             await scene.InitializeAsync(_context);
+
+
         }
 
         private void Update(double time)

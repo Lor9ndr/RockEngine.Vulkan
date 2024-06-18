@@ -20,6 +20,7 @@ namespace RockEngine.Vulkan.DI
             Container.RegisterSingleton<IComponentRenderer<Camera>, CameraRenderer>();
             Container.RegisterSingleton<IComponentRenderer<DebugCamera>, CameraRenderer>();
             Container.RegisterSingleton<IComponentRenderer<Transform>, TransformComponentRenderer>();
+            Container.RegisterSingleton<IComponentRenderer<Material>, MaterialRenderer>();
 
             // Register the factory
             Container.RegisterSingleton<MeshComponentRendererFactory>();

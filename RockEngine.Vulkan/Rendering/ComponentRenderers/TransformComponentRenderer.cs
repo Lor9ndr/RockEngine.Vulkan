@@ -20,7 +20,7 @@ namespace RockEngine.Vulkan.Rendering.ComponentRenderers
             }
 
             _ubo = UniformBufferObject.Create(context, (ulong)Marshal.SizeOf<Matrix4x4>(), "Model");
-            context.PipelineManager.CurrentPipeline.SetBuffer(_ubo, 0);
+            context.PipelineManager.SetBuffer(_ubo, 1,0);
             _isInitialized = true;
             return new ValueTask();
         }

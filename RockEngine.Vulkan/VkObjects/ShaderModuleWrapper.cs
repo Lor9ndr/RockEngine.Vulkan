@@ -29,6 +29,7 @@ namespace RockEngine.Vulkan.VkObjects
         public IReadOnlyList<SamplerObjectReflected> Samplers => _samplers;
         public IReadOnlyList<ImageObjectReflected> Images => _images;
         public IReadOnlyList<PushConstantRange> ConstantRanges => _constantRanges;
+        internal IReadOnlyList<DescriptorSetLayoutReflected> DescriptorSetLayouts => _descriptorSetLayouts;
 
         public ShaderModuleWrapper(VulkanContext context, ShaderModule module, ShaderStageFlags stage, ref ReflectShaderModule reflectShaderModule)
             :base(module)
@@ -45,6 +46,7 @@ namespace RockEngine.Vulkan.VkObjects
         private unsafe void ReflectShader()
         {
             var reflectorApi = Reflect.GetApi();
+
             // Extract shader variables
             uint variableCount = 0;
             reflectorApi.EnumerateInputVariables(in _reflectShaderModule, &variableCount, null);
@@ -72,29 +74,29 @@ namespace RockEngine.Vulkan.VkObjects
             reflectorApi.EnumerateDescriptorSets(in _reflectShaderModule, ref descriptorSetCount, descriptorSets);
             // Allocate memory for the descriptor sets
             descriptorSets = (ReflectDescriptorSet**)SilkMarshal.Allocate((int)descriptorSetCount * sizeof(ReflectDescriptorSet*));
-
             reflectorApi.EnumerateDescriptorSets(in _reflectShaderModule, ref descriptorSetCount, descriptorSets);
+            
 
             for (int i = 0; i < descriptorSetCount; i++)
             {
                 var descriptorSet = descriptorSets[i];
-                var bindings = new List<DescriptorSetLayoutBinding>();
-
+                var bindings = new List<DescriptorSetLayoutBindingReflected>();
                 for (int j = 0; j < descriptorSet->BindingCount; j++)
                 {
                     var binding = descriptorSet->Bindings[j];
-                    bindings.Add(new DescriptorSetLayoutBinding
+                    var bindingReflected = new DescriptorSetLayoutBindingReflected
                     {
                         Binding = binding->Binding,
                         DescriptorType = (Silk.NET.Vulkan.DescriptorType)binding->DescriptorType,
                         DescriptorCount = binding->Count,
                         StageFlags = _stage,
-                    });
-
+                    };
+                    bindings.Add(bindingReflected);
+                    string name;
                     if (binding->DescriptorType == DescriptorType.UniformBuffer)
                     {
-                        string name = SilkMarshal.PtrToString((nint)binding->Name);
 
+                        name  = SilkMarshal.PtrToString((nint)reflectorApi.BlockVariableTypeName(ref binding->Block));
                         _reflectedUbos.Add(new UniformBufferObjectReflected
                         {
                             Name = name,
@@ -104,15 +106,46 @@ namespace RockEngine.Vulkan.VkObjects
                             ShaderStage = _stage
                         });
                     }
+                    else if (binding->DescriptorType == DescriptorType.Sampler)
+                    {
+                        name = SilkMarshal.PtrToString((nint)binding->Name);
+
+                        _samplers.Add(new SamplerObjectReflected
+                        {
+                            Name = name,
+                            Binding = binding->Binding,
+                            Set = binding->Set,
+                            ShaderStage = _stage
+                        });
+                    }
+                    else if (binding->DescriptorType == DescriptorType.CombinedImageSampler)
+                    {
+                         name = SilkMarshal.PtrToString((nint)binding->Name);
+
+                        _images.Add(new ImageObjectReflected
+                        {
+                            Name = name,
+                            Binding = binding->Binding,
+                            Set = binding->Set,
+                            ShaderStage = _stage
+                        });
+                    }
+                    else
+                    {
+                        name = SilkMarshal.PtrToString((nint)binding->Name);
+                    }
+                    bindingReflected.Name = name;
                 }
 
                 _descriptorSetLayouts.Add(new DescriptorSetLayoutReflected
                 {
+                    Set = descriptorSet->Set,
                     Bindings = bindings
                 });
             }
 
             SilkMarshal.Free((nint)descriptorSets);
+
             // Extract push constants
             uint pushConstantCount = 0;
             reflectorApi.EnumeratePushConstantBlocks(in _reflectShaderModule, &pushConstantCount, null);
@@ -133,6 +166,7 @@ namespace RockEngine.Vulkan.VkObjects
                 }
             }
         }
+
         static unsafe string ConvertBytePointerToString(byte* bytePointer)
         {
             if (bytePointer == null)

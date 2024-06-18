@@ -146,25 +146,37 @@ namespace RockEngine.Vulkan.Rendering
 
         private async Task RecordCommandBuffer(CommandBufferWrapper commandBuffer, uint imageIndex, Project project)
         {
-            BeginRenderPass(commandBuffer, imageIndex);
-            var descriptors = _pipeline.DescriptorSets.Values.ToArray();
-            unsafe
+            Context.QueueMutex.WaitOne();
+            try
             {
-                fixed (DescriptorSet* set = descriptors)
-                    Context.Api.CmdBindDescriptorSets(commandBuffer,
-                                                      PipelineBindPoint.Graphics,
-                                                      _pipeline.Layout,
-                                                      0,
-                                                      (uint)descriptors.Length,
-                                                      set,
-                                                      null);
+                BeginRenderPass(commandBuffer, imageIndex);
+                var descriptors = _pipeline.DescriptorSets.Values.ToArray();
+                if(descriptors.Length > 0)
+                {
+                    unsafe
+                    {
+                        fixed (DescriptorSet* set = descriptors)
+                            Context.Api.CmdBindDescriptorSets(commandBuffer,
+                                                              PipelineBindPoint.Graphics,
+                                                              _pipeline.Layout,
+                                                              0,
+                                                              (uint)descriptors.Length,
+                                                              set,
+                                                              null);
 
+                    }
+                }
+                
+
+
+                await project.CurrentScene.RenderAsync(Context, commandBuffer);
+
+                EndRenderPass(commandBuffer);
             }
-
-
-            await project.CurrentScene.RenderAsync(Context, commandBuffer);
-
-            EndRenderPass(commandBuffer);
+            finally
+            {
+                Context.QueueMutex.ReleaseMutex();
+            }
         }
 
         private void EndRenderPass(CommandBufferWrapper commandBuffer)
@@ -324,35 +336,9 @@ namespace RockEngine.Vulkan.Rendering
                     ColorComponentFlags.ABit
             };
 
-            var pushConstants = vertexShaderModule.ConstantRanges.Union(fragmentShaderModule.ConstantRanges).ToArray();
-
-            // Define descriptor set layout bindings for both camera and model
-            DescriptorSetLayoutBinding[] camBindings = new DescriptorSetLayoutBinding[1]
-            {
-                new DescriptorSetLayoutBinding
-                {
-                    Binding = 0,
-                    DescriptorCount = 1,
-                    DescriptorType = DescriptorType.UniformBuffer,
-                    StageFlags = ShaderStageFlags.VertexBit
-                }
-            };
-            var camLayout = CreateDescriptorLayout(camBindings);
-
-            DescriptorSetLayoutBinding[] modelBindings = new DescriptorSetLayoutBinding[1]
-            {
-                new DescriptorSetLayoutBinding
-                {
-                    Binding = 0,
-                    DescriptorCount = 1,
-                    DescriptorType = DescriptorType.UniformBuffer,
-                    StageFlags = ShaderStageFlags.VertexBit
-                }
-            };
-            var modelLayout = CreateDescriptorLayout(modelBindings);
 
             // Create the pipeline layout with both descriptor set layouts
-            _pipelineLayout = PipelineLayoutWrapper.Create(Context, new[] { camLayout, modelLayout }, pushConstants);
+            _pipelineLayout = PipelineLayoutWrapper.Create(Context, vertexShaderModule, fragmentShaderModule);
 
             // Create Uniform Buffers
 
@@ -384,10 +370,15 @@ namespace RockEngine.Vulkan.Rendering
                 DescriptorCount = 2,
                 Type = DescriptorType.UniformBuffer
             };
-            var descPool = Context.DescriptorPoolFactory.GetOrCreatePool(2, new[] { poolSize });
+            var poolSamplerSize = new DescriptorPoolSize()
+            {
+                DescriptorCount = 2,
+                Type = DescriptorType.CombinedImageSampler
+            };
+            var descPool = Context.DescriptorPoolFactory.GetOrCreatePool(4, new[] { poolSize, poolSamplerSize });
+            _pipeline.AutoCreateDescriptorSets(descPool);
 
-            _pipeline.CreateDescriptorSet("CameraData", descPool, camLayout);
-            _pipeline.CreateDescriptorSet("Model", descPool, modelLayout);
+          
         }
 
         private unsafe DescriptorSetLayout CreateDescriptorLayout(DescriptorSetLayoutBinding[] bindings)
@@ -405,6 +396,7 @@ namespace RockEngine.Vulkan.Rendering
                 return layout;
             }
         }
+       
 
 
         private void CreateSwapChain(ISurfaceHandler surfacehandler)

@@ -11,25 +11,24 @@ namespace RockEngine.Vulkan.VkObjects
         private readonly VulkanContext _context;
         private readonly PipelineLayoutWrapper _pipelineLayout;
         private readonly RenderPassWrapper _renderPass;
-        private Dictionary<string, DescriptorSet> _descriptorSets;
+        private readonly Dictionary<uint, DescriptorSet> _descriptorSets;
         private readonly uint _requiredDescriptorSets;
-        private readonly List<WriteDescriptorSet> _writeDescriptorSets = new List<WriteDescriptorSet>();
 
         public PipelineLayoutWrapper Layout => _pipelineLayout;
         public RenderPassWrapper RenderPass => _renderPass;
         public string Name => _name;
         public uint RequiredDescriptorSets => _requiredDescriptorSets;
-        public IReadOnlyDictionary<string, DescriptorSet> DescriptorSets => _descriptorSets;
+        public IReadOnlyDictionary<uint, DescriptorSet> DescriptorSets => _descriptorSets;
 
         public PipelineWrapper(VulkanContext context, string name, Pipeline pipeline, PipelineLayoutWrapper pipelineLayout, RenderPassWrapper renderPass)
-            :base(pipeline)
+            : base(pipeline)
         {
             _context = context;
             _pipelineLayout = pipelineLayout;
             _renderPass = renderPass;
             _name = name;
             _requiredDescriptorSets = (uint)pipelineLayout.DescriptorSetLayouts.Length;
-            _descriptorSets = new Dictionary<string, DescriptorSet>((int)RequiredDescriptorSets);
+            _descriptorSets = new Dictionary<uint, DescriptorSet>((int)RequiredDescriptorSets);
         }
 
         public unsafe static PipelineWrapper Create(VulkanContext context, string name, ref GraphicsPipelineCreateInfo ci, RenderPassWrapper renderPass, PipelineLayoutWrapper layout)
@@ -40,54 +39,8 @@ namespace RockEngine.Vulkan.VkObjects
             return new PipelineWrapper(context, name, pipeline, layout, renderPass);
         }
 
-        public unsafe bool SetBuffer(UniformBufferObject ubo, uint bindingIndex)
+        public unsafe DescriptorSet CreateDescriptorSet(uint location, DescriptorPoolWrapper descriptorPool, DescriptorSetLayout descriptorSetLayout)
         {
-            if (!_descriptorSets.TryGetValue(ubo.Name, out var descriptorSet))
-            {
-                return false;
-            }
-
-            var bufferInfo = new DescriptorBufferInfo
-            {
-                Buffer = ubo.UniformBuffer,
-                Offset = 0,
-                Range = ubo.Size
-            };
-
-            var writeDescriptorSet = new WriteDescriptorSet
-            {
-                SType = StructureType.WriteDescriptorSet,
-                DstSet = descriptorSet,
-                DstBinding = bindingIndex,
-                DstArrayElement = 0,
-                DescriptorType = DescriptorType.UniformBuffer,
-                DescriptorCount = 1,
-                PBufferInfo = &bufferInfo
-            };
-            _writeDescriptorSets.Add(writeDescriptorSet);
-            var currentDescriptros = _writeDescriptorSets.ToArray();
-            fixed (WriteDescriptorSet* descSet = currentDescriptros)
-            {
-                _context.QueueMutex.WaitOne();
-                try
-                {
-                    _context.Api.UpdateDescriptorSets(_context.Device, (uint)currentDescriptros.Length, descSet, 0, null);
-                }
-                finally
-                {
-                    _context.QueueMutex.ReleaseMutex();
-                }
-            }
-
-            return true;
-        }
-        public unsafe DescriptorSet CreateDescriptorSet(string setName, DescriptorPoolWrapper descriptorPool, DescriptorSetLayout descriptorSetLayout)
-        {
-            if (_descriptorSets.ContainsKey(setName))
-            {
-                throw new InvalidOperationException($"Descriptor set with name {setName} already exists.");
-            }
-
             var allocInfo = new DescriptorSetAllocateInfo
             {
                 SType = StructureType.DescriptorSetAllocateInfo,
@@ -100,9 +53,18 @@ namespace RockEngine.Vulkan.VkObjects
             _context.Api.AllocateDescriptorSets(_context.Device, &allocInfo, &descriptorSet)
                   .ThrowCode("Failed to allocate descriptor set");
 
-            _descriptorSets[setName] = descriptorSet;
+            _descriptorSets[location] = descriptorSet;
             return descriptorSet;
         }
+
+        public unsafe void AutoCreateDescriptorSets(DescriptorPoolWrapper descriptorPool)
+        {
+            foreach (var layoutWrapper in _pipelineLayout.DescriptorSetLayouts)
+            {
+                CreateDescriptorSet(layoutWrapper.SetLocation, descriptorPool, layoutWrapper.DescriptorSetLayout);
+            }
+        }
+
 
         protected override void Dispose(bool disposing)
         {

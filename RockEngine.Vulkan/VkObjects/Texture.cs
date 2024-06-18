@@ -7,19 +7,25 @@ using SkiaSharp;
 
 namespace RockEngine.Vulkan.VkObjects
 {
-    internal class Texture : IDisposable
+    public class Texture : IDisposable
     {
         private readonly VulkanContext _context;
-        private readonly Silk.NET.Vulkan.Image _vkImage;
+        private readonly Image _image;
         private readonly DeviceMemory _imageMemory;
         private readonly ImageView _imageView;
+        private readonly Sampler _sampler;
 
-        private Texture(VulkanContext context, Silk.NET.Vulkan.Image vkImage, DeviceMemory imageMemory, ImageView imageView)
+        public Image Image => _image;
+        public ImageView ImageView => _imageView;
+        public Sampler Sampler => _sampler;
+
+        private Texture(VulkanContext context, Image vkImage, DeviceMemory imageMemory, ImageView imageView, Sampler sampler)
         {
             _context = context;
-            _vkImage = vkImage;
+            _image = vkImage;
             _imageMemory = imageMemory;
             _imageView = imageView;
+            _sampler = sampler;
         }
 
         public static async Task<Texture> FromFileAsync(VulkanContext context, string path, CancellationToken cancellationToken = default)
@@ -39,10 +45,32 @@ namespace RockEngine.Vulkan.VkObjects
             // Copy image data from SkiaSharp to Vulkan image
             CopyImageData(context, skImage, vkImage);
 
-            return new Texture(context, vkImage, imageMemory, imageView);
+            // Create a sampler
+            var samplerCreateInfo = new SamplerCreateInfo
+            {
+                SType = StructureType.SamplerCreateInfo,
+                MagFilter = Filter.Linear,
+                MinFilter = Filter.Linear,
+                AddressModeU = SamplerAddressMode.Repeat,
+                AddressModeV = SamplerAddressMode.Repeat,
+                AddressModeW = SamplerAddressMode.Repeat,
+                AnisotropyEnable = Vk.True,
+                MaxAnisotropy = 16,
+                BorderColor = BorderColor.IntOpaqueBlack,
+                UnnormalizedCoordinates = Vk.False,
+                CompareEnable = Vk.False,
+                CompareOp = CompareOp.Always,
+                MipmapMode = SamplerMipmapMode.Linear,
+                MipLodBias = 0.0f,
+                MinLod = 0.0f,
+                MaxLod = 0.0f
+            };
+            var sampler = Sampler.Create(context, in samplerCreateInfo);
+
+            return new Texture(context, vkImage, imageMemory, imageView, sampler);
         }
 
-        private unsafe static Silk.NET.Vulkan.Image CreateVulkanImage(VulkanContext context, uint width, uint height, Format format)
+        private unsafe static Image CreateVulkanImage(VulkanContext context, uint width, uint height, Format format)
         {
             var imageInfo = new ImageCreateInfo
             {
@@ -64,22 +92,18 @@ namespace RockEngine.Vulkan.VkObjects
                 InitialLayout = ImageLayout.Undefined
             };
 
-            context.Api.CreateImage(context.Device, in imageInfo, null, out var vkImage)
-                .ThrowCode("Failed to create image!");
-
-            return vkImage;
+            return Image.Create(context, in imageInfo);
         }
 
-        private static DeviceMemory AllocateImageMemory(VulkanContext context, Silk.NET.Vulkan.Image vkImage)
+        private static DeviceMemory AllocateImageMemory(VulkanContext context, Image vkImage)
         {
             context.Api.GetImageMemoryRequirements(context.Device, vkImage, out var memRequirements);
 
             return DeviceMemory.Allocate(context, memRequirements, MemoryPropertyFlags.DeviceLocalBit);
         }
 
-        private unsafe static ImageView CreateImageView(VulkanContext context, Silk.NET.Vulkan.Image vkImage, Format format)
+        private unsafe static ImageView CreateImageView(VulkanContext context, Image vkImage, Format format)
         {
-
             var viewInfo = new ImageViewCreateInfo
             {
                 SType = StructureType.ImageViewCreateInfo,
@@ -98,9 +122,9 @@ namespace RockEngine.Vulkan.VkObjects
 
             return ImageView.Create(context, in viewInfo);
         }
+
         private static CommandBufferWrapper BeginSingleTimeCommands(VulkanContext context, CommandPoolWrapper commandPool)
         {
-
             var allocInfo = new CommandBufferAllocateInfo
             {
                 SType = StructureType.CommandBufferAllocateInfo,
@@ -108,14 +132,13 @@ namespace RockEngine.Vulkan.VkObjects
                 CommandPool = commandPool,
                 CommandBufferCount = 1
             };
-            var beginInfo = new CommandBufferBeginInfo
+            var commandBuffer = CommandBufferWrapper.Create(context, in allocInfo, commandPool);
+
+            commandBuffer.Begin(new CommandBufferBeginInfo
             {
                 SType = StructureType.CommandBufferBeginInfo,
                 Flags = CommandBufferUsageFlags.OneTimeSubmitBit
-            };
-            var commandBuffer = CommandBufferWrapper.Create(context, in allocInfo, commandPool);
-
-           commandBuffer.Begin(beginInfo);
+            });
 
             return commandBuffer;
         }
@@ -124,8 +147,8 @@ namespace RockEngine.Vulkan.VkObjects
         {
             var vk = context.Api;
             var device = context.Device;
+            commandBuffer.End();
 
-            vk.EndCommandBuffer(commandBuffer).ThrowCode("Failed to end command buffer!");
             var commandBufferNative = commandBuffer.VkObjectNative;
             var submitInfo = new SubmitInfo
             {
@@ -139,6 +162,7 @@ namespace RockEngine.Vulkan.VkObjects
 
             vk.FreeCommandBuffers(device, commandPool, 1, in commandBufferNative);
         }
+
         private static Format GetVulkanFormat(SKImage skImage)
         {
             // Determine the Vulkan format based on the SkiaSharp image color type
@@ -150,7 +174,7 @@ namespace RockEngine.Vulkan.VkObjects
             };
         }
 
-        private static void CopyImageData(VulkanContext context, SKImage skImage, Silk.NET.Vulkan.Image vkImage)
+        private static void CopyImageData(VulkanContext context, SKImage skImage, Image vkImage)
         {
             var format = GetVulkanFormat(skImage);
             var width = (uint)skImage.Width;
@@ -172,23 +196,28 @@ namespace RockEngine.Vulkan.VkObjects
             skImage.PeekPixels().ReadPixels(new SKImageInfo((int)width, (int)height, skImage.ColorType, SKAlphaType.Premul), data, (int)(width * 4));
             stagingBuffer.UnmapMemory();
 
-            // Transition the Vulkan image layout to TRANSFER_DST_OPTIMAL
-            TransitionImageLayout(context, vkImage, format, ImageLayout.Undefined, ImageLayout.TransferDstOptimal);
+            context.QueueMutex.WaitOne();
+            try
+            {
+                // Transition the Vulkan image layout to TRANSFER_DST_OPTIMAL
+                TransitionImageLayout(context, vkImage, ImageLayout.Undefined, ImageLayout.TransferDstOptimal);
 
-            // Copy the data from the staging buffer to the Vulkan image
-            CopyBufferToImage(context, stagingBuffer, vkImage, width, height);
+                // Copy the data from the staging buffer to the Vulkan image
+                CopyBufferToImage(context, stagingBuffer, vkImage, width, height);
 
-            // Transition the Vulkan image layout to SHADER_READ_ONLY_OPTIMAL
-            TransitionImageLayout(context, vkImage, format, ImageLayout.TransferDstOptimal, ImageLayout.ShaderReadOnlyOptimal);
-
-            // Clean up the staging buffer
-            stagingBuffer.Dispose();
+                // Transition the Vulkan image layout to SHADER_READ_ONLY_OPTIMAL
+                TransitionImageLayout(context, vkImage, ImageLayout.TransferDstOptimal, ImageLayout.ShaderReadOnlyOptimal);
+            }
+            finally
+            {
+                context.QueueMutex.ReleaseMutex();
+            }
         }
 
-        private unsafe static void TransitionImageLayout(VulkanContext context, Silk.NET.Vulkan.Image image, Format format, ImageLayout oldLayout, ImageLayout newLayout)
+        private unsafe static void TransitionImageLayout(VulkanContext context, Image image, ImageLayout oldLayout, ImageLayout newLayout)
         {
             var commandPool = context.GetOrCreateCommandPool();
-            var commandBuffer = BeginSingleTimeCommands(context, commandPool);
+            using var commandBuffer = BeginSingleTimeCommands(context, commandPool);
 
             var barrier = new ImageMemoryBarrier
             {
@@ -196,6 +225,8 @@ namespace RockEngine.Vulkan.VkObjects
                 OldLayout = oldLayout,
                 NewLayout = newLayout,
                 Image = image,
+                SrcQueueFamilyIndex = Vk.QueueFamilyIgnored,
+                DstQueueFamilyIndex = Vk.QueueFamilyIgnored,
                 SubresourceRange = new ImageSubresourceRange
                 {
                     AspectMask = ImageAspectFlags.ColorBit,
@@ -206,15 +237,28 @@ namespace RockEngine.Vulkan.VkObjects
                 }
             };
 
-            var srcStage = PipelineStageFlags.TopOfPipeBit;
-            var dstStage = PipelineStageFlags.TransferBit;
+            PipelineStageFlags srcStage;
+            PipelineStageFlags dstStage;
 
-            if (oldLayout == ImageLayout.TransferDstOptimal && newLayout == ImageLayout.ShaderReadOnlyOptimal)
+            if (oldLayout == ImageLayout.Undefined && newLayout == ImageLayout.TransferDstOptimal)
+            {
+                barrier.SrcAccessMask = 0;
+                barrier.DstAccessMask = AccessFlags.TransferWriteBit;
+
+                srcStage = PipelineStageFlags.TopOfPipeBit;
+                dstStage = PipelineStageFlags.TransferBit;
+            }
+            else if (oldLayout == ImageLayout.TransferDstOptimal && newLayout == ImageLayout.ShaderReadOnlyOptimal)
             {
                 barrier.SrcAccessMask = AccessFlags.TransferWriteBit;
                 barrier.DstAccessMask = AccessFlags.ShaderReadBit;
+
                 srcStage = PipelineStageFlags.TransferBit;
                 dstStage = PipelineStageFlags.FragmentShaderBit;
+            }
+            else
+            {
+                throw new Exception("Unsupported layout transition");
             }
 
             context.Api.CmdPipelineBarrier(commandBuffer, srcStage, dstStage, 0, 0, null, 0, null, 1, &barrier);
@@ -225,7 +269,7 @@ namespace RockEngine.Vulkan.VkObjects
         private unsafe static void CopyBufferToImage(VulkanContext context, BufferWrapper stagingBuffer, Silk.NET.Vulkan.Image image, uint width, uint height)
         {
             var commandPool = context.GetOrCreateCommandPool();
-            var commandBuffer = BeginSingleTimeCommands(context, commandPool);
+            using var commandBuffer = BeginSingleTimeCommands(context, commandPool);
 
             var region = new BufferImageCopy
             {
@@ -250,8 +294,9 @@ namespace RockEngine.Vulkan.VkObjects
 
         public unsafe void Dispose()
         {
+            _sampler.Dispose();
             _imageView.Dispose();
-            _context.Api.DestroyImage(_context.Device, _vkImage, null);
+            _image.Dispose();
             _imageMemory.Dispose();
         }
     }

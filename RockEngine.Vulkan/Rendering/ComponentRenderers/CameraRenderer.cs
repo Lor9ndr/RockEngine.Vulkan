@@ -20,26 +20,22 @@ namespace RockEngine.Vulkan.Rendering.ComponentRenderers
             }
 
             _ubo = UniformBufferObject.Create(context, (ulong)Marshal.SizeOf<Matrix4x4>(), "CameraData");
-            context.PipelineManager.CurrentPipeline.SetBuffer(_ubo,0);
+            context.PipelineManager.SetBuffer(_ubo,0, 0);
             _isInitialized = true;
             return new ValueTask();
         }
 
         public async Task RenderAsync(Camera component, VulkanContext context, CommandBufferWrapper commandBuffer)
         {
-            if (context.PipelineManager.CurrentPipeline is null)
-            {
-                return;
-            }
             var viewProjectionMatrix = component.ViewProjectionMatrix;
 
-            await _ubo.UniformBuffer.SendDataAsync(viewProjectionMatrix);
+            await _ubo!.UniformBuffer.SendDataAsync(viewProjectionMatrix);
         }
 
 
         public void Dispose()
         {
-            _ubo.Dispose();
+            _ubo?.Dispose();
         }
 
     }

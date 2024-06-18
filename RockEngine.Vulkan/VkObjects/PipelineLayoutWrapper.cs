@@ -1,5 +1,4 @@
 ﻿using RockEngine.Vulkan.Helpers;
-using RockEngine.Vulkan.VkObjects.Reflected;
 using RockEngine.Vulkan.VulkanInitilizers;
 
 using Silk.NET.Vulkan;
@@ -12,77 +11,61 @@ namespace RockEngine.Vulkan.VkObjects
         public readonly DescriptorSetLayoutWrapper[] DescriptorSetLayouts;
         private readonly VulkanContext _context;
 
-
         private PipelineLayoutWrapper(VulkanContext context, PipelineLayout layout, PushConstantRange[] pushConstantRanges, DescriptorSetLayoutWrapper[] descriptorSetLayouts)
-            :base(layout)
+            : base(layout)
         {
             PushConstantRanges = pushConstantRanges;
             DescriptorSetLayouts = descriptorSetLayouts;
             _context = context;
         }
 
-        public static unsafe PipelineLayoutWrapper Create(VulkanContext context, UniformBufferObjectReflected[] uniformsReflected, PushConstantRange[] pushConstantRanges)
+        public static unsafe PipelineLayoutWrapper Create(VulkanContext context, params ShaderModuleWrapper[] shaders)
         {
-            var descriptorSetLayouts = CreateDescriptorSetLayouts(context, uniformsReflected);
-            var setLayouts = descriptorSetLayouts.Select(s => s.DescriptorSetLayout).ToArray();
-
-            fixed(DescriptorSetLayout* setLayout =  setLayouts)
-            fixed(PushConstantRange* constantRange = pushConstantRanges)
-            {
-                var layoutInfo = new PipelineLayoutCreateInfo
-                {
-                    SType = StructureType.PipelineLayoutCreateInfo,
-                    SetLayoutCount = (uint)descriptorSetLayouts.Length,
-                    PSetLayouts = setLayout,
-                    PushConstantRangeCount = (uint)pushConstantRanges.Length,
-                    PPushConstantRanges = constantRange
-                };
-                context.Api.CreatePipelineLayout(context.Device, &layoutInfo, null, out var pipelineLayout)
-                    .ThrowCode("Failed to create pipeline layout");
-                return new PipelineLayoutWrapper(context, pipelineLayout, pushConstantRanges, descriptorSetLayouts);
-            }
-        }
-        public static unsafe PipelineLayoutWrapper Create(VulkanContext context, DescriptorSetLayout[] descriptorSetLayouts, PushConstantRange[] pushConstantRanges)
-        {
-
+            var descriptorSetLayoutsWrapped = CreateDescriptorSetLayouts(context, shaders);
+            var pushConstantRanges = shaders.SelectMany(s => s.ConstantRanges).ToArray();
+            var descriptorSetLayouts = descriptorSetLayoutsWrapped.Select(s=>s.DescriptorSetLayout).ToArray();
             fixed (DescriptorSetLayout* setLayout = descriptorSetLayouts)
             fixed (PushConstantRange* constantRange = pushConstantRanges)
             {
                 var layoutInfo = new PipelineLayoutCreateInfo
                 {
                     SType = StructureType.PipelineLayoutCreateInfo,
-                    SetLayoutCount = (uint)descriptorSetLayouts.Length,
+                    SetLayoutCount = (uint)descriptorSetLayoutsWrapped.Length,
                     PSetLayouts = setLayout,
                     PushConstantRangeCount = (uint)pushConstantRanges.Length,
                     PPushConstantRanges = constantRange
                 };
                 context.Api.CreatePipelineLayout(context.Device, &layoutInfo, null, out var pipelineLayout)
                     .ThrowCode("Failed to create pipeline layout");
-                return new PipelineLayoutWrapper(context, pipelineLayout, pushConstantRanges, 
-                    descriptorSetLayouts.Select(s => new DescriptorSetLayoutWrapper(s)).ToArray());
+                return new PipelineLayoutWrapper(context, pipelineLayout, pushConstantRanges,
+                    descriptorSetLayoutsWrapped);
             }
         }
 
-        private static unsafe DescriptorSetLayoutWrapper[] CreateDescriptorSetLayouts(VulkanContext context, UniformBufferObjectReflected[] reflectedUbos)
+        private static unsafe DescriptorSetLayoutWrapper[] CreateDescriptorSetLayouts(VulkanContext context, ShaderModuleWrapper[] shaders)
         {
-            var groupedUboSets = reflectedUbos.GroupBy(ubo => ubo.Set);
+            var setLayouts = new List<DescriptorSetLayoutWrapper>();
+            var descriptorSetLayoutsReflected = shaders.SelectMany(s => s.DescriptorSetLayouts)
+                                                       .GroupBy(d => d.Set)
+                                                       .ToDictionary(g => g.Key, g => g.ToList());
 
-            List<DescriptorSetLayoutWrapper> setLayouts = new List<DescriptorSetLayoutWrapper>();
-            foreach (var ubo in reflectedUbos)
+            foreach (var set in descriptorSetLayoutsReflected)
             {
-                var bindings = new List<DescriptorSetLayoutBinding>
-                {
-                    new DescriptorSetLayoutBinding
-                    {
-                        Binding = ubo.Binding,
-                        DescriptorType = DescriptorType.UniformBuffer,
-                        DescriptorCount = 1,
-                        StageFlags = ubo.ShaderStage,
-                        PImmutableSamplers = null
-                    }
-                };
+                var bindings = new List<DescriptorSetLayoutBinding>();
 
-                fixed (DescriptorSetLayoutBinding* pBindings = bindings.ToArray())
+                foreach (var layout in set.Value)
+                {
+                    bindings.AddRange(layout.Bindings.Select(b => new DescriptorSetLayoutBinding
+                    {
+                        Binding = b.Binding,
+                        DescriptorType = b.DescriptorType,
+                        DescriptorCount = b.DescriptorCount,
+                        StageFlags = b.StageFlags,
+                        PImmutableSamplers = b.PImmutableSamplers
+                    }));
+                }
+                var bindignsArr = bindings.ToArray();
+                fixed (DescriptorSetLayoutBinding* pBindings = bindignsArr)
                 {
                     var layoutInfo = new DescriptorSetLayoutCreateInfo
                     {
@@ -93,16 +76,15 @@ namespace RockEngine.Vulkan.VkObjects
 
                     context.Api.CreateDescriptorSetLayout(context.Device, in layoutInfo, null, out var descriptorSetLayout)
                         .ThrowCode("Failed to create descriptor set layout");
-                    setLayouts.Add(new DescriptorSetLayoutWrapper(descriptorSetLayout));
+                    setLayouts.Add(new DescriptorSetLayoutWrapper(descriptorSetLayout, set.Key, bindignsArr));
                 }
             }
+
             return setLayouts.ToArray();
         }
 
-
         protected override void Dispose(bool disposing)
         {
-
             if (!_disposed)
             {
                 if (disposing)
@@ -120,7 +102,6 @@ namespace RockEngine.Vulkan.VkObjects
                         {
                             _context.Api.DestroyDescriptorSetLayout(_context.Device, item.DescriptorSetLayout, null);
                         }
-
 
                         _context.Api.DestroyPipelineLayout(_context.Device, _vkObject, null);
                     }

@@ -86,13 +86,21 @@ namespace RockEngine.Vulkan.VkObjects
                 };
                 queueCreateInfos[i] = queueCreateInfo;
             }
+
+            PhysicalDeviceFeatures deviceFeatures = new PhysicalDeviceFeatures()
+            {
+                 SamplerAnisotropy = true
+            };
+
             using var pqueueCreateInfo = queueCreateInfos.AsMemory().Pin();
             // Create device create info
             var deviceCreateInfo = new DeviceCreateInfo
             {
                 SType = StructureType.DeviceCreateInfo,
                 QueueCreateInfoCount = (uint)queueCreateInfos.Length,
-                PQueueCreateInfos = (DeviceQueueCreateInfo*)pqueueCreateInfo.Pointer
+                PQueueCreateInfos = (DeviceQueueCreateInfo*)pqueueCreateInfo.Pointer,
+                PEnabledFeatures = &deviceFeatures
+                
             };
 
             // Set extensions
@@ -177,9 +185,10 @@ namespace RockEngine.Vulkan.VkObjects
             if (extensionsSupported)
             {
                 SwapChainSupportDetails swapChainSupport = VkHelper.QuerySwapChainSupport(device, surface);
-                swapChainAdequate = swapChainSupport.Formats.Any() && swapChainSupport.PresentModes.Any();
+                swapChainAdequate = swapChainSupport.Formats.Length != 0 && swapChainSupport.PresentModes.Length != 0;
             }
-            return indices.IsComplete() && extensionsSupported && swapChainAdequate;
+            var features = api.GetPhysicalDeviceFeatures(device);
+            return indices.IsComplete() && extensionsSupported && swapChainAdequate && features.SamplerAnisotropy;
         }
 
         private static unsafe bool CheckDeviceExtensionsSupported(Vk api, PhysicalDevice device, string[] extensions)
@@ -196,7 +205,7 @@ namespace RockEngine.Vulkan.VkObjects
             {
                 requiredExtensions.Remove(SilkMarshal.PtrToString((nint)extension.ExtensionName));
             }
-            return !requiredExtensions.Any();
+            return requiredExtensions.Count == 0;
         }
     }
 }

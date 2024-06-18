@@ -3,6 +3,10 @@ using RockEngine.Vulkan.VulkanInitilizers;
 
 using Silk.NET.Vulkan;
 
+using SkiaSharp;
+
+using System.Diagnostics;
+
 namespace RockEngine.Vulkan.VkObjects
 {
     public class CommandBufferWrapper : VkObject<CommandBuffer>, IBegginable<CommandBufferBeginInfo>
@@ -19,12 +23,14 @@ namespace RockEngine.Vulkan.VkObjects
 
         public void Begin(CommandBufferBeginInfo beginInfo)
         {
-            _context.Api.BeginCommandBuffer(_vkObject, ref beginInfo);
+            _context.Api.BeginCommandBuffer(_vkObject, ref beginInfo)
+                .ThrowCode("Failed to begin command buffer!");
         }
 
         public void End()
         {
-            _context.Api.EndCommandBuffer(_vkObject);
+            _context.Api.EndCommandBuffer(_vkObject)
+                .ThrowCode("Failed to end command buffer!");
         }
 
         public void CopyBuffer(BufferWrapper srcBuffer, BufferWrapper dstBuffer, ulong size)
@@ -78,23 +84,24 @@ namespace RockEngine.Vulkan.VkObjects
         {
             context.Api.AllocateCommandBuffers(context.Device, in ai, out CommandBuffer cb)
                 .ThrowCode("Failed to allocate command buffer");
+            Debugger.Log(1, "Allocation", $"Allocated a command buffer with handle: {cb.Handle}");
 
             return new CommandBufferWrapper(context, in cb, commandPool);
         }
 
         protected override void Dispose(bool disposing)
         {
-            if (!_disposed)
+            if (_disposed)
             {
-                if (disposing)
-                {
-                    // Dispose managed state (managed objects).
-                }
-
-                _context.Api.FreeCommandBuffers(_context.Device, _commandPool, 1, in _vkObject);
-
-                _disposed = true;
+                return;
             }
+            if (disposing)
+            {
+                // Dispose managed state (managed objects).
+            }
+            //_context.Api.FreeCommandBuffers(_context.Device, _commandPool, 1, in _vkObject);
+/*            _vkObject = default;
+            _disposed = true;*/
         }
     }
 }
