@@ -99,6 +99,7 @@ namespace RockEngine.Vulkan
             await entity.AddComponent(_context, new MeshComponent(entity, DefaultMesh.PlaneVertices, DefaultMesh.PlaneIndices));
             await entity.AddComponent(_context, new Material(entity, await Texture.FromFileAsync(_context, "C:\\Users\\Админис\\Desktop\\texture.jpg",CancellationToken)));
             entity.Transform.Scale = new Vector3(10,10,10);
+            entity.Transform.Position = new Vector3(0,0,-10);
             await scene.AddEntity(_context, entity);
 
             await scene.InitializeAsync(_context);

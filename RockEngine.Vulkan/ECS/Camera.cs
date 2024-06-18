@@ -6,6 +6,8 @@ using RockEngine.Vulkan.VulkanInitilizers;
 
 using System.Numerics;
 
+using static System.Net.Mime.MediaTypeNames;
+
 namespace RockEngine.Vulkan.ECS
 {
     internal class Camera : Component, IRenderableComponent<Camera>
@@ -21,7 +23,6 @@ namespace RockEngine.Vulkan.ECS
         private Matrix4x4 _viewProjectionMatrix;
         private IComponentRenderer<Camera> _renderer;
 
-        protected Vector3 _target;
         protected float _fov = MathHelper.PiOver2;
 
         // Rotation around the X axis (radians)
@@ -30,7 +31,8 @@ namespace RockEngine.Vulkan.ECS
 
         protected Vector3 _right = Vector3.UnitX;
 
-        protected Vector3 _up = Vector3.UnitY;
+        protected Vector3 _up ;
+        private Vector3 _front;
 
         public float Fov
         {
@@ -73,22 +75,16 @@ namespace RockEngine.Vulkan.ECS
         }
 
 
-        public Vector3 Target
-        {
-            get => _target;
-            set
-            {
-                _target = value;
-                UpdateVectors();
-            }
-        }
+        public Vector3 Right => _right;
 
-        public Vector3 Up
+        public Vector3 Up => _up;
+
+        public Vector3 Front
         {
-            get => _up;
+            get => _front;
             set
             {
-                _up = value;
+                _front = value;
                 UpdateVectors();
             }
         }
@@ -131,15 +127,13 @@ namespace RockEngine.Vulkan.ECS
             _aspectRatio = aspectRatio;
             _nearClip = nearClip;
             _farClip = farClip;
-            _target = Vector3.UnitZ;
-            _up = Vector3.UnitY;
             UpdateVectors();
             UpdateProjectionMatrix();
         }
 
         protected void UpdateViewMatrix()
         {
-            _viewMatrix = Matrix4x4.CreateLookAt(Entity.Transform.Position, _target, _up);
+            _viewMatrix = Matrix4x4.CreateLookAt(Entity.Transform.Position, Entity.Transform.Position + Front, _up);
             UpdateViewProjectionMatrix();
         }
 
@@ -157,16 +151,16 @@ namespace RockEngine.Vulkan.ECS
         protected void UpdateVectors()
         {
             // First the front matrix is calculated using some basic trigonometry
-            _target = new Vector3(MathF.Cos(_pitch) * MathF.Cos(_yaw), MathF.Sin(_pitch), MathF.Cos(_pitch) * MathF.Sin(_yaw));
+            _front = new Vector3(MathF.Cos(_pitch) * MathF.Cos(_yaw), MathF.Sin(_pitch), MathF.Cos(_pitch) * MathF.Sin(_yaw));
 
             // We need to make sure the vectors are all normalized, as otherwise we would get some funky results
-            _target = Vector3.Normalize(_target);
+            _front = Vector3.Normalize(_front);
 
             // Calculate both the right and the up vector using cross product
             // Note that we are calculating the right from the global up, this behaviour might
             // not be what you need for all cameras so keep this in mind if you do not want a FPS camera
-            _right = Vector3.Normalize(Vector3.Cross(_target, Vector3.UnitY));
-            _up = Vector3.Normalize(Vector3.Cross(_right, _target));
+            _right = Vector3.Normalize(Vector3.Cross(_front, Vector3.UnitY));
+            _up = Vector3.Normalize(Vector3.Cross(_right, _front));
             UpdateViewMatrix();
         }
 

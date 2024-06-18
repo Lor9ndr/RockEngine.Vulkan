@@ -52,24 +52,32 @@ namespace RockEngine.Vulkan.VkObjects
             {
                 throw new InvalidOperationException("No matching descriptor set layout found for the given set index and binding index.");
             }
-            foreach (var matchingPipeline in matchingPipelines)
+            _context.QueueMutex.WaitOne();
+            try
             {
-                var pipeline = matchingPipeline.Value;
-                var layout = pipeline.Layout.DescriptorSetLayouts.FirstOrDefault(s => s.SetLocation == setIndex && 
-                                                                        s.Bindings.Any(b => b.DescriptorType == DescriptorType.UniformBuffer && b.Binding == bindingIndex));
-                var writeDescriptorSet = new WriteDescriptorSet
+                foreach (var matchingPipeline in matchingPipelines)
                 {
-                    SType = StructureType.WriteDescriptorSet,
-                    DstSet = pipeline.DescriptorSets[layout.SetLocation],
-                    DstBinding = bindingIndex,
-                    DstArrayElement = 0,
-                    DescriptorType = DescriptorType.UniformBuffer,
-                    DescriptorCount = 1,
-                    PBufferInfo = &bufferInfo
-                };
-
-                _context.Api.UpdateDescriptorSets(_context.Device, 1, &writeDescriptorSet, 0, null);
+                    var pipeline = matchingPipeline.Value;
+                    var layout = pipeline.Layout.DescriptorSetLayouts.FirstOrDefault(s => s.SetLocation == setIndex &&
+                                                                            s.Bindings.Any(b => b.DescriptorType == DescriptorType.UniformBuffer && b.Binding == bindingIndex));
+                    var writeDescriptorSet = new WriteDescriptorSet
+                    {
+                        SType = StructureType.WriteDescriptorSet,
+                        DstSet = pipeline.DescriptorSets[layout.SetLocation],
+                        DstBinding = bindingIndex,
+                        DstArrayElement = 0,
+                        DescriptorType = DescriptorType.UniformBuffer,
+                        DescriptorCount = 1,
+                        PBufferInfo = &bufferInfo
+                    };
+                    _context.Api.UpdateDescriptorSets(_context.Device, 1, &writeDescriptorSet, 0, null);
+                }
             }
+            finally
+            {
+                _context.QueueMutex.ReleaseMutex();
+            }
+           
            
         }
         public unsafe void SetTexture(Texture texture, uint setIndex, uint bindingIndex)
