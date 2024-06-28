@@ -1,19 +1,31 @@
-﻿using Silk.NET.GLFW;
-using Silk.NET.Maths;
-using Silk.NET.Vulkan.Extensions.KHR;
-using Silk.NET.Vulkan;
-using Silk.NET.Windowing;
+﻿using RockEngine.Vulkan.VkObjects;
 
-using System.Numerics;
-using RockEngine.Vulkan.VkObjects;
-using static RockEngine.Vulkan.VulkanInitilizers.ISurfaceHandler;
+using Silk.NET.Core.Native;
+using Silk.NET.GLFW;
+
+using Silk.NET.Maths;
 using Silk.NET.SDL;
+using Silk.NET.Vulkan;
+using Silk.NET.Vulkan.Extensions.KHR;
+using Silk.NET.Windowing;
+using Silk.NET.Windowing.Sdl;
+
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Numerics;
+using System.Text;
+using System.Threading.Tasks;
+
+using static RockEngine.Vulkan.VulkanInitilizers.ISurfaceHandler;
+
+using Window = Silk.NET.SDL.Window;
 
 namespace RockEngine.Vulkan.VulkanInitilizers
 {
-    public class GlfwSurfaceHandler : VkObject<SurfaceKHR>, ISurfaceHandler
+    internal class SDLSurfaceHandler : VkObject<SurfaceKHR>, ISurfaceHandler
     {
-        private readonly IWindow _window;
+        private readonly IView _window;
         private readonly VulkanContext _context;
         private readonly KhrSurface _surfaceApi;
         private Vector2 _size;
@@ -28,8 +40,8 @@ namespace RockEngine.Vulkan.VulkanInitilizers
 
         public event FramebufferResizeHandler? OnFramebufferResize;
 
-        public GlfwSurfaceHandler(IWindow window, VulkanContext context, SurfaceKHR surface)
-            :base(surface)
+        public SDLSurfaceHandler(IView window, VulkanContext context, SurfaceKHR surface)
+            : base(surface)
         {
             _window = window;
             _context = context;
@@ -38,22 +50,39 @@ namespace RockEngine.Vulkan.VulkanInitilizers
             _window.Resize += SurfaceResized;
         }
 
-        public static unsafe GlfwSurfaceHandler CreateSurface(IWindow window, VulkanContext context)
+        public static unsafe SDLSurfaceHandler CreateSurface(IView window, VulkanContext context)
         {
             if (window.VkSurface is null)
             {
-                throw new Exception("Unable to create surface");
+                VkNonDispatchableHandle surface = new VkNonDispatchableHandle();
+
+                Sdl.GetApi().VulkanCreateSurface(SdlWindowing.GetHandle(window), context.Instance.VkObjectNative.ToHandle(), ref surface);
+                return new SDLSurfaceHandler(window, context, new SurfaceKHR(surface.Handle));
+
             }
-            var handle = window.VkSurface.Create<AllocationCallbacks>(context.Instance.VkObjectNative.ToHandle(), null);
-            var surface  = new SurfaceKHR(handle.Handle);
-            return new GlfwSurfaceHandler(window, context, surface);
+            else
+            {
+                var handle = window.VkSurface.Create<AllocationCallbacks>(context.Instance.VkObjectNative.ToHandle(), null);
+                var surface = new SurfaceKHR(handle.Handle);
+                return new SDLSurfaceHandler(window, context, surface);
+
+            }
+
+        }
+        public static unsafe SDLSurfaceHandler CreateSurface(Window* window, VulkanContext context)
+        {
+            VkNonDispatchableHandle surface = new VkNonDispatchableHandle();
+            var view = SdlWindowing.CreateFrom(window);
+
+            Sdl.GetApi().VulkanCreateSurface(window, context.Instance.VkObjectNative.ToHandle(), ref surface);
+            return new SDLSurfaceHandler(view, context, new SurfaceKHR(surface.Handle));
+
+
         }
 
         private unsafe Vector2 GetSurfaceSize()
         {
-            Glfw.GetApi().GetFramebufferSize((WindowHandle*)_window.Handle, out var width, out var height);
-            return new Vector2(width, height);
-
+            return new Vector2(_window.Size.X, _window.Size.Y);
         }
 
         private void SurfaceResized(Vector2D<int> obj)
@@ -86,7 +115,7 @@ namespace RockEngine.Vulkan.VulkanInitilizers
         }
 
         // Override finalizer only if 'Dispose(bool disposing)' has code to free unmanaged resources
-        ~GlfwSurfaceHandler()
+        ~SDLSurfaceHandler()
         {
             // Do not change this code. Put cleanup code in 'Dispose(bool disposing)' method
             Dispose(disposing: false);

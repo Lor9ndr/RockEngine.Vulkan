@@ -25,7 +25,7 @@ namespace RockEngine.Vulkan.VkBuilders
         private VulkanMultisampleStateInfoBuilder _multisampleStateBuilder;
         private VulkanColorBlendStateBuilder _colorBlendStateBuilder;
         private PipelineDynamicStateBuilder _dynamicStateBuilder;
-        private Dictionary<string, DescriptorSetLayout> _ubos = new Dictionary<string, DescriptorSetLayout>();
+        private PipelineDepthStencilStateCreateInfo _depthStencilState;
 
         public GraphicsPipelineBuilder(VulkanContext context, string name)
         {
@@ -94,9 +94,9 @@ namespace RockEngine.Vulkan.VkBuilders
             return this;
         }
 
-        public GraphicsPipelineBuilder AddUbo(string name, DescriptorSetLayout ubo)
+        public GraphicsPipelineBuilder AddDepthStencilState(PipelineDepthStencilStateCreateInfo pipelineDepthStencilStateCreateInfo)
         {
-            _ubos[name] = ubo;
+            _depthStencilState = pipelineDepthStencilStateCreateInfo;
             return this;
         }
 
@@ -119,6 +119,7 @@ namespace RockEngine.Vulkan.VkBuilders
             ArgumentNullException.ThrowIfNull(_multisampleStateBuilder);
             ArgumentNullException.ThrowIfNull(_rasterizerBuilder);
             ArgumentNullException.ThrowIfNull(_viewportStateBuilder);
+
             var pstages = _pipelineStageBuilder.Build();
             var pInputState = _vertexInputStateBuilder.Build();
             var pColorBlend = _colorBlendStateBuilder.Build();
@@ -126,7 +127,12 @@ namespace RockEngine.Vulkan.VkBuilders
             var pInputAssembly = _inputAssemblyBuilder.Build();
             var pMultisample = _multisampleStateBuilder.Build();
             var pRasterizer = _rasterizerBuilder.Build();
-            var pvpState = _viewportStateBuilder.Build();
+            var pVpState = _viewportStateBuilder.Build();
+
+            // Ensure the SType is correctly set
+            _depthStencilState.SType = StructureType.PipelineDepthStencilStateCreateInfo;
+
+            var pDepthState = CreateMemoryHandle(_depthStencilState);
 
             GraphicsPipelineCreateInfo ci = new GraphicsPipelineCreateInfo()
             {
@@ -139,11 +145,13 @@ namespace RockEngine.Vulkan.VkBuilders
                 PInputAssemblyState = (PipelineInputAssemblyStateCreateInfo*)pInputAssembly.Pointer,
                 PMultisampleState = (PipelineMultisampleStateCreateInfo*)pMultisample.Pointer,
                 PRasterizationState = (PipelineRasterizationStateCreateInfo*)pRasterizer.Pointer,
-                PViewportState = (PipelineViewportStateCreateInfo*)pvpState.Pointer,
+                PViewportState = (PipelineViewportStateCreateInfo*)pVpState.Pointer,
+                PDepthStencilState = (PipelineDepthStencilStateCreateInfo*)pDepthState.Pointer,
                 Layout = _pipelineLayout,
                 RenderPass = _renderPass,
                 Subpass = 0,
             };
+
             try
             {
                 _context.Api.CreateGraphicsPipelines(_context.Device, default, 1, in ci, null, out Pipeline pipeline)
@@ -166,5 +174,6 @@ namespace RockEngine.Vulkan.VkBuilders
                 _viewportStateBuilder.Dispose();
             }
         }
+
     }
 }

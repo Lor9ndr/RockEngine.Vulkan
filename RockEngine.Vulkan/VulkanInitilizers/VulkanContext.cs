@@ -6,6 +6,8 @@ using Silk.NET.Vulkan;
 using Silk.NET.Vulkan.Extensions.KHR;
 using Silk.NET.Windowing;
 
+using SkiaSharp;
+
 using System.Runtime.InteropServices;
 
 namespace RockEngine.Vulkan.VulkanInitilizers
@@ -15,35 +17,30 @@ namespace RockEngine.Vulkan.VulkanInitilizers
         public Vk Api { get; private set; }
         public InstanceWrapper Instance { get; private set; }
         public LogicalDeviceWrapper Device { get; private set; }
-        public ISurfaceHandler Surface { get; private set; }
         public CommandPoolManager CommandPoolManager { get; private set;}
         public DescriptorPoolFactory DescriptorPoolFactory { get; }
         public PipelineManager PipelineManager { get; }
+        public ISurfaceHandler Surface { get; private set;}
 
-        public readonly Mutex QueueMutex = new Mutex();
+        public Mutex QueueMutex = new Mutex();
 
         private readonly IWindow _window;
         private readonly string[] _validationLayers = ["VK_LAYER_KHRONOS_validation"];
-
-        public const int MAX_FRAMES_IN_FLIGHT = 2;
-        public int CurrentFrame { get; private set;}
+        private DebugUtilsMessengerCallbackFunctionEXT _debugCallback;
+        public const int MAX_FRAMES_IN_FLIGHT = 8;
 
         public VulkanContext(IWindow window, string appName)
         {
             _window = window;
             Api = Vk.GetApi();
             CreateInstance(appName);
-            CreateSurface();
+
+            Surface = SDLSurfaceHandler.CreateSurface(_window, this);
             CreateDevice();
             CommandPoolManager = new CommandPoolManager(this);
             PipelineManager = new PipelineManager(this);
             DescriptorPoolFactory = new DescriptorPoolFactory(this);
-        }
-
-
-        public void SwapFrame()
-        {
-            CurrentFrame = (CurrentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
+            
         }
 
         public CommandPoolWrapper GetOrCreateCommandPool()
@@ -70,8 +67,8 @@ namespace RockEngine.Vulkan.VulkanInitilizers
                 PApplicationInfo = &appInfo,
             };
 
-
-            IntPtr callbackPtr = Marshal.GetFunctionPointerForDelegate(DebugCallback);
+            _debugCallback = DebugUtilsMessengerCallbackFunctionEXT;
+            IntPtr callbackPtr = Marshal.GetFunctionPointerForDelegate(_debugCallback);
 
 
             PfnDebugUtilsMessengerCallbackEXT dbcallback = new PfnDebugUtilsMessengerCallbackEXT(
@@ -89,28 +86,24 @@ namespace RockEngine.Vulkan.VulkanInitilizers
                 .Build(ref ci);
 
             Marshal.FreeHGlobal((nint)appname);
+            Api.CurrentInstance = Instance;
         }
 
-        private void CreateSurface()
-        {
-            Surface = GlfwSurfaceHandler.CreateSurface(_window, this);
-        }
+       
 
         private void CreateDevice()
         {
             var device = PhysicalDeviceWrapper.Create(this);
             Device = LogicalDeviceWrapper.Create(Api, device, Surface, KhrSwapchain.ExtensionName);
+            Api.CurrentDevice = Device;
         }
 
-        unsafe Bool32 DebugCallback(DebugUtilsMessageSeverityFlagsEXT severity,
-               DebugUtilsMessageTypeFlagsEXT messageType,
-               DebugUtilsMessengerCallbackDataEXT* callbackData,
-               void* userData)
+        private unsafe uint DebugUtilsMessengerCallbackFunctionEXT(DebugUtilsMessageSeverityFlagsEXT messageSeverity, DebugUtilsMessageTypeFlagsEXT messageTypes, DebugUtilsMessengerCallbackDataEXT* pCallbackData, void* pUserData)
         {
-            var message = Marshal.PtrToStringUTF8((nint)callbackData->PMessage);
+            var message = Marshal.PtrToStringUTF8((nint)pCallbackData->PMessage);
 
             // Change console color based on severity
-            switch (severity)
+            switch (messageSeverity)
             {
                 case DebugUtilsMessageSeverityFlagsEXT.ErrorBitExt:
                     Console.ForegroundColor = ConsoleColor.Red;
@@ -129,13 +122,13 @@ namespace RockEngine.Vulkan.VulkanInitilizers
                     break;
             }
 
-            Console.WriteLine($"{severity} ||| {message}");
+            Console.WriteLine($"{messageSeverity} ||| {message}");
 
             // Reset console color to default
             Console.ResetColor();
 
             // Throw an exception if severity is ErrorBitEXT
-            if (severity == DebugUtilsMessageSeverityFlagsEXT.ErrorBitExt)
+            if (messageSeverity == DebugUtilsMessageSeverityFlagsEXT.ErrorBitExt)
             {
                throw new Exception($"Vulkan Error: {message}");
             }

@@ -28,5 +28,9 @@ namespace RockEngine.Vulkan.Helpers
             }
             throw new Exception(message + Environment.NewLine + result);
         }
+        public static bool HasStencilComponent(this Format format)
+        {
+            return format == Format.D32SfloatS8Uint || format == Format.D24UnormS8Uint;
+        }
     }
 }

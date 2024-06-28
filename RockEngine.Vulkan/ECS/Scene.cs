@@ -48,8 +48,9 @@ namespace RockEngine.Vulkan.ECS
 
         public async Task InitializeAsync(VulkanContext context)
         {
-            foreach (var item in _entities)
+            for (int i = 0; i < _entities.Count; i++)
             {
+                Entity? item = _entities[i];
                 await item.InitializeAsync(context);
             }
             _isInitalized = true;
@@ -58,16 +59,18 @@ namespace RockEngine.Vulkan.ECS
 
         public async Task RenderAsync(VulkanContext context, CommandBufferWrapper commandBuffer)
         {
-            foreach (var item in _entities)
+            for (int i = 0; i < _entities.Count; i++)
             {
+                Entity? item = _entities[i];
                 await item.RenderAsync(context, commandBuffer);
             }
         }
 
         internal void Update(double time)
         {
-            foreach (var item in _entities)
+            for (int i = 0; i < _entities.Count; i++)
             {
+                Entity? item = _entities[i];
                 item.Update(time);
             }
         }

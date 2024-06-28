@@ -59,7 +59,7 @@ namespace RockEngine.Vulkan.Rendering.ComponentRenderers
             _vertexBuffer = BufferWrapper.Create(context, in vertexBufferCreateInfo, MemoryPropertyFlags.DeviceLocalBit);
 
             // Copy Data from Staging Buffer to Vertex Buffer
-            stagingBuffer.CopyBuffer(context, _vertexBuffer, vertexBufferSize);
+            var t1 =  stagingBuffer.CopyBufferAsync(context, _vertexBuffer, vertexBufferSize);
 
             if (component.Indicies != null)
             {
@@ -91,8 +91,10 @@ namespace RockEngine.Vulkan.Rendering.ComponentRenderers
                 _indexBuffer = BufferWrapper.Create(context, in indexBufferCreateInfo, MemoryPropertyFlags.DeviceLocalBit);
 
                 // Copy Data from Staging Buffer to Index Buffer
-                stagingIndexBuffer.CopyBuffer(context, _indexBuffer, indexBufferSize);
+                await stagingBuffer.CopyBufferAsync(context, _indexBuffer, indexBufferSize);
             }
+
+            await t1;
 
             _isReady = true;
         }

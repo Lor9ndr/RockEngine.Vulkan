@@ -1,6 +1,8 @@
-﻿namespace RockEngine.Vulkan.VkObjects
+﻿using System.Runtime.InteropServices;
+
+namespace RockEngine.Vulkan.VkObjects
 {
-    public abstract class VkObject<T> : IDisposable
+    public abstract class VkObject<T> : IDisposable where T: struct 
     {
         protected T _vkObject;
         protected bool _disposed;
@@ -28,5 +30,6 @@
             GC.SuppressFinalize(this);
         }
         public static implicit operator T(VkObject<T> value) => value._vkObject;
+       
     }
 }

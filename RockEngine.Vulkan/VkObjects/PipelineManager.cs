@@ -50,36 +50,28 @@ namespace RockEngine.Vulkan.VkObjects
 
             if (!matchingPipelines.Any())
             {
-                throw new InvalidOperationException("No matching descriptor set layout found for the given set index and binding index.");
+                return;
             }
-            _context.QueueMutex.WaitOne();
-            try
+
+            foreach (var matchingPipeline in matchingPipelines)
             {
-                foreach (var matchingPipeline in matchingPipelines)
+                var pipeline = matchingPipeline.Value;
+                var layout = pipeline.Layout.DescriptorSetLayouts.FirstOrDefault(s => s.SetLocation == setIndex &&
+                                                                        s.Bindings.Any(b => b.DescriptorType == DescriptorType.UniformBuffer && b.Binding == bindingIndex));
+                var writeDescriptorSet = new WriteDescriptorSet
                 {
-                    var pipeline = matchingPipeline.Value;
-                    var layout = pipeline.Layout.DescriptorSetLayouts.FirstOrDefault(s => s.SetLocation == setIndex &&
-                                                                            s.Bindings.Any(b => b.DescriptorType == DescriptorType.UniformBuffer && b.Binding == bindingIndex));
-                    var writeDescriptorSet = new WriteDescriptorSet
-                    {
-                        SType = StructureType.WriteDescriptorSet,
-                        DstSet = pipeline.DescriptorSets[layout.SetLocation],
-                        DstBinding = bindingIndex,
-                        DstArrayElement = 0,
-                        DescriptorType = DescriptorType.UniformBuffer,
-                        DescriptorCount = 1,
-                        PBufferInfo = &bufferInfo
-                    };
-                    _context.Api.UpdateDescriptorSets(_context.Device, 1, &writeDescriptorSet, 0, null);
-                }
+                    SType = StructureType.WriteDescriptorSet,
+                    DstSet = pipeline.DescriptorSets[layout.SetLocation],
+                    DstBinding = bindingIndex,
+                    DstArrayElement = 0,
+                    DescriptorType = DescriptorType.UniformBuffer,
+                    DescriptorCount = 1,
+                    PBufferInfo = &bufferInfo
+                };
+                _context.Api.UpdateDescriptorSets(_context.Device, 1, &writeDescriptorSet, 0, null);
             }
-            finally
-            {
-                _context.QueueMutex.ReleaseMutex();
-            }
-           
-           
         }
+
         public unsafe void SetTexture(Texture texture, uint setIndex, uint bindingIndex)
         {
             var imageInfo = new DescriptorImageInfo
@@ -95,7 +87,7 @@ namespace RockEngine.Vulkan.VkObjects
 
             if (!matchingPipelines.Any())
             {
-                throw new InvalidOperationException("No matching descriptor set layout found for the given set index and binding index.");
+                return;
             }
             foreach (var matchingPipeline in matchingPipelines)
             {

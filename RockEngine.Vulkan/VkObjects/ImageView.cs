@@ -24,6 +24,10 @@ namespace RockEngine.Vulkan.VkObjects
 
         protected unsafe override void Dispose(bool disposing)
         {
+            if (_disposed)
+            {
+                return;
+            }
             _context.Api.DestroyImageView(_context.Device, _vkObject, null);
             _disposed = true;
         }

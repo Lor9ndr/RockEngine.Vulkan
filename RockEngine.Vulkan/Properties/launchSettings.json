@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "RockEngine.Vulkan": {
+      "commandName": "Project",
+      "nativeDebugging": true
+    }
+  }
+}

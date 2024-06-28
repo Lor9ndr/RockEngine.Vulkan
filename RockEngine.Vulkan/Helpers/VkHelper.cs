@@ -1,4 +1,5 @@
 ﻿using RockEngine.Vulkan.VkObjects;
+using RockEngine.Vulkan.VulkanInitilizers;
 
 using Silk.NET.Vulkan;
 
@@ -63,6 +64,47 @@ namespace RockEngine.Vulkan.Helpers
 
             return details;
         }
-       
+
+        public static CommandBufferWrapper BeginSingleTimeCommands(VulkanContext context, CommandPoolWrapper commandPool)
+        {
+            var allocInfo = new CommandBufferAllocateInfo
+            {
+                SType = StructureType.CommandBufferAllocateInfo,
+                Level = CommandBufferLevel.Primary,
+                CommandPool = commandPool,
+                CommandBufferCount = 1
+            };
+            var commandBuffer = CommandBufferWrapper.Create(context, in allocInfo, commandPool);
+
+            commandBuffer.Begin(new CommandBufferBeginInfo
+            {
+                SType = StructureType.CommandBufferBeginInfo,
+                Flags = CommandBufferUsageFlags.OneTimeSubmitBit
+            });
+
+            return commandBuffer;
+        }
+
+        public unsafe static void EndSingleTimeCommands(VulkanContext context, CommandBufferWrapper commandBuffer, CommandPoolWrapper commandPool)
+        {
+            context.QueueMutex.WaitOne();
+            var vk = context.Api;
+            var device = context.Device;
+            commandBuffer.End();
+
+
+            var commandBufferNative = commandBuffer.VkObjectNative;
+            var submitInfo = new SubmitInfo
+            {
+                SType = StructureType.SubmitInfo,
+                CommandBufferCount = 1,
+                PCommandBuffers = &commandBufferNative
+            };
+            vk.QueueSubmit(context.Device.GraphicsQueue, 1, in submitInfo, default);
+            vk.QueueWaitIdle(context.Device.GraphicsQueue);
+            vk.FreeCommandBuffers(device, commandPool, 1, in commandBufferNative);
+            context.QueueMutex.ReleaseMutex();
+        }
+
     }
 }

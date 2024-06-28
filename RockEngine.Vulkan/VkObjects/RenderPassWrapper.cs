@@ -1,5 +1,4 @@
 ﻿using RockEngine.Vulkan.Helpers;
-using RockEngine.Vulkan.VkObjects;
 using RockEngine.Vulkan.VulkanInitilizers;
 
 using Silk.NET.Vulkan;
@@ -33,42 +32,35 @@ namespace RockEngine.Vulkan.VkObjects
                 _disposed = true;
             }
         }
-        public static RenderPassWrapper Create(VulkanContext context, RenderPassCreateInfo createInfo)
+        public unsafe static RenderPassWrapper Create(VulkanContext context, in RenderPassCreateInfo createInfo)
         {
-            RenderPass renderPass;
-            unsafe
-            {
-                context.Api.CreateRenderPass(context.Device, in createInfo, null, out renderPass)
-                         .ThrowCode("Failed to create render pass.");
-            }
+            context.Api.CreateRenderPass(context.Device, in createInfo, null, out RenderPass renderPass)
+                     .ThrowCode("Failed to create render pass.");
 
             return new RenderPassWrapper(context, renderPass);
         }
-        public static RenderPassWrapper Create(VulkanContext context, SubpassDescription[] subpasses, AttachmentDescription[] attachments, SubpassDependency[] dependencies)
+        public unsafe static RenderPassWrapper Create(VulkanContext context, SubpassDescription[] subpasses, AttachmentDescription[] attachments, SubpassDependency[] dependencies)
         {
             RenderPass renderPass;
-            unsafe
+            fixed (SubpassDescription* pSubpasses = subpasses)
+            fixed (AttachmentDescription* pAttachments = attachments)
+            fixed (SubpassDependency* pDependencies = dependencies)
             {
-                fixed (SubpassDescription* pSubpasses = subpasses)
-                fixed (AttachmentDescription* pAttachments = attachments)
-                fixed (SubpassDependency* pDependencies = dependencies)
+                var createInfo = new RenderPassCreateInfo
                 {
-                    var createInfo = new RenderPassCreateInfo
-                    {
-                        SType = StructureType.RenderPassCreateInfo,
-                        PNext = null,
-                        Flags = 0,
-                        AttachmentCount = (uint)attachments.Length,
-                        PAttachments = pAttachments,
-                        SubpassCount = (uint)subpasses.Length,
-                        PSubpasses = pSubpasses,
-                        DependencyCount = (uint)dependencies.Length,
-                        PDependencies = pDependencies
-                    };
+                    SType = StructureType.RenderPassCreateInfo,
+                    PNext = null,
+                    Flags = 0,
+                    AttachmentCount = (uint)attachments.Length,
+                    PAttachments = pAttachments,
+                    SubpassCount = (uint)subpasses.Length,
+                    PSubpasses = pSubpasses,
+                    DependencyCount = (uint)dependencies.Length,
+                    PDependencies = pDependencies
+                };
 
-                    context.Api.CreateRenderPass(context.Device, in createInfo, null, out renderPass)
-                        .ThrowCode("Failed to create render pass.");
-                }
+                context.Api.CreateRenderPass(context.Device, in createInfo, null, out renderPass)
+                    .ThrowCode("Failed to create render pass.");
             }
 
             return new RenderPassWrapper(context, renderPass);

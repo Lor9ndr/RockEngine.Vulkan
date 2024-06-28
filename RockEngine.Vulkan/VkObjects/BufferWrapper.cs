@@ -37,9 +37,8 @@ namespace RockEngine.Vulkan.VkObjects
             _deviceMemory = DeviceMemory.Allocate(_context, memoryRequirements, memoryFlag);
         }
      
-        public void BindVertexBuffer(CommandBufferWrapper commandBuffer)
+        public void BindVertexBuffer(CommandBufferWrapper commandBuffer, ulong offset = 0)
         {
-            ulong offset = 0;
             _context.Api.CmdBindVertexBuffers(commandBuffer, 0, 1, in _vkObject, in offset);
         }
         public void BindIndexBuffer(CommandBufferWrapper commandBuffer)
@@ -66,9 +65,8 @@ namespace RockEngine.Vulkan.VkObjects
         /// <returns></returns>
         public async Task SendDataAsync<T>(T data, ulong offset = 0) where T : struct
         {
-            ulong bufferSize = (ulong)Marshal.SizeOf<T>();
 
-            MapMemory(bufferSize, offset, out var dataPtr);
+            MapMemory(Size, offset, out var dataPtr);
 
             byte[] byteArray = await StructArrayToByteArrayAsync(data);
             Marshal.Copy(byteArray, 0, dataPtr, byteArray.Length);
@@ -78,31 +76,31 @@ namespace RockEngine.Vulkan.VkObjects
 
         public void UnmapMemory() => _deviceMemory.Unmap();
 
-        public unsafe void CopyBuffer(VulkanContext context, BufferWrapper dstBuffer, ulong size)
+        public async Task CopyBufferAsync(VulkanContext context, BufferWrapper dstBuffer, ulong size)
         {
             context.QueueMutex.WaitOne();
-            try
+            var commandPool = context.GetOrCreateCommandPool();
+            var commandBufferAllocateInfoo = new CommandBufferAllocateInfo()
             {
-                var commandPool = context.GetOrCreateCommandPool();
-                var commandBufferAllocateInfoo = new CommandBufferAllocateInfo()
-                {
-                    SType = StructureType.CommandBufferAllocateInfo,
-                    Level= CommandBufferLevel.Primary,
-                    CommandPool = commandPool,
-                    CommandBufferCount = 1
-                };
-                using CommandBufferWrapper commandBuffer = CommandBufferWrapper.Create(context,ref commandBufferAllocateInfoo, commandPool);
+                SType = StructureType.CommandBufferAllocateInfo,
+                Level = CommandBufferLevel.Primary,
+                CommandPool = commandPool,
+                CommandBufferCount = 1
+            };
+            using CommandBufferWrapper commandBuffer = CommandBufferWrapper.Create(context, in commandBufferAllocateInfoo, commandPool);
 
-                commandBuffer.Begin(new CommandBufferBeginInfo
-                {
-                    SType = StructureType.CommandBufferBeginInfo,
-                    Flags = CommandBufferUsageFlags.OneTimeSubmitBit
-                });
+            commandBuffer.Begin(new CommandBufferBeginInfo
+            {
+                SType = StructureType.CommandBufferBeginInfo,
+                Flags = CommandBufferUsageFlags.OneTimeSubmitBit
+            });
 
-                commandBuffer.CopyBuffer(this, dstBuffer, size);
+            commandBuffer.CopyBuffer(this, dstBuffer, size);
 
-                commandBuffer.End();
-                var buffer = (CommandBuffer)commandBuffer;
+            commandBuffer.End();
+            var buffer = (CommandBuffer)commandBuffer;
+            unsafe
+            {
                 SubmitInfo submitInfo = new SubmitInfo()
                 {
                     SType = StructureType.SubmitInfo,
@@ -110,12 +108,9 @@ namespace RockEngine.Vulkan.VkObjects
                     PCommandBuffers = &buffer
                 };
                 context.Api.QueueSubmit(context.Device.GraphicsQueue, 1, &submitInfo, default);
-                context.Api.QueueWaitIdle(context.Device.GraphicsQueue);
             }
-            finally
-            {
-                context.QueueMutex.ReleaseMutex();
-            }
+            context.Api.QueueWaitIdle(context.Device.GraphicsQueue);
+            context.QueueMutex.ReleaseMutex();
         }
 
         public void MapMemory(ulong bufferSize, ulong offset, out nint pData)
@@ -177,20 +172,17 @@ namespace RockEngine.Vulkan.VkObjects
             return Task.FromResult(byteArray);
         }
 
-        public static BufferWrapper Create(VulkanContext context, in BufferCreateInfo ci, MemoryPropertyFlags flags)
+        public unsafe static BufferWrapper Create(VulkanContext context, in BufferCreateInfo ci, MemoryPropertyFlags flags)
         {
-            unsafe
-            {
-                context.Api.CreateBuffer(context.Device, in ci, null, out Buffer buffer)
-                    .ThrowCode("Failed to create buffer");
-                var memoryRequirements = context.Api.GetBufferMemoryRequirements(context.Device, buffer);
+            context.Api.CreateBuffer(context.Device, in ci, null, out Buffer buffer)
+                .ThrowCode("Failed to create buffer");
+            var memoryRequirements = context.Api.GetBufferMemoryRequirements(context.Device, buffer);
 
-               var deviceMemory = DeviceMemory.Allocate(context, memoryRequirements, flags);
+            var deviceMemory = DeviceMemory.Allocate(context, memoryRequirements, flags);
 
-                context.Api.BindBufferMemory(context.Device, buffer, deviceMemory, 0);
+            context.Api.BindBufferMemory(context.Device, buffer, deviceMemory, 0);
 
-                return new BufferWrapper(context, buffer, deviceMemory, memoryRequirements.Size);
-            }
+            return new BufferWrapper(context, buffer, deviceMemory, memoryRequirements.Size);
         }
 
         protected override void Dispose(bool disposing)

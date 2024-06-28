@@ -4,6 +4,7 @@ using RockEngine.Vulkan.VkBuilders;
 using Silk.NET.Core.Native;
 using Silk.NET.Core;
 using Silk.NET.Vulkan;
+using RockEngine.Vulkan.VulkanInitilizers;
 
 namespace RockEngine.Vulkan.VkObjects
 {
@@ -21,7 +22,6 @@ namespace RockEngine.Vulkan.VkObjects
         private readonly Queue _graphicsQueue;
         internal readonly QueueFamilyIndices QueueFamilyIndices;
         private readonly PhysicalDeviceWrapper _physicalDevice;
-
 
         public Queue PresentQueue => _presentQueue;
 
@@ -89,7 +89,8 @@ namespace RockEngine.Vulkan.VkObjects
 
             PhysicalDeviceFeatures deviceFeatures = new PhysicalDeviceFeatures()
             {
-                 SamplerAnisotropy = true
+                 SamplerAnisotropy = true,
+                 DepthClamp = true,
             };
 
             using var pqueueCreateInfo = queueCreateInfos.AsMemory().Pin();

@@ -20,7 +20,7 @@ namespace RockEngine.Vulkan.ECS
             foreach (var mouse in _inputContext.Mice)
             {
                 mouse.MouseMove += OnMouseMove;
-                mouse.Cursor.CursorMode = CursorMode.Raw;
+                //mouse.Cursor.CursorMode = CursorMode.Raw;
             }
         }
         private void ChangePosition(Vector3 offset)

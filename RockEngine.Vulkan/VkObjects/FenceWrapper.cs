@@ -5,7 +5,7 @@ using Silk.NET.Vulkan;
 
 namespace RockEngine.Vulkan.VkObjects
 {
-    internal class FenceWrapper : VkObject<Fence>
+    public class FenceWrapper : VkObject<Fence>
     {
         private readonly VulkanContext _context;
 

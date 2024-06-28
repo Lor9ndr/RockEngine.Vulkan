@@ -7,13 +7,13 @@ namespace RockEngine.Vulkan.VkBuilders
 {
     public class VulkanRasterizerBuilder : DisposableBuilder
     {
-        private Bool32 _depthClamp = false;
+        private Bool32 _depthClamp = true;
         private Bool32 _rasterDiscard = false;
         private float _width = 1.0f;
         private PolygonMode _mode = Silk.NET.Vulkan.PolygonMode.Fill;
-        private CullModeFlags _cull = CullModeFlags.BackBit;
+        private CullModeFlags _cull = CullModeFlags.None;
         private FrontFace _frontFace = Silk.NET.Vulkan.FrontFace.Clockwise;
-        private Bool32 _depthBias = false;
+        private Bool32 _depthBias = true;
 
         public VulkanRasterizerBuilder DepthClamp(Bool32 depthclamp)
         {
@@ -58,7 +58,7 @@ namespace RockEngine.Vulkan.VkBuilders
 
         public MemoryHandle Build()
         {
-            return CreateMemoryHandle([ new PipelineRasterizationStateCreateInfo()
+            return CreateMemoryHandle([new PipelineRasterizationStateCreateInfo()
             {
                 SType = StructureType.PipelineRasterizationStateCreateInfo,
                 CullMode = _cull,
