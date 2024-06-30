@@ -6,8 +6,6 @@ using RockEngine.Vulkan.VulkanInitilizers;
 
 using System.Numerics;
 
-using static System.Net.Mime.MediaTypeNames;
-
 namespace RockEngine.Vulkan.ECS
 {
     internal class Camera : Component, IRenderableComponent<Camera>
@@ -140,6 +138,12 @@ namespace RockEngine.Vulkan.ECS
         protected void UpdateProjectionMatrix()
         {
             _projectionMatrix = Matrix4x4.CreatePerspectiveFieldOfView(_fov, _aspectRatio, _nearClip, _farClip);
+            // flipside the perspective because vulkan(or System.Numerics) idk
+            _projectionMatrix *= new Matrix4x4(
+                1, 0, 0, 0,
+                0, -1, 0, 0,
+                0, 0, 1, 0,
+                0, 0, 0, 1);
             UpdateViewProjectionMatrix();
         }
 

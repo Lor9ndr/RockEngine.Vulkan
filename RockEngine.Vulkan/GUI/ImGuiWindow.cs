@@ -18,7 +18,6 @@ namespace RockEngine.Vulkan.GUI
         private readonly VulkanContext _context;
         private readonly ImGuiViewportPtr _vp;
         private readonly IWindow _window;
-        private SDLSurfaceHandler _surface;
         private BaseRenderer _renderer;
         private bool _ready;
         private readonly Task _task;
@@ -66,8 +65,8 @@ namespace RockEngine.Vulkan.GUI
             vp.PlatformUserData = (IntPtr)_gcHandle;
             _task = Task.Run(() =>
             {
-                _surface = SDLSurfaceHandler.CreateSurface(_window, context);
-                _renderer = new BaseRenderer(_context, _surface);
+                var surface = SDLSurfaceHandler.CreateSurface(_window, context);
+                _renderer = new BaseRenderer(_context, surface);
                 _ready = true;
                 _window.Run();
             });

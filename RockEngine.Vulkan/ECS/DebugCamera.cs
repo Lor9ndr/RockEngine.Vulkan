@@ -77,7 +77,7 @@ namespace RockEngine.Vulkan.ECS
 
             // Update the yaw and pitch
             Yaw += deltaX;
-            Pitch += deltaY; 
+            Pitch -= deltaY; 
 
             // Update the last mouse position
             _lastMousePosition = position;
