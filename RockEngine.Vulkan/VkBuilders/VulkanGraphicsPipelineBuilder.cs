@@ -26,6 +26,8 @@ namespace RockEngine.Vulkan.VkBuilders
         private VulkanColorBlendStateBuilder _colorBlendStateBuilder;
         private PipelineDynamicStateBuilder _dynamicStateBuilder;
         private PipelineDepthStencilStateCreateInfo _depthStencilState;
+        private DescriptorPoolSize[] _poolSizes;
+        private uint _maxSets;
 
         public GraphicsPipelineBuilder(VulkanContext context, string name)
         {
@@ -100,6 +102,17 @@ namespace RockEngine.Vulkan.VkBuilders
             return this;
         }
 
+        public GraphicsPipelineBuilder AddPoolSizes(DescriptorPoolSize[] poolSizes)
+        {
+            _poolSizes = poolSizes;
+            return this;
+        }
+        public GraphicsPipelineBuilder SetMaxSets(uint maxSets)
+        {
+            _maxSets = maxSets;
+            return this;
+        }
+
 
         /// <summary>
         /// Building the whole pipeline
@@ -157,7 +170,7 @@ namespace RockEngine.Vulkan.VkBuilders
                 _context.Api.CreateGraphicsPipelines(_context.Device, default, 1, in ci, null, out Pipeline pipeline)
                     .ThrowCode("Failed to create pipeline");
 
-                var pipelineWrapper = new PipelineWrapper(_context, _name, pipeline, _pipelineLayout, _renderPass);
+                var pipelineWrapper = new PipelineWrapper(_context, _name, pipeline, _pipelineLayout, _renderPass,_poolSizes, _maxSets);
 
                 _context.PipelineManager.AddPipeline(pipelineWrapper);
                 return pipelineWrapper;

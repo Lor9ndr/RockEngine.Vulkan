@@ -2,6 +2,8 @@
 
 using Silk.NET.Vulkan;
 
+using System.Diagnostics;
+
 namespace RockEngine.Vulkan.VkObjects
 {
     public class PipelineManager : IDisposable
@@ -20,9 +22,9 @@ namespace RockEngine.Vulkan.VkObjects
             _pipelines = new Dictionary<string, PipelineWrapper>();
         }
 
-        public PipelineWrapper CreatePipeline(VulkanContext context, string name, ref GraphicsPipelineCreateInfo ci, RenderPassWrapper renderPass, PipelineLayoutWrapper layout)
+        public PipelineWrapper CreatePipeline(VulkanContext context, string name, DescriptorPoolSize[] poolSizes, uint maxSets, ref GraphicsPipelineCreateInfo ci, RenderPassWrapper renderPass, PipelineLayoutWrapper layout)
         {
-            var pipeline = PipelineWrapper.Create(context, name, ref ci, renderPass, layout);
+            var pipeline = PipelineWrapper.Create(context, name,poolSizes, maxSets, ref ci, renderPass, layout);
             _pipelines[name] = pipeline;
             CurrentPipeline = pipeline;
             PipelineCreated?.Invoke(pipeline);
@@ -61,7 +63,7 @@ namespace RockEngine.Vulkan.VkObjects
                 var writeDescriptorSet = new WriteDescriptorSet
                 {
                     SType = StructureType.WriteDescriptorSet,
-                    DstSet = pipeline.DescriptorSets[layout.SetLocation],
+                    DstSet = pipeline.CreateDescriptorSet(setIndex,layout.DescriptorSetLayout),
                     DstBinding = bindingIndex,
                     DstArrayElement = 0,
                     DescriptorType = DescriptorType.UniformBuffer,
@@ -69,7 +71,26 @@ namespace RockEngine.Vulkan.VkObjects
                     PBufferInfo = &bufferInfo
                 };
                 _context.Api.UpdateDescriptorSets(_context.Device, 1, &writeDescriptorSet, 0, null);
+                ubo._descriptorSet = new DescriptorSetWrapper(writeDescriptorSet.DstSet, setIndex, true);
             }
+        }
+        public void Use(Texture texture, CommandBuffer cb, PipelineBindPoint bindPoint = PipelineBindPoint.Graphics)
+        {
+            uint offset = 0;
+            if (texture._attachedDescriptorSet.DescriptorSet.Handle != default)
+            {
+                _context.Api.CmdBindDescriptorSets(cb, bindPoint, CurrentPipeline.Layout, texture._attachedDescriptorSet.SetIndex, 1, ref texture._attachedDescriptorSet.DescriptorSet, 0, ref offset);
+            }
+            else
+            {
+                Debugger.Log(5, "Binding desciptors", "Failed to bind descriptor because texture was not setted");
+            }
+        }
+
+        public void Use(UniformBufferObject ubo, CommandBuffer cb, PipelineBindPoint bindPoint = PipelineBindPoint.Graphics)
+        {
+            uint offset = 0;
+            _context.Api.CmdBindDescriptorSets(cb, bindPoint, CurrentPipeline.Layout, ubo._descriptorSet.SetIndex, 1, ref ubo._descriptorSet.DescriptorSet, 0, ref offset);
         }
 
         public unsafe void SetTexture(Texture texture, uint setIndex, uint bindingIndex)
@@ -97,7 +118,7 @@ namespace RockEngine.Vulkan.VkObjects
                 var writeDescriptorSet = new WriteDescriptorSet
                 {
                     SType = StructureType.WriteDescriptorSet,
-                    DstSet = pipeline.DescriptorSets[layout.SetLocation],
+                    DstSet = pipeline.CreateDescriptorSet(setIndex, layout.DescriptorSetLayout),
                     DstBinding = bindingIndex,
                     DstArrayElement = 0,
                     DescriptorType = DescriptorType.CombinedImageSampler,
@@ -105,7 +126,7 @@ namespace RockEngine.Vulkan.VkObjects
                     PImageInfo = &imageInfo
                 };
                 _context.Api.UpdateDescriptorSets(_context.Device, 1, &writeDescriptorSet, 0, null);
-
+                texture._attachedDescriptorSet = new DescriptorSetWrapper(writeDescriptorSet.DstSet, setIndex, true);
             }
         }
         public PipelineWrapper GetPipeline(string name)

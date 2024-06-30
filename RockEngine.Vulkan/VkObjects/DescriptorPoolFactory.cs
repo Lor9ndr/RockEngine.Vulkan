@@ -22,6 +22,10 @@ namespace RockEngine.Vulkan.VkObjects
             // Check if there is an existing pool with enough available space and matching pool sizes
             foreach (var pool in _pools)
             {
+                if (_poolSizeMap[pool] == null)
+                {
+                    continue;
+                }
                 if (_poolUsageMap[pool] + maxSets <= pool.MaxSets && PoolSizesMatch(_poolSizeMap[pool], poolSizes))
                 {
                     _poolUsageMap[pool] += maxSets;

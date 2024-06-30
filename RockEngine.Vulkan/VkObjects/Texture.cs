@@ -19,6 +19,8 @@ namespace RockEngine.Vulkan.VkObjects
         public ImageView ImageView => _imageView;
         public Sampler Sampler => _sampler;
 
+        internal DescriptorSetWrapper _attachedDescriptorSet;
+
         private Texture(VulkanContext context, Image vkImage, DeviceMemory imageMemory, ImageView imageView, Sampler sampler)
         {
             _context = context;

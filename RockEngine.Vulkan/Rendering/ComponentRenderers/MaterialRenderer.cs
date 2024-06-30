@@ -8,11 +8,12 @@ namespace RockEngine.Vulkan.Rendering.ComponentRenderers
     {
         public async ValueTask InitializeAsync(Material component, VulkanContext context)
         {
-            context.PipelineManager.SetTexture(component.Texture, 0, 1);
+            context.PipelineManager.SetTexture(component.Texture, 2, 0);
         }
 
         public async Task RenderAsync(Material component, VulkanContext context, CommandBufferWrapper commandBuffer)
         {
+            context.PipelineManager.Use(component.Texture, commandBuffer);
         }
         public void Dispose()
         {

@@ -7,7 +7,6 @@
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <EnableUnmanagedDebugging>true</EnableUnmanagedDebugging>
-
   </PropertyGroup>
 
   <ItemGroup>
@@ -37,14 +36,39 @@
     </Reference>
   </ItemGroup>
 
+  <PropertyGroup>
+    <NativeOututPath>bin\$(Configuration)\$(TargetFramework)\runtimes\win-x64\native\</NativeOututPath>
+    <ShadersOutputPath>bin\$(Configuration)\$(TargetFramework)\Shaders\</ShadersOutputPath>
+    <GenerateDocumentationFile>True</GenerateDocumentationFile>
+    <SignAssembly>False</SignAssembly>
+  </PropertyGroup>
 
-  
+  <ItemGroup>
+    <NativeLibrary Include="$(SolutionDir)\deps\*.dll" />
+  </ItemGroup>
+
+  <Target Name="CopyNativeLibraries" AfterTargets="Build">
+    <Copy SourceFiles="@(NativeLibrary)" DestinationFolder="$(NativeOututPath)" />
+  </Target>
+
+  <Target Name="CopyRefs" AfterTargets="Build">
+    <Copy SourceFiles="..\refs\ImGui.NET.dll" DestinationFolder="$(OutputPath)" />
+  </Target>
+
   <Target Name="PostBuild" AfterTargets="PostBuildEvent">
     <!-- Echo each shader file found -->
     <Message Importance="high" Text="Compiling shader file: %(ShaderFiles.FullPath)" />
 
     <!-- Compile each shader file individually -->
     <Exec Command="glslc.exe %(ShaderFiles.FullPath) -o %(ShaderFiles.FullPath).spv" />
+  </Target>
+
+  <ItemGroup>
+    <CompiledShader Include="**\*.spv" />
+  </ItemGroup>
+
+  <Target Name="CopyCompiledShaders" AfterTargets="PostBuild">
+    <Copy SourceFiles="@(CompiledShader)" DestinationFolder="$(ShadersOutputPath)" />
   </Target>
 
 </Project>

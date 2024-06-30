@@ -2,18 +2,19 @@
 
 namespace RockEngine.Vulkan.VkObjects
 {
-    public struct DescriptorSetLayoutWrapper
+    public struct DescriptorSetWrapper
     {
-        public DescriptorSetLayout DescriptorSetLayout;
-        public uint SetLocation;
-        public readonly DescriptorSetLayoutBinding[] Bindings;
+        public DescriptorSet DescriptorSet;
+        public uint SetIndex;
+        public bool Updated;
 
-        public DescriptorSetLayoutWrapper(DescriptorSetLayout descriptorSetLayout, uint setLocation, DescriptorSetLayoutBinding[] bindignsArr)
+        public DescriptorSetWrapper(DescriptorSet descriptorSet, uint setIndex, bool updated = false)
         {
-            DescriptorSetLayout = descriptorSetLayout;
-            SetLocation = setLocation;
-            Bindings = bindignsArr;
+            DescriptorSet = descriptorSet;
+            SetIndex = setIndex;
+            Updated = updated;
         }
 
+        public static implicit operator DescriptorSet(DescriptorSetWrapper descriptorSet) => descriptorSet.DescriptorSet;
     }
 }

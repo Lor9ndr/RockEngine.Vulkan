@@ -108,23 +108,11 @@ namespace RockEngine.Vulkan.GUI
             };
 
             var descPool = _context.DescriptorPoolFactory.GetOrCreatePool(4, [poolSize, poolSamplerSize]);
-            _pipeline.AutoCreateDescriptorSets(descPool);
         }
 
-        public override async Task RenderAsync(Project p, CommandBufferWrapper commandBuffer, uint frameIndex)
+        public override async Task RenderAsync(Project p, CommandBufferWrapper commandBuffer, int frameIndex)
         {
             _context.Api.CmdBindPipeline(commandBuffer, PipelineBindPoint.Graphics, _pipeline);
-            unsafe
-            {
-                var descriptors = _pipeline.DescriptorSets.Values.ToArray();
-                if (descriptors.Length > 0)
-                {
-                    fixed (DescriptorSet* pDescriptors = descriptors)
-                        _context.Api.CmdBindDescriptorSets(commandBuffer, PipelineBindPoint.Graphics, _pipelineLayout, 0, (uint)descriptors.Length, pDescriptors, null);
-                }
-
-                   
-            }
             _context.PipelineManager.CurrentPipeline = _pipeline;
             foreach (var item in _elements)
             {

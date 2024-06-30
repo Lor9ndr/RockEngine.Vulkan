@@ -9,7 +9,7 @@ namespace RockEngine.Vulkan.Rendering
     {
         protected VulkanContext _context;
         protected readonly ISurfaceHandler _surface;
-        protected uint _currentFrameIndex;
+        protected int CurrentFrameIndex => _swapchain.CurrentFrameIndex;
         protected uint _currentImageIndex;
         protected bool _frameStarted;
         protected CommandBufferWrapper[] _commandBuffers;
@@ -25,13 +25,13 @@ namespace RockEngine.Vulkan.Rendering
             CreateSwapChain(surface);
         }
 
-        public CommandBufferWrapper GetCurrentCommandBuffer() => _commandBuffers[_currentFrameIndex];
+        public CommandBufferWrapper GetCurrentCommandBuffer() => _commandBuffers[CurrentFrameIndex];
         public RenderPassWrapper GetRenderPass() => _swapchain.RenderPass;
         public FramebufferWrapper GetCurrentFrameBuffer() => _swapchain.SwapchainFramebuffers[_currentImageIndex];
-        public uint FrameIndex => _currentFrameIndex;
+        public int FrameIndex => CurrentFrameIndex;
 
         protected abstract void CreateCommandBuffers();
-        public abstract CommandBufferWrapper? BeginFrame();
+        public abstract Task<CommandBufferWrapper?> BeginFrameAsync();
         public abstract void EndFrame();
         public abstract void BeginSwapchainRenderPass(CommandBufferWrapper commandBuffer);
         public abstract void EndSwapchainRenderPass(CommandBufferWrapper commandBuffer);

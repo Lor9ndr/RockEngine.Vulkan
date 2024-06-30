@@ -653,45 +653,48 @@ namespace RockEngine.Vulkan.Rendering.ImGuiRender
         /// <summary>
         /// Renders the ImGui draw list data.
         /// </summary>
-        public void Render(CommandBuffer commandBuffer, Extent2D swapChainExtent)
+        public void RenderAsync(CommandBuffer commandBuffer, Extent2D swapChainExtent)
         {
             if (_frameBegun)
             {
                 _frameBegun = false;
 
-
                 ImGui.Render();
                 RenderImDrawData(ImGui.GetDrawData(), commandBuffer, swapChainExtent);
-                // Update and Render additional Platform Windows
-                var io = ImGui.GetIO();
-                if ((io.ConfigFlags & ImGuiConfigFlags.ViewportsEnable) != 0)
+            }
+        }
+        public async Task RenderWindowsAsync()
+        {
+            // Update and Render additional Platform Windows
+            var io = ImGui.GetIO();
+            if ((io.ConfigFlags & ImGuiConfigFlags.ViewportsEnable) != 0)
+            {
+                ImGui.UpdatePlatformWindows();
+                ImGuiPlatformIOPtr platformIO = ImGui.GetPlatformIO();
+                for (int i = 1; i < platformIO.Viewports.Size; i++) // Skip first because it is mainviewport
                 {
-                    ImGui.UpdatePlatformWindows();
-                    ImGuiPlatformIOPtr platformIO = ImGui.GetPlatformIO();
-                    for (int i = 1; i < platformIO.Viewports.Size; i++)
+                    ImGuiViewportPtr vp = platformIO.Viewports[i];
+                    ImGuiWindow window = (ImGuiWindow)GCHandle.FromIntPtr(vp.PlatformUserData).Target;
+
+                    if (window.Ready)
                     {
-                        ImGuiViewportPtr vp = platformIO.Viewports[i];
-                        ImGuiWindow window = (ImGuiWindow)GCHandle.FromIntPtr(vp.PlatformUserData).Target;
-                        if (window.Ready)
+                        var vpCb = await window.Render.BeginFrameAsync();
+                        if (vpCb == null)
                         {
-                            var vpCb = window.Render.BeginFrame();
-                            if (vpCb == null)
-                            {
-                                continue;
-                            }
-                            window.Render.BeginSwapchainRenderPass(vpCb);
-                            io.DisplaySize = new Vector2(window.Window.Size.X, window.Window.Size.Y);
-
-                            if (_windowWidth > 0 && _windowHeight > 0)
-                            {
-                                io.DisplayFramebufferScale = new Vector2(window.Window.FramebufferSize.X / window.Window.Size.X, window.Window.FramebufferSize.Y / window.Window.Size.Y);
-                            }
-                            UpdateImGuiInput(window.Input);
-                            RenderImDrawData(vp.DrawData, vpCb, window.Extent);
-
-                            window.Render.EndSwapchainRenderPass(vpCb);
-                            window.Render.EndFrame();
+                            return;
                         }
+                        window.Render.BeginSwapchainRenderPass(vpCb);
+                        io.DisplaySize = new Vector2(window.Window.Size.X, window.Window.Size.Y);
+
+                        if (_windowWidth > 0 && _windowHeight > 0)
+                        {
+                            io.DisplayFramebufferScale = new Vector2(window.Window.FramebufferSize.X / window.Window.Size.X, window.Window.FramebufferSize.Y / window.Window.Size.Y);
+                        }
+                        UpdateImGuiInput(window.Input);
+                        RenderImDrawData(vp.DrawData, vpCb, window.Extent);
+
+                        window.Render.EndSwapchainRenderPass(vpCb);
+                        window.Render.EndFrame();
                     }
                 }
             }

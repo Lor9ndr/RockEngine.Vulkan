@@ -10,11 +10,12 @@ namespace RockEngine.Vulkan.VkObjects
         private readonly BufferWrapper _uniformBuffer;
         private readonly ulong _size;
         private readonly string _name;
-        private DescriptorSet _descriptorSet;
 
         public BufferWrapper UniformBuffer => _uniformBuffer;
         public ulong Size => _size;
         public string Name => _name;
+
+        internal DescriptorSetWrapper _descriptorSet;
 
         public UniformBufferObject(VulkanContext context, BufferWrapper uniformBuffer, ulong size, string name)
         {

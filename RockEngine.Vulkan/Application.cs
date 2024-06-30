@@ -3,15 +3,12 @@
 using RockEngine.Vulkan.Assets;
 using RockEngine.Vulkan.DI;
 using RockEngine.Vulkan.ECS;
-using RockEngine.Vulkan.GUI;
 using RockEngine.Vulkan.Rendering;
 using RockEngine.Vulkan.Rendering.ImGuiRender;
 using RockEngine.Vulkan.Utils;
-using RockEngine.Vulkan.VkObjects;
 using RockEngine.Vulkan.VulkanInitilizers;
 
 using Silk.NET.Input;
-using Silk.NET.SDL;
 using Silk.NET.Vulkan;
 using Silk.NET.Windowing;
 using Silk.NET.Windowing.Sdl;
@@ -83,27 +80,25 @@ namespace RockEngine.Vulkan
 
         private async Task DrawFrame(double obj)
         {
-
-            var commandBuffer = _baseRenderer.BeginFrame();
+            var commandBuffer =  await _baseRenderer.BeginFrameAsync();
             if (commandBuffer == null)
             {
                 return;
             }
-
 
             _imguiController.Update((float)obj);
             ImGui.ShowDemoWindow();
 
             _baseRenderer.BeginSwapchainRenderPass(commandBuffer);
 
-            await _sceneRenderSystem.RenderAsync(_project, commandBuffer, _baseRenderer.FrameIndex);
+             await _sceneRenderSystem.RenderAsync(_project, commandBuffer, _baseRenderer.FrameIndex);
 
-            _imguiController.Render(commandBuffer, _baseRenderer.Swapchain.Extent);
+            _imguiController.RenderAsync(commandBuffer, _baseRenderer.Swapchain.Extent);
 
             _baseRenderer.EndSwapchainRenderPass(commandBuffer);
             _baseRenderer.EndFrame();
 
-
+            await _imguiController.RenderWindowsAsync();
         }
 
         private async Task Window_Load()
@@ -140,12 +135,16 @@ namespace RockEngine.Vulkan
             await scene.AddEntity(context: _context, camera);
             var debug = camera.GetComponent<DebugCamera>();
 
-            var entity = new Entity();
-            await entity.AddComponent(_context, new MeshComponent(entity, DefaultMesh.CubeVertices));
-            await entity.AddComponent(_context, new Material(entity, await Texture.FromFileAsync(_context, "C:\\Users\\Админис\\Desktop\\texture.jpg",CancellationToken)));
-            entity.Transform.Scale = new Vector3(5,5,5);
-            entity.Transform.Position = new Vector3(0,0,-10);
-            await scene.AddEntity(_context, entity);
+            for (int i = 0; i < 1; i++)
+            {
+                var entity = new Entity();
+                await entity.AddComponent(_context, new MeshComponent(entity, DefaultMesh.CubeVertices));
+                await entity.AddComponent(_context, new Material(entity, await Texture.FromFileAsync(_context, "C:\\Users\\Админис\\Desktop\\texture.jpg", CancellationToken)));
+                entity.Transform.Scale = new Vector3(4, 4, 4);
+                entity.Transform.Position = new Vector3(0, 0, -5);
+                await scene.AddEntity(_context, entity);
+            }
+
 
             await scene.InitializeAsync(_context);
         }

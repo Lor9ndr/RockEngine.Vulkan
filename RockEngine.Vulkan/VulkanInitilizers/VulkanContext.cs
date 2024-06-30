@@ -22,12 +22,12 @@ namespace RockEngine.Vulkan.VulkanInitilizers
         public PipelineManager PipelineManager { get; }
         public ISurfaceHandler Surface { get; private set;}
 
-        public Mutex QueueMutex = new Mutex();
+        public SemaphoreSlim QueueSemaphore = new SemaphoreSlim(1,1);
 
         private readonly IWindow _window;
         private readonly string[] _validationLayers = ["VK_LAYER_KHRONOS_validation"];
         private DebugUtilsMessengerCallbackFunctionEXT _debugCallback;
-        public const int MAX_FRAMES_IN_FLIGHT = 8;
+        public const int MAX_FRAMES_IN_FLIGHT = 3;
 
         public VulkanContext(IWindow window, string appName)
         {

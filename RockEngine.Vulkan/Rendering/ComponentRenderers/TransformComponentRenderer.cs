@@ -33,6 +33,8 @@ namespace RockEngine.Vulkan.Rendering.ComponentRenderers
             }
             var model = component.GetModelMatrix();
             await _ubo.UniformBuffer.SendDataAsync(model, 0);
+            context.PipelineManager.Use(_ubo, commandBuffer);
+
         }
 
         public void Dispose()

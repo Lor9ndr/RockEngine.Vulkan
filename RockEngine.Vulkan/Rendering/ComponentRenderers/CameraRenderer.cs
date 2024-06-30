@@ -29,6 +29,7 @@ namespace RockEngine.Vulkan.Rendering.ComponentRenderers
         {
             var viewProjectionMatrix = component.ViewProjectionMatrix;
 
+            context.PipelineManager.Use(_ubo, commandBuffer);
             await _ubo!.UniformBuffer.SendDataAsync(viewProjectionMatrix);
         }
 

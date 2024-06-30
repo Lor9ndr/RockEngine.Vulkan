@@ -19,7 +19,7 @@ namespace RockEngine.Vulkan.Rendering
 
         public abstract Task Init(CancellationToken cancellationToken = default);
         protected abstract Task CreateGraphicsPipeline(CancellationToken cancellationToken = default);
-        public abstract Task  RenderAsync(Project p,CommandBufferWrapper commandBuffer, uint frameIndex);
+        public abstract Task  RenderAsync(Project p,CommandBufferWrapper commandBuffer, int frameIndex);
 
         public abstract void Dispose();
         

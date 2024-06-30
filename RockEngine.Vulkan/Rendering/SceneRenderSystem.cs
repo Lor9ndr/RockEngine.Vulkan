@@ -43,7 +43,16 @@ namespace RockEngine.Vulkan.Rendering
 
             // Create the pipeline layout with both descriptor set layouts
             _pipelineLayout = PipelineLayoutWrapper.Create(_context, vertexShaderModule, fragmentShaderModule);
-
+            var poolSize = new DescriptorPoolSize()
+            {
+                DescriptorCount = 10000,
+                Type = DescriptorType.UniformBuffer
+            };
+            var poolSamplerSize = new DescriptorPoolSize()
+            {
+                DescriptorCount = 10000,
+                Type = DescriptorType.CombinedImageSampler
+            };
             // Create Uniform Buffers
             using GraphicsPipelineBuilder pBuilder = new GraphicsPipelineBuilder(_context, "Base")
                .AddRenderPass(_renderPass)
@@ -77,37 +86,25 @@ namespace RockEngine.Vulkan.Rendering
                    StencilTestEnable = false,
                    Front = new StencilOpState(),
                    Back = new StencilOpState()
-               });
-
+               })
+               .AddPoolSizes([poolSize, poolSamplerSize])
+               .SetMaxSets(200);
             _pipeline = pBuilder.Build();
-
-            var poolSize = new DescriptorPoolSize()
-            {
-                DescriptorCount = 2,
-                Type = DescriptorType.UniformBuffer
-            };
-            var poolSamplerSize = new DescriptorPoolSize()
-            {
-                DescriptorCount = 2,
-                Type = DescriptorType.CombinedImageSampler
-            };
-
-            var descPool = _context.DescriptorPoolFactory.GetOrCreatePool(4, new[] { poolSize, poolSamplerSize });
-            _pipeline.AutoCreateDescriptorSets(descPool);
         }
 
-        public  override async Task RenderAsync(Project p, CommandBufferWrapper commandBuffer, uint frameIndex)
+        public  override async Task RenderAsync(Project p, CommandBufferWrapper commandBuffer, int frameIndex)
         {
             Debug.Assert(_pipeline != null, "Has to create graphics pipeline before rendering");
             Debug.Assert(_pipelineLayout != null, "Has to create graphics pipeline before rendering");
 
             _context.Api.CmdBindPipeline(commandBuffer, PipelineBindPoint.Graphics, _pipeline);
-            unsafe
-            {
-                var descriptors = _pipeline.DescriptorSets.Values.ToArray();
-                fixed (DescriptorSet* pDescriptors = descriptors)
-                    _context.Api.CmdBindDescriptorSets(commandBuffer, PipelineBindPoint.Graphics, _pipelineLayout, 0, (uint)descriptors.Length, pDescriptors, null);
-            }
+            //_pipeline.BindDummyDescriptors(commandBuffer);
+            //unsafe
+            //{
+            //    var descriptors = _pipeline.DescriptorSets.Values.ToArray();
+            //    fixed (DescriptorSet* pDescriptors = descriptors)
+            //        _context.Api.CmdBindDescriptorSets(commandBuffer, PipelineBindPoint.Graphics, _pipelineLayout, 0, (uint)descriptors.Length, pDescriptors, null);
+            //}
 
             _context.PipelineManager.CurrentPipeline = _pipeline;
 

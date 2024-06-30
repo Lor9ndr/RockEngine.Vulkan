@@ -65,7 +65,6 @@ namespace RockEngine.Vulkan.VkObjects
         /// <returns></returns>
         public async Task SendDataAsync<T>(T data, ulong offset = 0) where T : struct
         {
-
             MapMemory(Size, offset, out var dataPtr);
 
             byte[] byteArray = await StructArrayToByteArrayAsync(data);
@@ -78,7 +77,7 @@ namespace RockEngine.Vulkan.VkObjects
 
         public async Task CopyBufferAsync(VulkanContext context, BufferWrapper dstBuffer, ulong size)
         {
-            context.QueueMutex.WaitOne();
+            await context.QueueSemaphore.WaitAsync();
             var commandPool = context.GetOrCreateCommandPool();
             var commandBufferAllocateInfoo = new CommandBufferAllocateInfo()
             {
@@ -110,7 +109,7 @@ namespace RockEngine.Vulkan.VkObjects
                 context.Api.QueueSubmit(context.Device.GraphicsQueue, 1, &submitInfo, default);
             }
             context.Api.QueueWaitIdle(context.Device.GraphicsQueue);
-            context.QueueMutex.ReleaseMutex();
+            context.QueueSemaphore.Release();
         }
 
         public void MapMemory(ulong bufferSize, ulong offset, out nint pData)
@@ -150,7 +149,7 @@ namespace RockEngine.Vulkan.VkObjects
 
             try
             {
-                Parallel.For(0, data.Length, i =>
+                for (int i = 0; i < data.Length; i++)
                 {
                     nint localPtr = Marshal.AllocHGlobal(size);
                     try
@@ -162,7 +161,7 @@ namespace RockEngine.Vulkan.VkObjects
                     {
                         Marshal.FreeHGlobal(localPtr);
                     }
-                });
+                }
             }
             finally
             {
