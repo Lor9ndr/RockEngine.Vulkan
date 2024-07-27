@@ -137,7 +137,6 @@ namespace RockEngine.Vulkan
             _baseRenderer.BeginSwapchainRenderPass(in commandBuffer);
             await _sceneRenderSystem.RenderAsync(_project, commandBuffer, _baseRenderer.FrameIndex).ConfigureAwait(false);
             _imguiController.RenderAsync(commandBuffer, _baseRenderer.Swapchain.Extent);
-            await _imguiController.RenderWindows().ConfigureAwait(false);
             _baseRenderer.EndSwapchainRenderPass(in commandBuffer);
             _baseRenderer.EndFrame();
         }

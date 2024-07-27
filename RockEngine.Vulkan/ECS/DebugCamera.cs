@@ -25,7 +25,9 @@ namespace RockEngine.Vulkan.ECS
         }
         private void ChangePosition(Vector3 offset)
         {
-             Entity!.Transform.Position += offset;
+            Entity!.Transform.Position += offset;
+            UpdateViewMatrix();
+
         }
         public override void Update(double time)
         {
@@ -35,32 +37,26 @@ namespace RockEngine.Vulkan.ECS
             if (keyboard.IsKeyPressed(Key.A))
             {
                 ChangePosition(-Right * _moveSpeed * t);
-                UpdateVectors();
             }
             if (keyboard.IsKeyPressed(Key.S))
             {
                 ChangePosition(-Front * _moveSpeed * t);
-                UpdateVectors();
             }
             if (keyboard.IsKeyPressed(Key.W))
             {
                 ChangePosition(Front * _moveSpeed * t); 
-                UpdateVectors();
             }
             if (keyboard.IsKeyPressed(Key.D))
             {
                 ChangePosition(Right * _moveSpeed * t);
-                UpdateVectors();
             }
             if (keyboard.IsKeyPressed(Key.Space))
             {
                 ChangePosition(Up * _moveSpeed * t);
-                UpdateVectors();
             }
             if (keyboard.IsKeyPressed(Key.ShiftLeft) || keyboard.IsKeyPressed(Key.ShiftRight))
             {
                 ChangePosition(-Up * _moveSpeed * t);
-                UpdateVectors();
             }
         }
 

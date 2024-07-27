@@ -10,6 +10,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="ImGui.NET" Version="1.90.9.1" />
     <PackageReference Include="PropertyChanged.Fody" Version="4.1.0" />
     <PackageReference Include="Silk.NET.Core" Version="2.21.0" />
     <PackageReference Include="Silk.NET.Input" Version="2.21.0" />
@@ -29,31 +30,12 @@
     <ShaderFiles Include="**\*.vert" />
     <ShaderFiles Include="**\*.frag" />
   </ItemGroup>
-
-  <ItemGroup>
-    <Reference Include="ImGui.NET">
-      <HintPath>..\refs\ImGui.NET.dll</HintPath>
-    </Reference>
-  </ItemGroup>
-
   <PropertyGroup>
-    <NativeOututPath>bin\$(Configuration)\$(TargetFramework)\runtimes\win-x64\native\</NativeOututPath>
+
     <ShadersOutputPath>bin\$(Configuration)\$(TargetFramework)\Shaders\</ShadersOutputPath>
     <GenerateDocumentationFile>True</GenerateDocumentationFile>
-    <SignAssembly>False</SignAssembly>
+    <SignAssembly>True</SignAssembly>
   </PropertyGroup>
-
-  <ItemGroup>
-    <NativeLibrary Include="$(SolutionDir)\deps\*.dll" />
-  </ItemGroup>
-
-  <Target Name="CopyNativeLibraries" AfterTargets="Build">
-    <Copy SourceFiles="@(NativeLibrary)" DestinationFolder="$(NativeOututPath)" />
-  </Target>
-
-  <Target Name="CopyRefs" AfterTargets="Build">
-    <Copy SourceFiles="..\refs\ImGui.NET.dll" DestinationFolder="$(OutputPath)" />
-  </Target>
 
   <Target Name="PostBuild" AfterTargets="PostBuildEvent">
     <!-- Echo each shader file found -->

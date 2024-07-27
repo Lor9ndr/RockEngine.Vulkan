@@ -1,16 +1,13 @@
 ﻿using ImGuiNET;
 
-using RockEngine.Vulkan.GUI;
 using RockEngine.Vulkan.VulkanInitilizers;
 
 using Silk.NET.Core.Native;
 using Silk.NET.GLFW;
 using Silk.NET.Input;
 using Silk.NET.Maths;
-using Silk.NET.SDL;
 using Silk.NET.Vulkan;
 using Silk.NET.Windowing;
-using Silk.NET.Windowing.Sdl;
 
 using System.Numerics;
 using System.Runtime.CompilerServices;
@@ -20,6 +17,7 @@ using BlendFactor = Silk.NET.Vulkan.BlendFactor;
 using Buffer = Silk.NET.Vulkan.Buffer;
 using Image = Silk.NET.Vulkan.Image;
 using ImageView = Silk.NET.Vulkan.ImageView;
+using MouseButton = Silk.NET.Input.MouseButton;
 using Sampler = Silk.NET.Vulkan.Sampler;
 
 namespace RockEngine.Vulkan.Rendering.ImGuiRender
@@ -52,22 +50,7 @@ namespace RockEngine.Vulkan.Rendering.ImGuiRender
         private Image _fontImage;
         private ImageView _fontView;
         private ulong _bufferMemoryAlignment = 256;
-        private bool _platformInterfaceInitialized;
-        private List<IWindow> _windows = new List<IWindow>();
-        private ImGuiWindow _mainViewportWindow;
-        private Platform_CreateWindow _createWindow;
-        private Platform_DestroyWindow _destroyWindow;
-        private Platform_GetWindowPos _getWindowPos;
-        private Platform_ShowWindow _showWindow;
-        private Platform_SetWindowPos _setWindowPos;
-        private Platform_SetWindowSize _setWindowSize;
-        private Platform_GetWindowSize _getWindowSize;
-        private Platform_SetWindowFocus _setWindowFocus;
-        private Platform_GetWindowFocus _getWindowFocus;
-        private Platform_GetWindowMinimized _getWindowMinimized;
-        private Platform_SetWindowTitle _setWindowTitle;
-        private Platform_SetWindowAlphaDelegate _setWindowAlpha;
-        private Sdl sdlApi;
+
         /// <summary>
         /// Constructs a new ImGuiController.
         /// </summary>
@@ -79,39 +62,48 @@ namespace RockEngine.Vulkan.Rendering.ImGuiRender
         /// <param name="swapChainImageCt">The number of images used in the swap chain</param>
         /// <param name="swapChainFormat">The image format used by the swap chain</param>
         /// <param name="depthBufferFormat">The image formate used by the depth buffer, or null if no depth buffer is used</param>
-        public ImGuiController(VulkanContext vkContext, IWindow view, IInputContext input, PhysicalDevice physicalDevice, uint graphicsFamilyIndex, int swapChainImageCt, Format swapChainFormat, Format? depthBufferFormat, RenderPass renderPass)
+        public ImGuiController(VulkanContext vkContext,
+                               IWindow view,
+                               IInputContext input,
+                               PhysicalDevice physicalDevice,
+                               uint graphicsFamilyIndex,
+                               int swapChainImageCt,
+                               Format swapChainFormat,
+                               Format? depthBufferFormat,
+                               RenderPass renderPass)
         {
             _vkContext = vkContext;
-            sdlApi = Sdl.GetApi();
             var context = ImGui.CreateContext();
             ImGui.SetCurrentContext(context);
             var io = ImGui.GetIO();
             io.Fonts.AddFontDefault();
 
             io.ConfigFlags |= ImGuiConfigFlags.DockingEnable;
-            io.ConfigFlags |= ImGuiConfigFlags.ViewportsEnable;
 
 
 
             Init(vkContext.Api, view, input, physicalDevice, graphicsFamilyIndex, swapChainImageCt, swapChainFormat, depthBufferFormat, renderPass);
 
-            SetKeyMappings();
 
             SetPerFrameImGuiData(1f / 60f);
-            InitPlatformInterface();
 
             io.BackendFlags |= ImGuiBackendFlags.HasMouseCursors;
             io.BackendFlags |= ImGuiBackendFlags.HasSetMousePos;
-            io.BackendFlags |= ImGuiBackendFlags.PlatformHasViewports;
-            io.BackendFlags |= ImGuiBackendFlags.RendererHasViewports;
             io.BackendFlags |= ImGuiBackendFlags.RendererHasVtxOffset;
             ApplyDarkTheme();
             BeginFrame();
-
-         
         }
 
-        private unsafe void Init(Vk vk, IWindow view, IInputContext input, PhysicalDevice physicalDevice, uint graphicsFamilyIndex, int swapChainImageCt, Format swapChainFormat, Format? depthBufferFormat, RenderPass rp)
+        private unsafe void Init(
+            Vk vk,
+            IWindow view,
+            IInputContext input,
+            PhysicalDevice physicalDevice,
+            uint graphicsFamilyIndex,
+            int swapChainImageCt,
+            Format swapChainFormat,
+            Format? depthBufferFormat,
+            RenderPass rp)
         {
             _view = view;
             _input = input;
@@ -663,42 +655,6 @@ namespace RockEngine.Vulkan.Rendering.ImGuiRender
                 RenderImDrawData(ImGui.GetDrawData(), commandBuffer, swapChainExtent);
             }
         }
-        public async Task RenderWindows()
-        {
-            // Update and Render additional Platform Windows
-            var io = ImGui.GetIO();
-            if ((io.ConfigFlags & ImGuiConfigFlags.ViewportsEnable) != 0)
-            {
-                ImGui.UpdatePlatformWindows();
-                ImGuiPlatformIOPtr platformIO = ImGui.GetPlatformIO();
-                for (int i = 1; i < platformIO.Viewports.Size; i++) // Skip first because it is mainviewport
-                {
-                    ImGuiViewportPtr vp = platformIO.Viewports[i];
-                    ImGuiWindow window = (ImGuiWindow)GCHandle.FromIntPtr(vp.PlatformUserData).Target;
-
-                    if (window.Ready)
-                    {
-                        var vpCb = await window.Render.BeginFrameAsync();
-                        if (vpCb == null)
-                        {
-                            return;
-                        }
-                        window.Render.BeginSwapchainRenderPass(vpCb);
-                        io.DisplaySize = new Vector2(window.Window.Size.X, window.Window.Size.Y);
-
-                        if (_windowWidth > 0 && _windowHeight > 0)
-                        {
-                            io.DisplayFramebufferScale = new Vector2(window.Window.FramebufferSize.X / window.Window.Size.X, window.Window.FramebufferSize.Y / window.Window.Size.Y);
-                        }
-                        UpdateImGuiInput(window.Input);
-                        RenderImDrawData(vp.DrawData, vpCb, window.Extent);
-
-                        window.Render.EndSwapchainRenderPass(vpCb);
-                        window.Render.EndFrame();
-                    }
-                }
-            }
-        }
 
 
         /// <summary>
@@ -741,29 +697,26 @@ namespace RockEngine.Vulkan.Rendering.ImGuiRender
             var mouseState = input.Mice[0];
             var keyboardState = input.Keyboards[0];
 
-            //io.MouseDown[0] = mouseState.IsButtonPressed(MouseButton.Left);
-            //io.MouseDown[1] = mouseState.IsButtonPressed(MouseButton.Right);
-            //io.MouseDown[2] = mouseState.IsButtonPressed(MouseButton.Middle);
+            io.MouseDown[0] = mouseState.IsButtonPressed(MouseButton.Left);
+            io.MouseDown[1] = mouseState.IsButtonPressed(MouseButton.Right);
+            io.MouseDown[2] = mouseState.IsButtonPressed(MouseButton.Middle);
 
-            int x = 0, y = 0;
-            var buttons = sdlApi.GetGlobalMouseState(ref x, ref y);
-
-            io.MouseDown[0] = (buttons & 0b0001) != 0;
-            io.MouseDown[1] = (buttons & 0b0010) != 0;
-            io.MouseDown[2] = (buttons & 0b0100) != 0;
-            io.MousePos = new Vector2(x, y);
+            io.MousePos = mouseState.Position;
 
             var wheel = mouseState.ScrollWheels[0];
             io.MouseWheel = wheel.Y;
             io.MouseWheelH = wheel.X;
 
-            foreach (Key key in Enum.GetValues(typeof(Key)))
+            foreach (Key key in keyboardState.SupportedKeys)
             {
                 if (key == Key.Unknown)
                 {
                     continue;
                 }
-                io.KeysDown[(int)key] = keyboardState.IsKeyPressed(key);
+                if (TryMapKey(key, out ImGuiKey imguikey))
+                {
+                    io.AddKeyEvent(imguikey, keyboardState.IsKeyPressed(key));
+                }
             }
 
             foreach (var c in _pressedChars)
@@ -778,6 +731,67 @@ namespace RockEngine.Vulkan.Rendering.ImGuiRender
             io.KeyShift = keyboardState.IsKeyPressed(Key.ShiftLeft) || keyboardState.IsKeyPressed(Key.ShiftRight);
             io.KeySuper = keyboardState.IsKeyPressed(Key.SuperLeft) || keyboardState.IsKeyPressed(Key.SuperRight);
         }
+        private bool TryMapKey(Key key, out ImGuiKey result)
+        {
+            ImGuiKey KeyToImGuiKeyShortcut(Key keyToConvert, Key startKey1, ImGuiKey startKey2)
+            {
+                int changeFromStart1 = (int)keyToConvert - (int)startKey1;
+                return startKey2 + changeFromStart1;
+            }
+
+            result = key switch
+            {
+                >= Key.F1 and <= Key.F24 => KeyToImGuiKeyShortcut(key, Key.F1, ImGuiKey.F1),
+                >= Key.Keypad0 and <= Key.Keypad9 => KeyToImGuiKeyShortcut(key, Key.Keypad0, ImGuiKey.Keypad0),
+                >= Key.A and <= Key.Z => KeyToImGuiKeyShortcut(key, Key.A, ImGuiKey.A),
+                >= Key.Number0 and <= Key.Number9 => KeyToImGuiKeyShortcut(key, Key.Number0, ImGuiKey._0),
+                Key.ShiftLeft or Key.ShiftRight => ImGuiKey.ModShift,
+                Key.ControlLeft or Key.ControlRight => ImGuiKey.ModCtrl,
+                Key.AltLeft or Key.AltRight => ImGuiKey.ModAlt,
+                Key.SuperLeft or Key.SuperRight => ImGuiKey.ModSuper,
+                Key.Menu => ImGuiKey.Menu,
+                Key.Up => ImGuiKey.UpArrow,
+                Key.Down => ImGuiKey.DownArrow,
+                Key.Left => ImGuiKey.LeftArrow,
+                Key.Right => ImGuiKey.RightArrow,
+                Key.Enter => ImGuiKey.Enter,
+                Key.Escape => ImGuiKey.Escape,
+                Key.Space => ImGuiKey.Space,
+                Key.Tab => ImGuiKey.Tab,
+                Key.Backspace => ImGuiKey.Backspace,
+                Key.Insert => ImGuiKey.Insert,
+                Key.Delete => ImGuiKey.Delete,
+                Key.PageUp => ImGuiKey.PageUp,
+                Key.PageDown => ImGuiKey.PageDown,
+                Key.Home => ImGuiKey.Home,
+                Key.End => ImGuiKey.End,
+                Key.CapsLock => ImGuiKey.CapsLock,
+                Key.ScrollLock => ImGuiKey.ScrollLock,
+                Key.PrintScreen => ImGuiKey.PrintScreen,
+                Key.Pause => ImGuiKey.Pause,
+                Key.NumLock => ImGuiKey.NumLock,
+                Key.KeypadDivide => ImGuiKey.KeypadDivide,
+                Key.KeypadMultiply => ImGuiKey.KeypadMultiply,
+                Key.KeypadSubtract => ImGuiKey.KeypadSubtract,
+                Key.KeypadAdd => ImGuiKey.KeypadAdd,
+                Key.KeypadDecimal => ImGuiKey.KeypadDecimal,
+                Key.KeypadEnter => ImGuiKey.KeypadEnter,
+                Key.GraveAccent => ImGuiKey.GraveAccent,
+                Key.Minus => ImGuiKey.Minus,
+                Key.Equal => ImGuiKey.Equal,
+                Key.LeftBracket => ImGuiKey.LeftBracket,
+                Key.RightBracket => ImGuiKey.RightBracket,
+                Key.Semicolon => ImGuiKey.Semicolon,
+                Key.Apostrophe => ImGuiKey.Apostrophe,
+                Key.Comma => ImGuiKey.Comma,
+                Key.Period => ImGuiKey.Period,
+                Key.Slash => ImGuiKey.Slash,
+                Key.BackSlash => ImGuiKey.Backslash,
+                _ => ImGuiKey.None
+            };
+
+            return result != ImGuiKey.None;
+        }
 
         internal void PressChar(char keyChar)
         {
@@ -787,25 +801,8 @@ namespace RockEngine.Vulkan.Rendering.ImGuiRender
         private static void SetKeyMappings()
         {
             var io = ImGui.GetIO();
-            io.KeyMap[(int)ImGuiKey.Tab] = (int)Key.Tab;
-            io.KeyMap[(int)ImGuiKey.LeftArrow] = (int)Key.Left;
-            io.KeyMap[(int)ImGuiKey.RightArrow] = (int)Key.Right;
-            io.KeyMap[(int)ImGuiKey.UpArrow] = (int)Key.Up;
-            io.KeyMap[(int)ImGuiKey.DownArrow] = (int)Key.Down;
-            io.KeyMap[(int)ImGuiKey.PageUp] = (int)Key.PageUp;
-            io.KeyMap[(int)ImGuiKey.PageDown] = (int)Key.PageDown;
-            io.KeyMap[(int)ImGuiKey.Home] = (int)Key.Home;
-            io.KeyMap[(int)ImGuiKey.End] = (int)Key.End;
-            io.KeyMap[(int)ImGuiKey.Delete] = (int)Key.Delete;
-            io.KeyMap[(int)ImGuiKey.Backspace] = (int)Key.Backspace;
-            io.KeyMap[(int)ImGuiKey.Enter] = (int)Key.Enter;
-            io.KeyMap[(int)ImGuiKey.Escape] = (int)Key.Escape;
-            io.KeyMap[(int)ImGuiKey.A] = (int)Key.A;
-            io.KeyMap[(int)ImGuiKey.C] = (int)Key.C;
-            io.KeyMap[(int)ImGuiKey.V] = (int)Key.V;
-            io.KeyMap[(int)ImGuiKey.X] = (int)Key.X;
-            io.KeyMap[(int)ImGuiKey.Y] = (int)Key.Y;
-            io.KeyMap[(int)ImGuiKey.Z] = (int)Key.Z;
+
+           
         }
 
         private unsafe void RenderImDrawData(in ImDrawDataPtr drawDataPtr, in CommandBuffer commandBuffer, in Extent2D swapChainExtent)
@@ -894,7 +891,7 @@ namespace RockEngine.Vulkan.Rendering.ImGuiRender
                 }
                 for (int n = 0; n < drawData.CmdListsCount; n++)
                 {
-                    ImDrawList* cmd_list = drawDataPtr.NativePtr->CmdLists[n];
+                    ImDrawList* cmd_list = drawDataPtr.CmdLists[n];
                     Unsafe.CopyBlock(vtx_dst, cmd_list->VtxBuffer.Data.ToPointer(), (uint)cmd_list->VtxBuffer.Size * (uint)sizeof(ImDrawVert));
                     Unsafe.CopyBlock(idx_dst, cmd_list->IdxBuffer.Data.ToPointer(), (uint)cmd_list->IdxBuffer.Size * sizeof(ushort));
                     vtx_dst += cmd_list->VtxBuffer.Size;
@@ -960,7 +957,7 @@ namespace RockEngine.Vulkan.Rendering.ImGuiRender
             int indexOffset = 0;
             for (int n = 0; n < drawData.CmdListsCount; n++)
             {
-                ImDrawList* cmd_list = drawDataPtr.NativePtr->CmdLists[n];
+                ImDrawList* cmd_list = drawDataPtr.CmdLists[n];
                 for (int cmd_i = 0; cmd_i < cmd_list->CmdBuffer.Size; cmd_i++)
                 {
                     ref ImDrawCmd pcmd = ref cmd_list->CmdBuffer.Ref<ImDrawCmd>(cmd_i);
@@ -1044,158 +1041,6 @@ namespace RockEngine.Vulkan.Rendering.ImGuiRender
             bufferSize = req.Size;
         }
 
-
-        private unsafe void InitPlatformInterface()
-        {
-            var platformIO = ImGui.GetPlatformIO();
-            ImGuiViewportPtr mainViewport = platformIO.Viewports[0];
-            mainViewport.PlatformHandle = _view.Handle;
-            _mainViewportWindow = new ImGuiWindow(_vkContext, mainViewport, _view);
-            // Set platform delegates
-
-            _createWindow = Platform_CreateWindow;
-            _destroyWindow = Platform_DestroyWindow;
-            _getWindowPos = Platform_GetWindowPos;
-            _showWindow = Platform_ShowWindow;
-            _setWindowPos = Platform_SetWindowPos;
-            _setWindowSize = Platform_SetWindowSize;
-            _getWindowSize = Platform_GetWindowSize;
-            _setWindowFocus = Platform_SetWindowFocus;
-            _getWindowFocus = Platform_GetWindowFocus;
-            _getWindowMinimized = Platform_GetWindowMinimized;
-            _setWindowTitle = Platform_SetWindowTitle;
-            _setWindowAlpha = Platform_SetWindowAlpha;
-
-            platformIO.Platform_CreateWindow = Marshal.GetFunctionPointerForDelegate(_createWindow);
-            platformIO.Platform_DestroyWindow = Marshal.GetFunctionPointerForDelegate(_destroyWindow);
-            platformIO.Platform_ShowWindow = Marshal.GetFunctionPointerForDelegate(_showWindow);
-            platformIO.Platform_SetWindowPos = Marshal.GetFunctionPointerForDelegate(_setWindowPos);
-            platformIO.Platform_SetWindowSize = Marshal.GetFunctionPointerForDelegate(_setWindowSize);
-            platformIO.Platform_SetWindowFocus = Marshal.GetFunctionPointerForDelegate(_setWindowFocus);
-            platformIO.Platform_GetWindowFocus = Marshal.GetFunctionPointerForDelegate(_getWindowFocus);
-            platformIO.Platform_GetWindowMinimized = Marshal.GetFunctionPointerForDelegate(_getWindowMinimized);
-            platformIO.Platform_SetWindowTitle = Marshal.GetFunctionPointerForDelegate(_setWindowTitle);
-            platformIO.Platform_SetWindowAlpha = Marshal.GetFunctionPointerForDelegate(_setWindowAlpha);
-            ImGuiNative.ImGuiPlatformIO_Set_Platform_GetWindowPos(platformIO.NativePtr, Marshal.GetFunctionPointerForDelegate(_getWindowPos));
-            ImGuiNative.ImGuiPlatformIO_Set_Platform_GetWindowSize(platformIO.NativePtr, Marshal.GetFunctionPointerForDelegate(_getWindowSize));
-
-
-            // Set up monitor list
-            SetupMonitors(platformIO);
-
-        }
-        private delegate void Platform_SetWindowAlphaDelegate(ImGuiViewportPtr viewport, float alpha);
-
-        private unsafe void Platform_SetWindowAlpha(ImGuiViewportPtr viewport, float alpha)
-        {
-            ImGuiWindow window = (ImGuiWindow)GCHandle.FromIntPtr(viewport.PlatformUserData).Target;
-            var surface = sdlApi.GetWindowSurface(SdlWindowing.GetHandle(window.Window));
-            sdlApi.SetSurfaceAlphaMod(surface, (byte)alpha);
-        }
-
-        private unsafe void Platform_CreateWindow(ImGuiViewportPtr viewport)
-        {
-            ImGuiWindow window = new ImGuiWindow(_vkContext, viewport);
-            foreach (var keyboard in window.Input.Keyboards)
-            {
-                keyboard.KeyChar += this.OnKeyChar;
-            }
-        }
-
-        private async void Platform_DestroyWindow(ImGuiViewportPtr viewport)
-        {
-            if (viewport.PlatformUserData != IntPtr.Zero)
-            {
-                ImGuiWindow window = (ImGuiWindow)GCHandle.FromIntPtr(viewport.PlatformUserData).Target;
-                foreach (var item in window.Input.Keyboards)
-                {
-                    item.KeyChar -= this.OnKeyChar;
-                }
-                await window.DisposeAsync();
-
-                viewport.PlatformUserData = IntPtr.Zero;
-            }
-        }
-
-        private unsafe void Platform_ShowWindow(ImGuiViewportPtr viewport)
-        {
-            ImGuiWindow window = (ImGuiWindow)GCHandle.FromIntPtr(viewport.PlatformUserData).Target;
-            window.Window.IsVisible = true;
-        }
-
-        private unsafe void Platform_SetWindowPos(ImGuiViewportPtr vp, Vector2 pos)
-        {
-            ImGuiWindow window = (ImGuiWindow)GCHandle.FromIntPtr(vp.PlatformUserData).Target;
-            window.Window.Position = new Vector2D<int>((int)pos.X, (int)pos.Y);
-        }
-
-        private unsafe void Platform_GetWindowPos(ImGuiViewportPtr vp, Vector2* pos)
-        {
-            ImGuiWindow window = (ImGuiWindow)GCHandle.FromIntPtr((nint)vp.PlatformUserData).Target;
-            *pos = new Vector2(window.Window.Position.X, window.Window.Position.Y);
-        }
-
-        private unsafe void Platform_SetWindowSize(ImGuiViewportPtr vp, Vector2 size)
-        {
-            ImGuiWindow window = (ImGuiWindow)GCHandle.FromIntPtr(vp.PlatformUserData).Target;
-            window.Window.Size = new Vector2D<int>((int)size.X, (int)size.Y);
-        }
-
-        private unsafe void Platform_GetWindowSize(ImGuiViewportPtr vp, Vector2* outSize)
-        {
-            ImGuiWindow window = (ImGuiWindow)GCHandle.FromIntPtr(vp.PlatformUserData).Target;
-            *outSize = new Vector2(window.Window.Size.X, window.Window.Size.Y);
-        }
-
-        private unsafe void Platform_SetWindowFocus(ImGuiViewportPtr vp)
-        {
-            ImGuiWindow window = (ImGuiWindow)GCHandle.FromIntPtr(vp.PlatformUserData).Target;
-            sdlApi.SetWindowInputFocus(SdlWindowing.GetHandle(window.Window));
-        }
-
-        private unsafe byte Platform_GetWindowFocus(ImGuiViewportPtr vp)
-        {
-            ImGuiWindow window = (ImGuiWindow)GCHandle.FromIntPtr(vp.PlatformUserData).Target;
-            return ((WindowFlags)sdlApi.GetWindowFlags(SdlWindowing.GetHandle(window.Window))).HasFlag(WindowFlags.InputFocus) ? (byte)1:(byte)0;
-        }
-
-        private unsafe byte Platform_GetWindowMinimized(ImGuiViewportPtr vp)
-        {
-            ImGuiWindow window = (ImGuiWindow)GCHandle.FromIntPtr(vp.PlatformUserData).Target;
-            return ((WindowFlags)sdlApi.GetWindowFlags(SdlWindowing.GetHandle(window.Window))).HasFlag(WindowFlags.Minimized) ? (byte)1 : (byte)0;
-        }
-
-        private unsafe void Platform_SetWindowTitle(ImGuiViewportPtr vp, IntPtr title)
-        {
-            ImGuiWindow window = (ImGuiWindow)GCHandle.FromIntPtr(vp.PlatformUserData).Target;
-            byte* titlePtr = (byte*)title;
-            int count = 0;
-            while (titlePtr[count] != 0)
-            {
-                count += 1;
-            }
-            sdlApi.SetWindowTitle(SdlWindowing.GetHandle(window.Window), titlePtr);
-        }
-
-
-        private unsafe void SetupMonitors(ImGuiPlatformIOPtr platformIO)
-        {
-            Marshal.FreeHGlobal(platformIO.NativePtr->Monitors.Data);
-            int numMonitors = sdlApi.GetNumVideoDisplays();
-            IntPtr data = Marshal.AllocHGlobal(Unsafe.SizeOf<ImGuiPlatformMonitor>() * numMonitors);
-            platformIO.NativePtr->Monitors = new ImVector(numMonitors, numMonitors, data);
-            for (int i = 0; i < numMonitors; i++)
-            {
-                Rectangle<int> r;
-                sdlApi.GetDisplayBounds(i, &r);
-                ImGuiPlatformMonitorPtr monitor = platformIO.Monitors[i];
-                monitor.DpiScale = 1f;
-                monitor.MainPos = new Vector2(r.Origin.X, r.Origin.Y);
-                monitor.MainSize = new Vector2(r.Size.X, r.Size.Y);
-                monitor.WorkPos = new Vector2(r.Origin.X, r.Origin.Y);
-                monitor.WorkSize = new Vector2(r.Size.X, r.Size.Y);
-            }
-        }
         /// <summary>
         /// Frees all graphics resources used by the renderer.
         /// </summary>
@@ -1291,9 +1136,9 @@ namespace RockEngine.Vulkan.Rendering.ImGuiRender
             colors[(int)ImGuiCol.ResizeGripActive] = new System.Numerics.Vector4(0.26f, 0.59f, 0.98f, 0.95f);
             colors[(int)ImGuiCol.Tab] = new System.Numerics.Vector4(0.18f, 0.35f, 0.58f, 0.86f);
             colors[(int)ImGuiCol.TabHovered] = new System.Numerics.Vector4(0.26f, 0.59f, 0.98f, 0.80f);
-            colors[(int)ImGuiCol.TabActive] = new System.Numerics.Vector4(0.20f, 0.41f, 0.68f, 1.00f);
-            colors[(int)ImGuiCol.TabUnfocused] = new System.Numerics.Vector4(0.07f, 0.10f, 0.15f, 0.97f);
-            colors[(int)ImGuiCol.TabUnfocusedActive] = new System.Numerics.Vector4(0.14f, 0.26f, 0.42f, 1.00f);
+            colors[(int)ImGuiCol.TabSelected] = new System.Numerics.Vector4(0.20f, 0.41f, 0.68f, 1.00f);
+            colors[(int)ImGuiCol.TabDimmed] = new System.Numerics.Vector4(0.07f, 0.10f, 0.15f, 0.97f);
+            colors[(int)ImGuiCol.TabDimmedSelected] = new System.Numerics.Vector4(0.14f, 0.26f, 0.42f, 1.00f);
             colors[(int)ImGuiCol.DockingPreview] = new System.Numerics.Vector4(0.26f, 0.59f, 0.98f, 0.70f);
             colors[(int)ImGuiCol.DockingEmptyBg] = new System.Numerics.Vector4(0.20f, 0.20f, 0.20f, 1.00f);
             colors[(int)ImGuiCol.PlotLines] = new System.Numerics.Vector4(0.61f, 0.61f, 0.61f, 1.00f);

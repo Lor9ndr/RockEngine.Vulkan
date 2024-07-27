@@ -139,11 +139,7 @@ namespace RockEngine.Vulkan.ECS
         {
             _projectionMatrix = Matrix4x4.CreatePerspectiveFieldOfView(_fov, _aspectRatio, _nearClip, _farClip);
             // flipside the perspective because vulkan(or System.Numerics) idk
-            _projectionMatrix *= new Matrix4x4(
-                1, 0, 0, 0,
-                0, -1, 0, 0,
-                0, 0, 1, 0,
-                0, 0, 0, 1);
+            _projectionMatrix[1,1] *= -1;
             UpdateViewProjectionMatrix();
         }
 
