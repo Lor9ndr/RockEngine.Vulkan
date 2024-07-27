@@ -245,12 +245,34 @@ namespace RockEngine.Vulkan.VkObjects
             }
         }
 
+        /// <summary>
+        /// Getting new image index from the swapchain
+        /// </summary>
+        /// <param name="imageIndex">new image index</param>
+        /// <returns>Result of the vulkan api request</returns>
+        /// <exception cref="InvalidOperationException">throws an error when sync objects not properly initialized</exception>
         public Result AcquireNextImage(ref uint imageIndex)
         {
             var fence = _inFlightFences[_currentFrame].VkObjectNative;
-            _context.Api.WaitForFences(_context.Device, 1, in fence, true, 100_000_000_0);
+            if (fence.Handle == default )
+            {
+                throw new InvalidOperationException("Fence is not properly initialized.");
+            }
 
-            var result = _khrSwapchain.AcquireNextImage(_context.Device, _vkObject, ulong.MaxValue, _imageAvailableSemaphores[_currentFrame], default, ref imageIndex);
+            _context.Api.WaitForFences(_context.Device.VkObjectNative, 1, in fence, true, 100_000_000_0);
+
+            var semaphore = _imageAvailableSemaphores[_currentFrame];
+            if (semaphore.VkObjectNative.Handle == default )
+            {
+                throw new InvalidOperationException("Semaphore is not properly initialized.");
+            }
+
+            if (_vkObject.Handle == default)
+            {
+                throw new InvalidOperationException("Swapchain is not properly initialized.");
+            }
+
+            var result = _khrSwapchain.AcquireNextImage(_context.Device.VkObjectNative, _vkObject, ulong.MaxValue, semaphore, default, ref imageIndex);
             return result;
         }
 
@@ -264,8 +286,8 @@ namespace RockEngine.Vulkan.VkObjects
                 var waitSemaphores = stackalloc Semaphore[] { _imageAvailableSemaphores[_currentFrame].VkObjectNative };
                 var currentFence = _inFlightFences[_currentFrame].VkObjectNative;
 
-                _context.Api.WaitForFences(_context.Device, 1, in imageInflight, true, uint.MaxValue);
-                _context.Api.ResetFences(_context.Device, 1, in currentFence);
+                _context.Api.WaitForFences(_context.Device.VkObjectNative, 1, in imageInflight, true, uint.MaxValue);
+                _context.Api.ResetFences(_context.Device.VkObjectNative, 1, in currentFence);
 
                 unsafe
                 {

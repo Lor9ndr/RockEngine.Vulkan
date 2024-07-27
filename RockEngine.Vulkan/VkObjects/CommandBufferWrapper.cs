@@ -3,8 +3,6 @@ using RockEngine.Vulkan.VulkanInitilizers;
 
 using Silk.NET.Vulkan;
 
-using SkiaSharp;
-
 using System.Diagnostics;
 
 namespace RockEngine.Vulkan.VkObjects
@@ -80,28 +78,29 @@ namespace RockEngine.Vulkan.VkObjects
             _context.Api.CmdBindIndexBuffer(_vkObject, indexBuffer, offset, indexType);
         }
 
-        public static CommandBufferWrapper Create(VulkanContext context, in CommandBufferAllocateInfo ai, CommandPoolWrapper commandPool)
+        public static CommandBufferWrapper Create(in CommandBufferAllocateInfo ai, CommandPoolWrapper commandPool)
         {
-            context.Api.AllocateCommandBuffers(context.Device, in ai, out CommandBuffer cb)
-                .ThrowCode("Failed to allocate command buffer");
-            Debugger.Log(1, "Allocation", $"Allocated a command buffer with handle: {cb.Handle}");
-
-            return new CommandBufferWrapper(context, in cb, commandPool);
+           return commandPool.AllocateCommandBuffer(in ai);
         }
 
+        /// <summary>
+        /// Have no effect, 
+        /// </summary>
+        /// <param name="disposing"></param>
         protected override void Dispose(bool disposing)
         {
             if (_disposed)
             {
                 return;
             }
+
             if (disposing)
             {
                 // Dispose managed state (managed objects).
             }
-            //_context.Api.FreeCommandBuffers(_context.Device, _commandPool, 1, in _vkObject);
-/*            _vkObject = default;
-            _disposed = true;*/
+            _vkObject = default;
+            _disposed = true;
         }
+
     }
 }

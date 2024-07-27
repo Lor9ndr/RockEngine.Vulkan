@@ -90,7 +90,7 @@ namespace RockEngine.Vulkan.VkObjects
         public void Use(UniformBufferObject ubo, CommandBuffer cb, PipelineBindPoint bindPoint = PipelineBindPoint.Graphics)
         {
             uint offset = 0;
-            _context.Api.CmdBindDescriptorSets(cb, bindPoint, CurrentPipeline.Layout, ubo._descriptorSet.SetIndex, 1, ref ubo._descriptorSet.DescriptorSet, 0, ref offset);
+            _context.Api.CmdBindDescriptorSets(cb, bindPoint, CurrentPipeline.Layout.VkObjectNative, ubo._descriptorSet.SetIndex, 1, ref ubo._descriptorSet.DescriptorSet, 0, ref offset);
         }
 
         public unsafe void SetTexture(Texture texture, uint setIndex, uint bindingIndex)

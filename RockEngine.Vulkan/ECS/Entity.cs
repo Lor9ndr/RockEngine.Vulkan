@@ -1,8 +1,6 @@
 ﻿using RockEngine.Vulkan.VkObjects;
 using RockEngine.Vulkan.VulkanInitilizers;
 
-using Silk.NET.Vulkan;
-
 namespace RockEngine.Vulkan.ECS
 {
     public class Entity
@@ -41,7 +39,7 @@ namespace RockEngine.Vulkan.ECS
 
         public T GetComponent<T>() where T : Component
         {
-            return (T)_components.OfType<T>().First();
+            return _components.OfType<T>().First();
         }
 
 

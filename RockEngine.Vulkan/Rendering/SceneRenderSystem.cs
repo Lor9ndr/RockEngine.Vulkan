@@ -10,7 +10,7 @@ using System.Diagnostics;
 
 namespace RockEngine.Vulkan.Rendering
 {
-    internal class SceneRenderSystem : RenderSystem
+    public class SceneRenderSystem : RenderSystem
     {
         public SceneRenderSystem(VulkanContext context, RenderPassWrapper renderPass)
             :base(context, renderPass)
@@ -92,10 +92,11 @@ namespace RockEngine.Vulkan.Rendering
             _pipeline = pBuilder.Build();
         }
 
-        public  override async Task RenderAsync(Project p, CommandBufferWrapper commandBuffer, int frameIndex)
+        public  override Task RenderAsync(Project p, CommandBufferWrapper commandBuffer, int frameIndex)
         {
             Debug.Assert(_pipeline != null, "Has to create graphics pipeline before rendering");
             Debug.Assert(_pipelineLayout != null, "Has to create graphics pipeline before rendering");
+            Debug.Assert(commandBuffer.VkObjectNative.Handle != default, "Command buffer is null");
 
             _context.Api.CmdBindPipeline(commandBuffer, PipelineBindPoint.Graphics, _pipeline);
             //_pipeline.BindDummyDescriptors(commandBuffer);
@@ -108,7 +109,7 @@ namespace RockEngine.Vulkan.Rendering
 
             _context.PipelineManager.CurrentPipeline = _pipeline;
 
-           await p.CurrentScene.RenderAsync(_context, commandBuffer);
+           return p.CurrentScene.RenderAsync(_context, commandBuffer);
 
 
         }

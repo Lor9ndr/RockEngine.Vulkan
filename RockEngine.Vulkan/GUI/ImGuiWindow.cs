@@ -12,7 +12,7 @@ using System.Runtime.InteropServices;
 
 namespace RockEngine.Vulkan.GUI
 {
-    internal class ImGuiWindow
+    internal class ImGuiWindow : IAsyncDisposable
     {
         private readonly GCHandle _gcHandle;
         private readonly VulkanContext _context;
@@ -20,8 +20,8 @@ namespace RockEngine.Vulkan.GUI
         private readonly IWindow _window;
         private BaseRenderer _renderer;
         private bool _ready;
-        private readonly Task _task;
         private readonly IInputContext _inputContext;
+        private readonly Task _task;
 
         public IWindow Window => _window;
         public BaseRenderer Render => _renderer;
@@ -35,26 +35,7 @@ namespace RockEngine.Vulkan.GUI
             _gcHandle = GCHandle.Alloc(this);
             _context = context;
             _vp = vp;
-            WindowFlags flags = WindowFlags.Vulkan | WindowFlags.Shown;
-            if ((vp.Flags & ImGuiViewportFlags.NoTaskBarIcon) != 0)
-            {
-                flags |= WindowFlags.SkipTaskbar;
-            }
-            if ((vp.Flags & ImGuiViewportFlags.NoDecoration) != 0)
-            {
-                flags |= WindowFlags.Borderless;
-            }
-            else
-            {
-                flags |= WindowFlags.Resizable;
-            }
-
-            if ((vp.Flags & ImGuiViewportFlags.TopMost) != 0)
-            {
-                flags |= WindowFlags.AlwaysOnTop;
-            }
-            var api = Sdl.GetApi();
-            _window = Silk.NET.Windowing.Window.Create(WindowOptions.DefaultVulkan with { TopMost = flags.HasFlag( WindowFlags.AlwaysOnTop), WindowBorder = WindowBorder.Hidden});
+            _window = Silk.NET.Windowing.Window.Create(WindowOptions.DefaultVulkan with { TopMost = vp.Flags.HasFlag(ImGuiViewportFlags.TopMost), WindowBorder = WindowBorder.Hidden});
             _window.Title = "RockEngine";
             _window.Initialize();
             _window.Resize += (s) => _vp.PlatformRequestResize = true;
@@ -63,13 +44,11 @@ namespace RockEngine.Vulkan.GUI
             _inputContext = _window.CreateInput();
 
             vp.PlatformUserData = (IntPtr)_gcHandle;
-            _task = Task.Run(() =>
-            {
-                var surface = SDLSurfaceHandler.CreateSurface(_window, context);
-                _renderer = new BaseRenderer(_context, surface);
-                _ready = true;
-                _window.Run();
-            });
+            var surface = SDLSurfaceHandler.CreateSurface(_window, context);
+            _renderer = new BaseRenderer(_context, surface);
+            _ready = true;
+            
+            _task = Task.Run(_window.Run);
         }
 
         public ImGuiWindow(VulkanContext context, ImGuiViewportPtr vp, IWindow window)
@@ -81,16 +60,15 @@ namespace RockEngine.Vulkan.GUI
             vp.PlatformUserData = (IntPtr)_gcHandle;
         }
 
-        public async void Dispose()
+        public async ValueTask DisposeAsync()
         {
             _context.Api.DeviceWaitIdle(_context.Device);
+
             _window.Close();
-            await _task;
+            await _task.ConfigureAwait(false);
             _renderer.Dispose();
             _window.Close();
             _gcHandle.Free();
         }
-
-
     }
 }

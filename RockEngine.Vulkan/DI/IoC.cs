@@ -1,9 +1,10 @@
 ﻿using RockEngine.Vulkan.ECS;
-using RockEngine.Vulkan.Rendering.ComponentRenderers;
 using RockEngine.Vulkan.Rendering.ComponentRenderers.Factories;
+using RockEngine.Vulkan.Rendering.ComponentRenderers;
 
 using SimpleInjector;
 using SimpleInjector.Lifestyles;
+using RockEngine.Vulkan.EventSystem;
 
 namespace RockEngine.Vulkan.DI
 {
@@ -33,6 +34,10 @@ namespace RockEngine.Vulkan.DI
                 // Initialize or set properties if needed
                 return renderer;
             });
+
+            // Register other dependencies
+            Container.RegisterSingleton<IEventSystem, EventSystem.EventSystem>();
+
         }
     }
 }

@@ -4,7 +4,7 @@ using RockEngine.Vulkan.VulkanInitilizers;
 
 namespace RockEngine.Vulkan.Rendering
 {
-    internal abstract class RenderSystem : IDisposable
+    public abstract class RenderSystem : IDisposable
     {
         protected readonly VulkanContext _context;
         protected readonly RenderPassWrapper _renderPass;
@@ -19,8 +19,7 @@ namespace RockEngine.Vulkan.Rendering
 
         public abstract Task Init(CancellationToken cancellationToken = default);
         protected abstract Task CreateGraphicsPipeline(CancellationToken cancellationToken = default);
-        public abstract Task  RenderAsync(Project p,CommandBufferWrapper commandBuffer, int frameIndex);
-
+        public abstract Task RenderAsync(Project p, CommandBufferWrapper commandBuffer, int frameIndex);
         public abstract void Dispose();
         
     }

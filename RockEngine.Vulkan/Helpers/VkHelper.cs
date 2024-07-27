@@ -74,7 +74,7 @@ namespace RockEngine.Vulkan.Helpers
                 CommandPool = commandPool,
                 CommandBufferCount = 1
             };
-            var commandBuffer = CommandBufferWrapper.Create(context, in allocInfo, commandPool);
+            var commandBuffer = CommandBufferWrapper.Create(in allocInfo, commandPool);
 
             commandBuffer.Begin(new CommandBufferBeginInfo
             {

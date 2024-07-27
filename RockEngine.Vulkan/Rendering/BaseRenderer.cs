@@ -8,7 +8,7 @@ using System.Diagnostics;
 
 namespace RockEngine.Vulkan.Rendering
 {
-    internal class BaseRenderer : ARenderer, IDisposable
+    public class BaseRenderer : ARenderer, IDisposable
     {
         private SemaphoreSlim _frameSemaphore;
 
@@ -36,7 +36,7 @@ namespace RockEngine.Vulkan.Rendering
             _commandBuffers = new CommandBufferWrapper[VulkanContext.MAX_FRAMES_IN_FLIGHT];
             for (int i = 0; i < _commandBuffers.Length; i++)
             {
-                _commandBuffers[i] = CommandBufferWrapper.Create(_context, in allocInfo, commandPool);
+                _commandBuffers[i] = CommandBufferWrapper.Create(in allocInfo, commandPool);
             }
         }
 
@@ -68,8 +68,8 @@ namespace RockEngine.Vulkan.Rendering
                 Flags = CommandBufferUsageFlags.None,
                 PInheritanceInfo = default // Only relevant for secondary command buffers
             };
-            _context.Api.ResetCommandBuffer(commandBuffer, CommandBufferResetFlags.None);
-            _context.Api.BeginCommandBuffer(commandBuffer, in beginInfo)
+            _context.Api.ResetCommandBuffer(commandBuffer.VkObjectNative, CommandBufferResetFlags.None);
+            _context.Api.BeginCommandBuffer(commandBuffer.VkObjectNative, in beginInfo)
                 .ThrowCode("Failed to begin recording command buffer!");
 
             _frameStarted = true;
@@ -90,13 +90,13 @@ namespace RockEngine.Vulkan.Rendering
             _frameSemaphore.Release();
         }
 
-        public unsafe override void BeginSwapchainRenderPass(CommandBufferWrapper commandBuffer)
+        public unsafe override void BeginSwapchainRenderPass(in CommandBufferWrapper commandBuffer)
         {
             var viewport = new Viewport() { Width = _swapchain.Extent.Width, Height = _swapchain.Extent.Height, MaxDepth = 1.0f };
             var scissor = new Rect2D() { Extent = _swapchain.Extent };
 
-            _context.Api.CmdSetViewport(commandBuffer, 0, 1, ref viewport);
-            _context.Api.CmdSetScissor(commandBuffer, 0, 1, ref scissor);
+            _context.Api.CmdSetViewport(commandBuffer.VkObjectNative, 0, 1, ref viewport);
+            _context.Api.CmdSetScissor(commandBuffer.VkObjectNative, 0, 1, ref scissor);
 
             var cv = stackalloc ClearValue[]
             {
@@ -112,15 +112,15 @@ namespace RockEngine.Vulkan.Rendering
                 ClearValueCount = 2,
                 PClearValues = cv
             };
-            _context.Api.CmdBeginRenderPass(commandBuffer, in renderPassInfo, SubpassContents.Inline);
+            _context.Api.CmdBeginRenderPass(commandBuffer.VkObjectNative, in renderPassInfo, SubpassContents.Inline);
         }
 
 
-        public override void EndSwapchainRenderPass(CommandBufferWrapper commandBuffer)
+        public override void EndSwapchainRenderPass(in CommandBufferWrapper commandBuffer)
         {
             Debug.Assert(commandBuffer == GetCurrentCommandBuffer(), "Can't end render pass on command buffer from a different frame");
             Debug.Assert(_frameStarted, "Can't call endSwapChainRenderPass if frame is not in progress");
-            _context.Api.CmdEndRenderPass(commandBuffer);
+            _context.Api.CmdEndRenderPass(commandBuffer.VkObjectNative);
         }
 
         public void Dispose()

@@ -45,26 +45,15 @@ namespace RockEngine.Vulkan
         {
             IoC.Register();
             SdlWindowing.Use();
-                _window = Window.Create(WindowOptions.DefaultVulkan);
-
+            _window = Window.Create(WindowOptions.DefaultVulkan);
             _window.Title = "RockEngine";
-            _window.Load += async () =>
-            {
-                _inputContext = _window.CreateInput();
-                try
-                {
-                    await Window_Load().ConfigureAwait(false);
-                }
-                catch (Exception)
-                {
-                    throw;
-                }
-            };
-            //_window.Closing += Dispose;
+
+            _window.Load += async () => await InitializeAsync().ConfigureAwait(false);
+            _window.Update += Update;
 
             try
             {
-                await Task.Run(() => _window.Run(), CancellationToken);
+                await Task.Run(() => _window.Run(), CancellationToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
@@ -74,66 +63,52 @@ namespace RockEngine.Vulkan
             {
                 throw;
             }
-
-        }
-      
-
-        private async Task DrawFrame(double obj)
-        {
-            var commandBuffer =  await _baseRenderer.BeginFrameAsync();
-            if (commandBuffer == null)
-            {
-                return;
-            }
-
-            _imguiController.Update((float)obj);
-            ImGui.ShowDemoWindow();
-
-            _baseRenderer.BeginSwapchainRenderPass(commandBuffer);
-
-             await _sceneRenderSystem.RenderAsync(_project, commandBuffer, _baseRenderer.FrameIndex);
-
-            _imguiController.RenderAsync(commandBuffer, _baseRenderer.Swapchain.Extent);
-
-            _baseRenderer.EndSwapchainRenderPass(commandBuffer);
-            _baseRenderer.EndFrame();
-
-            await _imguiController.RenderWindowsAsync();
         }
 
-        private async Task Window_Load()
+        private async Task InitializeAsync()
         {
+            _inputContext = _window.CreateInput();
             _context = new VulkanContext(_window, "Lor9ndr");
-            _baseRenderer = new BaseRenderer(_context,_context.Surface);
-
+            _baseRenderer = new BaseRenderer(_context, _context.Surface);
             _assetManager = new AssetManager();
 
+            await LoadProjectAsync();
+            await InitializeRenderSystemsAsync();
+            _window.Render += async (s) => await DrawFrame(s).ConfigureAwait(false);
+
+            await InitializeSceneAsync();
+        }
+
+        private async Task LoadProjectAsync()
+        {
             _project = await _assetManager.CreateProjectAsync("Sandbox", "F:\\RockEngine.Vulkan\\RockEngine.Vulkan\\bin\\Debug\\net8.0\\Sandbox.asset", CancellationToken);
             var scene = _project.Scenes[0];
-            var savingTask =  _assetManager.SaveAssetAsync(scene, CancellationToken);
-            
-            _sceneRenderSystem = new SceneRenderSystem(_context,_baseRenderer.GetRenderPass());
+            await _assetManager.SaveAssetAsync(scene, CancellationToken);
+        }
+
+        private async Task InitializeRenderSystemsAsync()
+        {
+            _sceneRenderSystem = new SceneRenderSystem(_context, _baseRenderer.GetRenderPass());
             await _sceneRenderSystem.Init(CancellationToken).ConfigureAwait(false);
+
             _imguiController = new ImGuiController(
                 _context,
-                _window, 
+                _window,
                 _inputContext,
                 _context.Device.PhysicalDevice,
                 _context.Device.QueueFamilyIndices.GraphicsFamily.Value,
-                _baseRenderer.Swapchain.Images.Length, 
+                _baseRenderer.Swapchain.Images.Length,
                 _baseRenderer.Swapchain.Format,
-                _baseRenderer.Swapchain.DepthFormat, 
+                _baseRenderer.Swapchain.DepthFormat,
                 _baseRenderer.GetRenderPass());
+        }
 
-
-            _window.Update += Update;
-            _window.Render += async (s) => await DrawFrame(s);
-            await savingTask;
+        private async Task InitializeSceneAsync()
+        {
+            var scene = _project.Scenes[0];
             var camera = new Entity();
-            await camera.AddComponent(_context,
-                new DebugCamera(_inputContext, MathHelper.DegreesToRadians(90), _window.Size.X / _window.Size.Y, 0.1f, 1000,camera));
-            await scene.AddEntity(context: _context, camera);
-            var debug = camera.GetComponent<DebugCamera>();
+            await camera.AddComponent(_context, new DebugCamera(_inputContext, MathHelper.DegreesToRadians(90), _window.Size.X / _window.Size.Y, 0.1f, 1000, camera));
+            await scene.AddEntity(_context, camera);
 
             for (int i = 0; i < 1; i++)
             {
@@ -145,12 +120,31 @@ namespace RockEngine.Vulkan
                 await scene.AddEntity(_context, entity);
             }
 
-
             await scene.InitializeAsync(_context);
         }
+
+        private async Task DrawFrame(double obj)
+        {
+            var commandBuffer = await _baseRenderer.BeginFrameAsync().ConfigureAwait(false);
+            if (commandBuffer == null)
+            {
+                return;
+            }
+
+            _imguiController.Update((float)obj);
+            ImGui.ShowDemoWindow();
+
+            _baseRenderer.BeginSwapchainRenderPass(in commandBuffer);
+            await _sceneRenderSystem.RenderAsync(_project, commandBuffer, _baseRenderer.FrameIndex).ConfigureAwait(false);
+            _imguiController.RenderAsync(commandBuffer, _baseRenderer.Swapchain.Extent);
+            await _imguiController.RenderWindows().ConfigureAwait(false);
+            _baseRenderer.EndSwapchainRenderPass(in commandBuffer);
+            _baseRenderer.EndFrame();
+        }
+
         private void Update(double time)
         {
-           _project.CurrentScene.Update(time);
+            _project.CurrentScene.Update(time);
         }
 
         public void Dispose()
@@ -160,7 +154,6 @@ namespace RockEngine.Vulkan
             _sceneRenderSystem.Dispose();
             _baseRenderer.Dispose();
             IoC.Container.Dispose();
-
             _project.Dispose();
             _inputContext.Dispose();
             _context.Dispose();

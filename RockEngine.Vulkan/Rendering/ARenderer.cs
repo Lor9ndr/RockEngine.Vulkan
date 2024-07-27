@@ -33,8 +33,8 @@ namespace RockEngine.Vulkan.Rendering
         protected abstract void CreateCommandBuffers();
         public abstract Task<CommandBufferWrapper?> BeginFrameAsync();
         public abstract void EndFrame();
-        public abstract void BeginSwapchainRenderPass(CommandBufferWrapper commandBuffer);
-        public abstract void EndSwapchainRenderPass(CommandBufferWrapper commandBuffer);
+        public abstract void BeginSwapchainRenderPass(in CommandBufferWrapper commandBuffer);
+        public abstract void EndSwapchainRenderPass(in CommandBufferWrapper commandBuffer);
 
         protected void RecreateSwapChainAsync()
         {

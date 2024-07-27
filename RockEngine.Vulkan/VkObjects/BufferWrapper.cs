@@ -86,7 +86,7 @@ namespace RockEngine.Vulkan.VkObjects
                 CommandPool = commandPool,
                 CommandBufferCount = 1
             };
-            using CommandBufferWrapper commandBuffer = CommandBufferWrapper.Create(context, in commandBufferAllocateInfoo, commandPool);
+            using CommandBufferWrapper commandBuffer = CommandBufferWrapper.Create(in commandBufferAllocateInfoo, commandPool);
 
             commandBuffer.Begin(new CommandBufferBeginInfo
             {
