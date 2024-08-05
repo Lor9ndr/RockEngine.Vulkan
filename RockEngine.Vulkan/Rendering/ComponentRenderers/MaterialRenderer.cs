@@ -4,17 +4,26 @@ using RockEngine.Vulkan.VulkanInitilizers;
 
 namespace RockEngine.Vulkan.Rendering.ComponentRenderers
 {
-    internal class MaterialRenderer : IComponentRenderer<Material>
+    internal class MaterialRenderer : IComponentRenderer<MaterialComponent>
     {
-        public async ValueTask InitializeAsync(Material component, VulkanContext context)
+        private readonly VulkanContext _context;
+
+        public MaterialRenderer(VulkanContext context)
         {
-            context.PipelineManager.SetTexture(component.Texture, 2, 0);
+            _context = context;
         }
 
-        public async Task RenderAsync(Material component, VulkanContext context, CommandBufferWrapper commandBuffer)
+        public async ValueTask InitializeAsync(MaterialComponent component)
         {
-            context.PipelineManager.Use(component.Texture, commandBuffer);
+            _context.PipelineManager.SetTexture(component.Texture, 2, 0);
         }
+
+        public async Task RenderAsync(MaterialComponent component, CommandBufferWrapper commandBuffer)
+        {
+            // SOme usage of shader from material
+            _context.PipelineManager.Use(component.Texture, commandBuffer);
+        }
+
         public void Dispose()
         {
         }

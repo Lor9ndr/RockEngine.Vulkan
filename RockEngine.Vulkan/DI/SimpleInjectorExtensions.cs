@@ -1,6 +1,7 @@
 ﻿using RockEngine.Vulkan.ECS;
 using RockEngine.Vulkan.Rendering.ComponentRenderers;
 using RockEngine.Vulkan.Rendering.ComponentRenderers.Factories;
+using RockEngine.Vulkan.VulkanInitilizers;
 
 using SimpleInjector;
 
@@ -23,6 +24,10 @@ namespace RockEngine.Vulkan.DI
             return container.GetInstance<IComponentRendererFactory<TRenderer, TComponent>>();
         }
 
-      
+        public static VulkanContext GetRenderingContext(this Container container) 
+        {
+            return container.GetInstance<VulkanContext>();
+        }
+
     }
 }

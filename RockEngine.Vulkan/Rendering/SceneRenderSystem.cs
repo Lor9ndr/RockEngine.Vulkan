@@ -87,7 +87,7 @@ namespace RockEngine.Vulkan.Rendering
                    Front = new StencilOpState(),
                    Back = new StencilOpState()
                })
-               .AddPoolSizes([poolSize, poolSamplerSize])
+               .SetPoolSizes([poolSize, poolSamplerSize])
                .SetMaxSets(200);
             _pipeline = pBuilder.Build();
         }
@@ -99,19 +99,10 @@ namespace RockEngine.Vulkan.Rendering
             Debug.Assert(commandBuffer.VkObjectNative.Handle != default, "Command buffer is null");
 
             _context.Api.CmdBindPipeline(commandBuffer, PipelineBindPoint.Graphics, _pipeline);
-            //_pipeline.BindDummyDescriptors(commandBuffer);
-            //unsafe
-            //{
-            //    var descriptors = _pipeline.DescriptorSets.Values.ToArray();
-            //    fixed (DescriptorSet* pDescriptors = descriptors)
-            //        _context.Api.CmdBindDescriptorSets(commandBuffer, PipelineBindPoint.Graphics, _pipelineLayout, 0, (uint)descriptors.Length, pDescriptors, null);
-            //}
 
             _context.PipelineManager.CurrentPipeline = _pipeline;
 
-           return p.CurrentScene.RenderAsync(_context, commandBuffer);
-
-
+           return p.CurrentScene.RenderAsync(commandBuffer);
         }
 
         public override void Dispose()

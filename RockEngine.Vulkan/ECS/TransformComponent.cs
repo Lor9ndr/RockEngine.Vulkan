@@ -7,18 +7,14 @@ using System.Numerics;
 
 namespace RockEngine.Vulkan.ECS
 {
-    public class Transform : Component, IRenderableComponent<Transform>
+    public class TransformComponent : Component, IRenderableComponent<TransformComponent>
     {
         private Vector3 _position;
         private Quaternion _rotation = Quaternion.Identity;
         private Vector3 _scale = Vector3.One;
         private Matrix4x4 _modelMatrix;
         private bool _isDirty = true;
-        private IComponentRenderer<Transform> _renderer;
-
-        public Transform(Entity entity) : base(entity)
-        {
-        }
+        private IComponentRenderer<TransformComponent> _renderer;
 
         public Vector3 Position
         {
@@ -50,9 +46,9 @@ namespace RockEngine.Vulkan.ECS
             }
         }
 
-        public IComponentRenderer<Transform> Renderer => _renderer;
+        public IComponentRenderer<TransformComponent> Renderer => _renderer;
 
-        public override int Order => 0;
+        public int Order => 0;
 
         public ref Matrix4x4 GetModelMatrix()
         {
@@ -71,12 +67,12 @@ namespace RockEngine.Vulkan.ECS
             return ref _modelMatrix;
         }
 
-        public override async Task OnInitializedAsync(VulkanContext context)
+        public override async Task OnInitializedAsync()
         {
             try
             {
-                _renderer = IoC.Container.GetRenderer<Transform>();
-                await _renderer.InitializeAsync(this, context)
+                _renderer = IoC.Container.GetRenderer<TransformComponent>();
+                await _renderer.InitializeAsync(this)
                     .ConfigureAwait(false);
                 IsInitialized = true;
             }
@@ -88,9 +84,9 @@ namespace RockEngine.Vulkan.ECS
             }
         }
 
-        public Task RenderAsync(VulkanContext context, CommandBufferWrapper commandBuffer)
+        public Task RenderAsync(CommandBufferWrapper commandBuffer)
         {
-            return _renderer.RenderAsync(this, context, commandBuffer);
+            return _renderer.RenderAsync(this, commandBuffer);
         }
     }
 }

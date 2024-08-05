@@ -87,7 +87,7 @@ namespace RockEngine.Vulkan.Helpers
 
         public unsafe static void EndSingleTimeCommands(VulkanContext context, CommandBufferWrapper commandBuffer, CommandPoolWrapper commandPool)
         {
-            context.QueueSemaphore.Wait();
+            context.QueueMutex.WaitOne();
             var vk = context.Api;
             var device = context.Device;
             commandBuffer.End();
@@ -103,7 +103,7 @@ namespace RockEngine.Vulkan.Helpers
             vk.QueueSubmit(context.Device.GraphicsQueue, 1, in submitInfo, default);
             vk.QueueWaitIdle(context.Device.GraphicsQueue);
             vk.FreeCommandBuffers(device, commandPool, 1, in commandBufferNative);
-            context.QueueSemaphore.Release();
+            context.QueueMutex.ReleaseMutex();
         }
 
     }

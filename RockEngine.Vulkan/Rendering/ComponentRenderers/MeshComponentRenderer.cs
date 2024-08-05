@@ -12,20 +12,22 @@ namespace RockEngine.Vulkan.Rendering.ComponentRenderers
         private BufferWrapper _indexBuffer;
         private bool _isReady;
         private readonly MeshComponent _component;
+        private readonly VulkanContext _context;
 
-        public MeshComponentRenderer(MeshComponent component)
+        public MeshComponentRenderer(MeshComponent component, VulkanContext context)
         {
             _component = component;
+            _context = context;
         }
 
-        public ValueTask InitializeAsync(MeshComponent component, VulkanContext context)
+        public ValueTask InitializeAsync(MeshComponent component)
         {
-            return CreateBuffersAsync(context, _component);
+            return CreateBuffersAsync(_context, _component);
         }
 
-        public Task RenderAsync(MeshComponent component, VulkanContext context, CommandBufferWrapper commandBuffer)
+        public Task RenderAsync(MeshComponent component, CommandBufferWrapper commandBuffer)
         {
-            Draw(context, commandBuffer, _component);
+            Draw(commandBuffer, _component);
             return Task.CompletedTask;
         }
 
@@ -61,9 +63,9 @@ namespace RockEngine.Vulkan.Rendering.ComponentRenderers
             // Copy Data from Staging Buffer to Vertex Buffer
             var t1 =  stagingBuffer.CopyBufferAsync(context, _vertexBuffer, vertexBufferSize);
 
-            if (component.Indicies != null)
+            if (component.Indices != null)
             {
-                ulong indexBufferSize = (ulong)(component.Indicies.Length * sizeof(uint));
+                ulong indexBufferSize = (ulong)(component.Indices.Length * sizeof(uint));
 
                 // Create Staging Buffer for Index Data
                 BufferCreateInfo stagingIndexBufferCreateInfo = new BufferCreateInfo
@@ -76,7 +78,7 @@ namespace RockEngine.Vulkan.Rendering.ComponentRenderers
 
                 using BufferWrapper stagingIndexBuffer = BufferWrapper.Create(context, in stagingIndexBufferCreateInfo, MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit);
 
-                await stagingIndexBuffer.SendDataAsync(component.Indicies)
+                await stagingIndexBuffer.SendDataAsync(component.Indices)
                     .ConfigureAwait(false);
 
                 // Create Index Buffer with Device Local Memory
@@ -100,7 +102,7 @@ namespace RockEngine.Vulkan.Rendering.ComponentRenderers
         }
 
 
-        public void Draw(VulkanContext context, CommandBufferWrapper commandBuffer, MeshComponent component)
+        public void Draw(CommandBufferWrapper commandBuffer, MeshComponent component)
         {
             if (!_isReady)
             {
@@ -110,7 +112,7 @@ namespace RockEngine.Vulkan.Rendering.ComponentRenderers
             if (_indexBuffer != null)
             {
                 _indexBuffer.BindIndexBuffer(commandBuffer);
-                commandBuffer.DrawIndexed((uint)component.Indicies!.Length, 1, 0, 0, 0);
+                commandBuffer.DrawIndexed((uint)component.Indices!.Length, 1, 0, 0, 0);
             }
             else
             {

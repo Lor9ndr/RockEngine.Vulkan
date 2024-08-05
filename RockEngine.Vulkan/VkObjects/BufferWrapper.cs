@@ -77,39 +77,49 @@ namespace RockEngine.Vulkan.VkObjects
 
         public async Task CopyBufferAsync(VulkanContext context, BufferWrapper dstBuffer, ulong size)
         {
-            await context.QueueSemaphore.WaitAsync();
-            var commandPool = context.GetOrCreateCommandPool();
-            var commandBufferAllocateInfoo = new CommandBufferAllocateInfo()
+            context.QueueMutex.WaitOne();
+            try
             {
-                SType = StructureType.CommandBufferAllocateInfo,
-                Level = CommandBufferLevel.Primary,
-                CommandPool = commandPool,
-                CommandBufferCount = 1
-            };
-            using CommandBufferWrapper commandBuffer = CommandBufferWrapper.Create(in commandBufferAllocateInfoo, commandPool);
-
-            commandBuffer.Begin(new CommandBufferBeginInfo
-            {
-                SType = StructureType.CommandBufferBeginInfo,
-                Flags = CommandBufferUsageFlags.OneTimeSubmitBit
-            });
-
-            commandBuffer.CopyBuffer(this, dstBuffer, size);
-
-            commandBuffer.End();
-            var buffer = (CommandBuffer)commandBuffer;
-            unsafe
-            {
-                SubmitInfo submitInfo = new SubmitInfo()
+                var commandPool = context.GetOrCreateCommandPool();
+                var commandBufferAllocateInfoo = new CommandBufferAllocateInfo()
                 {
-                    SType = StructureType.SubmitInfo,
-                    CommandBufferCount = 1,
-                    PCommandBuffers = &buffer
+                    SType = StructureType.CommandBufferAllocateInfo,
+                    Level = CommandBufferLevel.Primary,
+                    CommandPool = commandPool,
+                    CommandBufferCount = 1
                 };
-                context.Api.QueueSubmit(context.Device.GraphicsQueue, 1, &submitInfo, default);
+                using CommandBufferWrapper commandBuffer = CommandBufferWrapper.Create(in commandBufferAllocateInfoo, commandPool);
+
+                commandBuffer.Begin(new CommandBufferBeginInfo
+                {
+                    SType = StructureType.CommandBufferBeginInfo,
+                    Flags = CommandBufferUsageFlags.OneTimeSubmitBit
+                });
+
+                commandBuffer.CopyBuffer(this, dstBuffer, size);
+                commandBuffer.End();
+
+                unsafe
+                {
+                    var buffer = stackalloc CommandBuffer[] { commandBuffer.VkObjectNative };
+                    unsafe
+                    {
+                        SubmitInfo submitInfo = new SubmitInfo()
+                        {
+                            SType = StructureType.SubmitInfo,
+                            CommandBufferCount = 1,
+                            PCommandBuffers = buffer
+                        };
+                        context.Api.QueueSubmit(context.Device.GraphicsQueue, 1, in submitInfo, default);
+                    }
+                    context.Api.QueueWaitIdle(context.Device.GraphicsQueue);
+                }
+               
             }
-            context.Api.QueueWaitIdle(context.Device.GraphicsQueue);
-            context.QueueSemaphore.Release();
+            finally
+            {
+                context.QueueMutex.ReleaseMutex();
+            }
         }
 
         public void MapMemory(ulong bufferSize, ulong offset, out nint pData)
@@ -117,7 +127,7 @@ namespace RockEngine.Vulkan.VkObjects
             _deviceMemory.MapMemory(bufferSize, offset, out pData);
         }
 
-        public unsafe void MapMemory(out nint pData)
+        public void MapMemory(out nint pData)
         {
            _deviceMemory.MapMemory(out pData);
         }

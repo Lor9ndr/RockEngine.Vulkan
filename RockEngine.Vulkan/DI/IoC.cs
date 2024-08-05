@@ -5,6 +5,7 @@ using RockEngine.Vulkan.Rendering.ComponentRenderers;
 using SimpleInjector;
 using SimpleInjector.Lifestyles;
 using RockEngine.Vulkan.EventSystem;
+using SimpleInjector.Diagnostics;
 
 namespace RockEngine.Vulkan.DI
 {
@@ -16,12 +17,14 @@ namespace RockEngine.Vulkan.DI
         {
             // Set the default scoped lifestyle
             Container.Options.DefaultScopedLifestyle = new AsyncScopedLifestyle();
+            Container.Options.EnableAutoVerification = false;
+
 
             // Register component renderers with appropriate lifestyles
             Container.RegisterSingleton<IComponentRenderer<Camera>, CameraRenderer>();
             Container.RegisterSingleton<IComponentRenderer<DebugCamera>, CameraRenderer>();
-            Container.RegisterSingleton<IComponentRenderer<Transform>, TransformComponentRenderer>();
-            Container.RegisterSingleton<IComponentRenderer<Material>, MaterialRenderer>();
+            Container.RegisterSingleton<IComponentRenderer<TransformComponent>, TransformComponentRenderer>();
+            Container.RegisterSingleton<IComponentRenderer<MaterialComponent>, MaterialRenderer>();
 
             // Register the factory
             Container.RegisterSingleton<MeshComponentRendererFactory>();
@@ -29,14 +32,21 @@ namespace RockEngine.Vulkan.DI
             // Register the delegate for creating MeshComponentRenderer with a parameter
             Container.Register<Func<MeshComponent, MeshComponentRenderer>>(() => component =>
             {
+                var context = Container.GetRenderingContext();
                 // Resolve dependencies and create the instance manually
-                var renderer = new MeshComponentRenderer(component);
+                var renderer = new MeshComponentRenderer(component, context);
                 // Initialize or set properties if needed
                 return renderer;
             });
 
             // Register other dependencies
             Container.RegisterSingleton<IEventSystem, EventSystem.EventSystem>();
+
+            Container.Register<TransformComponent>();
+            Container.Register<MeshComponent>();
+            Container.Register<MaterialComponent>();
+            Container.Register<Camera>();
+            Container.Register<DebugCamera>();
 
         }
     }

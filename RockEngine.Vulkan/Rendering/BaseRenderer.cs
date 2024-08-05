@@ -10,7 +10,6 @@ namespace RockEngine.Vulkan.Rendering
 {
     public class BaseRenderer : ARenderer, IDisposable
     {
-        private SemaphoreSlim _frameSemaphore;
 
         public BaseRenderer(VulkanContext context, ISurfaceHandler surfaceHandler)
             : base(context, surfaceHandler)
@@ -20,7 +19,6 @@ namespace RockEngine.Vulkan.Rendering
         protected override void CreateSwapChain(ISurfaceHandler surfaceHandler)
         {
             _swapchain = SwapchainWrapper.Create(_context, surfaceHandler, (uint)surfaceHandler.Size.X, (uint)surfaceHandler.Size.Y);
-            _frameSemaphore = new SemaphoreSlim(1, 1);
         }
 
         protected override void CreateCommandBuffers()
@@ -40,13 +38,11 @@ namespace RockEngine.Vulkan.Rendering
             }
         }
 
-        public override async Task<CommandBufferWrapper?> BeginFrameAsync()
+        public override CommandBufferWrapper? BeginFrame()
         {
-            await _frameSemaphore.WaitAsync();
             float width = _surface.Size.X, height = _surface.Size.Y;
             if (width == 0 || height == 0)
             {
-                _frameSemaphore.Release();
                 return null; // Skip rendering if the window is minimized
             }
 
@@ -57,7 +53,6 @@ namespace RockEngine.Vulkan.Rendering
 
             if (result == Result.ErrorOutOfDateKhr)
             {
-                _frameSemaphore.Release();
                 RecreateSwapChainAsync();
                 return null;
             }
@@ -87,7 +82,6 @@ namespace RockEngine.Vulkan.Rendering
             _swapchain.SubmitCommandBuffers([commandBuffer.VkObjectNative], _currentImageIndex);
             _frameStarted = false;
 
-            _frameSemaphore.Release();
         }
 
         public unsafe override void BeginSwapchainRenderPass(in CommandBufferWrapper commandBuffer)

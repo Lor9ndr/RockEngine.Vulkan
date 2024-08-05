@@ -48,7 +48,10 @@ namespace RockEngine.Vulkan
             _window = Window.Create(WindowOptions.DefaultVulkan);
             _window.Title = "RockEngine";
 
-            _window.Load += async () => await InitializeAsync().ConfigureAwait(false);
+            _window.Load += async () => await InitializeAsync()
+                    .ConfigureAwait(false);
+
+
             _window.Update += Update;
 
             try
@@ -68,7 +71,11 @@ namespace RockEngine.Vulkan
         private async Task InitializeAsync()
         {
             _inputContext = _window.CreateInput();
+            
+            IoC.Container.RegisterInstance(_inputContext);
+
             _context = new VulkanContext(_window, "Lor9ndr");
+
             _baseRenderer = new BaseRenderer(_context, _context.Surface);
             _assetManager = new AssetManager();
 
@@ -81,9 +88,10 @@ namespace RockEngine.Vulkan
 
         private async Task LoadProjectAsync()
         {
-            _project = await _assetManager.CreateProjectAsync("Sandbox", "F:\\RockEngine.Vulkan\\RockEngine.Vulkan\\bin\\Debug\\net8.0\\Sandbox.asset", CancellationToken);
+            _project = await _assetManager.CreateProjectAsync("Sandbox", "..\\Sandbox.asset", CancellationToken);
             var scene = _project.Scenes[0];
-            await _assetManager.SaveAssetAsync(scene, CancellationToken);
+            await _assetManager.AddAssetToProject(_project,scene, CancellationToken);
+            _window.Title = _project.Name;
         }
 
         private async Task InitializeRenderSystemsAsync()
@@ -107,32 +115,39 @@ namespace RockEngine.Vulkan
         {
             var scene = _project.Scenes[0];
             var camera = new Entity();
-            await camera.AddComponent(_context, new DebugCamera(_inputContext, MathHelper.DegreesToRadians(90), _window.Size.X / _window.Size.Y, 0.1f, 1000, camera));
-            await scene.AddEntity(_context, camera);
+            camera.AddComponent<DebugCamera>();
+            await scene.AddEntity(camera);
 
+            var cubeAsset = new MeshAsset("Cube", "..\\..\\Cube.asset");
+            cubeAsset.SetVertices(DefaultMesh.CubeVertices);
+
+            await _assetManager.AddAssetToProject(_project, cubeAsset, CancellationToken);
+
+            var texture = await Texture.FromFileAsync(_context, "C:\\Users\\Админис\\Desktop\\texture.jpg", CancellationToken);
             for (int i = 0; i < 1; i++)
             {
                 var entity = new Entity();
-                await entity.AddComponent(_context, new MeshComponent(entity, DefaultMesh.CubeVertices));
-                await entity.AddComponent(_context, new Material(entity, await Texture.FromFileAsync(_context, "C:\\Users\\Админис\\Desktop\\texture.jpg", CancellationToken)));
+                var mesh = entity.AddComponent<MeshComponent>();
+                mesh.SetAsset(cubeAsset);
+                var material = entity.AddComponent<MaterialComponent>();
+                material.SetTexture(texture);
                 entity.Transform.Scale = new Vector3(4, 4, 4);
                 entity.Transform.Position = new Vector3(0, 0, -5);
-                await scene.AddEntity(_context, entity);
+                await scene.AddEntity(entity);
             }
 
-            await scene.InitializeAsync(_context);
+            await scene.InitializeAsync();
         }
 
         private async Task DrawFrame(double obj)
         {
-            var commandBuffer = await _baseRenderer.BeginFrameAsync().ConfigureAwait(false);
+            var commandBuffer =  _baseRenderer.BeginFrame();
             if (commandBuffer == null)
             {
                 return;
             }
 
             _imguiController.Update((float)obj);
-            ImGui.ShowDemoWindow();
 
             _baseRenderer.BeginSwapchainRenderPass(in commandBuffer);
             await _sceneRenderSystem.RenderAsync(_project, commandBuffer, _baseRenderer.FrameIndex).ConfigureAwait(false);

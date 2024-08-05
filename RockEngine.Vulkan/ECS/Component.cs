@@ -5,18 +5,16 @@ namespace RockEngine.Vulkan.ECS
     public abstract class Component
     {
         protected bool IsInitialized;
-        public abstract int Order { get; }
         public Entity Entity { get; protected set; }
 
-        public Component(Entity entity)
+        public Component()
         {
-            SetEntity(entity);
         }
 
-        public abstract Task OnInitializedAsync(VulkanContext context);
+        public abstract Task OnInitializedAsync();
 
         public virtual void Update(double time) { }
-        public void SetEntity(Entity entity)
+        internal void SetEntity(Entity entity)
         {
             Entity = entity;
         }

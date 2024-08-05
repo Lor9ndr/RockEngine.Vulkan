@@ -21,7 +21,7 @@ namespace RockEngine.Vulkan.Assets
             var id = jsonObject.GetProperty("ID").GetGuid();
             var path = jsonObject.GetProperty("Path").GetString() ?? throw new JsonException("Path cannot be null.");
 
-            var asset = _assetManager.LoadAssetByIdAsync<IAsset>(id, path).GetAwaiter().GetResult();
+            var asset = _assetManager.GetAssetByIdAsync<IAsset>(id, path).GetAwaiter().GetResult();
             return asset;
         }
 
@@ -70,7 +70,7 @@ namespace RockEngine.Vulkan.Assets
                 var id = jsonObject.GetProperty("ID").GetGuid();
                 var path = jsonObject.GetProperty("Path").GetString() ?? throw new JsonException("Path cannot be null.");
 
-                var asset = _assetManager.LoadAssetByIdAsync<IAsset>(id, path).GetAwaiter().GetResult();
+                var asset = _assetManager.GetAssetByIdAsync<IAsset>(id, path).GetAwaiter().GetResult();
                 assets.Add(asset);
             }
 

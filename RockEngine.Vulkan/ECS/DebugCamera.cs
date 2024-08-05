@@ -12,8 +12,7 @@ namespace RockEngine.Vulkan.ECS
         private Vector2 _lastMousePosition;
         private bool _firstMouseMove = true;
 
-        public DebugCamera(IInputContext context, float fov, float aspectRatio, float nearClip, float farClip, Entity entity)
-            : base(fov, aspectRatio, nearClip, farClip, entity)
+        public DebugCamera(IInputContext context)
         {
             _inputContext = context;
 

@@ -2,7 +2,6 @@
 using RockEngine.Vulkan.Rendering.ComponentRenderers;
 using RockEngine.Vulkan.Utils;
 using RockEngine.Vulkan.VkObjects;
-using RockEngine.Vulkan.VulkanInitilizers;
 
 using System.Numerics;
 
@@ -116,17 +115,15 @@ namespace RockEngine.Vulkan.ECS
         public IComponentRenderer<Camera> Renderer => _renderer;
      
 
-        public override int Order => 0;
+        public int Order => 0;
 
-        public Camera(float fov, float aspectRatio, float nearClip, float farClip, Entity entity)
-            :base(entity)
+        public Camera()
         {
-            _fov = fov;
-            _aspectRatio = aspectRatio;
-            _nearClip = nearClip;
-            _farClip = farClip;
-            UpdateVectors();
-            UpdateProjectionMatrix();
+            _fov = MathHelper.DegreesToRadians(90);
+            _aspectRatio = 16/9; // just for now, we have to change it by window
+            _nearClip = 0.1f;
+            _farClip = 1000;
+
         }
 
         protected void UpdateViewMatrix()
@@ -164,12 +161,14 @@ namespace RockEngine.Vulkan.ECS
             UpdateViewMatrix();
         }
 
-        public override async Task OnInitializedAsync(VulkanContext context)
+        public override async Task OnInitializedAsync()
         {
+            UpdateVectors();
+            UpdateProjectionMatrix();
             try
             {
                 _renderer = IoC.Container.GetRenderer<Camera>();
-                await _renderer.InitializeAsync(this, context)
+                await _renderer.InitializeAsync(this)
                     .ConfigureAwait(false);
                 IsInitialized = true;
             }
@@ -181,9 +180,9 @@ namespace RockEngine.Vulkan.ECS
             }
         }
 
-        public Task RenderAsync(VulkanContext context, CommandBufferWrapper commandBuffer)
+        public Task RenderAsync(CommandBufferWrapper commandBuffer)
         {
-            return _renderer.RenderAsync(this, context, commandBuffer);
+            return _renderer.RenderAsync(this, commandBuffer);
         }
     }
 }

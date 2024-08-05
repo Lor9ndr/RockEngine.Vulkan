@@ -27,7 +27,17 @@ namespace RockEngine.Vulkan.Assets
             return asset;
         }
 
-        public async Task<T?> LoadAssetByIdAsync<T>(Guid id, string path, CancellationToken cancellationToken = default) where T : IAsset
+        private void TryAddAsset<T>(T asset) where T : IAsset
+        {
+            if (_loadedAssets.Contains(asset))
+            {
+                return;
+            }
+
+            _loadedAssets.Add(asset);
+        }
+
+        public async Task<T?> GetAssetByIdAsync<T>(Guid id, string path, CancellationToken cancellationToken = default) where T : IAsset
         {
             var asset = _loadedAssets.FirstOrDefault(a => a.ID == id && a.Path == path);
             if (asset != null)
@@ -44,6 +54,7 @@ namespace RockEngine.Vulkan.Assets
             var options = GetSerializerOptions();
             await JsonSerializer.SerializeAsync(fs, asset, options, cancellationToken: cancellationToken);
             asset.IsChanged = false;
+            TryAddAsset(asset);
         }
 
         public async Task<Project> CreateProjectAsync(string name, string path, CancellationToken cancellationToken = default)
@@ -52,6 +63,20 @@ namespace RockEngine.Vulkan.Assets
             await SaveAssetAsync(p, cancellationToken)
                 .ConfigureAwait(false);
             return p;
+        }
+
+        /// <summary>
+        /// Will change the path of the asset to the <see cref="Project.AssetPath"/> + <see cref="IAsset.Name"/> + <see cref="IAsset.FILE_EXTENSION"/>
+        /// and save it to that path
+        /// </summary>
+        /// <typeparam name="T">asset type</typeparam>
+        /// <param name="project">to which project to add asset</param>
+        /// <param name="asset">asset that will be moved to the project assets path</param>
+        /// <returns></returns>
+        public  Task AddAssetToProject<T>(Project project, T asset, CancellationToken cancellationToken = default) where T:IAsset
+        {
+            asset.Path = project.AssetPath + "/" + asset.Name + IAsset.FILE_EXTENSION;
+            return SaveAssetAsync(asset, cancellationToken);
         }
     }
 }

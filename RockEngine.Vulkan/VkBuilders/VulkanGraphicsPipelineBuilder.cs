@@ -5,7 +5,6 @@ using RockEngine.Vulkan.VulkanInitilizers;
 using Silk.NET.Vulkan;
 
 using System.Buffers;
-using System.Collections.Generic;
 using System.Text;
 
 namespace RockEngine.Vulkan.VkBuilders
@@ -102,7 +101,7 @@ namespace RockEngine.Vulkan.VkBuilders
             return this;
         }
 
-        public GraphicsPipelineBuilder AddPoolSizes(DescriptorPoolSize[] poolSizes)
+        public GraphicsPipelineBuilder SetPoolSizes(DescriptorPoolSize[] poolSizes)
         {
             _poolSizes = poolSizes;
             return this;
@@ -123,24 +122,24 @@ namespace RockEngine.Vulkan.VkBuilders
         /// <returns>disposable pipeline wrapper</returns>
         public unsafe PipelineWrapper Build()
         {
-            ArgumentNullException.ThrowIfNull(_pipelineLayout);
-            ArgumentNullException.ThrowIfNull(_pipelineStageBuilder);
-            ArgumentNullException.ThrowIfNull(_vertexInputStateBuilder);
-            ArgumentNullException.ThrowIfNull(_colorBlendStateBuilder);
-            ArgumentNullException.ThrowIfNull(_dynamicStateBuilder);
-            ArgumentNullException.ThrowIfNull(_inputAssemblyBuilder);
-            ArgumentNullException.ThrowIfNull(_multisampleStateBuilder);
-            ArgumentNullException.ThrowIfNull(_rasterizerBuilder);
-            ArgumentNullException.ThrowIfNull(_viewportStateBuilder);
+            ArgumentNullException.ThrowIfNull(_pipelineLayout,nameof(_pipelineLayout));
+            ArgumentNullException.ThrowIfNull(_pipelineStageBuilder, nameof(_pipelineStageBuilder));
+            ArgumentNullException.ThrowIfNull(_vertexInputStateBuilder, nameof(_vertexInputStateBuilder));
+            ArgumentNullException.ThrowIfNull(_colorBlendStateBuilder, nameof(_colorBlendStateBuilder));
+            ArgumentNullException.ThrowIfNull(_dynamicStateBuilder, nameof(_dynamicStateBuilder));
+            ArgumentNullException.ThrowIfNull(_inputAssemblyBuilder, nameof(_inputAssemblyBuilder));
+            ArgumentNullException.ThrowIfNull(_multisampleStateBuilder, nameof(_multisampleStateBuilder));
+            ArgumentNullException.ThrowIfNull(_rasterizerBuilder, nameof(_rasterizerBuilder));
+            ArgumentNullException.ThrowIfNull(_viewportStateBuilder, nameof(_viewportStateBuilder));
 
-            var pstages = _pipelineStageBuilder.Build();
-            var pInputState = _vertexInputStateBuilder.Build();
-            var pColorBlend = _colorBlendStateBuilder.Build();
-            var pDynamicState = _dynamicStateBuilder.Build();
-            var pInputAssembly = _inputAssemblyBuilder.Build();
-            var pMultisample = _multisampleStateBuilder.Build();
-            var pRasterizer = _rasterizerBuilder.Build();
-            var pVpState = _viewportStateBuilder.Build();
+            using var pstages = _pipelineStageBuilder.Build();
+            using var pInputState = _vertexInputStateBuilder.Build();
+            using var pColorBlend = _colorBlendStateBuilder.Build();
+            using var pDynamicState = _dynamicStateBuilder.Build();
+            using var pInputAssembly = _inputAssemblyBuilder.Build();
+            using var pMultisample = _multisampleStateBuilder.Build();
+            using var pRasterizer = _rasterizerBuilder.Build();
+            using var pVpState = _viewportStateBuilder.Build();
 
             // Ensure the SType is correctly set
             _depthStencilState.SType = StructureType.PipelineDepthStencilStateCreateInfo;
@@ -165,28 +164,13 @@ namespace RockEngine.Vulkan.VkBuilders
                 Subpass = 0,
             };
 
-            try
-            {
-                _context.Api.CreateGraphicsPipelines(_context.Device, default, 1, in ci, null, out Pipeline pipeline)
-                    .ThrowCode("Failed to create pipeline");
+            _context.Api.CreateGraphicsPipelines(_context.Device, default, 1, in ci, null, out Pipeline pipeline)
+                .ThrowCode("Failed to create pipeline");
 
-                var pipelineWrapper = new PipelineWrapper(_context, _name, pipeline, _pipelineLayout, _renderPass,_poolSizes, _maxSets);
+            var pipelineWrapper = new PipelineWrapper(_context, _name, pipeline, _pipelineLayout, _renderPass, _poolSizes, _maxSets);
 
-                _context.PipelineManager.AddPipeline(pipelineWrapper);
-                return pipelineWrapper;
-            }
-            finally
-            {
-                _pipelineStageBuilder.Dispose();
-                _vertexInputStateBuilder.Dispose();
-                _colorBlendStateBuilder.Dispose();
-                _dynamicStateBuilder.Dispose();
-                _inputAssemblyBuilder.Dispose();
-                _multisampleStateBuilder.Dispose();
-                _rasterizerBuilder.Dispose();
-                _viewportStateBuilder.Dispose();
-            }
+            _context.PipelineManager.AddPipeline(pipelineWrapper);
+            return pipelineWrapper;
         }
-
     }
 }

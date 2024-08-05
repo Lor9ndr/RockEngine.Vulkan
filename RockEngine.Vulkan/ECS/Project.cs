@@ -18,7 +18,9 @@ namespace RockEngine.Vulkan.ECS
         [JsonIgnore]
         public bool IsChanged { get; set; } = false;
 
-        // Dynamically calculate the AssetPath based on the Path property
+        /// <summary>
+        /// Dynamically calculate the AssetPath based on the Path property
+        /// </summary>
         public string AssetPath
         {
             get
@@ -30,14 +32,13 @@ namespace RockEngine.Vulkan.ECS
             }
         }
 
-        public Project(Guid id, string name, string path)
+        internal Project(Guid id, string name, string path)
         {
             ID = id;
             Name = name;
             Path = path;
-            CreateAssetFolder();
+            TryCreateAssetFolder();
             IsChanged = false;
-            CurrentScene = Scenes[0];
         }
 
         public Project(string name, string path)
@@ -45,14 +46,18 @@ namespace RockEngine.Vulkan.ECS
             ID = Guid.NewGuid();
             Name = name;
             Path = path;
-            CreateAssetFolder();
+            TryCreateAssetFolder();
             IsChanged = false;
             AddScene(new Scene("Scene 1", this));
             CurrentScene = Scenes[0];
         }
 
-        private void CreateAssetFolder()
+        private void TryCreateAssetFolder()
         {
+            if (Directory.Exists(AssetPath))
+            {
+                return;
+            }
             Directory.CreateDirectory(AssetPath);
         }
 

@@ -1,4 +1,5 @@
-﻿using RockEngine.Vulkan.VkBuilders;
+﻿using RockEngine.Vulkan.DI;
+using RockEngine.Vulkan.VkBuilders;
 using RockEngine.Vulkan.VkObjects;
 
 using Silk.NET.Core;
@@ -22,16 +23,22 @@ namespace RockEngine.Vulkan.VulkanInitilizers
         public PipelineManager PipelineManager { get; }
         public ISurfaceHandler Surface { get; private set;}
 
-        public SemaphoreSlim QueueSemaphore = new SemaphoreSlim(1,1);
+        public Mutex QueueMutex = new Mutex();
 
         private readonly IWindow _window;
         private readonly string[] _validationLayers = ["VK_LAYER_KHRONOS_validation"];
         private DebugUtilsMessengerCallbackFunctionEXT _debugCallback;
+        
+        /// <summary>
+        /// Max frames in flight, for now it has a bug with more than 1 frame in flight
+        /// </summary>
         public const int MAX_FRAMES_IN_FLIGHT = 3;
 
         public VulkanContext(IWindow window, string appName)
         {
             _window = window;
+            ArgumentNullException.ThrowIfNull(_window.VkSurface);
+
             Api = Vk.GetApi();
             CreateInstance(appName);
 
@@ -40,7 +47,8 @@ namespace RockEngine.Vulkan.VulkanInitilizers
             CommandPoolManager = new CommandPoolManager(this);
             PipelineManager = new PipelineManager(this);
             DescriptorPoolFactory = new DescriptorPoolFactory(this);
-            
+
+            IoC.Container.RegisterInstance(this);
         }
 
         public CommandPoolWrapper GetOrCreateCommandPool()
@@ -74,7 +82,8 @@ namespace RockEngine.Vulkan.VulkanInitilizers
             PfnDebugUtilsMessengerCallbackEXT dbcallback = new PfnDebugUtilsMessengerCallbackEXT(
                 (delegate* unmanaged[Cdecl]<DebugUtilsMessageSeverityFlagsEXT, DebugUtilsMessageTypeFlagsEXT, DebugUtilsMessengerCallbackDataEXT*, void*, Bool32>)callbackPtr);
 
-            var extensions = _window.VkSurface.GetRequiredExtensions(out uint countExtensions);
+
+            var extensions = _window.VkSurface!.GetRequiredExtensions(out uint countExtensions);
             ci.PpEnabledExtensionNames = extensions;
             ci.EnabledExtensionCount = countExtensions;
 

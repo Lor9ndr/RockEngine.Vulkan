@@ -1,8 +1,8 @@
-﻿using RockEngine.Vulkan.DI;
+﻿using RockEngine.Vulkan.Assets;
+using RockEngine.Vulkan.DI;
 using RockEngine.Vulkan.Rendering.ComponentRenderers;
 using RockEngine.Vulkan.Rendering.ComponentRenderers.Factories;
 using RockEngine.Vulkan.VkObjects;
-using RockEngine.Vulkan.VulkanInitilizers;
 
 using SimpleInjector.Lifestyles;
 
@@ -10,40 +10,49 @@ namespace RockEngine.Vulkan.ECS
 {
     public class MeshComponent : Component, IRenderableComponent<MeshComponent>, IDisposable
     {
-        private readonly RenderableObject _renderableObject;
+        private MeshAsset _asset;
         private MeshComponentRenderer _renderer;
 
-        public Vertex[] Vertices => _renderableObject.Vertices;
-        public uint[]? Indicies => _renderableObject.Indicies;
+        public Vertex[] Vertices => _asset.Vertices;
+        public uint[]? Indices => _asset.Indices;
 
         public IComponentRenderer<MeshComponent> Renderer => _renderer;
 
-        public override int Order => 100;
+        public int Order => 100;
 
-        public MeshComponent(Entity entity, Vertex[] vertices, uint[]? indices = null)
-            :base(entity)
+        public MeshComponent()
         {
-            _renderableObject = new RenderableObject(vertices, indices);
         }
 
-        public override async Task OnInitializedAsync(VulkanContext context)
+        public void SetAsset(MeshAsset meshAsset)
         {
-            using (AsyncScopedLifestyle.BeginScope(IoC.Container))
+            _asset = meshAsset;
+        }
+
+        /// <summary>
+        /// Initializing the meshComponent, create/get renderer 
+        /// </summary>
+        /// <returns>Task as async function</returns>
+        public override async Task OnInitializedAsync()
+        {
+            ArgumentNullException.ThrowIfNull(_asset);
+
+            using (var scope = AsyncScopedLifestyle.BeginScope(IoC.Container))
             {
-                var factory = IoC.Container.GetInstance<MeshComponentRendererFactory>();
+                var factory = scope.GetInstance<MeshComponentRendererFactory>();
                 _renderer = factory.Get(this);
-                await _renderer.InitializeAsync(this, context).ConfigureAwait(false);
             }
+            await _renderer.InitializeAsync(this).ConfigureAwait(false);
             IsInitialized = true;
         }
 
-        public async Task RenderAsync(VulkanContext context, CommandBufferWrapper commandBuffer)
+        public Task RenderAsync(CommandBufferWrapper commandBuffer)
         {
             if (!IsInitialized)
             {
-                return;
+                return Task.CompletedTask;
             }
-            await _renderer.RenderAsync(this, context, commandBuffer);
+            return _renderer.RenderAsync(this, commandBuffer);
         }
 
         public void Dispose()

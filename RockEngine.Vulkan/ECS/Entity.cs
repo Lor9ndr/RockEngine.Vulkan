@@ -1,59 +1,54 @@
-﻿using RockEngine.Vulkan.VkObjects;
-using RockEngine.Vulkan.VulkanInitilizers;
+﻿using RockEngine.Vulkan.DI;
+using RockEngine.Vulkan.VkObjects;
 
 namespace RockEngine.Vulkan.ECS
 {
     public class Entity
     {
         public string Name;
-        public Transform Transform;
-        private List<Component> _components = new List<Component>();
+        public TransformComponent Transform;
+        private ComponentCollection _components = new ComponentCollection();
         private bool _isInitialized = false;
 
         public Entity()
         {
             Name = "Entity";
-            Transform = AddComponent(null, new Transform(this)).GetAwaiter().GetResult();
+            Transform = AddComponent<TransformComponent>();
         }
 
-        public async Task InitializeAsync(VulkanContext context)
+        public async Task InitializeAsync()
         {
             foreach (var item in _components)
             {
-                await item.OnInitializedAsync(context);
+                await item.OnInitializedAsync();
             }
             _isInitialized = true;
         }
 
-        public async Task<T> AddComponent<T>(VulkanContext context, T component) where T : Component
+        public T AddComponent<T>() where T:Component
         {
+            var component = IoC.Container.GetInstance<T>();
             _components.Add(component);
-
-            if (_isInitialized)
-            {
-                await component.OnInitializedAsync(context).ConfigureAwait(false);
-            }
-            _components = _components.OrderBy(s=>s.Order).ToList();
+            component.SetEntity(this);
             return component;
         }
 
-        public T GetComponent<T>() where T : Component
+        public T? GetComponent<T>() where T : Component
         {
-            return _components.OfType<T>().First();
+            return _components.GetFirst<T>();
         }
 
 
-        public async Task RenderAsync(VulkanContext context, CommandBufferWrapper commandBuffer)
+        public async Task RenderAsync(CommandBufferWrapper commandBuffer)
         {
             if (!_isInitialized)
             {
                 return;
             }
 
-            foreach (var item in _components.OfType<IRenderable>())
+            foreach (var item in _components.GetRenderables())
             {
-                await item.RenderAsync(context, commandBuffer);
-
+                await item.RenderAsync(commandBuffer);
             }
         }
 

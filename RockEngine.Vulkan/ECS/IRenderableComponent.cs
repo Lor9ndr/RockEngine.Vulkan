@@ -10,6 +10,7 @@ namespace RockEngine.Vulkan.ECS
     }
     public interface IRenderable
     {
-        public Task RenderAsync(VulkanContext context, CommandBufferWrapper commandBuffer);
+        public int Order { get; }
+        public Task RenderAsync(CommandBufferWrapper commandBuffer);
     }
 }

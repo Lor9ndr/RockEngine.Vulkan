@@ -37,32 +37,32 @@ namespace RockEngine.Vulkan.ECS
             Path = project.AssetPath + "\\" + Name + IAsset.FILE_EXTENSION;
         }
 
-        public async Task AddEntity(VulkanContext context, Entity entity)
+        public async Task AddEntity( Entity entity)
         {
             _entities.Add(entity);
             if (_isInitalized)
             {
-                await entity.InitializeAsync(context);
+                await entity.InitializeAsync();
             }
         }
 
-        public async Task InitializeAsync(VulkanContext context)
+        public async Task InitializeAsync()
         {
             for (int i = 0; i < _entities.Count; i++)
             {
                 Entity? item = _entities[i];
-                await item.InitializeAsync(context);
+                await item.InitializeAsync();
             }
             _isInitalized = true;
         }
         
 
-        public async Task RenderAsync(VulkanContext context, CommandBufferWrapper commandBuffer)
+        public async Task RenderAsync(CommandBufferWrapper commandBuffer)
         {
             for (int i = 0; i < _entities.Count; i++)
             {
                 Entity? item = _entities[i];
-                await item.RenderAsync(context, commandBuffer);
+                await item.RenderAsync(commandBuffer);
             }
         }
 
