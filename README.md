@@ -48,4 +48,4 @@ To get started with RockEngine, follow these steps:
 ## Usage
 
 To run a sample application using RockEngine:
-(Sample app will be in development
+(Sample app will be in development, for now just run the builded app)
