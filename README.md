@@ -1,6 +1,6 @@
 # RockEngine
 
-RockEngine is a high-performance 3D game engine built on Vulkan. It aims to provide developers with a powerful and flexible platform for creating stunning 3D games.
+RockEngine is going to be a high perfomance 3D game engine built on Vulkan. It aims to provide developers with a powerful and flexible platform for creating stunning 3D games.
 
 ## Features
 
