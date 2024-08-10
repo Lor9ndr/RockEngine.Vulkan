@@ -12,7 +12,7 @@ RockEngine is going to be a high perfomance 3D game engine built on Vulkan. It a
 - **Texture Mapping**: Basic texture mapping capabilities.
 - **Camera System**: Basic camera controls and movement.
 - **Input Handling**: Keyboard and mouse input handling.
-- **Shader reflection**:Able to reflect shader to get Ubos and combinedImageSamples
+- **Shader reflection**: Able to reflect shader to get Ubos and combinedImageSamples
 
 ### In Progress
 - **Lighting System**: Implementing basic lighting (directional, point, and spotlights).
