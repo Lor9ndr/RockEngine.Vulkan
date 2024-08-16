@@ -12,10 +12,12 @@ namespace RockEngine.Vulkan.Rendering.ComponentRenderers
         private UniformBufferObject? _ubo;
         private bool _isInitialized = false;
         private readonly VulkanContext _context;
+        private readonly PipelineManager _pipelineManager;
 
-        public CameraRenderer(VulkanContext context)
+        public CameraRenderer(VulkanContext context, PipelineManager pipelineManager)
         {
             _context = context;
+            _pipelineManager = pipelineManager;
         }
 
         public unsafe ValueTask InitializeAsync(Camera component)
@@ -26,17 +28,19 @@ namespace RockEngine.Vulkan.Rendering.ComponentRenderers
             }
 
             _ubo = UniformBufferObject.Create(_context, (ulong)Marshal.SizeOf<Matrix4x4>(), "CameraData");
-            _context.PipelineManager.SetBuffer(_ubo,0, 0);
+            _pipelineManager.SetBuffer(_ubo,0, 0);
             _isInitialized = true;
             return new ValueTask();
         }
 
-        public async Task RenderAsync(Camera component, CommandBufferWrapper commandBuffer)
+        public async Task RenderAsync(Camera component, FrameInfo frameInfo)
         {
             var viewProjectionMatrix = component.ViewProjectionMatrix;
-
-            _context.PipelineManager.Use(_ubo, commandBuffer);
+            // CAN BE MOVED TO THE UPDATE METHOD
             await _ubo!.UniformBuffer.SendDataAsync(viewProjectionMatrix);
+
+            // THIS IS HAS TO BE STAYED HERE 
+            _pipelineManager.Use(_ubo, frameInfo);
         }
 
 

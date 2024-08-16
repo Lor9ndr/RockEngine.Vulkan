@@ -7,20 +7,17 @@ using Silk.NET.Vulkan;
 using Silk.NET.Vulkan.Extensions.KHR;
 using Silk.NET.Windowing;
 
-using SkiaSharp;
-
 using System.Runtime.InteropServices;
 
 namespace RockEngine.Vulkan.VulkanInitilizers
 {
-    public unsafe class VulkanContext : IDisposable
+    public unsafe class VulkanContext : IVulkanContext
     {
         public Vk Api { get; private set; }
         public InstanceWrapper Instance { get; private set; }
         public LogicalDeviceWrapper Device { get; private set; }
         public CommandPoolManager CommandPoolManager { get; private set;}
         public DescriptorPoolFactory DescriptorPoolFactory { get; }
-        public PipelineManager PipelineManager { get; }
         public ISurfaceHandler Surface { get; private set;}
 
         public Mutex QueueMutex = new Mutex();
@@ -32,7 +29,7 @@ namespace RockEngine.Vulkan.VulkanInitilizers
         /// <summary>
         /// Max frames in flight, for now it has a bug with more than 1 frame in flight
         /// </summary>
-        public const int MAX_FRAMES_IN_FLIGHT = 3;
+        public const int MAX_FRAMES_IN_FLIGHT = 1;
 
         public VulkanContext(IWindow window, string appName)
         {
@@ -45,7 +42,6 @@ namespace RockEngine.Vulkan.VulkanInitilizers
             Surface = SDLSurfaceHandler.CreateSurface(_window, this);
             CreateDevice();
             CommandPoolManager = new CommandPoolManager(this);
-            PipelineManager = new PipelineManager(this);
             DescriptorPoolFactory = new DescriptorPoolFactory(this);
 
             IoC.Container.RegisterInstance(this);
@@ -139,7 +135,7 @@ namespace RockEngine.Vulkan.VulkanInitilizers
             // Throw an exception if severity is ErrorBitEXT
             if (messageSeverity == DebugUtilsMessageSeverityFlagsEXT.ErrorBitExt)
             {
-               throw new Exception($"Vulkan Error: {message}");
+               throw new Exception(message: $"Vulkan Error: {message}");
             }
 
             return new Bool32(true);
@@ -149,7 +145,6 @@ namespace RockEngine.Vulkan.VulkanInitilizers
         {
             DescriptorPoolFactory.Dispose();
             CommandPoolManager.Dispose();
-            PipelineManager.Dispose();
             Surface.Dispose();
             Device.Dispose();
             Instance.Dispose();

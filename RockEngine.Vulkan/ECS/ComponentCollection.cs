@@ -8,6 +8,7 @@ namespace RockEngine.Vulkan.ECS
         private readonly Dictionary<Type, List<Component>> _components;
         private readonly List<IRenderable> _renderables;
 
+
         public ComponentCollection()
         {
             _components = new Dictionary<Type, List<Component>>();

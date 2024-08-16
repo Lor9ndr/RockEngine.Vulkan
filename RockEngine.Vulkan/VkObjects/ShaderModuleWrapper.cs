@@ -23,7 +23,14 @@ namespace RockEngine.Vulkan.VkObjects
 
         private readonly ReflectShaderModule _reflectShaderModule;
 
+        /// <summary>
+        /// Shader stage (e.g. fragment, vertex)
+        /// </summary>
         public ShaderStageFlags Stage => _stage;
+
+        /// <summary>
+        /// Input variables
+        /// </summary>
         public IReadOnlyList<ShaderVariableReflected> Variables => _variables;
         public IReadOnlyList<UniformBufferObjectReflected> ReflectedUbos => _reflectedUbos;
         public IReadOnlyList<SamplerObjectReflected> Samplers => _samplers;
@@ -84,18 +91,11 @@ namespace RockEngine.Vulkan.VkObjects
                 for (int j = 0; j < descriptorSet->BindingCount; j++)
                 {
                     var binding = descriptorSet->Bindings[j];
-                    var bindingReflected = new DescriptorSetLayoutBindingReflected
-                    {
-                        Binding = binding->Binding,
-                        DescriptorType = (Silk.NET.Vulkan.DescriptorType)binding->DescriptorType,
-                        DescriptorCount = binding->Count,
-                        StageFlags = _stage,
-                    };
+                    var bindingReflected = new DescriptorSetLayoutBindingReflected(null, binding->Binding, (Silk.NET.Vulkan.DescriptorType)binding->DescriptorType, binding->Count, _stage, default);
                     bindings.Add(bindingReflected);
                     string name;
                     if (binding->DescriptorType == DescriptorType.UniformBuffer)
                     {
-
                         name  = SilkMarshal.PtrToString((nint)reflectorApi.BlockVariableTypeName(ref binding->Block));
                         _reflectedUbos.Add(new UniformBufferObjectReflected
                         {

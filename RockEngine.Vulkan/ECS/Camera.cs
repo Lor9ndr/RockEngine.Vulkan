@@ -1,4 +1,5 @@
 ﻿using RockEngine.Vulkan.DI;
+using RockEngine.Vulkan.Rendering;
 using RockEngine.Vulkan.Rendering.ComponentRenderers;
 using RockEngine.Vulkan.Utils;
 using RockEngine.Vulkan.VkObjects;
@@ -7,7 +8,7 @@ using System.Numerics;
 
 namespace RockEngine.Vulkan.ECS
 {
-    internal class Camera : Component, IRenderableComponent<Camera>
+    public class Camera : Component, IRenderableComponent<Camera>
     {
         public const int MAX_FOV = 120;
         public const int MIN_FOV = 30;
@@ -117,8 +118,9 @@ namespace RockEngine.Vulkan.ECS
 
         public int Order => 0;
 
-        public Camera()
+        public Camera(IComponentRenderer<Camera> renderer)
         {
+            _renderer = renderer;
             _fov = MathHelper.DegreesToRadians(90);
             _aspectRatio = 16/9; // just for now, we have to change it by window
             _nearClip = 0.1f;
@@ -167,7 +169,6 @@ namespace RockEngine.Vulkan.ECS
             UpdateProjectionMatrix();
             try
             {
-                _renderer = IoC.Container.GetRenderer<Camera>();
                 await _renderer.InitializeAsync(this)
                     .ConfigureAwait(false);
                 IsInitialized = true;
@@ -180,9 +181,9 @@ namespace RockEngine.Vulkan.ECS
             }
         }
 
-        public Task RenderAsync(CommandBufferWrapper commandBuffer)
+        public Task RenderAsync(FrameInfo frameInfo)
         {
-            return _renderer.RenderAsync(this, commandBuffer);
+            return _renderer.RenderAsync(this, frameInfo);
         }
     }
 }

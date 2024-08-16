@@ -1,8 +1,12 @@
 ﻿using RockEngine.Vulkan.DI;
-using RockEngine.Vulkan.VkObjects;
+using RockEngine.Vulkan.Rendering;
+
+using System.Text.Json.Serialization;
 
 namespace RockEngine.Vulkan.ECS
 {
+    // TODO: make it more perfomanced
+    // Think about awaiting tasks as it can be not so cool in terms of game may be reference from one object to another and so on
     public class Entity
     {
         public string Name;
@@ -10,6 +14,7 @@ namespace RockEngine.Vulkan.ECS
         private ComponentCollection _components = new ComponentCollection();
         private bool _isInitialized = false;
 
+        [JsonConstructor]
         public Entity()
         {
             Name = "Entity";
@@ -18,10 +23,12 @@ namespace RockEngine.Vulkan.ECS
 
         public async Task InitializeAsync()
         {
+            var tasks = new List<Task>();
             foreach (var item in _components)
             {
-                await item.OnInitializedAsync();
+                tasks.Add(item.OnInitializedAsync());
             }
+            await Task.WhenAll(tasks);
             _isInitialized = true;
         }
 
@@ -38,8 +45,7 @@ namespace RockEngine.Vulkan.ECS
             return _components.GetFirst<T>();
         }
 
-
-        public async Task RenderAsync(CommandBufferWrapper commandBuffer)
+        public async Task RenderAsync(FrameInfo frameInfo)
         {
             if (!_isInitialized)
             {
@@ -48,7 +54,7 @@ namespace RockEngine.Vulkan.ECS
 
             foreach (var item in _components.GetRenderables())
             {
-                await item.RenderAsync(commandBuffer);
+                await item.RenderAsync(frameInfo);
             }
         }
 
@@ -67,6 +73,12 @@ namespace RockEngine.Vulkan.ECS
             {
                 item.Update(time);
             }
+        }
+
+        internal bool TryGet<T>(out T component) where T: Component
+        {
+            component = _components.GetFirst<T>();
+            return component is not null;
         }
     }
 }

@@ -1,4 +1,5 @@
-﻿using RockEngine.Vulkan.VulkanInitilizers;
+﻿using RockEngine.Vulkan.Rendering.MaterialRendering;
+using RockEngine.Vulkan.VulkanInitilizers;
 
 using Silk.NET.Vulkan;
 
@@ -15,7 +16,7 @@ namespace RockEngine.Vulkan.VkObjects
         public ulong Size => _size;
         public string Name => _name;
 
-        internal DescriptorSetWrapper _descriptorSet;
+        public Dictionary<PipelineLayout, (uint setIndex, DescriptorSet set)> PerPipelineDescriptorSet = new Dictionary<PipelineLayout, (uint setIndex, DescriptorSet set)>();
 
         public UniformBufferObject(VulkanContext context, BufferWrapper uniformBuffer, ulong size, string name)
         {

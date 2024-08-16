@@ -6,28 +6,31 @@ using Silk.NET.Vulkan;
 
 namespace RockEngine.Vulkan.Rendering.ComponentRenderers
 {
-    internal class MeshComponentRenderer : IComponentRenderer<MeshComponent>, IDisposable
+    public class MeshComponentRenderer : IComponentRenderer<MeshComponent>, IDisposable
     {
         private BufferWrapper _vertexBuffer;
         private BufferWrapper _indexBuffer;
         private bool _isReady;
-        private readonly MeshComponent _component;
+        private MeshComponent _component;
         private readonly VulkanContext _context;
+        private readonly PipelineManager _pipelineManager;
 
-        public MeshComponentRenderer(MeshComponent component, VulkanContext context)
+        public MeshComponentRenderer(VulkanContext context, PipelineManager pipelineManager)
         {
-            _component = component;
             _context = context;
+            _pipelineManager = pipelineManager;
         }
 
         public ValueTask InitializeAsync(MeshComponent component)
         {
-            return CreateBuffersAsync(_context, _component);
+            _component = component;
+            return CreateBuffersAsync(_context, component);
         }
 
-        public Task RenderAsync(MeshComponent component, CommandBufferWrapper commandBuffer)
+        public Task RenderAsync(MeshComponent component, FrameInfo frameInfo)
         {
-            Draw(commandBuffer, _component);
+            _pipelineManager.BindQueuedDescriptorSets(frameInfo);
+            Draw(frameInfo.CommandBuffer!, _component);
             return Task.CompletedTask;
         }
 
@@ -61,7 +64,7 @@ namespace RockEngine.Vulkan.Rendering.ComponentRenderers
             _vertexBuffer = BufferWrapper.Create(context, in vertexBufferCreateInfo, MemoryPropertyFlags.DeviceLocalBit);
 
             // Copy Data from Staging Buffer to Vertex Buffer
-            var t1 =  stagingBuffer.CopyBufferAsync(context, _vertexBuffer, vertexBufferSize);
+            var t1 = stagingBuffer.CopyBufferAsync(context, _vertexBuffer, vertexBufferSize);
 
             if (component.Indices != null)
             {
@@ -93,7 +96,7 @@ namespace RockEngine.Vulkan.Rendering.ComponentRenderers
                 _indexBuffer = BufferWrapper.Create(context, in indexBufferCreateInfo, MemoryPropertyFlags.DeviceLocalBit);
 
                 // Copy Data from Staging Buffer to Index Buffer
-                await stagingBuffer.CopyBufferAsync(context, _indexBuffer, indexBufferSize);
+                await stagingIndexBuffer.CopyBufferAsync(context, _indexBuffer, indexBufferSize);
             }
 
             await t1;
@@ -101,6 +104,12 @@ namespace RockEngine.Vulkan.Rendering.ComponentRenderers
             _isReady = true;
         }
 
+        /// <summary>
+        /// Drawing mesh to the commandBuffer,
+        /// if mesh has indices, then used indexed drawing, else default 
+        /// </summary>
+        /// <param name="commandBuffer">Command buffer to which operate</param>
+        /// <param name="component">MeshComponent, not used directly here, as everything that needed is stored in the renderer</param>
 
         public void Draw(CommandBufferWrapper commandBuffer, MeshComponent component)
         {
@@ -108,7 +117,9 @@ namespace RockEngine.Vulkan.Rendering.ComponentRenderers
             {
                 return;
             }
+
             _vertexBuffer.BindVertexBuffer(commandBuffer);
+
             if (_indexBuffer != null)
             {
                 _indexBuffer.BindIndexBuffer(commandBuffer);

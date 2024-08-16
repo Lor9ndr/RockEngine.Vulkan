@@ -12,6 +12,7 @@ namespace RockEngine.Vulkan.ECS
         public string Path { get; set; }
         public List<Scene> Scenes { get; set; } = new List<Scene>();
 
+        [JsonIgnore]
         public Scene CurrentScene;
 
         // This property will be automatically set to true when any other property changes
@@ -32,11 +33,13 @@ namespace RockEngine.Vulkan.ECS
             }
         }
 
-        internal Project(Guid id, string name, string path)
+        [JsonConstructor]
+        internal Project(Guid id, string name, string path, List<Scene> scenes)
         {
             ID = id;
             Name = name;
             Path = path;
+            Scenes = scenes;
             TryCreateAssetFolder();
             IsChanged = false;
         }

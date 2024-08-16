@@ -12,11 +12,14 @@ namespace RockEngine.Vulkan.Rendering.ComponentRenderers
         private bool _isInitialized = false;
         private UniformBufferObject _ubo;
         private readonly VulkanContext _context;
+        private readonly PipelineManager _pipelineManager;
 
-        public TransformComponentRenderer(VulkanContext context)
+        public TransformComponentRenderer(VulkanContext context, PipelineManager pipelineManager)
         {
             _context = context;
+            _pipelineManager = pipelineManager;
         }
+
         public ValueTask InitializeAsync(TransformComponent component)
         {
             if (_isInitialized)
@@ -25,20 +28,21 @@ namespace RockEngine.Vulkan.Rendering.ComponentRenderers
             }
 
             _ubo = UniformBufferObject.Create(_context, (ulong)Marshal.SizeOf<Matrix4x4>(), "Model");
-            _context.PipelineManager.SetBuffer(_ubo, 1,0);
+            _pipelineManager.SetBuffer(_ubo, 1,0);
             _isInitialized = true;
             return new ValueTask();
         }
 
-        public async Task RenderAsync(TransformComponent component, CommandBufferWrapper commandBuffer)
+        public async Task RenderAsync(TransformComponent component, FrameInfo frameInfo)
         {
-            if (_context.PipelineManager.CurrentPipeline is null)
+            if (!component.Entity.TryGet<MeshComponent>(out var _))
             {
                 return;
             }
             var model = component.GetModelMatrix();
-            await _ubo.UniformBuffer.SendDataAsync(model, 0);
-            _context.PipelineManager.Use(_ubo, commandBuffer);
+            _pipelineManager.Use(_ubo, frameInfo);
+            // CAN BE MOVED TO THE UPDATE METHOD
+            await _ubo.UniformBuffer.SendDataAsync(model);
         }
 
         public void Dispose()

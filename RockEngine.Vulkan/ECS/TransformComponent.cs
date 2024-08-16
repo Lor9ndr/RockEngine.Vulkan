@@ -1,7 +1,6 @@
 ﻿using RockEngine.Vulkan.DI;
+using RockEngine.Vulkan.Rendering;
 using RockEngine.Vulkan.Rendering.ComponentRenderers;
-using RockEngine.Vulkan.VkObjects;
-using RockEngine.Vulkan.VulkanInitilizers;
 
 using System.Numerics;
 
@@ -15,6 +14,11 @@ namespace RockEngine.Vulkan.ECS
         private Matrix4x4 _modelMatrix;
         private bool _isDirty = true;
         private IComponentRenderer<TransformComponent> _renderer;
+
+        public TransformComponent(IComponentRenderer<TransformComponent> renderer)
+        {
+            _renderer = renderer;
+        }
 
         public Vector3 Position
         {
@@ -84,9 +88,9 @@ namespace RockEngine.Vulkan.ECS
             }
         }
 
-        public Task RenderAsync(CommandBufferWrapper commandBuffer)
+        public Task RenderAsync(FrameInfo frameInfo)
         {
-            return _renderer.RenderAsync(this, commandBuffer);
+            return _renderer.RenderAsync(this, frameInfo);
         }
     }
 }

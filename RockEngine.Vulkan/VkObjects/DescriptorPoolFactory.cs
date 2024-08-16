@@ -2,73 +2,58 @@
 
 using Silk.NET.Vulkan;
 
+using System.Collections.Concurrent;
+
 namespace RockEngine.Vulkan.VkObjects
 {
     public class DescriptorPoolFactory : IDisposable
     {
-        private readonly List<DescriptorPoolWrapper> _pools = new List<DescriptorPoolWrapper>();
-        private readonly Dictionary<DescriptorPoolWrapper, List<DescriptorPoolSize>> _poolSizeMap = new Dictionary<DescriptorPoolWrapper, List<DescriptorPoolSize>>();
-        private readonly Dictionary<DescriptorPoolWrapper, uint> _poolUsageMap = new Dictionary<DescriptorPoolWrapper, uint>();
+        private readonly ConcurrentBag<DescriptorPoolWrapper> _pools = new ConcurrentBag<DescriptorPoolWrapper>();
         private readonly VulkanContext _context;
         private bool _disposed;
+        private int _currentPoolIndex = 0;
 
-        public DescriptorPoolFactory(VulkanContext context)
+        public unsafe DescriptorPoolFactory(VulkanContext context, uint poolCount = 3, uint maxSetsPerPool = 100)
         {
             _context = context;
-        }
 
-        public unsafe DescriptorPoolWrapper GetOrCreatePool(uint maxSets, DescriptorPoolSize[] poolSizes, DescriptorPoolCreateFlags flags = DescriptorPoolCreateFlags.None)
-        {
-            // Check if there is an existing pool with enough available space and matching pool sizes
-            foreach (var pool in _pools)
+            // Create default pool sizes
+            var poolSizes = new[]
             {
-                if (_poolSizeMap[pool] == null)
-                {
-                    continue;
-                }
-                if (_poolUsageMap[pool] + maxSets <= pool.MaxSets && PoolSizesMatch(_poolSizeMap[pool], poolSizes))
-                {
-                    _poolUsageMap[pool] += maxSets;
-                    return pool;
-                }
-            }
+                new DescriptorPoolSize(DescriptorType.UniformBuffer, 100),
+                new DescriptorPoolSize(DescriptorType.CombinedImageSampler, 100),
+                new DescriptorPoolSize(DescriptorType.StorageBuffer, 100)
+            };
 
-            // If no existing pool has enough space, create a new pool
-            fixed (DescriptorPoolSize* pPoolSizes = poolSizes)
+            // Create multiple descriptor pools
+            for (int i = 0; i < poolCount; i++)
             {
-                var poolInfo = new DescriptorPoolCreateInfo
+                fixed (DescriptorPoolSize* pPoolSizes = poolSizes)
                 {
-                    SType = StructureType.DescriptorPoolCreateInfo,
-                    PoolSizeCount = (uint)poolSizes.Length,
-                    PPoolSizes = pPoolSizes,
-                    MaxSets = maxSets,
-                    Flags = flags
-                };
-                var descriptorPool = DescriptorPoolWrapper.Create(_context, in poolInfo, maxSets);
-
-                _pools.Add(descriptorPool);
-                _poolSizeMap[descriptorPool] = new List<DescriptorPoolSize>(poolSizes);
-                _poolUsageMap[descriptorPool] = maxSets;
-                return descriptorPool;
+                    var poolInfo = new DescriptorPoolCreateInfo
+                    {
+                        SType = StructureType.DescriptorPoolCreateInfo,
+                        PoolSizeCount = (uint)poolSizes.Length,
+                        PPoolSizes = pPoolSizes,
+                        MaxSets = maxSetsPerPool,
+                        Flags = DescriptorPoolCreateFlags.FreeDescriptorSetBit
+                    };
+                    var descriptorPool = DescriptorPoolWrapper.Create(_context, in poolInfo, maxSetsPerPool);
+                    _pools.Add(descriptorPool);
+                }
             }
         }
 
-        private bool PoolSizesMatch(List<DescriptorPoolSize> existingPoolSizes, DescriptorPoolSize[] newPoolSizes)
+        public DescriptorPoolWrapper GetOrCreatePool()
         {
-            if (existingPoolSizes.Count != newPoolSizes.Length)
+            if (_pools.IsEmpty)
             {
-                return false;
+                throw new InvalidOperationException("No descriptor pools available.");
             }
 
-            for (int i = 0; i < existingPoolSizes.Count; i++)
-            {
-                if (existingPoolSizes[i].Type != newPoolSizes[i].Type || existingPoolSizes[i].DescriptorCount != newPoolSizes[i].DescriptorCount)
-                {
-                    return false;
-                }
-            }
-
-            return true;
+            // Simple round-robin selection of pools
+            var poolIndex = Interlocked.Increment(ref _currentPoolIndex) % _pools.Count;
+            return _pools.ElementAt(poolIndex);
         }
 
         public unsafe void Dispose()

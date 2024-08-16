@@ -1,8 +1,8 @@
 ﻿using PropertyChanged;
 
 using RockEngine.Vulkan.Assets;
+using RockEngine.Vulkan.Rendering;
 using RockEngine.Vulkan.VkObjects;
-using RockEngine.Vulkan.VulkanInitilizers;
 
 using System.Text.Json.Serialization;
 
@@ -11,10 +11,11 @@ namespace RockEngine.Vulkan.ECS
     [AddINotifyPropertyChangedInterface]
     public class Scene : IAsset, IDisposable
     {
+        [JsonRequired, JsonInclude, JsonPropertyName("Entities")]
+        private List<Entity> _entities = new List<Entity>();
+        
         [JsonInclude]
-        private readonly List<Entity> _entities = new List<Entity>();
-
-        public Guid ID { get;}
+        public Guid ID { get; set;}
 
         public string Name { get;set;}
         public string Path { get;set; }
@@ -23,11 +24,13 @@ namespace RockEngine.Vulkan.ECS
 
         private bool _isInitalized = false;
 
-        public Scene(Guid id, string name, string path)
+        [JsonConstructor]
+        internal Scene(Guid id, string name, string path, List<Entity> entities)
         {
             ID = id;
             Name = name;
             Path = path;
+            _entities = entities;
         }
 
         public Scene(string name, Project project)
@@ -37,7 +40,7 @@ namespace RockEngine.Vulkan.ECS
             Path = project.AssetPath + "\\" + Name + IAsset.FILE_EXTENSION;
         }
 
-        public async Task AddEntity( Entity entity)
+        public async Task AddEntityAsync(Entity entity)
         {
             _entities.Add(entity);
             if (_isInitalized)
@@ -50,20 +53,14 @@ namespace RockEngine.Vulkan.ECS
         {
             for (int i = 0; i < _entities.Count; i++)
             {
-                Entity? item = _entities[i];
-                await item.InitializeAsync();
+                 await _entities[i].InitializeAsync();
             }
             _isInitalized = true;
         }
-        
 
-        public async Task RenderAsync(CommandBufferWrapper commandBuffer)
+        public IEnumerable<Entity> GetEntities()
         {
-            for (int i = 0; i < _entities.Count; i++)
-            {
-                Entity? item = _entities[i];
-                await item.RenderAsync(commandBuffer);
-            }
+            return _entities;
         }
 
         internal void Update(double time)

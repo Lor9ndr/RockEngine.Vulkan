@@ -1,5 +1,6 @@
 ﻿using RockEngine.Vulkan.ECS;
 using RockEngine.Vulkan.VkObjects;
+using RockEngine.Vulkan.VkObjects.Infos.Texture;
 using RockEngine.Vulkan.VulkanInitilizers;
 
 namespace RockEngine.Vulkan.Rendering.ComponentRenderers
@@ -7,21 +8,29 @@ namespace RockEngine.Vulkan.Rendering.ComponentRenderers
     internal class MaterialRenderer : IComponentRenderer<MaterialComponent>
     {
         private readonly VulkanContext _context;
+        private readonly PipelineManager _pipelineManager;
 
-        public MaterialRenderer(VulkanContext context)
+        public MaterialRenderer(VulkanContext context, PipelineManager pipelineManager)
         {
             _context = context;
+            _pipelineManager = pipelineManager;
         }
 
         public async ValueTask InitializeAsync(MaterialComponent component)
         {
-            _context.PipelineManager.SetTexture(component.Texture, 2, 0);
+            var loadTasks = component.Material.Textures
+            .Where(t => t.TextureInfo is NotLoadedTextureInfo)
+            .Select(t => t.LoadAsync(_context));
+
+            await Task.WhenAll(loadTasks);
+
+            _pipelineManager.SetMaterialDescriptors(component.Material);
         }
 
-        public async Task RenderAsync(MaterialComponent component, CommandBufferWrapper commandBuffer)
+        public Task RenderAsync(MaterialComponent component, FrameInfo frameInfo)
         {
-            // SOme usage of shader from material
-            _context.PipelineManager.Use(component.Texture, commandBuffer);
+            _pipelineManager.Use(component.Material, frameInfo);
+            return Task.CompletedTask;
         }
 
         public void Dispose()

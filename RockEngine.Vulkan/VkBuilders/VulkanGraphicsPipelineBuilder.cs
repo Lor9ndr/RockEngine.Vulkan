@@ -13,6 +13,7 @@ namespace RockEngine.Vulkan.VkBuilders
     {
         private MemoryHandle _entryPoint;
         private readonly VulkanContext _context;
+        private readonly PipelineManager _pipelineManager;
         private readonly string _name;
         private RenderPassWrapper _renderPass;
         private PipelineLayoutWrapper _pipelineLayout;
@@ -25,13 +26,12 @@ namespace RockEngine.Vulkan.VkBuilders
         private VulkanColorBlendStateBuilder _colorBlendStateBuilder;
         private PipelineDynamicStateBuilder _dynamicStateBuilder;
         private PipelineDepthStencilStateCreateInfo _depthStencilState;
-        private DescriptorPoolSize[] _poolSizes;
-        private uint _maxSets;
 
-        public GraphicsPipelineBuilder(VulkanContext context, string name)
+        public GraphicsPipelineBuilder(VulkanContext context, PipelineManager pipelineManager, string name)
         {
             _entryPoint = CreateMemoryHandle(Encoding.ASCII.GetBytes("main"));
             _context = context;
+            _pipelineManager = pipelineManager;
             _name = name;
         }
 
@@ -101,28 +101,18 @@ namespace RockEngine.Vulkan.VkBuilders
             return this;
         }
 
-        public GraphicsPipelineBuilder SetPoolSizes(DescriptorPoolSize[] poolSizes)
-        {
-            _poolSizes = poolSizes;
-            return this;
-        }
-        public GraphicsPipelineBuilder SetMaxSets(uint maxSets)
-        {
-            _maxSets = maxSets;
-            return this;
-        }
 
 
         /// <summary>
         /// Building the whole pipeline
         /// after finishing disposing layout and all the builders that are sended into it
         /// so you have not dispose them after all.
-        /// Also adds the pipeline to the <see cref="VulkanContext.PipelineManager"/> by <see cref="PipelineManager.AddPipeline(PipelineWrapper)"/>
+        /// Also adds the pipeline to the <see cref="VulkanContext.PipelineManager"/> by <see cref="PipelineManager.CreatePipeline(VulkanContext, string, DescriptorPoolSize[], uint, ref GraphicsPipelineCreateInfo, RenderPassWrapper, PipelineLayoutWrapper)"/>
         /// </summary>
         /// <returns>disposable pipeline wrapper</returns>
         public unsafe PipelineWrapper Build()
         {
-            ArgumentNullException.ThrowIfNull(_pipelineLayout,nameof(_pipelineLayout));
+            ArgumentNullException.ThrowIfNull(_pipelineLayout, nameof(_pipelineLayout));
             ArgumentNullException.ThrowIfNull(_pipelineStageBuilder, nameof(_pipelineStageBuilder));
             ArgumentNullException.ThrowIfNull(_vertexInputStateBuilder, nameof(_vertexInputStateBuilder));
             ArgumentNullException.ThrowIfNull(_colorBlendStateBuilder, nameof(_colorBlendStateBuilder));
@@ -164,13 +154,7 @@ namespace RockEngine.Vulkan.VkBuilders
                 Subpass = 0,
             };
 
-            _context.Api.CreateGraphicsPipelines(_context.Device, default, 1, in ci, null, out Pipeline pipeline)
-                .ThrowCode("Failed to create pipeline");
-
-            var pipelineWrapper = new PipelineWrapper(_context, _name, pipeline, _pipelineLayout, _renderPass, _poolSizes, _maxSets);
-
-            _context.PipelineManager.AddPipeline(pipelineWrapper);
-            return pipelineWrapper;
+            return _pipelineManager.CreatePipeline(_name, ref ci, _renderPass, _pipelineLayout);
         }
     }
 }

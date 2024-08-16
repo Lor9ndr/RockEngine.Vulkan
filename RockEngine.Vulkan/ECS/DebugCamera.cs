@@ -1,4 +1,6 @@
-﻿using Silk.NET.Input;
+﻿using RockEngine.Vulkan.Rendering.ComponentRenderers;
+
+using Silk.NET.Input;
 
 using System.Numerics;
 
@@ -12,7 +14,8 @@ namespace RockEngine.Vulkan.ECS
         private Vector2 _lastMousePosition;
         private bool _firstMouseMove = true;
 
-        public DebugCamera(IInputContext context)
+        public DebugCamera(IInputContext context, IComponentRenderer<Camera> renderer)
+            : base(renderer)
         {
             _inputContext = context;
 

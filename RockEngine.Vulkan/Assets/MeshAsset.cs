@@ -1,4 +1,6 @@
-﻿namespace RockEngine.Vulkan.Assets
+﻿using System.Text.Json.Serialization;
+
+namespace RockEngine.Vulkan.Assets
 {
     public class MeshAsset : IAsset
     {
@@ -19,12 +21,23 @@
         {
             Name = name;
             Path = path;
+            ID = Guid.NewGuid();
+        }
+
+        public MeshAsset(MeshData meshData)
+        {
+            Name = meshData.Name;
+            Path = string.Empty;
+            ID = Guid.NewGuid();
+            _vertices = meshData.Vertices;
+            _indices = meshData.Indices;
         }
 
         public void SetVertices(Vertex[] vertices)
         {
             _vertices = vertices;
         }
+
         public void SetIndices(uint[] indices)
         {
             _indices = indices;

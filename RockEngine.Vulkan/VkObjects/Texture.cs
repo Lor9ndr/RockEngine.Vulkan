@@ -1,39 +1,38 @@
 ﻿using RockEngine.Vulkan.Helpers;
+using RockEngine.Vulkan.VkObjects.Infos.Texture;
 using RockEngine.Vulkan.VulkanInitilizers;
 
 using Silk.NET.Vulkan;
 
 using SkiaSharp;
 
+using System.Diagnostics;
+
 namespace RockEngine.Vulkan.VkObjects
 {
     public class Texture : IDisposable
     {
-        private readonly VulkanContext _context;
-        private readonly Image _image;
-        private readonly DeviceMemory _imageMemory;
-        private readonly ImageView _imageView;
-        private readonly Sampler _sampler;
+        public TextureInfo TextureInfo { get; private set;}
 
-        public Image Image => _image;
-        public ImageView ImageView => _imageView;
-        public Sampler Sampler => _sampler;
-
-        internal DescriptorSetWrapper _attachedDescriptorSet;
-
-        private Texture(VulkanContext context, Image vkImage, DeviceMemory imageMemory, ImageView imageView, Sampler sampler)
+        public Texture(string path)
         {
-            _context = context;
-            _image = vkImage;
-            _imageMemory = imageMemory;
-            _imageView = imageView;
-            _sampler = sampler;
+            TextureInfo = new NotLoadedTextureInfo(path);
         }
 
-        public static async Task<Texture> FromFileAsync(VulkanContext context, string path, CancellationToken cancellationToken = default)
+        public Texture(TextureInfo info)
         {
-            var bytes = await File.ReadAllBytesAsync(path, cancellationToken)
-                .ConfigureAwait(false);
+            TextureInfo = info;
+        }
+
+        public async Task LoadAsync(VulkanContext context, CancellationToken cancellationToken = default)
+        {
+            if (TextureInfo is not NotLoadedTextureInfo preLoadInfo)
+            {
+                Debugger.Log(1, "Texture loading", "Texture is already loaded");
+                return;
+            }
+
+            var bytes = await File.ReadAllBytesAsync(preLoadInfo.Path, cancellationToken).ConfigureAwait(false);
             using var skImage = SKImage.FromBitmap(SKBitmap.Decode(bytes));
 
             var width = (uint)skImage.Width;
@@ -69,7 +68,7 @@ namespace RockEngine.Vulkan.VkObjects
             };
             var sampler = Sampler.Create(context, in samplerCreateInfo);
 
-            return new Texture(context, vkImage, imageMemory, imageView, sampler);
+            TextureInfo = new LoadedTextureInfo(vkImage, imageMemory, imageView, sampler);
         }
 
         private unsafe static Image CreateVulkanImage(VulkanContext context, uint width, uint height, Format format)
@@ -125,8 +124,6 @@ namespace RockEngine.Vulkan.VkObjects
             return ImageView.Create(context, in viewInfo);
         }
 
-      
-
         private static Format GetVulkanFormat(SKImage skImage)
         {
             // Determine the Vulkan format based on the SkiaSharp image color type
@@ -134,6 +131,7 @@ namespace RockEngine.Vulkan.VkObjects
             {
                 SKColorType.Rgba8888 => Format.R8G8B8A8Unorm,
                 SKColorType.Bgra8888 => Format.B8G8R8A8Unorm,
+                SKColorType.Gray8 => Format.R8Unorm,
                 _ => throw new NotSupportedException($"Unsupported color type: {skImage.ColorType}")
             };
         }
@@ -160,7 +158,6 @@ namespace RockEngine.Vulkan.VkObjects
             skImage.PeekPixels().ReadPixels(new SKImageInfo((int)width, (int)height, skImage.ColorType, SKAlphaType.Premul), data, (int)(width * 4));
             stagingBuffer.UnmapMemory();
 
-
             // Transition the Vulkan image layout to TRANSFER_DST_OPTIMAL
             vkImage.TransitionImageLayout(context, Format.R8G8B8A8Srgb, ImageLayout.Undefined, ImageLayout.TransferDstOptimal);
 
@@ -169,7 +166,6 @@ namespace RockEngine.Vulkan.VkObjects
 
             // Transition the Vulkan image layout to SHADER_READ_ONLY_OPTIMAL
             vkImage.TransitionImageLayout(context, Format.R8G8B8A8Srgb, ImageLayout.TransferDstOptimal, ImageLayout.ShaderReadOnlyOptimal);
-
         }
 
         private unsafe static void CopyBufferToImage(VulkanContext context, BufferWrapper stagingBuffer, Image image, uint width, uint height)
@@ -200,10 +196,13 @@ namespace RockEngine.Vulkan.VkObjects
 
         public unsafe void Dispose()
         {
-            _sampler.Dispose();
-            _imageView.Dispose();
-            _image.Dispose();
-            _imageMemory.Dispose();
+            if (TextureInfo is LoadedTextureInfo loaded)
+            {
+                loaded.Sampler.Dispose();
+                loaded.ImageView.Dispose();
+                loaded.Image.Dispose();
+                loaded.ImageMemory.Dispose();
+            }
         }
     }
 }

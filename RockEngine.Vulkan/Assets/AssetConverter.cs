@@ -1,8 +1,5 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text.Json;
+﻿using System.Text.Json;
 using System.Text.Json.Serialization;
-using System.Threading.Tasks;
 
 namespace RockEngine.Vulkan.Assets
 {
@@ -52,13 +49,18 @@ namespace RockEngine.Vulkan.Assets
 
         public override bool CanConvert(Type typeToConvert)
         {
+            if (!typeof(IEnumerable<IAsset>).IsAssignableFrom(typeToConvert))
+            {
+                return false;
+            }
+
             if (!typeToConvert.IsGenericType)
             {
                 return false;
             }
-            var generic = typeToConvert.GenericTypeArguments[0];
-            var hasIAsset = typeToConvert.IsInterface || (generic.GetInterface(nameof(IAsset)) != null);
-            return hasIAsset;
+
+            var genericArgument = typeToConvert.GetGenericArguments()[0];
+            return typeof(IAsset).IsAssignableFrom(genericArgument);
         }
         public override IEnumerable<IAsset> Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
         {

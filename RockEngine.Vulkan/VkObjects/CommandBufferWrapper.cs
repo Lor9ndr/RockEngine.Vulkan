@@ -52,11 +52,6 @@ namespace RockEngine.Vulkan.VkObjects
             _context.Api.CmdSetScissor(_vkObject, 0, 1, ref scissor);
         }
 
-        public void BindPipeline(PipelineBindPoint pipelineBindPoint, Pipeline pipeline)
-        {
-            _context.Api.CmdBindPipeline(_vkObject, pipelineBindPoint, pipeline);
-        }
-
         public void Draw(uint vertexCount, uint instanceCount, uint firstVertex, uint firstInstance)
         {
             _context.Api.CmdDraw(_vkObject, vertexCount, instanceCount, firstVertex, firstInstance);

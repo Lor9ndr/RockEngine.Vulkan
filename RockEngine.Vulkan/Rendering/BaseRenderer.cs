@@ -38,12 +38,12 @@ namespace RockEngine.Vulkan.Rendering
             }
         }
 
-        public override CommandBufferWrapper? BeginFrame()
+        public override FrameInfo BeginFrame()
         {
             float width = _surface.Size.X, height = _surface.Size.Y;
             if (width == 0 || height == 0)
             {
-                return null; // Skip rendering if the window is minimized
+                return new FrameInfo(); // Skip rendering if the window is minimized
             }
 
             var commandBuffer = GetCurrentCommandBuffer();
@@ -54,7 +54,7 @@ namespace RockEngine.Vulkan.Rendering
             if (result == Result.ErrorOutOfDateKhr)
             {
                 RecreateSwapChainAsync();
-                return null;
+                return new FrameInfo();
             }
 
             var beginInfo = new CommandBufferBeginInfo
@@ -68,8 +68,11 @@ namespace RockEngine.Vulkan.Rendering
                 .ThrowCode("Failed to begin recording command buffer!");
 
             _frameStarted = true;
-            return commandBuffer;
-
+            return new FrameInfo()
+            { 
+                CommandBuffer = commandBuffer,
+                FrameIndex = CurrentFrameIndex,
+            };
         }
 
         public override void EndFrame()

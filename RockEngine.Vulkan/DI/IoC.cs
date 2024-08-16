@@ -1,11 +1,12 @@
-﻿using RockEngine.Vulkan.ECS;
-using RockEngine.Vulkan.Rendering.ComponentRenderers.Factories;
+﻿using RockEngine.Vulkan.Cache;
+using RockEngine.Vulkan.ECS;
 using RockEngine.Vulkan.Rendering.ComponentRenderers;
+using RockEngine.Vulkan.VkObjects;
+
+using Silk.NET.Vulkan;
 
 using SimpleInjector;
 using SimpleInjector.Lifestyles;
-using RockEngine.Vulkan.EventSystem;
-using SimpleInjector.Diagnostics;
 
 namespace RockEngine.Vulkan.DI
 {
@@ -25,23 +26,15 @@ namespace RockEngine.Vulkan.DI
             Container.RegisterSingleton<IComponentRenderer<DebugCamera>, CameraRenderer>();
             Container.RegisterSingleton<IComponentRenderer<TransformComponent>, TransformComponentRenderer>();
             Container.RegisterSingleton<IComponentRenderer<MaterialComponent>, MaterialRenderer>();
-
-            // Register the factory
-            Container.RegisterSingleton<MeshComponentRendererFactory>();
-
-            // Register the delegate for creating MeshComponentRenderer with a parameter
-            Container.Register<Func<MeshComponent, MeshComponentRenderer>>(() => component =>
-            {
-                var context = Container.GetRenderingContext();
-                // Resolve dependencies and create the instance manually
-                var renderer = new MeshComponentRenderer(component, context);
-                // Initialize or set properties if needed
-                return renderer;
-            });
+            Container.Register<IComponentRenderer<MeshComponent>, MeshComponentRenderer>();
+            Container.Register<ICache<uint, DescriptorSetLayout>, DescriptorLayoutCache>();
 
             // Register other dependencies
-            Container.RegisterSingleton<IEventSystem, EventSystem.EventSystem>();
+            Container.RegisterSingleton<AssimpLoader>();
+            Container.RegisterSingleton<PipelineManager>();
 
+
+            // Register components
             Container.Register<TransformComponent>();
             Container.Register<MeshComponent>();
             Container.Register<MaterialComponent>();

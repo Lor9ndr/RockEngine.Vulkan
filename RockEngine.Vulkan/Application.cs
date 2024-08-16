@@ -5,7 +5,9 @@ using RockEngine.Vulkan.DI;
 using RockEngine.Vulkan.ECS;
 using RockEngine.Vulkan.Rendering;
 using RockEngine.Vulkan.Rendering.ImGuiRender;
-using RockEngine.Vulkan.Utils;
+using RockEngine.Vulkan.Rendering.MaterialRendering;
+using RockEngine.Vulkan.VkBuilders;
+using RockEngine.Vulkan.VkObjects;
 using RockEngine.Vulkan.VulkanInitilizers;
 
 using Silk.NET.Input;
@@ -14,8 +16,8 @@ using Silk.NET.Windowing;
 using Silk.NET.Windowing.Sdl;
 
 using System.Numerics;
+using System.Threading;
 
-using Texture = RockEngine.Vulkan.VkObjects.Texture;
 using Window = Silk.NET.Windowing.Window;
 
 namespace RockEngine.Vulkan
@@ -23,10 +25,12 @@ namespace RockEngine.Vulkan
     public class Application : IDisposable
     {
         private readonly Vk _api = Vk.GetApi();
+        private PipelineManager _pipelineManager;
         private IWindow _window;
         private VulkanContext _context;
         private Project _project;
         private AssetManager _assetManager;
+        private AssimpLoader _assimp;
         private IInputContext _inputContext;
         private BaseRenderer _baseRenderer;
         private SceneRenderSystem _sceneRenderSystem;
@@ -51,12 +55,10 @@ namespace RockEngine.Vulkan
             _window.Load += async () => await InitializeAsync()
                     .ConfigureAwait(false);
 
-
-            _window.Update += Update;
-
             try
             {
-                await Task.Run(() => _window.Run(), CancellationToken).ConfigureAwait(false);
+                await Task.Run(() => _window.Run(), CancellationToken)
+                    .ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
@@ -79,25 +81,30 @@ namespace RockEngine.Vulkan
             _baseRenderer = new BaseRenderer(_context, _context.Surface);
             _assetManager = new AssetManager();
 
-            await LoadProjectAsync();
-            await InitializeRenderSystemsAsync();
-            _window.Render += async (s) => await DrawFrame(s).ConfigureAwait(false);
+            _assimp = IoC.Container.GetInstance<AssimpLoader>();
+            _pipelineManager = IoC.Container.GetInstance<PipelineManager>();
 
+            InitializeRenderSystems();
+            await LoadShaderPasses();
+            await LoadProjectAsync();
             await InitializeSceneAsync();
+
+            _window.Update += Update;
+            _window.Render += async (s) => await DrawFrame(s)
+                .ConfigureAwait(false);
         }
 
         private async Task LoadProjectAsync()
         {
-            _project = await _assetManager.CreateProjectAsync("Sandbox", "..\\Sandbox.asset", CancellationToken);
+            _project = await _assetManager.CreateProjectAsync("Sandbox","..\\Sandbox.asset", CancellationToken);
             var scene = _project.Scenes[0];
             await _assetManager.AddAssetToProject(_project,scene, CancellationToken);
             _window.Title = _project.Name;
         }
 
-        private async Task InitializeRenderSystemsAsync()
+        private void InitializeRenderSystems()
         {
-            _sceneRenderSystem = new SceneRenderSystem(_context, _baseRenderer.GetRenderPass());
-            await _sceneRenderSystem.Init(CancellationToken).ConfigureAwait(false);
+            _sceneRenderSystem = new SceneRenderSystem(_context);
 
             _imguiController = new ImGuiController(
                 _context,
@@ -116,43 +123,197 @@ namespace RockEngine.Vulkan
             var scene = _project.Scenes[0];
             var camera = new Entity();
             camera.AddComponent<DebugCamera>();
-            await scene.AddEntity(camera);
+            await scene.AddEntityAsync(camera);
 
-            var cubeAsset = new MeshAsset("Cube", "..\\..\\Cube.asset");
-            cubeAsset.SetVertices(DefaultMesh.CubeVertices);
-
-            await _assetManager.AddAssetToProject(_project, cubeAsset, CancellationToken);
-
-            var texture = await Texture.FromFileAsync(_context, "C:\\Users\\Админис\\Desktop\\texture.jpg", CancellationToken);
-            for (int i = 0; i < 1; i++)
+            var sponza = await _assimp.LoadMeshesAsync("F:\\RockEngine.Vulkan\\RockEngine.Vulkan\\Resources\\Models\\SponzaAtrium\\scene.gltf");
+            var defaultEffect = _pipelineManager.GetEffect("ForwardDefault");
+            var normalsEffect = _pipelineManager.GetEffect("Normals");
+            for (int i = 0; i < sponza.Count; i++)
             {
                 var entity = new Entity();
                 var mesh = entity.AddComponent<MeshComponent>();
-                mesh.SetAsset(cubeAsset);
+                var meshData = sponza[i];
+                var meshAsset = new MeshAsset(meshData);
+                mesh.SetAsset(meshAsset);
                 var material = entity.AddComponent<MaterialComponent>();
-                material.SetTexture(texture);
-                entity.Transform.Scale = new Vector3(4, 4, 4);
-                entity.Transform.Position = new Vector3(0, 0, -5);
-                await scene.AddEntity(entity);
+                if (i % 2 == 0)
+                {
+                    material.Material = new Material(defaultEffect, meshData.textures, new Dictionary<string, object>());
+                }
+                else
+                {
+                    material.Material = new Material(normalsEffect, new List<Texture>(), new Dictionary<string, object>());
+                }
+
+                entity.Transform.Scale = new Vector3(0.005f);
+                await scene.AddEntityAsync(entity);
             }
 
+            await _assetManager.SaveAssetAsync(scene, CancellationToken);
             await scene.InitializeAsync();
+        }
+
+        private async Task LoadShaderPasses()
+        {
+            // Load the vertex shader
+            var vertexShaderModule = await ShaderModuleWrapper.CreateAsync(_context, "..\\..\\..\\Resources\\Shaders\\Shader.vert.spv", ShaderStageFlags.VertexBit, CancellationToken)
+                .ConfigureAwait(false);
+
+            // Load the fragment shader
+            var fragmentShaderModule = await ShaderModuleWrapper.CreateAsync(_context, "..\\..\\..\\Resources\\Shaders\\Shader.frag.spv", ShaderStageFlags.FragmentBit, CancellationToken)
+                .ConfigureAwait(false);
+
+            EffectTemplate effectTemplate = new EffectTemplate();
+
+            var pipelineLayout = PipelineLayoutWrapper.Create(_context, true,vertexShaderModule, fragmentShaderModule);
+
+            PipelineColorBlendAttachmentState colorBlendAttachmentState = new PipelineColorBlendAttachmentState()
+            {
+                ColorWriteMask = ColorComponentFlags.RBit |
+               ColorComponentFlags.GBit |
+               ColorComponentFlags.BBit |
+               ColorComponentFlags.ABit
+            };
+            using GraphicsPipelineBuilder pBuilder = new GraphicsPipelineBuilder(_context,_pipelineManager, "Base")
+               .AddRenderPass(_baseRenderer.GetRenderPass())
+               .WithPipelineLayout(pipelineLayout)
+               .WithDynamicState(new PipelineDynamicStateBuilder()
+                   .AddState(DynamicState.Viewport)
+                   .AddState(DynamicState.Scissor))
+               .WithMultisampleState(new VulkanMultisampleStateInfoBuilder()
+                   .Configure(false, SampleCountFlags.Count1Bit))
+               .WithRasterizer(new VulkanRasterizerBuilder())
+               .WithColorBlendState(new VulkanColorBlendStateBuilder()
+                   .Configure(LogicOp.Copy)
+                   .AddAttachment(colorBlendAttachmentState))
+               .WithInputAssembly(new VulkanInputAssemblyBuilder().Configure())
+               .WithVertexInputState(new VulkanPipelineVertexInputStateBuilder()
+                   .Add(Vertex.GetBindingDescription(), Vertex.GetAttributeDescriptions()))
+               .WithShaderModule(vertexShaderModule)
+               .WithShaderModule(fragmentShaderModule)
+               .WithViewportState(new VulkanViewportStateInfoBuilder()
+                   .AddViewport(new Viewport())
+                   .AddScissors(new Rect2D()))
+               .AddDepthStencilState(new PipelineDepthStencilStateCreateInfo()
+               {
+                   SType = StructureType.PipelineDepthStencilStateCreateInfo,
+                   DepthTestEnable = true,
+                   DepthWriteEnable = true,
+                   DepthCompareOp = CompareOp.Less,
+                   DepthBoundsTestEnable = false,
+                   MinDepthBounds = 0.0f,
+                   MaxDepthBounds = 1.0f,
+                   StencilTestEnable = false,
+                   Front = new StencilOpState(),
+                   Back = new StencilOpState()
+               });
+            var pipeline = pBuilder.Build();
+
+            ShaderEffect shaderEffect = new ShaderEffect([vertexShaderModule, fragmentShaderModule]);
+
+            ShaderPass shaderPass = new ShaderPass()
+            {
+                Effect = shaderEffect,
+                Layout = pipelineLayout,
+                Pipeline = pipeline
+            };
+            effectTemplate.AddShaderPass(MeshpassType.Forward, shaderPass);
+           _pipelineManager.AddEffectTemplate("ForwardDefault", effectTemplate);
+
+            await LoadNormalEffect();
+         
+        }
+        private async Task LoadNormalEffect()
+        {
+            // Load the vertex shader
+            var vertexShaderModule = await ShaderModuleWrapper.CreateAsync(_context, "..\\..\\..\\Resources\\Shaders\\NormalsOnly.vert.spv", ShaderStageFlags.VertexBit, CancellationToken)
+                .ConfigureAwait(false);
+
+            // Load the fragment shader
+            var fragmentShaderModule = await ShaderModuleWrapper.CreateAsync(_context, "..\\..\\..\\Resources\\Shaders\\NormalsOnly.frag.spv", ShaderStageFlags.FragmentBit, CancellationToken)
+                .ConfigureAwait(false);
+
+            EffectTemplate effectTemplate = new EffectTemplate();
+
+            var pipelineLayout = PipelineLayoutWrapper.Create(_context, true, vertexShaderModule, fragmentShaderModule);
+
+            PipelineColorBlendAttachmentState colorBlendAttachmentState = new PipelineColorBlendAttachmentState()
+            {
+                ColorWriteMask = ColorComponentFlags.RBit |
+               ColorComponentFlags.GBit |
+               ColorComponentFlags.BBit |
+               ColorComponentFlags.ABit
+            };
+
+            using GraphicsPipelineBuilder pBuilder = new GraphicsPipelineBuilder(_context, _pipelineManager, "Base")
+               .AddRenderPass(_baseRenderer.GetRenderPass())
+               .WithPipelineLayout(pipelineLayout)
+               .WithDynamicState(new PipelineDynamicStateBuilder()
+                   .AddState(DynamicState.Viewport)
+                   .AddState(DynamicState.Scissor))
+               .WithMultisampleState(new VulkanMultisampleStateInfoBuilder()
+                   .Configure(false, SampleCountFlags.Count1Bit))
+               .WithRasterizer(new VulkanRasterizerBuilder())
+               .WithColorBlendState(new VulkanColorBlendStateBuilder()
+                   .Configure(LogicOp.Copy)
+                   .AddAttachment(colorBlendAttachmentState))
+               .WithInputAssembly(new VulkanInputAssemblyBuilder().Configure())
+               .WithVertexInputState(new VulkanPipelineVertexInputStateBuilder()
+                   .Add(Vertex.GetBindingDescription(), Vertex.GetAttributeDescriptions()))
+               .WithShaderModule(vertexShaderModule)
+               .WithShaderModule(fragmentShaderModule)
+               .WithViewportState(new VulkanViewportStateInfoBuilder()
+                   .AddViewport(new Viewport())
+                   .AddScissors(new Rect2D()))
+               .AddDepthStencilState(new PipelineDepthStencilStateCreateInfo()
+               {
+                   SType = StructureType.PipelineDepthStencilStateCreateInfo,
+                   DepthTestEnable = true,
+                   DepthWriteEnable = true,
+                   DepthCompareOp = CompareOp.Less,
+                   DepthBoundsTestEnable = false,
+                   MinDepthBounds = 0.0f,
+                   MaxDepthBounds = 1.0f,
+                   StencilTestEnable = false,
+                   Front = new StencilOpState(),
+                   Back = new StencilOpState()
+               });
+            var pipeline = pBuilder.Build();
+
+            ShaderEffect shaderEffect = new ShaderEffect([vertexShaderModule, fragmentShaderModule]);
+
+            ShaderPass shaderPass = new ShaderPass()
+            {
+                Effect = shaderEffect,
+                Layout = pipelineLayout,
+                Pipeline = pipeline
+            };
+            effectTemplate.AddShaderPass(MeshpassType.Forward, shaderPass);
+            _pipelineManager.AddEffectTemplate("Normals", effectTemplate);
         }
 
         private async Task DrawFrame(double obj)
         {
-            var commandBuffer =  _baseRenderer.BeginFrame();
-            if (commandBuffer == null)
+            var frameInfo =  _baseRenderer.BeginFrame();
+           
+            if (frameInfo.CommandBuffer is null)
             {
                 return;
             }
 
-            _imguiController.Update((float)obj);
+            frameInfo.FrameTime = (float)obj;
 
-            _baseRenderer.BeginSwapchainRenderPass(in commandBuffer);
-            await _sceneRenderSystem.RenderAsync(_project, commandBuffer, _baseRenderer.FrameIndex).ConfigureAwait(false);
-            _imguiController.RenderAsync(commandBuffer, _baseRenderer.Swapchain.Extent);
-            _baseRenderer.EndSwapchainRenderPass(in commandBuffer);
+
+            _imguiController.Update((float)obj);
+            ImGui.ShowDemoWindow();
+
+            _baseRenderer.BeginSwapchainRenderPass(frameInfo.CommandBuffer);
+
+            await _sceneRenderSystem.RenderAsync(_project, frameInfo).ConfigureAwait(false);
+
+            _imguiController.RenderAsync(frameInfo.CommandBuffer, _baseRenderer.Swapchain.Extent);
+
+            _baseRenderer.EndSwapchainRenderPass(frameInfo.CommandBuffer);
             _baseRenderer.EndFrame();
         }
 
@@ -161,6 +322,9 @@ namespace RockEngine.Vulkan
             _project.CurrentScene.Update(time);
         }
 
+        /// <summary>
+        /// Disposing all disposable objects
+        /// </summary>
         public void Dispose()
         {
             CancellationTokenSource.Cancel();

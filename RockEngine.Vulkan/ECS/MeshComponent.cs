@@ -1,33 +1,32 @@
 ﻿using RockEngine.Vulkan.Assets;
-using RockEngine.Vulkan.DI;
+using RockEngine.Vulkan.Rendering;
 using RockEngine.Vulkan.Rendering.ComponentRenderers;
-using RockEngine.Vulkan.Rendering.ComponentRenderers.Factories;
 using RockEngine.Vulkan.VkObjects;
-
-using SimpleInjector.Lifestyles;
 
 namespace RockEngine.Vulkan.ECS
 {
     public class MeshComponent : Component, IRenderableComponent<MeshComponent>, IDisposable
     {
         private MeshAsset _asset;
-        private MeshComponentRenderer _renderer;
-
+        private IComponentRenderer<MeshComponent> _renderer;
+      
         public Vertex[] Vertices => _asset.Vertices;
         public uint[]? Indices => _asset.Indices;
 
         public IComponentRenderer<MeshComponent> Renderer => _renderer;
 
-        public int Order => 100;
+        public int Order => 99999;
 
-        public MeshComponent()
+        public MeshComponent(IComponentRenderer<MeshComponent> renderer)
         {
+            _renderer = renderer;
         }
 
         public void SetAsset(MeshAsset meshAsset)
         {
             _asset = meshAsset;
         }
+
 
         /// <summary>
         /// Initializing the meshComponent, create/get renderer 
@@ -37,22 +36,17 @@ namespace RockEngine.Vulkan.ECS
         {
             ArgumentNullException.ThrowIfNull(_asset);
 
-            using (var scope = AsyncScopedLifestyle.BeginScope(IoC.Container))
-            {
-                var factory = scope.GetInstance<MeshComponentRendererFactory>();
-                _renderer = factory.Get(this);
-            }
             await _renderer.InitializeAsync(this).ConfigureAwait(false);
             IsInitialized = true;
         }
 
-        public Task RenderAsync(CommandBufferWrapper commandBuffer)
+        public Task RenderAsync(FrameInfo frameInfo)
         {
             if (!IsInitialized)
             {
                 return Task.CompletedTask;
             }
-            return _renderer.RenderAsync(this, commandBuffer);
+            return _renderer.RenderAsync(this, frameInfo);
         }
 
         public void Dispose()

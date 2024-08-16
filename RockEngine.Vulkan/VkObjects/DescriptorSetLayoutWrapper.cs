@@ -1,4 +1,6 @@
-﻿using Silk.NET.Vulkan;
+﻿using RockEngine.Vulkan.VkObjects.Reflected;
+
+using Silk.NET.Vulkan;
 
 namespace RockEngine.Vulkan.VkObjects
 {
@@ -6,9 +8,9 @@ namespace RockEngine.Vulkan.VkObjects
     {
         public DescriptorSetLayout DescriptorSetLayout;
         public uint SetLocation;
-        public readonly DescriptorSetLayoutBinding[] Bindings;
+        public readonly DescriptorSetLayoutBindingReflected[] Bindings;
 
-        public DescriptorSetLayoutWrapper(DescriptorSetLayout descriptorSetLayout, uint setLocation, DescriptorSetLayoutBinding[] bindignsArr)
+        public DescriptorSetLayoutWrapper(DescriptorSetLayout descriptorSetLayout, uint setLocation, DescriptorSetLayoutBindingReflected[] bindignsArr)
         {
             DescriptorSetLayout = descriptorSetLayout;
             SetLocation = setLocation;

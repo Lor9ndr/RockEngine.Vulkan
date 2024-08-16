@@ -41,7 +41,7 @@ namespace RockEngine.Vulkan.VkObjects
 
             _context.Api.AllocateCommandBuffers(_context.Device, in allocInfo, out CommandBuffer cbNative)
               .ThrowCode("Failed to allocate command buffer");
-            Debugger.Log(1, "Allocation", $"Allocated a command buffer with handle: {cbNative.Handle}");
+            //Debugger.Log(1, "Allocation", $"Allocated a command buffer with handle: {cbNative.Handle}");
 
             var cb = new CommandBufferWrapper(_context, in cbNative, this);
             _commandBuffers.Add(cb);
