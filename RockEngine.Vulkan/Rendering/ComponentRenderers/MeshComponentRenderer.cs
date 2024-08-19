@@ -27,11 +27,10 @@ namespace RockEngine.Vulkan.Rendering.ComponentRenderers
             return CreateBuffersAsync(_context, component);
         }
 
-        public Task RenderAsync(MeshComponent component, FrameInfo frameInfo)
+        public ValueTask RenderAsync(MeshComponent component, FrameInfo frameInfo)
         {
             _pipelineManager.BindQueuedDescriptorSets(frameInfo);
-            Draw(frameInfo.CommandBuffer!, _component);
-            return Task.CompletedTask;
+            return Draw(frameInfo.CommandBuffer!, _component);
         }
 
         private async ValueTask CreateBuffersAsync(VulkanContext context, MeshComponent component)
@@ -111,11 +110,11 @@ namespace RockEngine.Vulkan.Rendering.ComponentRenderers
         /// <param name="commandBuffer">Command buffer to which operate</param>
         /// <param name="component">MeshComponent, not used directly here, as everything that needed is stored in the renderer</param>
 
-        public void Draw(CommandBufferWrapper commandBuffer, MeshComponent component)
+        public ValueTask Draw(CommandBufferWrapper commandBuffer, MeshComponent component)
         {
             if (!_isReady)
             {
-                return;
+                return ValueTask.CompletedTask;
             }
 
             _vertexBuffer.BindVertexBuffer(commandBuffer);
@@ -129,6 +128,7 @@ namespace RockEngine.Vulkan.Rendering.ComponentRenderers
             {
                commandBuffer.Draw((uint)component.Vertices.Length, 1, 0, 0);
             }
+            return ValueTask.CompletedTask;
         }
 
         public void Dispose()

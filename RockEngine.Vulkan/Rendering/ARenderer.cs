@@ -93,7 +93,7 @@ namespace RockEngine.Vulkan.Rendering
         /// Begins the rendering frame. Must be implemented by derived classes.
         /// </summary>
         /// <returns>The command buffer for the current frame.</returns>
-        public abstract FrameInfo BeginFrame();
+        public abstract void BeginFrame(FrameInfo frameInfo);
 
         /// <summary>
         /// Ends the rendering frame. Must be implemented by derived classes.

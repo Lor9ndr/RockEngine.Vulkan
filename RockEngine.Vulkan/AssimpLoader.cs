@@ -63,19 +63,22 @@ namespace RockEngine.Vulkan
                 }
                
                 List<Texture> textures = new List<Texture>();
-                if (scene.Materials[mesh.MaterialIndex].HasTextureDiffuse)
+                var material = scene.Materials[mesh.MaterialIndex];
+                if(material.HasTextureDiffuse)
                 {
-                    var texturePath = scene.Materials[mesh.MaterialIndex].TextureDiffuse.FilePath;
+                    var texturePath = material.TextureDiffuse.FilePath;
                     var texture = new Texture(Directory.GetParent(filePath) + "\\" + texturePath);
                     textures.Add(texture);
                 }
-               /* if (scene.Materials[mesh.MaterialIndex].HasTextureNormal)
+                if (material.HasTextureNormal)
                 {
-                    var texturePath = scene.Materials[mesh.MaterialIndex].TextureNormal.FilePath;
+                    var texturePath = material.TextureNormal.FilePath;
                     var texture = new Texture(Directory.GetParent(filePath) + "\\" + texturePath);
                     textures.Add(texture);
-                }*/
-               /* if (scene.Materials[mesh.MaterialIndex].HasTextureSpecular)
+                }
+               
+
+                /*if (scene.Materials[mesh.MaterialIndex].HasTextureSpecular)
                 {
                     var texturePath = scene.Materials[mesh.MaterialIndex].TextureSpecular.FilePath;
                     var texture = new Texture(Directory.GetParent(filePath) + "\\" + texturePath);
@@ -85,7 +88,6 @@ namespace RockEngine.Vulkan
                 MeshData meshData = new MeshData(mesh.Name, vertices, mesh.GetUnsignedIndices(), textures);
                 meshes.Add(meshData);
             }
-
             return await ValueTask.FromResult(meshes);
         }
 

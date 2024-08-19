@@ -1,4 +1,4 @@
-﻿namespace RockEngine.Vulkan.Cache
+﻿namespace RockEngine.Vulkan.Helpers.Abstractions.Cache
 {
     public interface ICache<TKey, TValue>
     {

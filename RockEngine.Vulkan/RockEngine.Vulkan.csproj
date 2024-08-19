@@ -53,7 +53,7 @@
     <CompiledShader Include="**\*.spv" />
   </ItemGroup>
 
-  <Target Name="CopyCompiledShaders" AfterTargets="PostBuild">
+  <Target Name="CopyCompiledShaders" AfterTargets="PreBuild">
     <Copy SourceFiles="@(CompiledShader)" DestinationFolder="$(ShadersOutputPath)" />
   </Target>
 

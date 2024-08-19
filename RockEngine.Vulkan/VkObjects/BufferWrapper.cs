@@ -3,7 +3,7 @@ using RockEngine.Vulkan.VulkanInitilizers;
 
 using Silk.NET.Vulkan;
 
-using System;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
 using Buffer = Silk.NET.Vulkan.Buffer;
@@ -46,14 +46,14 @@ namespace RockEngine.Vulkan.VkObjects
             _context.Api.CmdBindIndexBuffer(commandBuffer, _vkObject, 0, IndexType.Uint32);
         }
 
-        public async Task SendDataAsync<T>(T[] data, ulong offset = 0) where T : struct
+        public async ValueTask SendDataAsync<T>(T[] data, ulong offset = 0) where T : struct
         {
             MapMemory(Size, offset, out var dataPtr);
 
             byte[] byteArray = await StructArrayToByteArrayAsync(data);
             Marshal.Copy(byteArray, 0, dataPtr, byteArray.Length);
 
-            _context.Api.UnmapMemory(_context.Device, _deviceMemory);
+            UnmapMemory();
         }
 
         /// <summary>
@@ -63,7 +63,7 @@ namespace RockEngine.Vulkan.VkObjects
         /// <param name="data">value of the data</param>
         /// <param name="offset">offset from 0 to size of data</param>
         /// <returns></returns>
-        public async Task SendDataAsync<T>(T data, ulong offset = 0) where T : struct
+        public async ValueTask SendDataAsync<T>(T data, ulong offset = 0) where T : struct
         {
             MapMemory(Size, offset, out var dataPtr);
 
@@ -78,48 +78,40 @@ namespace RockEngine.Vulkan.VkObjects
         public async Task CopyBufferAsync(VulkanContext context, BufferWrapper dstBuffer, ulong size)
         {
             context.QueueMutex.WaitOne();
-            try
+            var commandPool = context.GetOrCreateCommandPool();
+            var commandBufferAllocateInfoo = new CommandBufferAllocateInfo()
             {
-                var commandPool = context.GetOrCreateCommandPool();
-                var commandBufferAllocateInfoo = new CommandBufferAllocateInfo()
+                SType = StructureType.CommandBufferAllocateInfo,
+                Level = CommandBufferLevel.Primary,
+                CommandPool = commandPool,
+                CommandBufferCount = 1
+            };
+            using CommandBufferWrapper commandBuffer = CommandBufferWrapper.Create(in commandBufferAllocateInfoo, commandPool);
+
+            commandBuffer.Begin(new CommandBufferBeginInfo
+            {
+                SType = StructureType.CommandBufferBeginInfo,
+                Flags = CommandBufferUsageFlags.OneTimeSubmitBit
+            });
+
+            commandBuffer.CopyBuffer(this, dstBuffer, size);
+            commandBuffer.End();
+
+            unsafe
+            {
+                var buffer = stackalloc CommandBuffer[] { commandBuffer.VkObjectNative };
+                SubmitInfo submitInfo = new SubmitInfo()
                 {
-                    SType = StructureType.CommandBufferAllocateInfo,
-                    Level = CommandBufferLevel.Primary,
-                    CommandPool = commandPool,
-                    CommandBufferCount = 1
+                    SType = StructureType.SubmitInfo,
+                    CommandBufferCount = 1,
+                    PCommandBuffers = buffer
                 };
-                using CommandBufferWrapper commandBuffer = CommandBufferWrapper.Create(in commandBufferAllocateInfoo, commandPool);
-
-                commandBuffer.Begin(new CommandBufferBeginInfo
-                {
-                    SType = StructureType.CommandBufferBeginInfo,
-                    Flags = CommandBufferUsageFlags.OneTimeSubmitBit
-                });
-
-                commandBuffer.CopyBuffer(this, dstBuffer, size);
-                commandBuffer.End();
-
-                unsafe
-                {
-                    var buffer = stackalloc CommandBuffer[] { commandBuffer.VkObjectNative };
-                    unsafe
-                    {
-                        SubmitInfo submitInfo = new SubmitInfo()
-                        {
-                            SType = StructureType.SubmitInfo,
-                            CommandBufferCount = 1,
-                            PCommandBuffers = buffer
-                        };
-                        context.Api.QueueSubmit(context.Device.GraphicsQueue, 1, in submitInfo, default);
-                    }
-                    context.Api.QueueWaitIdle(context.Device.GraphicsQueue);
-                }
-               
+                context.Api.QueueSubmit(context.Device.GraphicsQueue, 1, in submitInfo, default);
             }
-            finally
-            {
-                context.QueueMutex.ReleaseMutex();
-            }
+            context.Api.QueueWaitIdle(context.Device.GraphicsQueue);
+
+
+            context.QueueMutex.ReleaseMutex();
         }
 
         public void MapMemory(ulong bufferSize, ulong offset, out nint pData)
@@ -134,7 +126,7 @@ namespace RockEngine.Vulkan.VkObjects
 
         public static ValueTask<byte[]> StructArrayToByteArrayAsync<T>(T data) where T : struct
         {
-            int size = Marshal.SizeOf<T>();
+            int size = Unsafe.SizeOf<T>();
             byte[] byteArray = new byte[size];
             nint ptr = Marshal.AllocHGlobal(size);
 
@@ -147,13 +139,12 @@ namespace RockEngine.Vulkan.VkObjects
             {
                 Marshal.FreeHGlobal(ptr);
             }
-
             return new ValueTask<byte[]>(byteArray);
         }
 
         public static Task<byte[]> StructArrayToByteArrayAsync<T>(T[] data) where T : struct
         {
-            int size = Marshal.SizeOf<T>();
+            int size = Unsafe.SizeOf<T>();
             byte[] byteArray = new byte[data.Length * size];
             nint ptr = Marshal.AllocHGlobal(size);
 

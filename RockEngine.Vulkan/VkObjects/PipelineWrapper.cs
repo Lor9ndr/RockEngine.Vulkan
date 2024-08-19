@@ -1,4 +1,5 @@
 ﻿using RockEngine.Vulkan.Helpers;
+using RockEngine.Vulkan.Rendering;
 using RockEngine.Vulkan.VulkanInitilizers;
 
 using Silk.NET.Vulkan;
@@ -17,6 +18,7 @@ namespace RockEngine.Vulkan.VkObjects
         public string Name => _name;
         public PipelineLayoutWrapper Layout => _pipelineLayout;
         public RenderPassWrapper RenderPass => _renderPass;
+        private List<DescriptorSet> _descriptorSets = new List<DescriptorSet>();
 
         public PipelineWrapper(VulkanContext context, string name, Pipeline pipeline, PipelineLayoutWrapper pipelineLayout, RenderPassWrapper renderPass)
             : base(pipeline)
@@ -34,7 +36,7 @@ namespace RockEngine.Vulkan.VkObjects
             return new PipelineWrapper(context, name, pipeline, layout, renderPass);
         }
 
-        public unsafe DescriptorSet CreateDescriptorSet(DescriptorSetLayout descriptorSetLayout)
+        public unsafe DescriptorSet GetOrCreateDescriptorSet(DescriptorSetLayout descriptorSetLayout)
         {
             var pool = _context.DescriptorPoolFactory.GetOrCreatePool();
             var allocInfo = new DescriptorSetAllocateInfo
@@ -48,9 +50,11 @@ namespace RockEngine.Vulkan.VkObjects
             DescriptorSet descriptorSet;
             _context.Api.AllocateDescriptorSets(_context.Device, &allocInfo, &descriptorSet)
                   .ThrowCode("Failed to allocate descriptor set");
+            _descriptorSets.Add(descriptorSet);
 
              return descriptorSet;
         }
+       
 
         protected override void Dispose(bool disposing)
         {

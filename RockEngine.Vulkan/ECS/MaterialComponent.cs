@@ -1,7 +1,6 @@
 ﻿using RockEngine.Vulkan.Rendering;
 using RockEngine.Vulkan.Rendering.ComponentRenderers;
 using RockEngine.Vulkan.Rendering.MaterialRendering;
-using RockEngine.Vulkan.VkObjects;
 
 namespace RockEngine.Vulkan.ECS
 {
@@ -49,7 +48,7 @@ namespace RockEngine.Vulkan.ECS
         /// </summary>
         /// <param name="frameInfo">The frameInfo used for rendering.</param>
         /// <returns>A task representing the asynchronous rendering operation.</returns>
-        public Task RenderAsync(FrameInfo frameInfo)
+        public ValueTask RenderAsync(FrameInfo frameInfo)
         {
             return _renderer.RenderAsync(this, frameInfo); // Delegates the rendering to the renderer.
         }

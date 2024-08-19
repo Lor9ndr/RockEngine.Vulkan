@@ -12,6 +12,6 @@ namespace RockEngine.Vulkan.ECS
     public interface IRenderable
     {
         public int Order { get; }
-        public Task RenderAsync(FrameInfo frameInfo);
+        public ValueTask RenderAsync(FrameInfo frameInfo);
     }
 }

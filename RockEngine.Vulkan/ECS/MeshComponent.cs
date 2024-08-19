@@ -40,11 +40,11 @@ namespace RockEngine.Vulkan.ECS
             IsInitialized = true;
         }
 
-        public Task RenderAsync(FrameInfo frameInfo)
+        public ValueTask RenderAsync(FrameInfo frameInfo)
         {
             if (!IsInitialized)
             {
-                return Task.CompletedTask;
+                return default;
             }
             return _renderer.RenderAsync(this, frameInfo);
         }

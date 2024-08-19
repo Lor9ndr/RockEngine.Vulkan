@@ -1,5 +1,4 @@
-﻿using RockEngine.Vulkan.ECS;
-using RockEngine.Vulkan.Rendering.MaterialRendering;
+﻿using RockEngine.Vulkan.Rendering.MaterialRendering;
 using RockEngine.Vulkan.VkObjects;
 
 using Silk.NET.Vulkan;
@@ -17,5 +16,9 @@ namespace RockEngine.Vulkan.Rendering
 
         public MeshpassType PassType { get; internal set; }
         public Queue<(uint SetIndex, DescriptorSet DescriptorSet)> DescriptorSetQueue { get; } = new Queue<(uint, DescriptorSet)>();
+        public List<UniformBufferObject> PendingUBOs { get;} = new List<UniformBufferObject>();
+
+
+
     }
 }

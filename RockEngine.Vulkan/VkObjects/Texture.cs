@@ -12,6 +12,8 @@ namespace RockEngine.Vulkan.VkObjects
 {
     public class Texture : IDisposable
     {
+        private static Texture _emptyTexture;
+
         public TextureInfo TextureInfo { get; private set;}
 
         public Texture(string path)
@@ -32,7 +34,8 @@ namespace RockEngine.Vulkan.VkObjects
                 return;
             }
 
-            var bytes = await File.ReadAllBytesAsync(preLoadInfo.Path, cancellationToken).ConfigureAwait(false);
+            var bytes = await File.ReadAllBytesAsync(preLoadInfo.Path, cancellationToken)
+                .ConfigureAwait(false);
             using var skImage = SKImage.FromBitmap(SKBitmap.Decode(bytes));
 
             var width = (uint)skImage.Width;
@@ -159,13 +162,13 @@ namespace RockEngine.Vulkan.VkObjects
             stagingBuffer.UnmapMemory();
 
             // Transition the Vulkan image layout to TRANSFER_DST_OPTIMAL
-            vkImage.TransitionImageLayout(context, Format.R8G8B8A8Srgb, ImageLayout.Undefined, ImageLayout.TransferDstOptimal);
+            vkImage.TransitionImageLayout(context, format, ImageLayout.Undefined, ImageLayout.TransferDstOptimal);
 
             // Copy the data from the staging buffer to the Vulkan image
             CopyBufferToImage(context, stagingBuffer, vkImage, width, height);
 
             // Transition the Vulkan image layout to SHADER_READ_ONLY_OPTIMAL
-            vkImage.TransitionImageLayout(context, Format.R8G8B8A8Srgb, ImageLayout.TransferDstOptimal, ImageLayout.ShaderReadOnlyOptimal);
+            vkImage.TransitionImageLayout(context, format, ImageLayout.TransferDstOptimal, ImageLayout.ShaderReadOnlyOptimal);
         }
 
         private unsafe static void CopyBufferToImage(VulkanContext context, BufferWrapper stagingBuffer, Image image, uint width, uint height)
@@ -194,15 +197,69 @@ namespace RockEngine.Vulkan.VkObjects
             VkHelper.EndSingleTimeCommands(context, commandBuffer, commandPool);
         }
 
+        public static Texture GetEmptyTexture(VulkanContext context)
+        {
+            _emptyTexture ??= CreateEmptyTexture(context);
+            return _emptyTexture;
+        }
+
+        private static Texture CreateEmptyTexture(VulkanContext context)
+        {
+            // Create a 1x1 white texture
+            using var surface = SKSurface.Create(new SKImageInfo(1, 1, SKColorType.Rgba8888));
+            surface.Canvas.Clear(SKColors.White);
+            using var image = surface.Snapshot();
+            var texture = new Texture(new NotLoadedTextureInfo("empty_texture"));
+            texture.LoadFromSKImage(context, image);
+            return texture;
+        }
+        private void LoadFromSKImage(VulkanContext context, SKImage skImage)
+        {
+            var width = (uint)skImage.Width;
+            var height = (uint)skImage.Height;
+            var format = GetVulkanFormat(skImage);
+            var vkImage = CreateVulkanImage(context, width, height, format);
+            var imageMemory = AllocateImageMemory(context, vkImage);
+            var imageView = CreateImageView(context, vkImage, format);
+
+            // Copy image data from SkiaSharp to Vulkan image
+            CopyImageData(context, skImage, vkImage);
+
+            // Create a sampler
+            var samplerCreateInfo = new SamplerCreateInfo
+            {
+                SType = StructureType.SamplerCreateInfo,
+                MagFilter = Filter.Linear,
+                MinFilter = Filter.Linear,
+                AddressModeU = SamplerAddressMode.Repeat,
+                AddressModeV = SamplerAddressMode.Repeat,
+                AddressModeW = SamplerAddressMode.Repeat,
+                AnisotropyEnable = Vk.True,
+                MaxAnisotropy = 16,
+                BorderColor = BorderColor.IntOpaqueBlack,
+                UnnormalizedCoordinates = Vk.False,
+                CompareEnable = Vk.False,
+                CompareOp = CompareOp.Always,
+                MipmapMode = SamplerMipmapMode.Linear,
+                MipLodBias = 0.0f,
+                MinLod = 0.0f,
+                MaxLod = 0.0f
+            };
+            var sampler = Sampler.Create(context, in samplerCreateInfo);
+
+            TextureInfo = new LoadedTextureInfo(vkImage, imageMemory, imageView, sampler);
+        }
+
         public unsafe void Dispose()
         {
-            if (TextureInfo is LoadedTextureInfo loaded)
+            if (TextureInfo is not LoadedTextureInfo loaded)
             {
-                loaded.Sampler.Dispose();
-                loaded.ImageView.Dispose();
-                loaded.Image.Dispose();
-                loaded.ImageMemory.Dispose();
+                return;
             }
+            loaded.Sampler.Dispose();
+            loaded.ImageView.Dispose();
+            loaded.Image.Dispose();
+            loaded.ImageMemory.Dispose();
         }
     }
 }

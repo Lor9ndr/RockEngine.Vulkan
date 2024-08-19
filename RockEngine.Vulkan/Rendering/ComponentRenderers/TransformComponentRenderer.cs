@@ -33,7 +33,7 @@ namespace RockEngine.Vulkan.Rendering.ComponentRenderers
             return new ValueTask();
         }
 
-        public async Task RenderAsync(TransformComponent component, FrameInfo frameInfo)
+        public async ValueTask RenderAsync(TransformComponent component, FrameInfo frameInfo)
         {
             if (!component.Entity.TryGet<MeshComponent>(out var _))
             {
@@ -41,6 +41,7 @@ namespace RockEngine.Vulkan.Rendering.ComponentRenderers
             }
             var model = component.GetModelMatrix();
             _pipelineManager.Use(_ubo, frameInfo);
+
             // CAN BE MOVED TO THE UPDATE METHOD
             await _ubo.UniformBuffer.SendDataAsync(model);
         }

@@ -1,6 +1,6 @@
 ﻿using System.Collections.Concurrent;
 
-namespace RockEngine.Vulkan.Cache
+namespace RockEngine.Vulkan.Helpers.Abstractions.Cache
 {
 
     /// <summary>
@@ -8,7 +8,7 @@ namespace RockEngine.Vulkan.Cache
     /// </summary>
     /// <typeparam name="TKey">key type</typeparam>
     /// <typeparam name="TValue">value type</typeparam>
-    public class MemoryCache<TKey, TValue> : ICache<TKey, TValue> where TKey :notnull
+    public class MemoryCache<TKey, TValue> : ICache<TKey, TValue> where TKey : notnull
     {
         protected readonly ConcurrentDictionary<TKey, TValue> _cache = new ConcurrentDictionary<TKey, TValue>();
 

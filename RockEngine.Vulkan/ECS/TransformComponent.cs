@@ -88,7 +88,7 @@ namespace RockEngine.Vulkan.ECS
             }
         }
 
-        public Task RenderAsync(FrameInfo frameInfo)
+        public ValueTask RenderAsync(FrameInfo frameInfo)
         {
             return _renderer.RenderAsync(this, frameInfo);
         }

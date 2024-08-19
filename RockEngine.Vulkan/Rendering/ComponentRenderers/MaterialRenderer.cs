@@ -27,10 +27,10 @@ namespace RockEngine.Vulkan.Rendering.ComponentRenderers
             _pipelineManager.SetMaterialDescriptors(component.Material);
         }
 
-        public Task RenderAsync(MaterialComponent component, FrameInfo frameInfo)
+        public ValueTask RenderAsync(MaterialComponent component, FrameInfo frameInfo)
         {
             _pipelineManager.Use(component.Material, frameInfo);
-            return Task.CompletedTask;
+            return default;
         }
 
         public void Dispose()

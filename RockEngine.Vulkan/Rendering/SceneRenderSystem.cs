@@ -1,5 +1,4 @@
 ﻿using RockEngine.Vulkan.ECS;
-using RockEngine.Vulkan.VkObjects;
 using RockEngine.Vulkan.VulkanInitilizers;
 
 using System.Diagnostics;
@@ -17,9 +16,13 @@ namespace RockEngine.Vulkan.Rendering
         {
             Debug.Assert(frameInfo.CommandBuffer?.VkObjectNative.Handle != default, "Command buffer is null");
 
-            foreach (var item in p.CurrentScene.GetEntities())
+            var groups = p.CurrentScene.GetEntities().GroupBy(s=> s.GetComponent<MaterialComponent>()?.Material.Original);
+            foreach (var group in groups)
             {
-                await item.RenderAsync(frameInfo);
+                foreach (var item in group)
+                {
+                    await item.RenderAsync(frameInfo);
+                }
             }
         }
 

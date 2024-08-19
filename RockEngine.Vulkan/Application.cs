@@ -18,6 +18,8 @@ using Silk.NET.Windowing.Sdl;
 using System.Numerics;
 using System.Threading;
 
+using static Assimp.Metadata;
+
 using Window = Silk.NET.Windowing.Window;
 
 namespace RockEngine.Vulkan
@@ -35,6 +37,7 @@ namespace RockEngine.Vulkan
         private BaseRenderer _baseRenderer;
         private SceneRenderSystem _sceneRenderSystem;
         private ImGuiController _imguiController;
+        private FrameInfo FrameInfo = new FrameInfo();
 
         public CancellationTokenSource CancellationTokenSource { get; private set; }
         public CancellationToken CancellationToken { get; private set; }
@@ -124,7 +127,10 @@ namespace RockEngine.Vulkan
             var camera = new Entity();
             camera.AddComponent<DebugCamera>();
             await scene.AddEntityAsync(camera);
-
+            var light = new Entity();
+            light.AddComponent<LightComponent>();
+            await scene.AddEntityAsync(light);
+            light.Transform.Position = new Vector3(0,10,0);
             var sponza = await _assimp.LoadMeshesAsync("F:\\RockEngine.Vulkan\\RockEngine.Vulkan\\Resources\\Models\\SponzaAtrium\\scene.gltf");
             var defaultEffect = _pipelineManager.GetEffect("ForwardDefault");
             var normalsEffect = _pipelineManager.GetEffect("Normals");
@@ -136,18 +142,19 @@ namespace RockEngine.Vulkan
                 var meshAsset = new MeshAsset(meshData);
                 mesh.SetAsset(meshAsset);
                 var material = entity.AddComponent<MaterialComponent>();
-                if (i % 2 == 0)
-                {
+              /*  if (i % 2 == 0)
+                {*/
                     material.Material = new Material(defaultEffect, meshData.textures, new Dictionary<string, object>());
-                }
+               /* }
                 else
                 {
                     material.Material = new Material(normalsEffect, new List<Texture>(), new Dictionary<string, object>());
-                }
+                }*/
 
                 entity.Transform.Scale = new Vector3(0.005f);
                 await scene.AddEntityAsync(entity);
             }
+
 
             await _assetManager.SaveAssetAsync(scene, CancellationToken);
             await scene.InitializeAsync();
@@ -165,7 +172,7 @@ namespace RockEngine.Vulkan
 
             EffectTemplate effectTemplate = new EffectTemplate();
 
-            var pipelineLayout = PipelineLayoutWrapper.Create(_context, true,vertexShaderModule, fragmentShaderModule);
+            var pipelineLayout = PipelineLayoutWrapper.Create(_context, vertexShaderModule, fragmentShaderModule);
 
             PipelineColorBlendAttachmentState colorBlendAttachmentState = new PipelineColorBlendAttachmentState()
             {
@@ -221,7 +228,6 @@ namespace RockEngine.Vulkan
            _pipelineManager.AddEffectTemplate("ForwardDefault", effectTemplate);
 
             await LoadNormalEffect();
-         
         }
         private async Task LoadNormalEffect()
         {
@@ -235,7 +241,7 @@ namespace RockEngine.Vulkan
 
             EffectTemplate effectTemplate = new EffectTemplate();
 
-            var pipelineLayout = PipelineLayoutWrapper.Create(_context, true, vertexShaderModule, fragmentShaderModule);
+            var pipelineLayout = PipelineLayoutWrapper.Create(_context, vertexShaderModule, fragmentShaderModule);
 
             PipelineColorBlendAttachmentState colorBlendAttachmentState = new PipelineColorBlendAttachmentState()
             {
@@ -245,7 +251,7 @@ namespace RockEngine.Vulkan
                ColorComponentFlags.ABit
             };
 
-            using GraphicsPipelineBuilder pBuilder = new GraphicsPipelineBuilder(_context, _pipelineManager, "Base")
+            using GraphicsPipelineBuilder pBuilder = new GraphicsPipelineBuilder(_context, _pipelineManager, "Normals")
                .AddRenderPass(_baseRenderer.GetRenderPass())
                .WithPipelineLayout(pipelineLayout)
                .WithDynamicState(new PipelineDynamicStateBuilder()
@@ -294,33 +300,63 @@ namespace RockEngine.Vulkan
 
         private async Task DrawFrame(double obj)
         {
-            var frameInfo =  _baseRenderer.BeginFrame();
+            _baseRenderer.BeginFrame(FrameInfo);
            
-            if (frameInfo.CommandBuffer is null)
+            if (FrameInfo.CommandBuffer is null)
             {
                 return;
             }
 
-            frameInfo.FrameTime = (float)obj;
+            FrameInfo.FrameTime = (float)obj;
 
 
             _imguiController.Update((float)obj);
             ImGui.ShowDemoWindow();
 
-            _baseRenderer.BeginSwapchainRenderPass(frameInfo.CommandBuffer);
+            _baseRenderer.BeginSwapchainRenderPass(FrameInfo.CommandBuffer);
 
-            await _sceneRenderSystem.RenderAsync(_project, frameInfo).ConfigureAwait(false);
+            await _sceneRenderSystem.RenderAsync(_project, FrameInfo).ConfigureAwait(false);
 
-            _imguiController.RenderAsync(frameInfo.CommandBuffer, _baseRenderer.Swapchain.Extent);
+            _imguiController.RenderAsync(FrameInfo.CommandBuffer, _baseRenderer.Swapchain.Extent);
 
-            _baseRenderer.EndSwapchainRenderPass(frameInfo.CommandBuffer);
+            _baseRenderer.EndSwapchainRenderPass(FrameInfo.CommandBuffer);
             _baseRenderer.EndFrame();
         }
+
+        private float _lightAngle = 0f;
+        private const float _lightRadius = 10f;
+        private const float _lightSpeed = 0.5f;
+        private const float _colorChangeSpeed = 0.3f;
 
         private void Update(double time)
         {
             _project.CurrentScene.Update(time);
+
+            // Update light position and color
+            _lightAngle += _lightSpeed * (float)time;
+            if (_lightAngle > 2 * MathF.PI)
+            {
+                _lightAngle -= 2 * MathF.PI;
+            }
+
+            var lightEntity = _project.CurrentScene.GetEntities().FirstOrDefault(s => s.GetComponent<LightComponent>() != null);
+            if (lightEntity != null)
+            {
+                var lightComponent = lightEntity.GetComponent<LightComponent>();
+
+                // Update position
+                float x = _lightRadius * MathF.Cos(_lightAngle);
+                float z = _lightRadius * MathF.Sin(_lightAngle);
+                lightEntity.Transform.Position = new Vector3(x, 10f, z);
+
+                // Update color
+                float r = (MathF.Sin(_colorChangeSpeed * _lightAngle) + 1) / 2;
+                float g = (MathF.Sin(_colorChangeSpeed * _lightAngle + 2 * MathF.PI / 3) + 1) / 2;
+                float b = (MathF.Sin(_colorChangeSpeed * _lightAngle + 4 * MathF.PI / 3) + 1) / 2;
+                lightComponent.Color = new Vector3(r, g, b);
+            }
         }
+
 
         /// <summary>
         /// Disposing all disposable objects

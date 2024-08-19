@@ -1,5 +1,5 @@
-﻿using RockEngine.Vulkan.Cache;
-using RockEngine.Vulkan.ECS;
+﻿using RockEngine.Vulkan.ECS;
+using RockEngine.Vulkan.Helpers.Abstractions.Cache;
 using RockEngine.Vulkan.Rendering.ComponentRenderers;
 using RockEngine.Vulkan.VkObjects;
 
@@ -26,8 +26,8 @@ namespace RockEngine.Vulkan.DI
             Container.RegisterSingleton<IComponentRenderer<DebugCamera>, CameraRenderer>();
             Container.RegisterSingleton<IComponentRenderer<TransformComponent>, TransformComponentRenderer>();
             Container.RegisterSingleton<IComponentRenderer<MaterialComponent>, MaterialRenderer>();
+            Container.Register<IComponentRenderer<LightComponent>, LightComponentRenderer>();
             Container.Register<IComponentRenderer<MeshComponent>, MeshComponentRenderer>();
-            Container.Register<ICache<uint, DescriptorSetLayout>, DescriptorLayoutCache>();
 
             // Register other dependencies
             Container.RegisterSingleton<AssimpLoader>();
@@ -40,6 +40,9 @@ namespace RockEngine.Vulkan.DI
             Container.Register<MaterialComponent>();
             Container.Register<Camera>();
             Container.Register<DebugCamera>();
+            Container.Register<LightComponent>();
+
+
 
         }
     }
