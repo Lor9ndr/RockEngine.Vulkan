@@ -14,7 +14,9 @@ namespace RockEngine.Vulkan.Rendering.ComponentRenderers
         private readonly VulkanContext _context;
         private readonly PipelineManager _pipelineManager;
 
-        public CameraRenderer(VulkanContext context, PipelineManager pipelineManager)
+        public CameraRenderer(
+            VulkanContext context,
+            PipelineManager pipelineManager)
         {
             _context = context;
             _pipelineManager = pipelineManager;
@@ -24,13 +26,13 @@ namespace RockEngine.Vulkan.Rendering.ComponentRenderers
         {
             if (_isInitialized)
             {
-                return new ValueTask();
+                return ValueTask.CompletedTask;
             }
 
             _ubo = UniformBufferObject.Create(_context, (ulong)Marshal.SizeOf<CameraData>(), "CameraData");
             _pipelineManager.SetBuffer(_ubo,0, 0);
             _isInitialized = true;
-            return new ValueTask();
+            return ValueTask.CompletedTask;
         }
 
         public async ValueTask RenderAsync(Camera component, FrameInfo frameInfo)
@@ -41,19 +43,19 @@ namespace RockEngine.Vulkan.Rendering.ComponentRenderers
                 viewproj = viewProjectionMatrix,
                 viewPos = component.Entity.Transform.Position
             };
-
-            // CAN BE MOVED TO THE UPDATE METHOD
             await _ubo!.UniformBuffer.SendDataAsync(cameraData);
-
-            // THIS IS HAS TO BE STAYED HERE 
             _pipelineManager.Use(_ubo, frameInfo);
         }
-
+        public ValueTask UpdateAsync(Camera component)
+        {
+            return ValueTask.CompletedTask;
+        }
 
         public void Dispose()
         {
             _ubo?.Dispose();
         }
+       
         [StructLayout(LayoutKind.Sequential)]
         private struct CameraData
         {

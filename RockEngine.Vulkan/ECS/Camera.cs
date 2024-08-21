@@ -185,5 +185,9 @@ namespace RockEngine.Vulkan.ECS
         {
             return _renderer.RenderAsync(this, frameInfo);
         }
+       /* public v ValueTask UpdateAsync(double time)
+        {
+            return _renderer.UpdateAsync(this);
+        }*/
     }
 }

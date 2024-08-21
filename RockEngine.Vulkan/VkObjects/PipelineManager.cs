@@ -1,17 +1,8 @@
-﻿using System.Runtime.CompilerServices;
-using Silk.NET.Vulkan;
+﻿using Silk.NET.Vulkan;
 using RockEngine.Vulkan.Rendering;
 using RockEngine.Vulkan.Rendering.MaterialRendering;
 using RockEngine.Vulkan.VkObjects.Infos.Texture;
 using RockEngine.Vulkan.VulkanInitilizers;
-using RockEngine.Vulkan.ECS;
-using RockEngine.Vulkan.Rendering.ComponentRenderers;
-using Silk.NET.Core.Native;
-using Silk.NET.Input;
-using static System.Net.WebRequestMethods;
-using System.Net.NetworkInformation;
-using System.Reflection.Metadata;
-using System;
 
 namespace RockEngine.Vulkan.VkObjects
 {
@@ -26,16 +17,12 @@ namespace RockEngine.Vulkan.VkObjects
             _templateCache = new Dictionary<string, EffectTemplate>();
         }
 
-        // We can use that attribute, but JIT has to do it by itself, has to figure out by looking into JIT code
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public PipelineWrapper CreatePipeline(string name, ref GraphicsPipelineCreateInfo ci, RenderPassWrapper renderPass, PipelineLayoutWrapper layout)
             => PipelineWrapper.Create(_context, name, ref ci, renderPass, layout);
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void AddEffectTemplate(string name, EffectTemplate effectTemplate)
             => _templateCache[name] = effectTemplate;
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public EffectTemplate? GetEffect(string effectName)
             => _templateCache.TryGetValue(effectName, out var effect) ? effect : null;
 
@@ -57,47 +44,31 @@ namespace RockEngine.Vulkan.VkObjects
             }
         }
 
-        public void Use(UniformBufferObject ubo, FrameInfo frameInfo, PipelineBindPoint bindPoint = PipelineBindPoint.Graphics)
+        public void Use(UniformBufferObject ubo, FrameInfo frameInfo)
         {
-            if (frameInfo.CurrentEffect is null)
-            {
-                frameInfo.PendingUBOs.Add(ubo);
-                return;
-            }
-
-            ProcessPendingUBOs(frameInfo);
-
-            var pipelineLayout = frameInfo.CurrentEffect.PassShaders[frameInfo.PassType].Layout;
-            if (ubo.PerPipelineDescriptorSet.TryGetValue(pipelineLayout, out var descriptorSetInfo))
-            {
-                frameInfo.DescriptorSetQueue.Enqueue((descriptorSetInfo.setIndex, descriptorSetInfo.set));
-            }
+            frameInfo.UbosInFrame.Add(ubo);
         }
 
-        private void ProcessPendingUBOs(FrameInfo frameInfo)
-        {
-            if (frameInfo.CurrentEffect is null)
-            {
-                return;
-            }
 
-            var pipelineLayout = frameInfo.CurrentEffect.PassShaders[frameInfo.PassType].Layout;
-            for (int i = 0; i < frameInfo.PendingUBOs.Count; i++)
-            {
-                UniformBufferObject? ubo = frameInfo.PendingUBOs[i];
-                if (ubo.PerPipelineDescriptorSet.TryGetValue(pipelineLayout, out var descriptorSetInfo))
-                {
-                    frameInfo.DescriptorSetQueue.Enqueue((descriptorSetInfo.setIndex, descriptorSetInfo.set));
-                }
-            }
-            frameInfo.PendingUBOs.RemoveAll(s => s.PerPipelineDescriptorSet.ContainsKey(pipelineLayout));
-        }
-
+        /// <summary>
+        /// Binds all descriptorsets that are queued in frameinfo, better to use before the actual mesh render
+        /// </summary>
+        /// <param name="frameInfo"></param>
+        /// <param name="bindPoint"></param>
         public unsafe void BindQueuedDescriptorSets(FrameInfo frameInfo, PipelineBindPoint bindPoint = PipelineBindPoint.Graphics)
         {
             if (frameInfo.CommandBuffer is null || frameInfo.CurrentEffect is null)
             {
                 return;
+            }
+            var pipelineLayout = frameInfo.CurrentEffect.PassShaders[frameInfo.PassType].Layout;
+            foreach (var item in frameInfo.UbosInFrame)
+            {
+                if (!item.PerPipelineDescriptorSet.TryGetValue(pipelineLayout, out var descriptorSetInfo))
+                {
+                    continue;
+                }
+                frameInfo.DescriptorSetQueue.Enqueue((descriptorSetInfo.setIndex, descriptorSetInfo.set));
             }
 
             var queue = frameInfo.DescriptorSetQueue;
@@ -123,7 +94,6 @@ namespace RockEngine.Vulkan.VkObjects
                 maxSetIndex = Math.Max(maxSetIndex, setIndex);
             }
 
-            var pipelineLayout = frameInfo.CurrentEffect.PassShaders[frameInfo.PassType].Layout;
             uint setCount = maxSetIndex - minSetIndex + 1;
             Span<DescriptorSet> finalDescriptorSets = stackalloc DescriptorSet[(int)setCount];
 
@@ -142,7 +112,6 @@ namespace RockEngine.Vulkan.VkObjects
             );
         }
 
-        //[MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void TrySetEffect(FrameInfo frameInfo, EffectTemplate effect, MeshpassType type)
         {
             if (frameInfo.CurrentEffect is null || frameInfo.CurrentEffect.PassShaders[type].Pipeline != effect.PassShaders[type].Pipeline)
@@ -153,7 +122,7 @@ namespace RockEngine.Vulkan.VkObjects
             }
         }
 
-        public void SetMaterialDescriptors(Material material)
+        public void SetMaterialDescriptors(Material material, UniformBufferObject paramsUbo)
         {
             foreach (var (passType, shader) in material.Original.PassShaders)
             {
@@ -162,12 +131,32 @@ namespace RockEngine.Vulkan.VkObjects
                     var layout = FindMaterialSetLayout(shader);
                     if (layout.DescriptorSetLayout.Handle != default)
                     {
-                        var descriptorSet = shader.Pipeline.GetOrCreateDescriptorSet(layout.DescriptorSetLayout);
+                        var descriptorSet = shader.Pipeline.CreateDescriptorSet(layout.DescriptorSetLayout);
                         UpdateDescriptorSetWithTextures(material, descriptorSet, layout);
                         material.PassSets[passType] = descriptorSet;
+
+                        var hasParamsBuffer = layout.Bindings.Any(s => s.DescriptorType == DescriptorType.UniformBuffer);
+                        if (hasParamsBuffer)
+                        {
+                            SetBuffer(paramsUbo, shader.Layout, layout.SetLocation,
+                           layout.Bindings.First(s => s.DescriptorType == DescriptorType.UniformBuffer).Binding, descriptorSet);
+                        }
                     }
                 }
             }
+        }
+
+        public unsafe void SetBuffer(UniformBufferObject ubo, PipelineLayout layout, uint setIndex, uint bindingIndex, DescriptorSet descriptorSet)
+        {
+            var bufferInfo = new DescriptorBufferInfo
+            {
+                Buffer = ubo.UniformBuffer,
+                Offset = 0,
+                Range = ubo.Size
+            };
+
+            UpdateDescriptorSetForBuffer(bindingIndex, &bufferInfo, descriptorSet);
+            ubo.PerPipelineDescriptorSet[layout] = (setIndex, descriptorSet);
         }
 
         public unsafe void SetBuffer(UniformBufferObject ubo, uint setIndex, uint bindingIndex)
@@ -185,8 +174,7 @@ namespace RockEngine.Vulkan.VkObjects
                 ubo.PerPipelineDescriptorSet[pipeline.Layout] = (setIndex, descriptorSet);
             }
         }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+      
         private DescriptorSetLayoutWrapper FindMaterialSetLayout(ShaderPass shaderPass)
             => shaderPass.Layout.DescriptorSetLayouts.FirstOrDefault(l => l.SetLocation == Constants.MATERIAL_SET);
 
@@ -202,7 +190,7 @@ namespace RockEngine.Vulkan.VkObjects
 
         private unsafe DescriptorSet UpdateDescriptorSetForBuffer(PipelineWrapper pipeline, DescriptorSetLayoutWrapper layout, uint bindingIndex, DescriptorBufferInfo bufferInfo)
         {
-            var descriptorSet = pipeline.GetOrCreateDescriptorSet(layout.DescriptorSetLayout);
+            var descriptorSet = pipeline.CreateDescriptorSet(layout.DescriptorSetLayout);
             var writeDescriptorSet = new WriteDescriptorSet
             {
                 SType = StructureType.WriteDescriptorSet,
@@ -212,6 +200,22 @@ namespace RockEngine.Vulkan.VkObjects
                 DescriptorType = DescriptorType.UniformBuffer,
                 DescriptorCount = 1,
                 PBufferInfo = &bufferInfo
+            };
+            _context.Api.UpdateDescriptorSets(_context.Device, 1, &writeDescriptorSet, 0, null);
+            return descriptorSet;
+        }
+
+        private unsafe DescriptorSet UpdateDescriptorSetForBuffer(uint bindingIndex, DescriptorBufferInfo* bufferInfo, DescriptorSet descriptorSet)
+        {
+            var writeDescriptorSet = new WriteDescriptorSet
+            {
+                SType = StructureType.WriteDescriptorSet,
+                DstSet = descriptorSet,
+                DstBinding = bindingIndex,
+                DstArrayElement = 0,
+                DescriptorType = DescriptorType.UniformBuffer,
+                DescriptorCount = 1,
+                PBufferInfo = bufferInfo
             };
             _context.Api.UpdateDescriptorSets(_context.Device, 1, &writeDescriptorSet, 0, null);
             return descriptorSet;
@@ -259,7 +263,10 @@ namespace RockEngine.Vulkan.VkObjects
                     PImageInfo = null  // We'll set this later
                 });
             }
-
+            if (imageInfos.Count == 0)
+            {
+                return;
+            }
             fixed (DescriptorImageInfo* pImageInfos = imageInfos.ToArray())
             fixed (WriteDescriptorSet* pWriteDescriptorSets = writeDescriptorSets.ToArray())
             {

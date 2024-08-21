@@ -13,16 +13,16 @@ namespace RockEngine.Vulkan.VkObjects
         private bool _disposed;
         private int _currentPoolIndex = 0;
 
-        public unsafe DescriptorPoolFactory(VulkanContext context, uint poolCount = 3, uint maxSetsPerPool = 100)
+        public unsafe DescriptorPoolFactory(VulkanContext context, uint poolCount = 3, uint maxSetsPerPool = 500)
         {
             _context = context;
 
             // Create default pool sizes
             var poolSizes = new[]
             {
-                new DescriptorPoolSize(DescriptorType.UniformBuffer, 100),
-                new DescriptorPoolSize(DescriptorType.CombinedImageSampler, 100),
-                new DescriptorPoolSize(DescriptorType.StorageBuffer, 100)
+                new DescriptorPoolSize(DescriptorType.UniformBuffer, 500),
+                new DescriptorPoolSize(DescriptorType.CombinedImageSampler, 500),
+                new DescriptorPoolSize(DescriptorType.StorageBuffer, 500)
             };
 
             // Create multiple descriptor pools

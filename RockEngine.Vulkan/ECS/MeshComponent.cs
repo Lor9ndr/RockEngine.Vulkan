@@ -1,7 +1,7 @@
 ﻿using RockEngine.Vulkan.Assets;
 using RockEngine.Vulkan.Rendering;
 using RockEngine.Vulkan.Rendering.ComponentRenderers;
-using RockEngine.Vulkan.VkObjects;
+using RockEngine.Vulkan.Rendering.MaterialRendering;
 
 namespace RockEngine.Vulkan.ECS
 {
@@ -9,13 +9,15 @@ namespace RockEngine.Vulkan.ECS
     {
         private MeshAsset _asset;
         private IComponentRenderer<MeshComponent> _renderer;
-      
+
+        public Material Material { get; private set; }
         public Vertex[] Vertices => _asset.Vertices;
         public uint[]? Indices => _asset.Indices;
 
         public IComponentRenderer<MeshComponent> Renderer => _renderer;
 
         public int Order => 99999;
+
 
         public MeshComponent(IComponentRenderer<MeshComponent> renderer)
         {
@@ -27,6 +29,10 @@ namespace RockEngine.Vulkan.ECS
             _asset = meshAsset;
         }
 
+        public void SetMaterial(Material material)
+        {
+            Material = material;
+        }
 
         /// <summary>
         /// Initializing the meshComponent, create/get renderer 
@@ -47,6 +53,11 @@ namespace RockEngine.Vulkan.ECS
                 return default;
             }
             return _renderer.RenderAsync(this, frameInfo);
+        }
+
+        public override ValueTask UpdateAsync(double time)
+        {
+            return _renderer.UpdateAsync(this);
         }
 
         public void Dispose()

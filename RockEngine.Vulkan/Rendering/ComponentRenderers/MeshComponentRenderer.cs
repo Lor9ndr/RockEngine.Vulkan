@@ -1,17 +1,21 @@
 ﻿using RockEngine.Vulkan.ECS;
 using RockEngine.Vulkan.VkObjects;
+using RockEngine.Vulkan.VkObjects.Infos.Texture;
 using RockEngine.Vulkan.VulkanInitilizers;
 
 using Silk.NET.Vulkan;
 
+using System.Numerics;
+using System.Runtime.InteropServices;
+
 namespace RockEngine.Vulkan.Rendering.ComponentRenderers
 {
-    public class MeshComponentRenderer : IComponentRenderer<MeshComponent>, IDisposable
+    public sealed class MeshComponentRenderer : IComponentRenderer<MeshComponent>, IDisposable
     {
         private BufferWrapper _vertexBuffer;
         private BufferWrapper _indexBuffer;
         private bool _isReady;
-        private MeshComponent _component;
+        private UniformBufferObject _materialUbo;
         private readonly VulkanContext _context;
         private readonly PipelineManager _pipelineManager;
 
@@ -21,100 +25,101 @@ namespace RockEngine.Vulkan.Rendering.ComponentRenderers
             _pipelineManager = pipelineManager;
         }
 
-        public ValueTask InitializeAsync(MeshComponent component)
+        public async ValueTask InitializeAsync(MeshComponent component)
         {
-            _component = component;
-            return CreateBuffersAsync(_context, component);
-        }
+            await CreateBuffersAsync(component);
 
-        public ValueTask RenderAsync(MeshComponent component, FrameInfo frameInfo)
-        {
-            _pipelineManager.BindQueuedDescriptorSets(frameInfo);
-            return Draw(frameInfo.CommandBuffer!, _component);
-        }
-
-        private async ValueTask CreateBuffersAsync(VulkanContext context, MeshComponent component)
-        {
-            ulong vertexBufferSize = (ulong)(component.Vertices.Length * Vertex.Size);
-
-            // Create Staging Buffer for Vertex Data
-            BufferCreateInfo stagingBufferCreateInfo = new BufferCreateInfo
+            if (component.Material is null)
             {
-                SType = StructureType.BufferCreateInfo,
-                Size = vertexBufferSize,
-                Usage = BufferUsageFlags.TransferSrcBit,
-                SharingMode = SharingMode.Exclusive
-            };
-
-            using BufferWrapper stagingBuffer = BufferWrapper.Create(context, in stagingBufferCreateInfo, MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit);
-
-            await stagingBuffer.SendDataAsync(component.Vertices)
-                .ConfigureAwait(false);
-
-            // Create Vertex Buffer with Device Local Memory
-            BufferCreateInfo vertexBufferCreateInfo = new BufferCreateInfo
-            {
-                SType = StructureType.BufferCreateInfo,
-                Size = vertexBufferSize,
-                Usage = BufferUsageFlags.VertexBufferBit | BufferUsageFlags.TransferDstBit,
-                SharingMode = SharingMode.Exclusive
-            };
-
-            _vertexBuffer = BufferWrapper.Create(context, in vertexBufferCreateInfo, MemoryPropertyFlags.DeviceLocalBit);
-
-            // Copy Data from Staging Buffer to Vertex Buffer
-            var t1 = stagingBuffer.CopyBufferAsync(context, _vertexBuffer, vertexBufferSize);
-
-            if (component.Indices != null)
-            {
-                ulong indexBufferSize = (ulong)(component.Indices.Length * sizeof(uint));
-
-                // Create Staging Buffer for Index Data
-                BufferCreateInfo stagingIndexBufferCreateInfo = new BufferCreateInfo
+                component.SetMaterial(new MaterialRendering.Material(_pipelineManager.GetEffect("ColorLit"), null, new Dictionary<string, object>()
                 {
-                    SType = StructureType.BufferCreateInfo,
-                    Size = indexBufferSize,
-                    Usage = BufferUsageFlags.TransferSrcBit,
-                    SharingMode = SharingMode.Exclusive
-                };
-
-                using BufferWrapper stagingIndexBuffer = BufferWrapper.Create(context, in stagingIndexBufferCreateInfo, MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit);
-
-                await stagingIndexBuffer.SendDataAsync(component.Indices)
-                    .ConfigureAwait(false);
-
-                // Create Index Buffer with Device Local Memory
-                BufferCreateInfo indexBufferCreateInfo = new BufferCreateInfo
-                {
-                    SType = StructureType.BufferCreateInfo,
-                    Size = indexBufferSize,
-                    Usage = BufferUsageFlags.IndexBufferBit | BufferUsageFlags.TransferDstBit,
-                    SharingMode = SharingMode.Exclusive
-                };
-
-                _indexBuffer = BufferWrapper.Create(context, in indexBufferCreateInfo, MemoryPropertyFlags.DeviceLocalBit);
-
-                // Copy Data from Staging Buffer to Index Buffer
-                await stagingIndexBuffer.CopyBufferAsync(context, _indexBuffer, indexBufferSize);
+                    { "baseColor", new Vector4(0.7f,0.2f, 0.2f,1.0f) },
+                    { "normalColor", new Vector3(1)}
+                }));
             }
 
-            await t1;
+            if (component.Material!.Textures != null )
+            {
+                var loadTasks = component.Material.Textures
+                  .Where(t => t.TextureInfo is NotLoadedTextureInfo)
+                  .Select(t => t.LoadAsync(_context));
+                await Task.WhenAll(loadTasks);
+            }
+            _materialUbo = UniformBufferObject.Create(_context, 28, "MaterialParams");
+
+
+
+            _pipelineManager.SetMaterialDescriptors(component.Material, _materialUbo);
 
             _isReady = true;
         }
 
-        /// <summary>
-        /// Drawing mesh to the commandBuffer,
-        /// if mesh has indices, then used indexed drawing, else default 
-        /// </summary>
-        /// <param name="commandBuffer">Command buffer to which operate</param>
-        /// <param name="component">MeshComponent, not used directly here, as everything that needed is stored in the renderer</param>
+        public async ValueTask RenderAsync(MeshComponent component, FrameInfo frameInfo)
+        {
+            if (component.Material.Parameters.Count != 0)
+            {
+                _materialUbo.UniformBuffer.MapMemory();
+                await _materialUbo.UniformBuffer.SendDataMappedAsync(component.Material.Parameters);
+                _materialUbo.UniformBuffer.UnmapMemory();
+            }
 
-        public ValueTask Draw(CommandBufferWrapper commandBuffer, MeshComponent component)
+            _pipelineManager.Use(component.Material, frameInfo);
+            _pipelineManager.BindQueuedDescriptorSets(frameInfo);
+
+            Draw(frameInfo.CommandBuffer!, component);
+        }
+
+        private async ValueTask CreateBuffersAsync(MeshComponent component)
+        {
+            await CreateVertexBufferAsync(component);
+            await CreateIndexBufferAsync(component);
+        }
+
+        private async ValueTask CreateVertexBufferAsync(MeshComponent component)
+        {
+            ulong vertexBufferSize = (ulong)(component.Vertices.Length * Vertex.Size);
+            _vertexBuffer = await CreateDeviceLocalBufferAsync(vertexBufferSize, BufferUsageFlags.VertexBufferBit | BufferUsageFlags.TransferDstBit, component.Vertices);
+        }
+
+        private async ValueTask CreateIndexBufferAsync(MeshComponent component)
+        {
+            if (component.Indices != null)
+            {
+                ulong indexBufferSize = (ulong)(component.Indices.Length * sizeof(uint));
+                _indexBuffer = await CreateDeviceLocalBufferAsync(indexBufferSize, BufferUsageFlags.IndexBufferBit | BufferUsageFlags.TransferDstBit, component.Indices);
+            }
+        }
+
+        private async ValueTask<BufferWrapper> CreateDeviceLocalBufferAsync<T>(ulong bufferSize, BufferUsageFlags usage, T[] data) where T : unmanaged
+        {
+            using var stagingBuffer = BufferWrapper.Create(_context, new BufferCreateInfo
+            {
+                SType = StructureType.BufferCreateInfo,
+                Size = bufferSize,
+                Usage = BufferUsageFlags.TransferSrcBit,
+                SharingMode = SharingMode.Exclusive
+            }, MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit);
+
+            await stagingBuffer.SendDataAsync(new ReadOnlyMemory<T>(data));
+
+            var deviceLocalBuffer = BufferWrapper.Create(_context, new BufferCreateInfo
+            {
+                SType = StructureType.BufferCreateInfo,
+                Size = bufferSize,
+                Usage = usage,
+                SharingMode = SharingMode.Exclusive
+            }, MemoryPropertyFlags.DeviceLocalBit);
+
+            stagingBuffer.CopyBuffer(_context, deviceLocalBuffer, bufferSize);
+
+            return deviceLocalBuffer;
+        }
+
+        private unsafe void Draw(CommandBufferWrapper commandBuffer, MeshComponent component)
         {
             if (!_isReady)
             {
-                return ValueTask.CompletedTask;
+                return;
             }
 
             _vertexBuffer.BindVertexBuffer(commandBuffer);
@@ -122,20 +127,25 @@ namespace RockEngine.Vulkan.Rendering.ComponentRenderers
             if (_indexBuffer != null)
             {
                 _indexBuffer.BindIndexBuffer(commandBuffer);
-                commandBuffer.DrawIndexed((uint)component.Indices!.Length, 1, 0, 0, 0);
+                _context.Api.CmdDrawIndexed(commandBuffer, (uint)component.Indices.Length, 1,0,0,0);
             }
             else
             {
-               commandBuffer.Draw((uint)component.Vertices.Length, 1, 0, 0);
+                _context.Api.CmdDraw(commandBuffer, (uint)component.Vertices.Length,1,0,0);
             }
+
+        }
+        public ValueTask UpdateAsync(MeshComponent component)
+        {
             return ValueTask.CompletedTask;
         }
-
         public void Dispose()
         {
             _vertexBuffer?.Dispose();
             _indexBuffer?.Dispose();
             _isReady = false;
         }
+
+       
     }
 }

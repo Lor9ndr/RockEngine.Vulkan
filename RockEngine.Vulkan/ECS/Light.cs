@@ -20,7 +20,7 @@ namespace RockEngine.Vulkan.ECS
             Type = LightType.Point;
         }
 
-        public int Order => -9999999;
+        public int Order => 9999;
 
         public IComponentRenderer<LightComponent> Renderer => _renderer;
 
@@ -34,6 +34,12 @@ namespace RockEngine.Vulkan.ECS
         {
             return _renderer.RenderAsync(this, frameInfo);
         }
+
+        public override ValueTask UpdateAsync(double time)
+        {
+            return _renderer.UpdateAsync(this);
+        }
+
         public enum LightType
         {
             Directional,

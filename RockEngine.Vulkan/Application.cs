@@ -6,6 +6,7 @@ using RockEngine.Vulkan.ECS;
 using RockEngine.Vulkan.Rendering;
 using RockEngine.Vulkan.Rendering.ImGuiRender;
 using RockEngine.Vulkan.Rendering.MaterialRendering;
+using RockEngine.Vulkan.Utils;
 using RockEngine.Vulkan.VkBuilders;
 using RockEngine.Vulkan.VkObjects;
 using RockEngine.Vulkan.VulkanInitilizers;
@@ -16,9 +17,6 @@ using Silk.NET.Windowing;
 using Silk.NET.Windowing.Sdl;
 
 using System.Numerics;
-using System.Threading;
-
-using static Assimp.Metadata;
 
 using Window = Silk.NET.Windowing.Window;
 
@@ -88,11 +86,13 @@ namespace RockEngine.Vulkan
             _pipelineManager = IoC.Container.GetInstance<PipelineManager>();
 
             InitializeRenderSystems();
-            await LoadShaderPasses();
+            await LoadPipelines();
             await LoadProjectAsync();
             await InitializeSceneAsync();
 
-            _window.Update += Update;
+            _window.Update += async (s) => await Update(s)
+                .ConfigureAwait(false);
+
             _window.Render += async (s) => await DrawFrame(s)
                 .ConfigureAwait(false);
         }
@@ -128,9 +128,14 @@ namespace RockEngine.Vulkan
             camera.AddComponent<DebugCamera>();
             await scene.AddEntityAsync(camera);
             var light = new Entity();
+            light.Transform.Position = new Vector3(0, 10, 0);
+            light.Transform.Scale = new Vector3(1, 1, 1);
             light.AddComponent<LightComponent>();
+  
+            var lightMesh = light.AddComponent<MeshComponent>();
+            lightMesh.SetAsset(new MeshAsset(new MeshData("Cube", DefaultMesh.CubeVertices,Indices: null, null)));
             await scene.AddEntityAsync(light);
-            light.Transform.Position = new Vector3(0,10,0);
+
             var sponza = await _assimp.LoadMeshesAsync("F:\\RockEngine.Vulkan\\RockEngine.Vulkan\\Resources\\Models\\SponzaAtrium\\scene.gltf");
             var defaultEffect = _pipelineManager.GetEffect("ForwardDefault");
             var normalsEffect = _pipelineManager.GetEffect("Normals");
@@ -141,15 +146,7 @@ namespace RockEngine.Vulkan
                 var meshData = sponza[i];
                 var meshAsset = new MeshAsset(meshData);
                 mesh.SetAsset(meshAsset);
-                var material = entity.AddComponent<MaterialComponent>();
-              /*  if (i % 2 == 0)
-                {*/
-                    material.Material = new Material(defaultEffect, meshData.textures, new Dictionary<string, object>());
-               /* }
-                else
-                {
-                    material.Material = new Material(normalsEffect, new List<Texture>(), new Dictionary<string, object>());
-                }*/
+                mesh.SetMaterial(new Material(defaultEffect, meshData.textures, new Dictionary<string, object>()));
 
                 entity.Transform.Scale = new Vector3(0.005f);
                 await scene.AddEntityAsync(entity);
@@ -160,7 +157,7 @@ namespace RockEngine.Vulkan
             await scene.InitializeAsync();
         }
 
-        private async Task LoadShaderPasses()
+        private async Task LoadPipelines()
         {
             // Load the vertex shader
             var vertexShaderModule = await ShaderModuleWrapper.CreateAsync(_context, "..\\..\\..\\Resources\\Shaders\\Shader.vert.spv", ShaderStageFlags.VertexBit, CancellationToken)
@@ -228,6 +225,7 @@ namespace RockEngine.Vulkan
            _pipelineManager.AddEffectTemplate("ForwardDefault", effectTemplate);
 
             await LoadNormalEffect();
+            await LoadColorLitEffect();
         }
         private async Task LoadNormalEffect()
         {
@@ -297,6 +295,74 @@ namespace RockEngine.Vulkan
             effectTemplate.AddShaderPass(MeshpassType.Forward, shaderPass);
             _pipelineManager.AddEffectTemplate("Normals", effectTemplate);
         }
+        private async Task LoadColorLitEffect()
+        {
+            // Load the vertex shader
+            var vertexShaderModule = await ShaderModuleWrapper.CreateAsync(_context, "..\\..\\..\\Resources\\Shaders\\ColorLit.vert.spv", ShaderStageFlags.VertexBit, CancellationToken)
+                .ConfigureAwait(false);
+
+            // Load the fragment shader
+            var fragmentShaderModule = await ShaderModuleWrapper.CreateAsync(_context, "..\\..\\..\\Resources\\Shaders\\ColorLit.frag.spv", ShaderStageFlags.FragmentBit, CancellationToken)
+                .ConfigureAwait(false);
+
+            EffectTemplate effectTemplate = new EffectTemplate();
+
+            var pipelineLayout = PipelineLayoutWrapper.Create(_context, vertexShaderModule, fragmentShaderModule);
+
+            PipelineColorBlendAttachmentState colorBlendAttachmentState = new PipelineColorBlendAttachmentState()
+            {
+                ColorWriteMask = ColorComponentFlags.RBit |
+               ColorComponentFlags.GBit |
+               ColorComponentFlags.BBit |
+               ColorComponentFlags.ABit
+            };
+
+            using GraphicsPipelineBuilder pBuilder = new GraphicsPipelineBuilder(_context, _pipelineManager, "ColorLit")
+               .AddRenderPass(_baseRenderer.GetRenderPass())
+               .WithPipelineLayout(pipelineLayout)
+               .WithDynamicState(new PipelineDynamicStateBuilder()
+                   .AddState(DynamicState.Viewport)
+                   .AddState(DynamicState.Scissor))
+               .WithMultisampleState(new VulkanMultisampleStateInfoBuilder()
+                   .Configure(false, SampleCountFlags.Count1Bit))
+               .WithRasterizer(new VulkanRasterizerBuilder())
+               .WithColorBlendState(new VulkanColorBlendStateBuilder()
+                   .Configure(LogicOp.Copy)
+                   .AddAttachment(colorBlendAttachmentState))
+               .WithInputAssembly(new VulkanInputAssemblyBuilder().Configure())
+               .WithVertexInputState(new VulkanPipelineVertexInputStateBuilder()
+                   .Add(Vertex.GetBindingDescription(), Vertex.GetAttributeDescriptions()))
+               .WithShaderModule(vertexShaderModule)
+               .WithShaderModule(fragmentShaderModule)
+               .WithViewportState(new VulkanViewportStateInfoBuilder()
+                   .AddViewport(new Viewport())
+                   .AddScissors(new Rect2D()))
+               .AddDepthStencilState(new PipelineDepthStencilStateCreateInfo()
+               {
+                   SType = StructureType.PipelineDepthStencilStateCreateInfo,
+                   DepthTestEnable = true,
+                   DepthWriteEnable = true,
+                   DepthCompareOp = CompareOp.Less,
+                   DepthBoundsTestEnable = false,
+                   MinDepthBounds = 0.0f,
+                   MaxDepthBounds = 1.0f,
+                   StencilTestEnable = false,
+                   Front = new StencilOpState(),
+                   Back = new StencilOpState()
+               });
+            var pipeline = pBuilder.Build();
+
+            ShaderEffect shaderEffect = new ShaderEffect([vertexShaderModule, fragmentShaderModule]);
+
+            ShaderPass shaderPass = new ShaderPass()
+            {
+                Effect = shaderEffect,
+                Layout = pipelineLayout,
+                Pipeline = pipeline
+            };
+            effectTemplate.AddShaderPass(MeshpassType.Forward, shaderPass);
+            _pipelineManager.AddEffectTemplate("ColorLit", effectTemplate);
+        }
 
         private async Task DrawFrame(double obj)
         {
@@ -312,7 +378,15 @@ namespace RockEngine.Vulkan
 
             _imguiController.Update((float)obj);
             ImGui.ShowDemoWindow();
-
+            var lightEntity = _project.CurrentScene.GetEntities().FirstOrDefault(s => s.GetComponent<LightComponent>() != null);
+            if (ImGui.Begin("Light", ImGuiWindowFlags.UnsavedDocument | ImGuiWindowFlags.AlwaysAutoResize | ImGuiWindowFlags.NoCollapse))
+            {
+                var pos = lightEntity.Transform.Position;
+                if (ImGui.InputFloat3("Position", ref pos))
+                {
+                    lightEntity.Transform.Position = pos;
+                }
+            }
             _baseRenderer.BeginSwapchainRenderPass(FrameInfo.CommandBuffer);
 
             await _sceneRenderSystem.RenderAsync(_project, FrameInfo).ConfigureAwait(false);
@@ -328,9 +402,9 @@ namespace RockEngine.Vulkan
         private const float _lightSpeed = 0.5f;
         private const float _colorChangeSpeed = 0.3f;
 
-        private void Update(double time)
+        private async Task Update(double time)
         {
-            _project.CurrentScene.Update(time);
+            await _project.CurrentScene.UpdateAsync(time);
 
             // Update light position and color
             _lightAngle += _lightSpeed * (float)time;
@@ -347,12 +421,12 @@ namespace RockEngine.Vulkan
                 // Update position
                 float x = _lightRadius * MathF.Cos(_lightAngle);
                 float z = _lightRadius * MathF.Sin(_lightAngle);
-                lightEntity.Transform.Position = new Vector3(x, 10f, z);
+                lightEntity.Transform.Position = new Vector3(x, 15f, z);
 
                 // Update color
-                float r = (MathF.Sin(_colorChangeSpeed * _lightAngle) + 1) / 2;
-                float g = (MathF.Sin(_colorChangeSpeed * _lightAngle + 2 * MathF.PI / 3) + 1) / 2;
-                float b = (MathF.Sin(_colorChangeSpeed * _lightAngle + 4 * MathF.PI / 3) + 1) / 2;
+                float r = (MathF.Sin(_colorChangeSpeed * _lightAngle) ) / 2;
+                float g = (MathF.Sin(_colorChangeSpeed * _lightAngle * MathF.PI / 3) + 1) / 2;
+                float b = (MathF.Sin(_colorChangeSpeed * _lightAngle * MathF.PI / 2) + 1) / 2;
                 lightComponent.Color = new Vector3(r, g, b);
             }
         }

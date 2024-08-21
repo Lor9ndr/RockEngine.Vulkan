@@ -15,10 +15,8 @@ namespace RockEngine.Vulkan.Rendering
         public EffectTemplate CurrentEffect { get; internal set; }
 
         public MeshpassType PassType { get; internal set; }
+
+        public HashSet<UniformBufferObject> UbosInFrame { get;set;} = new HashSet<UniformBufferObject>();
         public Queue<(uint SetIndex, DescriptorSet DescriptorSet)> DescriptorSetQueue { get; } = new Queue<(uint, DescriptorSet)>();
-        public List<UniformBufferObject> PendingUBOs { get;} = new List<UniformBufferObject>();
-
-
-
     }
 }

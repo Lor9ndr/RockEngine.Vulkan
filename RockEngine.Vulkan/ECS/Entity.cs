@@ -11,7 +11,7 @@ namespace RockEngine.Vulkan.ECS
     {
         public string Name;
         public TransformComponent Transform;
-        private ComponentCollection _components = new ComponentCollection();
+        private readonly ComponentCollection _components = new ComponentCollection();
         private bool _isInitialized = false;
 
         [JsonConstructor]
@@ -67,11 +67,11 @@ namespace RockEngine.Vulkan.ECS
             _isInitialized = false;
         }
 
-        internal void Update(double time)
+        internal async ValueTask UpdateAsync(double time)
         {
             foreach (var item in _components)
             {
-                item.Update(time);
+                await item.UpdateAsync(time);
             }
         }
 

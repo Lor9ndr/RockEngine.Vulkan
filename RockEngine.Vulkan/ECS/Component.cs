@@ -13,7 +13,10 @@ namespace RockEngine.Vulkan.ECS
 
         public abstract Task OnInitializedAsync();
 
-        public virtual void Update(double time) { }
+        public virtual ValueTask UpdateAsync(double time)
+        {
+            return ValueTask.CompletedTask;
+        }
         internal void SetEntity(Entity entity)
         {
             Entity = entity;

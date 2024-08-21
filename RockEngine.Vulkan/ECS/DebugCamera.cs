@@ -31,7 +31,7 @@ namespace RockEngine.Vulkan.ECS
             UpdateViewMatrix();
 
         }
-        public override void Update(double time)
+        public override ValueTask UpdateAsync(double time)
         {
             float t = (float)time;
             var keyboard = _inputContext.Keyboards[0];
@@ -60,6 +60,7 @@ namespace RockEngine.Vulkan.ECS
             {
                 ChangePosition(-Up * _moveSpeed * t);
             }
+            return base.UpdateAsync(time);
         }
 
         private void OnMouseMove(IMouse mouse, Vector2 position)

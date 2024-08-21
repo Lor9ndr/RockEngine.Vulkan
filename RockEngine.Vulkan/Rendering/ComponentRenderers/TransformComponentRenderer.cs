@@ -40,15 +40,20 @@ namespace RockEngine.Vulkan.Rendering.ComponentRenderers
                 return;
             }
             var model = component.GetModelMatrix();
-            _pipelineManager.Use(_ubo, frameInfo);
-
-            // CAN BE MOVED TO THE UPDATE METHOD
             await _ubo.UniformBuffer.SendDataAsync(model);
+            _pipelineManager.Use(_ubo, frameInfo);
+        }
+
+        public ValueTask UpdateAsync(TransformComponent component)
+        {
+            return ValueTask.CompletedTask;
         }
 
         public void Dispose()
         {
             _ubo.Dispose();
         }
+
+        
     }
 }

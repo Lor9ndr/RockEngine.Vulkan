@@ -6,5 +6,7 @@ namespace RockEngine.Vulkan.Rendering.ComponentRenderers
     {
         public ValueTask InitializeAsync(T component);
         public ValueTask RenderAsync(T component, FrameInfo frameInfo);
+
+        public ValueTask UpdateAsync(T component);
     }
 }

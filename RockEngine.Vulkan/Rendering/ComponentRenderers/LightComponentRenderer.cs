@@ -28,7 +28,7 @@ namespace RockEngine.Vulkan.Rendering.ComponentRenderers
             }
 
             _ubo = UniformBufferObject.Create(_context, (ulong)Marshal.SizeOf<LightData>(), "LightData");
-            _pipelineManager.SetBuffer(_ubo, Constants.LIGHT_SET, 0); 
+            _pipelineManager.SetBuffer(_ubo, Constants.LIGHT_SET, 0);
             _isInitialized = true;
             return new ValueTask();
         }
@@ -42,10 +42,8 @@ namespace RockEngine.Vulkan.Rendering.ComponentRenderers
                 intensity = component.Intensity,
                 type = (int)component.Type
             };
-
             // Update light data
             await _ubo!.UniformBuffer.SendDataAsync(lightData);
-
             // Bind the light data
             _pipelineManager.Use(_ubo, frameInfo);
         }
@@ -53,6 +51,11 @@ namespace RockEngine.Vulkan.Rendering.ComponentRenderers
         public void Dispose()
         {
             _ubo?.Dispose();
+        }
+
+        public ValueTask UpdateAsync(LightComponent component)
+        {
+           return ValueTask.CompletedTask;
         }
 
         [StructLayout(LayoutKind.Sequential, Pack = 16)]
@@ -63,7 +66,6 @@ namespace RockEngine.Vulkan.Rendering.ComponentRenderers
             public Vector3 color;
             public float intensity;  // This will now be correctly aligned
             public int type;
-            private Vector3 _padding2;  // Padding to ensure the struct size is a multiple of 16
         }
 
     }

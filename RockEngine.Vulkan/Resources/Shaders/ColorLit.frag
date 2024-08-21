@@ -8,8 +8,11 @@ layout(location = 3) in vec3 viewPos;
 
 layout(location = 0) out vec4 outColor;
 
-layout(set = 2, binding = 0) uniform sampler2D albedoSampler;
-layout(set = 2, binding = 1) uniform sampler2D normalSampler;
+layout(set = 2, binding = 0) uniform MaterialParams
+{
+    vec4 baseColor;
+    vec3 normalColor;
+} materialParams;
 
 layout(set = 3, binding = 0) uniform LightData {
     vec3 position;
@@ -18,10 +21,11 @@ layout(set = 3, binding = 0) uniform LightData {
     int type;
 } light;
 
+
 void main() {
     // Sample albedo and normal textures
-    vec4 albedo = texture(albedoSampler, texCoords);
-    vec3 normal = normalize(texture(normalSampler, texCoords).rgb * 2.0 - 1.0);
+    vec4 albedo = materialParams.baseColor;
+    vec3 normal = normalize(materialParams.normalColor * 2.0 - 1.0);
 
     // Ambient lighting
     vec3 ambient = light.color * light.intensity; //* material.ambient;

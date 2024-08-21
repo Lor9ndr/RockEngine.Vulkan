@@ -54,7 +54,7 @@ namespace RockEngine.Vulkan.ECS
 
         public int Order => 0;
 
-        public ref Matrix4x4 GetModelMatrix()
+        public Matrix4x4 GetModelMatrix()
         {
             if (_isDirty)
             {
@@ -68,14 +68,13 @@ namespace RockEngine.Vulkan.ECS
                 _isDirty = false;
             }
 
-            return ref _modelMatrix;
+            return  _modelMatrix;
         }
 
         public override async Task OnInitializedAsync()
         {
             try
             {
-                _renderer = IoC.Container.GetRenderer<TransformComponent>();
                 await _renderer.InitializeAsync(this)
                     .ConfigureAwait(false);
                 IsInitialized = true;
@@ -91,6 +90,11 @@ namespace RockEngine.Vulkan.ECS
         public ValueTask RenderAsync(FrameInfo frameInfo)
         {
             return _renderer.RenderAsync(this, frameInfo);
+        }
+
+        public override ValueTask UpdateAsync(double time)
+        {
+             return _renderer.UpdateAsync(this);
         }
     }
 }

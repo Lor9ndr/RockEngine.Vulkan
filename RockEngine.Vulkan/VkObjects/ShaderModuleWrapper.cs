@@ -11,6 +11,7 @@ namespace RockEngine.Vulkan.VkObjects
 {
     public class ShaderModuleWrapper : VkObject<ShaderModule>
     {
+        private const string UNDEFINED_NAME = "UNDEFINED";
         private readonly VulkanContext _context;
         private readonly ShaderStageFlags _stage;
 
@@ -96,7 +97,7 @@ namespace RockEngine.Vulkan.VkObjects
                     string name;
                     if (binding->DescriptorType == DescriptorType.UniformBuffer)
                     {
-                        name  = SilkMarshal.PtrToString((nint)reflectorApi.BlockVariableTypeName(ref binding->Block));
+                        name  = SilkMarshal.PtrToString((nint)reflectorApi.BlockVariableTypeName(ref binding->Block)) ?? UNDEFINED_NAME;
                         _reflectedUbos.Add(new UniformBufferObjectReflected
                         {
                             Name = name,
@@ -108,7 +109,7 @@ namespace RockEngine.Vulkan.VkObjects
                     }
                     else if (binding->DescriptorType == DescriptorType.Sampler)
                     {
-                        name = SilkMarshal.PtrToString((nint)binding->Name);
+                        name = SilkMarshal.PtrToString((nint)binding->Name) ?? UNDEFINED_NAME;
 
                         _samplers.Add(new SamplerObjectReflected
                         {
@@ -120,7 +121,7 @@ namespace RockEngine.Vulkan.VkObjects
                     }
                     else if (binding->DescriptorType == DescriptorType.CombinedImageSampler)
                     {
-                         name = SilkMarshal.PtrToString((nint)binding->Name);
+                         name = SilkMarshal.PtrToString((nint)binding->Name) ?? UNDEFINED_NAME;
 
                         _images.Add(new ImageObjectReflected
                         {
@@ -132,7 +133,7 @@ namespace RockEngine.Vulkan.VkObjects
                     }
                     else
                     {
-                        name = SilkMarshal.PtrToString((nint)binding->Name);
+                        name = SilkMarshal.PtrToString((nint)binding->Name) ?? UNDEFINED_NAME;
                     }
                     bindingReflected.Name = name;
                 }
@@ -185,8 +186,8 @@ namespace RockEngine.Vulkan.VkObjects
 
         public static async Task<ShaderModuleWrapper> CreateAsync(VulkanContext context, string path, ShaderStageFlags stage, CancellationToken cancellationToken = default)
         {
-            var shaderCode = await File.ReadAllBytesAsync(path, cancellationToken)
-               .ConfigureAwait(false);
+            var shaderCode = (await File.ReadAllBytesAsync(path, cancellationToken)
+               .ConfigureAwait(false));
 
             cancellationToken.ThrowIfCancellationRequested();
             unsafe

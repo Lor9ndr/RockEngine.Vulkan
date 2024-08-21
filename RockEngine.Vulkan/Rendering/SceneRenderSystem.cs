@@ -16,7 +16,7 @@ namespace RockEngine.Vulkan.Rendering
         {
             Debug.Assert(frameInfo.CommandBuffer?.VkObjectNative.Handle != default, "Command buffer is null");
 
-            var groups = p.CurrentScene.GetEntities().GroupBy(s=> s.GetComponent<MaterialComponent>()?.Material.Original);
+            var groups = p.CurrentScene.GetEntities().GroupBy(s=> s.GetComponent<MeshComponent>()?.Material.Original);
             foreach (var group in groups)
             {
                 foreach (var item in group)

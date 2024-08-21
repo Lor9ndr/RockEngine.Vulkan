@@ -1,9 +1,6 @@
 ﻿using RockEngine.Vulkan.ECS;
-using RockEngine.Vulkan.Helpers.Abstractions.Cache;
 using RockEngine.Vulkan.Rendering.ComponentRenderers;
 using RockEngine.Vulkan.VkObjects;
-
-using Silk.NET.Vulkan;
 
 using SimpleInjector;
 using SimpleInjector.Lifestyles;
@@ -24,8 +21,7 @@ namespace RockEngine.Vulkan.DI
             // Register component renderers with appropriate lifestyles
             Container.RegisterSingleton<IComponentRenderer<Camera>, CameraRenderer>();
             Container.RegisterSingleton<IComponentRenderer<DebugCamera>, CameraRenderer>();
-            Container.RegisterSingleton<IComponentRenderer<TransformComponent>, TransformComponentRenderer>();
-            Container.RegisterSingleton<IComponentRenderer<MaterialComponent>, MaterialRenderer>();
+            Container.Register<IComponentRenderer<TransformComponent>, TransformComponentRenderer>();
             Container.Register<IComponentRenderer<LightComponent>, LightComponentRenderer>();
             Container.Register<IComponentRenderer<MeshComponent>, MeshComponentRenderer>();
 
@@ -37,7 +33,6 @@ namespace RockEngine.Vulkan.DI
             // Register components
             Container.Register<TransformComponent>();
             Container.Register<MeshComponent>();
-            Container.Register<MaterialComponent>();
             Container.Register<Camera>();
             Container.Register<DebugCamera>();
             Container.Register<LightComponent>();

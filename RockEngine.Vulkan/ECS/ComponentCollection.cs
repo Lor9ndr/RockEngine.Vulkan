@@ -1,43 +1,62 @@
 ﻿using System.Collections;
-using System.Collections.Generic;
 
 namespace RockEngine.Vulkan.ECS
 {
     internal class ComponentCollection : IEnumerable<Component>
     {
-        private readonly Dictionary<Type, List<Component>> _components;
+        private readonly Dictionary<Type, object> _components;
         private readonly List<IRenderable> _renderables;
-
 
         public ComponentCollection()
         {
-            _components = new Dictionary<Type, List<Component>>();
+            _components = new Dictionary<Type, object>();
             _renderables = new List<IRenderable>();
         }
 
         public void Add<T>(T component) where T : Component
         {
             var type = typeof(T);
-            if (!_components.TryGetValue(type, out var componentList))
+            if (!_components.TryGetValue(type, out var existing))
             {
-                componentList = new List<Component>();
-                _components[type] = componentList;
+                _components[type] = component;
             }
-            // Add the component to the list
-            componentList.Add(component);
+            else if (existing is List<Component> list)
+            {
+                list.Add(component);
+            }
+            else
+            {
+                var newList = new List<Component>(2) { (Component)existing, component };
+                _components[type] = newList;
+            }
 
-            // Insert the component into the list in sorted order
             if (component is IRenderable renderable)
             {
-                InsertSorted(_renderables, renderable);
+                InsertSortedRenderable(renderable);
             }
         }
 
         public void Remove<T>(T component) where T : Component
         {
-            if (_components.TryGetValue(typeof(T), out var components))
+            var type = typeof(T);
+            if (_components.TryGetValue(type, out var existing))
             {
-                components.Remove(component);
+                if (existing is List<Component> list)
+                {
+                    list.Remove(component);
+                    if (list.Count == 1)
+                    {
+                        _components[type] = list[0];
+                    }
+                    else if (list.Count == 0)
+                    {
+                        _components.Remove(type);
+                    }
+                }
+                else if (existing.Equals(component))
+                {
+                    _components.Remove(type);
+                }
             }
 
             if (component is IRenderable renderable)
@@ -54,63 +73,82 @@ namespace RockEngine.Vulkan.ECS
 
         public IEnumerator<Component> GetEnumerator()
         {
-            foreach (var componentList in _components.Values)
+            foreach (var component in _components.Values)
             {
-                foreach (var component in componentList)
+                if (component is Component singleComponent)
                 {
-                    yield return component;
+                    yield return singleComponent;
+                }
+                else if (component is List<Component> componentList)
+                {
+                    foreach (var c in componentList)
+                    {
+                        yield return c;
+                    }
                 }
             }
         }
 
-        IEnumerator IEnumerable.GetEnumerator()
-        {
-            return GetEnumerator();
-        }
+        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 
-        private void InsertSorted(List<IRenderable> componentList, IRenderable component)
-        {
-            int index = componentList.BinarySearch(component, new RenderableComparer());
-            if (index < 0)
-            {
-                index = ~index; // Get the index where the component should be inserted
-            }
-            componentList.Insert(index, component);
-        }
-        // Get the first component of type T
         public T? GetFirst<T>() where T : Component
         {
-            if (_components.TryGetValue(typeof(T), out var componentList) && componentList.Count > 0)
+            if (_components.TryGetValue(typeof(T), out var component))
             {
-                return (T)componentList[0]; // Return the first component
+                return component as T ?? (component as List<Component>)?[0] as T;
             }
-            return null; // Return null if no component of type T exists
+            return null;
         }
 
-        // Get a list of all components of type T
-        public List<T> GetList<T>() where T : Component
+        public IEnumerable<T> GetList<T>() where T : Component
         {
-            if (_components.TryGetValue(typeof(T), out var componentList))
+            if (_components.TryGetValue(typeof(T), out var component))
             {
-                return componentList.ConvertAll(component => (T)component); // Convert to List<T>
-            }
-            return new List<T>(); // Return an empty list if no components of type T exist
-        }
-
-        public IEnumerable<IRenderable> GetRenderables()
-        {
-            return _renderables;
-        }
-
-        // Comparer for sorting components by Order
-        private class RenderableComparer : IComparer<IRenderable>
-        {
-            public int Compare(IRenderable x, IRenderable y)
-            {
-                return x.Order.CompareTo(y.Order);
+                if (component is T singleComponent)
+                {
+                    yield return singleComponent;
+                }
+                else if (component is List<Component> componentList)
+                {
+                    for (int i = 0; i < componentList.Count; i++)
+                    {
+                        if (componentList[i] is T typedComponent)
+                        {
+                            yield return typedComponent;
+                        }
+                    }
+                }
             }
         }
 
-       
+        public IReadOnlyList<IRenderable> GetRenderables() => _renderables;
+
+        private void InsertSortedRenderable(IRenderable renderable)
+        {
+            int left = 0;
+            int right = _renderables.Count - 1;
+
+            while (left <= right)
+            {
+                int middle = left + (right - left) / 2;
+                int comparison = renderable.Order.CompareTo(_renderables[middle].Order);
+
+                if (comparison == 0)
+                {
+                    _renderables.Insert(middle, renderable);
+                    return;
+                }
+                else if (comparison < 0)
+                {
+                    right = middle - 1;
+                }
+                else
+                {
+                    left = middle + 1;
+                }
+            }
+
+            _renderables.Insert(left, renderable);
+        }
     }
 }

@@ -8,15 +8,16 @@ namespace RockEngine.Vulkan.Rendering.MaterialRendering
     {
         public EffectTemplate Original;
         public PerPassData<DescriptorSet> PassSets;
-        public List<Texture> Textures;
+        public List<Texture>? Textures;
         public Dictionary<string, object> Parameters;
 
-        public Material(EffectTemplate original, List<Texture> textures, Dictionary<string, object> parameters)
+        public Material(EffectTemplate original, List<Texture>? textures, Dictionary<string, object> parameters)
         {
             Original = original;
             Textures = textures;
             Parameters = parameters;
             PassSets = new PerPassData<DescriptorSet>();
         }
+
     }
 }

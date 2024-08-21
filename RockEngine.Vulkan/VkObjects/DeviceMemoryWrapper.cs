@@ -10,6 +10,11 @@ namespace RockEngine.Vulkan.VkObjects
         private readonly Silk.NET.Vulkan.DeviceMemory _memory;
         private readonly ulong _size;
         public ulong Size => _size;
+        public bool IsMapped => _mappedData.HasValue;
+
+        public nint? MappedData => _mappedData;
+
+        private nint? _mappedData;
 
         private DeviceMemory(VulkanContext context, Silk.NET.Vulkan.DeviceMemory memory, ulong size)
             :base(memory)
@@ -48,30 +53,40 @@ namespace RockEngine.Vulkan.VkObjects
             }
             throw new InvalidOperationException("Failed to find suitable memory type.");
         }
-        public unsafe void MapMemory(ulong bufferSize, ulong offset, out IntPtr pData)
+
+        /// <summary>
+        /// Maps memory and set <see cref="MappedData"/> to its mapped value
+        /// </summary>
+        /// <param name="bufferSize">size of the buffer to map</param>
+        /// <param name="offset">offset to map</param>
+        public unsafe void MapMemory(ulong bufferSize, ulong offset)
         {
             void* mappedMemory = null;
             _context.Api.MapMemory(_context.Device, _vkObject, offset, bufferSize, 0, &mappedMemory)
                 .ThrowCode("Failed to map memory");
-            pData = new nint(mappedMemory);
+            _mappedData = new nint(mappedMemory);
         }
 
-        public unsafe void MapMemory(out IntPtr pData)
+        public unsafe void MapMemory()
         {
             void* mappedMemory = null;
             _context.Api.MapMemory(_context.Device, _vkObject, 0, _size, 0, &mappedMemory)
                 .ThrowCode("Failed to map memory");
-            pData = new nint(mappedMemory);
+            _mappedData = new nint(mappedMemory);
+
         }
 
         public void Unmap()
         {
             _context.Api.UnmapMemory(_context.Device, _vkObject);
+            _mappedData = null;
+
         }
 
         protected override unsafe void Dispose(bool disposing)
         {
             _context.Api.FreeMemory(_context.Device, _memory, null);
+            _mappedData = null;
             _disposed = true;
         }
 

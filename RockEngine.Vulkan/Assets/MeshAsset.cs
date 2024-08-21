@@ -15,6 +15,7 @@ namespace RockEngine.Vulkan.Assets
 
         public Vertex[] Vertices { get => _vertices; set => _vertices = value; }
         public uint[]? Indices { get => _indices; set => _indices = value; }
+
          
 
         public MeshAsset(string name, string path)
