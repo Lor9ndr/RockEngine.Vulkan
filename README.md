@@ -6,14 +6,14 @@ RockEngine is going to be a high perfomance 3D game engine built on Vulkan. It a
 
 ### Completed
 - **Vulkan Integration**: Efficient rendering using Vulkan API.
+
+### In Progress
 - **Basic Rendering Pipeline**: Supports basic rendering of 3D models.
-- **Shader Support**: Vertex and fragment shaders.
 - **Model Loading**: Load models in common formats (e.g., OBJ, FBX).
 - **Texture Mapping**: Basic texture mapping capabilities.
 - **Camera System**: Basic camera controls and movement.
 - **Input Handling**: Keyboard and mouse input handling.
 - **Shader reflection**: Able to reflect shader to get data from shader modules
-### In Progress
 - **Lighting System**: Implementing basic lighting (directional, point, and spotlights).
 - **Physics Engine**: Basic physics and collision detection.
 - **Animation System**: Skeletal animation support.
