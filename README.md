@@ -3,32 +3,34 @@
 RockEngine is going to be a high perfomance 3D game engine built on Vulkan. It aims to provide developers with a powerful and flexible platform for creating stunning 3D games.
 
 ## Features
+Here's a table summarizing the features of RockEngine with emojis and brief descriptions:
 
-### Completed
-- **Vulkan Integration**: Efficient rendering using Vulkan API.
-
-### In Progress
-- **Basic Rendering Pipeline**: Supports basic rendering of 3D models.
-- **Model Loading**: Load models in common formats (e.g., OBJ, FBX).
-- **Texture Mapping**: Basic texture mapping capabilities.
-- **Camera System**: Basic camera controls and movement.
-- **Input Handling**: Keyboard and mouse input handling.
-- **Shader reflection**: Able to reflect shader to get data from shader modules
-- **Lighting System**: Implementing basic lighting (directional, point, and spotlights).
-- **Physics Engine**: Basic physics and collision detection.
-- **Animation System**: Skeletal animation support.
-- **Audio System**: Basic 3D audio support.
-- **GUI System**: Basic graphical user interface components.
-
-### Planned
-- **Pipeline caching**: for optimization of drawcalls
-- **Indirect rendering**: Usage of indirect rendering
-- **Advanced Rendering Techniques**: PBR, HDR, and post-processing effects.
-- **Networking**: Basic networking for multiplayer support. (long way to do)
-- **Scripting**: Scripting support for game logic (e.g., C#).
-- **Terrain System**: Procedural terrain generation and rendering.
-- **Particle System**: Advanced particle effects.
-
+| Feature | Status | Description |
+|---------|--------|-------------|
+| Vulkan Integration | ✅ Done | Efficient rendering using Vulkan API |
+| Shader Reflection | ✅ Done | Ability to reflect shader data from modules |
+| Basic Rendering Pipeline | 🚧 In Progress | Support for basic 3D model rendering |
+| Model Loading | 🚧 In Progress | Loading common 3D model formats |
+| Texture Mapping | 🚧 In Progress | Basic texture mapping capabilities |
+| Camera System | 🚧 In Progress | Basic camera controls and movement |
+| Input Handling | 🚧 In Progress | Keyboard and mouse input handling |
+| Lighting System | 🚧 In Progress | Implementing basic lighting types |
+| Physics Engine | 🚧 In Progress | Basic physics and collision detection |
+| Animation System | 🚧 In Progress | Support for skeletal animations |
+| Audio System | 🚧 In Progress | Basic 3D audio support |
+| GUI System | 🚧 In Progress | Basic graphical user interface components |
+| Pipeline Caching | 🔜 Planned | Optimization for drawcalls |
+| Indirect Rendering | 🔜 Planned | Implementation of indirect rendering |
+| Advanced Rendering | 🔜 Planned | PBR, HDR, and post-processing effects |
+| Networking | 🔜 Planned | Basic multiplayer support (long-term goal) |
+| Scripting | 🔜 Planned | Support for game logic scripting (e.g., C#) |
+| Terrain System | 🔜 Planned | Procedural terrain generation and rendering |
+| Particle System | 🔜 Planned | Advanced particle effects |
+| Ray tracing | 🔜 Planned | Just a ray tracing, for awesome lighting,shadows and etc |
+Summary:
+- ✅ Done: Core Vulkan integration and shader reflection are completed.
+- 🚧 In Progress: Many fundamental engine features are currently being developed, including rendering pipeline, model loading, and basic systems for graphics, physics, and audio.
+- 🔜 Planned: Advanced features and optimizations are planned for future development, including pipeline caching, indirect rendering, and more sophisticated systems for rendering, networking, and gameplay.
 ## Installation
 
 To get started with RockEngine, follow these steps:
