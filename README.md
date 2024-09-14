@@ -9,7 +9,7 @@ Here's a table summarizing the features of RockEngine with emojis and brief desc
 |---------|--------|-------------|
 | Vulkan Integration | ✅ Done | Efficient rendering using Vulkan API |
 | Shader Reflection | ✅ Done | Ability to reflect shader data from modules |
-| Basic Rendering Pipeline | 🚧 In Progress | Support for basic 3D model rendering |
+| ImGui | ✅ Done | Able to use most of imgui features |
 | Model Loading | 🚧 In Progress | Loading common 3D model formats |
 | Texture Mapping | 🚧 In Progress | Basic texture mapping capabilities |
 | Camera System | 🚧 In Progress | Basic camera controls and movement |
