@@ -15,7 +15,7 @@ namespace RockEngine.Vulkan
 
         public unsafe static VkFence Create(RenderingContext context, in FenceCreateInfo fenceCreateInfo)
         {
-            RenderingContext.Vk.CreateFence(context.Device, in fenceCreateInfo, in RenderingContext.CustomAllocator, out Fence fence)
+            RenderingContext.Vk.CreateFence(context.Device, in fenceCreateInfo, in RenderingContext.CustomAllocator<VkFence>(), out Fence fence)
                 .VkAssertResult("Failed to create fence.");
 
             return new VkFence(context, in fence);
@@ -49,14 +49,14 @@ namespace RockEngine.Vulkan
 
                 unsafe
                 {
-                    var fenceStatus = RenderingContext.Vk.GetFenceStatus(_context.Device, this);
+                    var fenceStatus = Vk.GetFenceStatus(_context.Device, this);
                     // Awesome feature, by requesting fence status we avoid that error :)
                     //System.Exception: "Vulkan Error: Validation Error: [ VUID-vkDestroyFence-fence-01120 ]
                     //Object 0: handle = 0x9389c50000000061, type = VK_OBJECT_TYPE_FENCE; | MessageID = 0x5d296248 |
                     //vkDestroyFence(): fence (VkFence 0x9389c50000000061[]) is in use.
                     //The Vulkan spec states: All queue submission commands that refer to fence must have completed execution 
 
-                    RenderingContext.Vk.DestroyFence(_context.Device, _vkObject, in RenderingContext.CustomAllocator);
+                    Vk.DestroyFence(_context.Device, _vkObject, in RenderingContext.CustomAllocator<VkFence>());
                 }
 
                 _disposed = true;

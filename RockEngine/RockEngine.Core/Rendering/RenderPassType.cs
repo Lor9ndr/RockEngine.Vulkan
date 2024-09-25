@@ -2,6 +2,9 @@
 {
     public enum RenderPassType : short
     {
-        Default = 0,
+        None = 0,
+        ImGui = 1,
+        Depth = 2,
+        ColorDepth = 3,
     }
 }

@@ -15,7 +15,7 @@ namespace RockEngine.Vulkan
 
         public unsafe static VkImageView Create(RenderingContext context, in ImageViewCreateInfo ci)
         {
-            RenderingContext.Vk.CreateImageView(context.Device, in ci, in RenderingContext.CustomAllocator, out var imageView)
+            RenderingContext.Vk.CreateImageView(context.Device, in ci, in RenderingContext.CustomAllocator<VkImageView>(), out var imageView)
                .VkAssertResult("Failed to create image view!");
             return new VkImageView(context, imageView);
         }
@@ -26,7 +26,7 @@ namespace RockEngine.Vulkan
             {
                 return;
             }
-            RenderingContext.Vk.DestroyImageView(_context.Device, _vkObject, in RenderingContext.CustomAllocator);
+            RenderingContext.Vk.DestroyImageView(_context.Device, _vkObject, in RenderingContext.CustomAllocator<VkImageView>());
             _disposed = true;
         }
     }

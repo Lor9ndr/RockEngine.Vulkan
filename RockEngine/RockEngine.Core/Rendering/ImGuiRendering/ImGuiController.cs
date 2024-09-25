@@ -7,6 +7,8 @@ using Silk.NET.Core.Native;
 using System.Runtime.InteropServices;
 using Silk.NET.Input;
 using ImGuiNET;
+using RockEngine.Vulkan.Builders;
+using System.IO;
 
 namespace RockEngine.Core.Rendering.ImGuiRendering
 {
@@ -19,14 +21,13 @@ namespace RockEngine.Core.Rendering.ImGuiRendering
         private readonly IInputContext _input;
         private VkFramebuffer[] _framebuffers;
         private VkDescriptorPool _descriptorPool;
-        private PipelineLayout _pipelineLayout;
-        private DescriptorSetLayout _descriptorSetLayout;
-        private DescriptorSet _descriptorSet;
+        private VkPipelineLayout _pipelineLayout;
+        private VkDescriptorSetLayout _descriptorSetLayout;
         private readonly VkBuffer?[] _vertexBuffers;
         private readonly VkBuffer?[] _indexBuffers;
         private bool _frameBegun;
-        private VkRenderPass _renderPass;
-        private Pipeline _pipeline;
+        private EngineRenderPass _renderPass;
+        private VkPipeline _pipeline;
         private Queue<char> _pressedChars = new Queue<char>();
         private ulong _bufferMemoryAlignment;
         private Texture _fontTexture;
@@ -43,16 +44,17 @@ namespace RockEngine.Core.Rendering.ImGuiRendering
             _vertexBuffers = new VkBuffer[_vkContext.MaxFramesPerFlight];
             _indexBuffers = new VkBuffer[_vkContext.MaxFramesPerFlight];
             CreateDescriptorPool();
-            CreateDescriptorSetLayout();
             CreateFontResources();
-            CreateDescriptorSet();
             CreateDefaultRenderPass();
+
             CreateDeviceObjects();
+            CreateDescriptorSet();
+
             graphicsEngine.Swapchain.OnSwapchainRecreate += CreateFramebuffers;
             CreateFramebuffers(graphicsEngine.Swapchain);
             ApplyDarkTheme();
             ImGui.GetIO().DisplaySize = new Vector2(width, height);
-            _input.Keyboards[0].KeyChar +=(s,c)  => PressChar(c);
+            _input.Keyboards[0].KeyChar += (s, c) => PressChar(c);
 
 
             io.ConfigFlags |= ImGuiConfigFlags.DockingEnable;
@@ -92,7 +94,7 @@ namespace RockEngine.Core.Rendering.ImGuiRendering
                 }
             }
 
-            while(_pressedChars.Count > 0)
+            while (_pressedChars.Count > 0)
             {
                 io.AddInputCharacter(_pressedChars.Dequeue());
             }
@@ -201,27 +203,27 @@ namespace RockEngine.Core.Rendering.ImGuiRendering
             {
                 Attachment = 0,
                 Layout = ImageLayout.ColorAttachmentOptimal,
-               
+
             };
 
 
-           /* var depthAttachment = new AttachmentDescription
-            {
-                Format = _graphicsEngine.Swapchain.DepthFormat,
-                Samples = SampleCountFlags.Count1Bit,
-                LoadOp = AttachmentLoadOp.Clear,
-                StoreOp = AttachmentStoreOp.DontCare,
-                StencilLoadOp = AttachmentLoadOp.DontCare,
-                StencilStoreOp = AttachmentStoreOp.DontCare,
-                InitialLayout = ImageLayout.Undefined,
-                FinalLayout = ImageLayout.DepthStencilAttachmentOptimal
-            };
+            /* var depthAttachment = new AttachmentDescription
+             {
+                 Format = _graphicsEngine.Swapchain.DepthFormat,
+                 Samples = SampleCountFlags.Count1Bit,
+                 LoadOp = AttachmentLoadOp.Clear,
+                 StoreOp = AttachmentStoreOp.DontCare,
+                 StencilLoadOp = AttachmentLoadOp.DontCare,
+                 StencilStoreOp = AttachmentStoreOp.DontCare,
+                 InitialLayout = ImageLayout.Undefined,
+                 FinalLayout = ImageLayout.DepthStencilAttachmentOptimal
+             };
 
-            var depthAttachmentReference = new AttachmentReference
-            {
-                Attachment = 1,
-                Layout = ImageLayout.DepthStencilAttachmentOptimal
-            };*/
+             var depthAttachmentReference = new AttachmentReference
+             {
+                 Attachment = 1,
+                 Layout = ImageLayout.DepthStencilAttachmentOptimal
+             };*/
 
             var description = new SubpassDescription
             {
@@ -235,13 +237,13 @@ namespace RockEngine.Core.Rendering.ImGuiRendering
             {
                 SrcSubpass = Vk.SubpassExternal,
                 DstSubpass = 0,
-                SrcStageMask = PipelineStageFlags.ColorAttachmentOutputBit ,
+                SrcStageMask = PipelineStageFlags.ColorAttachmentOutputBit,
                 SrcAccessMask = AccessFlags.None,
                 DstStageMask = PipelineStageFlags.ColorAttachmentOutputBit,
                 DstAccessMask = AccessFlags.ColorAttachmentReadBit,
             };
 
-            _renderPass = _renderPassManager.CreateRenderPass(ImguiRenderPass, [description], [colorAttachment], [dependency]);
+            _renderPass = _renderPassManager.CreateRenderPass(RenderPassType.ImGui, [description], [colorAttachment], [dependency]);
         }
 
 
@@ -262,17 +264,17 @@ namespace RockEngine.Core.Rendering.ImGuiRendering
             {
                 _framebuffers = new VkFramebuffer[swapChainImageViews.Length];
             }
-           
+
 
             for (int i = 0; i < swapChainImageViews.Length; i++)
             {
-                var attachments = new ImageView[] { swapChainImageViews[i].VkObjectNative  };
+                var attachments = new ImageView[] { swapChainImageViews[i].VkObjectNative };
                 fixed (ImageView* attachmentsPtr = attachments)
                 {
                     var framebufferInfo = new FramebufferCreateInfo
                     {
                         SType = StructureType.FramebufferCreateInfo,
-                        RenderPass = _renderPass,
+                        RenderPass = _renderPass.RenderPass,
                         AttachmentCount = 1,
                         PAttachments = attachmentsPtr,
                         Width = swapChainExtent.Width,
@@ -319,27 +321,27 @@ namespace RockEngine.Core.Rendering.ImGuiRendering
                 new ClearValue() { DepthStencil = new ClearDepthStencilValue(1f, 0u) } };
             RenderPassBeginInfo renderPassBeginInfo = new RenderPassBeginInfo()
             {
-                SType =  StructureType.RenderPassBeginInfo,
+                SType = StructureType.RenderPassBeginInfo,
                 ClearValueCount = 2,
                 Framebuffer = _framebuffers[_graphicsEngine.CurrentImageIndex],
                 PClearValues = clearValues,
                 RenderArea = new Rect2D() { Extent = swapChainExtent, Offset = new Offset2D() },
-                RenderPass = _renderPass
+                RenderPass = _renderPass.RenderPass
             };
             commandBuffer.BeginRenderPass(renderPassBeginInfo, SubpassContents.Inline);
+
 
             ref var vertexBuffer = ref _vertexBuffers[_graphicsEngine.CurrentImageIndex];
             ref var indexBuffer = ref _indexBuffers![_graphicsEngine.CurrentImageIndex];
             if (drawData.TotalVtxCount > 0)
             {
                 // Calculate required buffer sizes
-                ulong requiredVertexSize = (ulong)drawData.TotalVtxCount * (ulong)sizeof(ImDrawVert);
+                ulong requiredVertexSize = (ulong)drawData.TotalVtxCount * (ulong)Unsafe.SizeOf<ImDrawVert>();
                 ulong requiredIndexSize = (ulong)drawData.TotalIdxCount * sizeof(ushort);
 
                 // Create or resize the vertex/index buffers
                 CreateOrResizeBuffer(ref vertexBuffer, requiredVertexSize, BufferUsageFlags.VertexBufferBit);
                 CreateOrResizeBuffer(ref indexBuffer, requiredIndexSize, BufferUsageFlags.IndexBufferBit);
-
                 // Upload vertex/index data into a single contiguous GPU buffer
                 vertexBuffer!.Map(out var pvtx_dst);
                 indexBuffer!.Map(out var pidx_dst);
@@ -362,14 +364,14 @@ namespace RockEngine.Core.Rendering.ImGuiRendering
 
             // Setup desired Vulkan state
             RenderingContext.Vk.CmdBindPipeline(commandBuffer, PipelineBindPoint.Graphics, _pipeline);
-            RenderingContext.Vk.CmdBindDescriptorSets(commandBuffer, PipelineBindPoint.Graphics, _pipelineLayout, 0, 1, _descriptorSet, 0, null);
+            _fontTexture.Use(commandBuffer, _pipeline);
 
             // Bind Vertex And Index Buffer:
             if (drawData.TotalVtxCount > 0)
             {
                 ulong vertex_offset = 0;
-                RenderingContext.Vk.CmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffer!, (ulong*)Unsafe.AsPointer(ref vertex_offset));
-                RenderingContext.Vk.CmdBindIndexBuffer(commandBuffer, indexBuffer!, 0, sizeof(ushort) == 2 ? IndexType.Uint16 : IndexType.Uint32);
+                vertexBuffer!.BindVertexBuffer(commandBuffer, vertex_offset);
+                indexBuffer!.BindIndexBuffer(commandBuffer, 0, sizeof(ushort) == 2 ? IndexType.Uint16 : IndexType.Uint32);
             }
 
             // Setup viewport:
@@ -380,7 +382,7 @@ namespace RockEngine.Core.Rendering.ImGuiRendering
             viewport.Height = _graphicsEngine.Swapchain.Extent.Height;
             viewport.MinDepth = 0.0f;
             viewport.MaxDepth = 1.0f;
-            RenderingContext.Vk.CmdSetViewport(commandBuffer, 0, 1, &viewport);
+            commandBuffer.SetViewport(ref viewport);
 
             // Setup scale and translation:
             // Our visible imgui space lies from draw_data.DisplayPps (top left) to draw_data.DisplayPos+data_data.DisplaySize (bottom right). DisplayPos is (0,0) for single viewport apps.
@@ -479,60 +481,12 @@ namespace RockEngine.Core.Rendering.ImGuiRendering
             _descriptorPool = VkDescriptorPool.Create(_vkContext, in poolInfo);
         }
 
-        private unsafe void CreateDescriptorSetLayout()
-        {
-            var binding = new DescriptorSetLayoutBinding
-            {
-                DescriptorType = DescriptorType.CombinedImageSampler,
-                DescriptorCount = 1,
-                StageFlags = ShaderStageFlags.FragmentBit
-            };
-
-            var layoutInfo = new DescriptorSetLayoutCreateInfo
-            {
-                SType = StructureType.DescriptorSetLayoutCreateInfo,
-                BindingCount = 1,
-                PBindings = &binding
-            };
-
-            RenderingContext.Vk.CreateDescriptorSetLayout(_vkContext.Device, in layoutInfo, default, out _descriptorSetLayout)
-                .VkAssertResult("Failed to create descriptor set layout!");
-        }
 
         private unsafe void CreateDescriptorSet()
         {
-            var layout = _descriptorSetLayout;
-            var allocInfo = new DescriptorSetAllocateInfo
-            {
-                SType = StructureType.DescriptorSetAllocateInfo,
-                DescriptorPool = _descriptorPool,
-                DescriptorSetCount = 1,
-                PSetLayouts = &layout
-            };
-
-            if (RenderingContext.Vk.AllocateDescriptorSets(_vkContext.Device, in allocInfo, out _descriptorSet) != Result.Success)
-            {
-                throw new Exception("Failed to allocate descriptor sets!");
-            }
-
-            var imageInfo = new DescriptorImageInfo
-            {
-                Sampler = _fontTexture.Sampler,
-                ImageView = _fontTexture.ImageView,
-                ImageLayout = ImageLayout.ShaderReadOnlyOptimal
-            };
-
-            var descriptorWrite = new WriteDescriptorSet
-            {
-                SType = StructureType.WriteDescriptorSet,
-                DstSet = _descriptorSet,
-                DescriptorCount = 1,
-                DescriptorType = DescriptorType.CombinedImageSampler,
-                PImageInfo = &imageInfo
-            };
-
-            RenderingContext.Vk.UpdateDescriptorSets(_vkContext.Device, 1, &descriptorWrite, 0, null);
-
+            var layout = _descriptorSetLayout.DescriptorSetLayout;
+            var set = _descriptorPool.AllocateDescriptorSet(layout);
+            _fontTexture.UpdateSet(set, layout,0);
         }
 
         private unsafe void CreateFontResources()
@@ -548,88 +502,26 @@ namespace RockEngine.Core.Rendering.ImGuiRendering
         }
 
 
-        private unsafe void CreateDeviceObjects()
+        private void CreateDeviceObjects()
         {
             // Create shaders
-            var vertShaderModule = CreateShaderModule(ImGuiShaders.VertexShader, ShaderStageFlags.VertexBit);
-            var fragShaderModule = CreateShaderModule(ImGuiShaders.FragmentShader, ShaderStageFlags.FragmentBit);
+            var vertShaderModule = VkShaderModule.Create(_vkContext, "Shaders/Imgui.vert.spv", ShaderStageFlags.VertexBit);
+            var fragShaderModule = VkShaderModule.Create(_vkContext, "Shaders/Imgui.frag.spv", ShaderStageFlags.FragmentBit);
 
-            // Create pipeline layout
-            var pushConstantRange = new PushConstantRange
-            {
-                StageFlags = ShaderStageFlags.VertexBit,
-                Offset = 0,
-                Size = 4 * sizeof(float)
-            };
-            var setLayout = _descriptorSetLayout;
-            var pipelineLayoutInfo = new PipelineLayoutCreateInfo
-            {
-                SType = StructureType.PipelineLayoutCreateInfo,
-                SetLayoutCount = 1,
-                PSetLayouts = &setLayout,
-                PushConstantRangeCount = 1,
-                PPushConstantRanges = &pushConstantRange
-            };
-            if (RenderingContext.Vk.CreatePipelineLayout(_vkContext.Device, in pipelineLayoutInfo, null, out _pipelineLayout) != Result.Success)
-            {
-                throw new Exception("Failed to create pipeline layout!");
-            }
 
-            // Create pipeline
-            Span<PipelineShaderStageCreateInfo> stage = stackalloc PipelineShaderStageCreateInfo[2];
-            stage[0].SType = StructureType.PipelineShaderStageCreateInfo;
-            stage[0].Stage = ShaderStageFlags.VertexBit;
-            stage[0].Module = vertShaderModule;
-            stage[0].PName = (byte*)SilkMarshal.StringToPtr("main");
-            stage[1].SType = StructureType.PipelineShaderStageCreateInfo;
-            stage[1].Stage = ShaderStageFlags.FragmentBit;
-            stage[1].Module = fragShaderModule;
-            stage[1].PName = (byte*)SilkMarshal.StringToPtr("main");
+            SetPipeline(vertShaderModule, fragShaderModule);
+
+        }
+
+        private unsafe void SetPipeline(VkShaderModule vertShaderModule, VkShaderModule fragShaderModule)
+        {
+
+            _pipelineLayout = VkPipelineLayout.Create(_vkContext, vertShaderModule, fragShaderModule);
+            _descriptorSetLayout = _pipelineLayout.DescriptorSetLayouts.First(s=> s.SetLocation == 0);
 
             var binding_desc = new VertexInputBindingDescription();
             binding_desc.Stride = (uint)Unsafe.SizeOf<ImDrawVert>();
             binding_desc.InputRate = VertexInputRate.Vertex;
-
-            Span<VertexInputAttributeDescription> attribute_desc = stackalloc VertexInputAttributeDescription[3];
-            attribute_desc[0].Location = 0;
-            attribute_desc[0].Binding = binding_desc.Binding;
-            attribute_desc[0].Format = Format.R32G32Sfloat;
-            attribute_desc[0].Offset = (uint)Marshal.OffsetOf<ImDrawVert>(nameof(ImDrawVert.pos));
-            attribute_desc[1].Location = 1;
-            attribute_desc[1].Binding = binding_desc.Binding;
-            attribute_desc[1].Format = Format.R32G32Sfloat;
-            attribute_desc[1].Offset = (uint)Marshal.OffsetOf<ImDrawVert>(nameof(ImDrawVert.uv));
-            attribute_desc[2].Location = 2;
-            attribute_desc[2].Binding = binding_desc.Binding;
-            attribute_desc[2].Format = Format.R8G8B8A8Unorm;
-            attribute_desc[2].Offset = (uint)Marshal.OffsetOf<ImDrawVert>(nameof(ImDrawVert.col));
-
-            var vertex_info = new PipelineVertexInputStateCreateInfo();
-            vertex_info.SType = StructureType.PipelineVertexInputStateCreateInfo;
-            vertex_info.VertexBindingDescriptionCount = 1;
-            vertex_info.PVertexBindingDescriptions = (VertexInputBindingDescription*)Unsafe.AsPointer(ref binding_desc);
-            vertex_info.VertexAttributeDescriptionCount = 3;
-            vertex_info.PVertexAttributeDescriptions = (VertexInputAttributeDescription*)Unsafe.AsPointer(ref attribute_desc[0]);
-
-            var ia_info = new PipelineInputAssemblyStateCreateInfo();
-            ia_info.SType = StructureType.PipelineInputAssemblyStateCreateInfo;
-            ia_info.Topology = PrimitiveTopology.TriangleList;
-
-            var viewport_info = new PipelineViewportStateCreateInfo();
-            viewport_info.SType = StructureType.PipelineViewportStateCreateInfo;
-            viewport_info.ViewportCount = 1;
-            viewport_info.ScissorCount = 1;
-
-            var raster_info = new PipelineRasterizationStateCreateInfo();
-            raster_info.SType = StructureType.PipelineRasterizationStateCreateInfo;
-            raster_info.PolygonMode = PolygonMode.Fill;
-            raster_info.CullMode = CullModeFlags.None;
-            raster_info.FrontFace = FrontFace.CounterClockwise;
-            raster_info.LineWidth = 1.0f;
-
-            var ms_info = new PipelineMultisampleStateCreateInfo();
-            ms_info.SType = StructureType.PipelineMultisampleStateCreateInfo;
-            ms_info.RasterizationSamples = SampleCountFlags.Count1Bit;
 
             var color_attachment = new PipelineColorBlendAttachmentState();
             color_attachment.BlendEnable = new Silk.NET.Core.Bool32(true);
@@ -641,49 +533,52 @@ namespace RockEngine.Core.Rendering.ImGuiRendering
             color_attachment.AlphaBlendOp = BlendOp.Add;
             color_attachment.ColorWriteMask = ColorComponentFlags.RBit | ColorComponentFlags.GBit | ColorComponentFlags.BBit | ColorComponentFlags.ABit;
 
-            var depth_info = new PipelineDepthStencilStateCreateInfo();
-            depth_info.SType = StructureType.PipelineDepthStencilStateCreateInfo;
+            using GraphicsPipelineBuilder pipelineBuilder = new GraphicsPipelineBuilder(_vkContext, "Imgui")
+                 .WithShaderModule(vertShaderModule)
+                 .WithShaderModule(fragShaderModule)
+                 .WithRasterizer(new VulkanRasterizerBuilder())
+                 .WithInputAssembly(new VulkanInputAssemblyBuilder().Configure())
+                 .WithVertexInputState(new VulkanPipelineVertexInputStateBuilder()
+                     .Add(binding_desc, [
+                         new VertexInputAttributeDescription()
+                        {
+                            Binding = binding_desc.Binding,
+                            Location = 0,
+                            Format = Format.R32G32Sfloat,
+                            Offset =  (uint)Marshal.OffsetOf<ImDrawVert>(nameof(ImDrawVert.pos))
+                        },
+                        new VertexInputAttributeDescription()
+                        {
+                            Binding = binding_desc.Binding,
+                            Location = 1,
+                            Format = Format.R32G32Sfloat,
+                            Offset =  (uint)Marshal.OffsetOf<ImDrawVert>(nameof(ImDrawVert.uv))
+                        },
+                         new VertexInputAttributeDescription()
+                        {
+                            Binding = binding_desc.Binding,
+                            Location = 2,
+                            Format = Format.R8G8B8A8Unorm,
+                            Offset =  (uint)Marshal.OffsetOf<ImDrawVert>(nameof(ImDrawVert.col))
+                        }
+                         ]))
+                 .WithViewportState(new VulkanViewportStateInfoBuilder()
+                     .AddViewport(new Viewport() { Height = _graphicsEngine.Swapchain.Surface.Size.X, Width = _graphicsEngine.Swapchain.Surface.Size.Y })
+                     .AddScissors(new Rect2D()))
+                 .WithMultisampleState(new VulkanMultisampleStateInfoBuilder().Configure(false, SampleCountFlags.Count1Bit))
+                 .WithColorBlendState(new VulkanColorBlendStateBuilder()
+                     .AddAttachment(color_attachment))
+                 .AddRenderPass(_renderPass.RenderPass)
+                 .WithPipelineLayout(_pipelineLayout)
+                 .WithDynamicState(new PipelineDynamicStateBuilder()
+                    .AddState(DynamicState.Viewport)
+                    .AddState(DynamicState.Scissor)
+                    );
 
-            var blend_info = new PipelineColorBlendStateCreateInfo();
-            blend_info.SType = StructureType.PipelineColorBlendStateCreateInfo;
-            blend_info.AttachmentCount = 1;
-            blend_info.PAttachments = (PipelineColorBlendAttachmentState*)Unsafe.AsPointer(ref color_attachment);
-
-            Span<DynamicState> dynamic_states = stackalloc DynamicState[] { DynamicState.Viewport, DynamicState.Scissor };
-            var dynamic_state = new PipelineDynamicStateCreateInfo();
-            dynamic_state.SType = StructureType.PipelineDynamicStateCreateInfo;
-            dynamic_state.DynamicStateCount = (uint)dynamic_states.Length;
-            dynamic_state.PDynamicStates = (DynamicState*)Unsafe.AsPointer(ref dynamic_states[0]);
-
-            var pipelineInfo = new GraphicsPipelineCreateInfo();
-            pipelineInfo.SType = StructureType.GraphicsPipelineCreateInfo;
-            pipelineInfo.Flags = default;
-            pipelineInfo.StageCount = 2;
-            pipelineInfo.PStages = (PipelineShaderStageCreateInfo*)Unsafe.AsPointer(ref stage[0]);
-            pipelineInfo.PVertexInputState = (PipelineVertexInputStateCreateInfo*)Unsafe.AsPointer(ref vertex_info);
-            pipelineInfo.PInputAssemblyState = (PipelineInputAssemblyStateCreateInfo*)Unsafe.AsPointer(ref ia_info);
-            pipelineInfo.PViewportState = (PipelineViewportStateCreateInfo*)Unsafe.AsPointer(ref viewport_info);
-            pipelineInfo.PRasterizationState = (PipelineRasterizationStateCreateInfo*)Unsafe.AsPointer(ref raster_info);
-            pipelineInfo.PMultisampleState = (PipelineMultisampleStateCreateInfo*)Unsafe.AsPointer(ref ms_info);
-            pipelineInfo.PDepthStencilState = (PipelineDepthStencilStateCreateInfo*)Unsafe.AsPointer(ref depth_info);
-            pipelineInfo.PColorBlendState = (PipelineColorBlendStateCreateInfo*)Unsafe.AsPointer(ref blend_info);
-            pipelineInfo.PDynamicState = (PipelineDynamicStateCreateInfo*)Unsafe.AsPointer(ref dynamic_state);
-            pipelineInfo.Layout = _pipelineLayout;
-            pipelineInfo.RenderPass = _renderPass;
-            pipelineInfo.Subpass = 0;
-            if (RenderingContext.Vk.CreateGraphicsPipelines(_vkContext.Device, default, 1, in pipelineInfo, default, out _pipeline) != Result.Success)
-            {
-                throw new Exception($"Unable to create the pipeline");
-            }
-
-            SilkMarshal.Free((nint)stage[0].PName);
-            SilkMarshal.Free((nint)stage[1].PName);
+            _pipeline = pipelineBuilder.Build();
         }
 
-        private unsafe ShaderModule CreateShaderModule(uint[] code, ShaderStageFlags stage)
-        {
-            return VkShaderModule.Create(_vkContext, code, stage);
-        }
+       
         public static void ApplyDarkTheme()
         {
             var style = ImGui.GetStyle();
@@ -743,16 +638,14 @@ namespace RockEngine.Core.Rendering.ImGuiRendering
 
             colors[(int)ImGuiCol.Tab] = new Vector4(0.10f, 0.09f, 0.12f, 1.00f);
             colors[(int)ImGuiCol.TabHovered] = new Vector4(0.56f, 0.56f, 0.58f, 1.00f);
-            colors[(int)ImGuiCol.TabActive] = new Vector4(0.28f, 0.28f, 0.28f, 1.00f);
-            colors[(int)ImGuiCol.TabUnfocused] = new Vector4(0.07f, 0.10f, 0.15f, 0.97f);
-            colors[(int)ImGuiCol.TabUnfocusedActive] = new Vector4(0.07f, 0.10f, 0.15f, 0.97f);
+            colors[(int)ImGuiCol.TabDimmed] = new Vector4(0.28f, 0.28f, 0.28f, 1.00f);
+            colors[(int)ImGuiCol.TabDimmedSelectedOverline] = new Vector4(0.07f, 0.10f, 0.15f, 0.97f);
             colors[(int)ImGuiCol.DockingPreview] = new Vector4(0.26f, 0.59f, 0.98f, 0.70f);
             colors[(int)ImGuiCol.DockingEmptyBg] = new Vector4(0.20f, 0.20f, 0.20f, 1.00f);
             colors[(int)ImGuiCol.DragDropTarget] = new Vector4(1.00f, 1.00f, 0.00f, 0.90f);
             colors[(int)ImGuiCol.NavHighlight] = new Vector4(0.26f, 0.59f, 0.98f, 1.00f);
             colors[(int)ImGuiCol.NavWindowingHighlight] = new Vector4(1.00f, 1.00f, 1.00f, 0.70f);
             colors[(int)ImGuiCol.NavWindowingDimBg] = new Vector4(0.80f, 0.80f, 0.80f, 0.20f);
-            colors[(int)ImGuiCol.TabUnfocused] = new Vector4(0.07f, 0.10f, 0.15f, 0.97f);
         }
 
 
@@ -761,6 +654,6 @@ namespace RockEngine.Core.Rendering.ImGuiRendering
         public void Dispose()
         {
 
-        }     
+        }
     }
 }

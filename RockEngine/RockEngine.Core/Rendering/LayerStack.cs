@@ -13,6 +13,7 @@ namespace RockEngine.Core.Rendering
 
     public class LayerStack
     {
+        public int Count => _layers.Count;
         private readonly List<ILayer> _layers = new List<ILayer>(4);
 
         public void PushLayer(ILayer layer)

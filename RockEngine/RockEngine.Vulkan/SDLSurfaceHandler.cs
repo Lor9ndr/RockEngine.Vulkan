@@ -40,12 +40,11 @@ namespace RockEngine.Vulkan
 
         public static unsafe SDLSurfaceHandler CreateSurface(IWindow window, RenderingContext context)
         {
-            fixed(AllocationCallbacks* acb = &RenderingContext.CustomAllocator)
-            {
-                var handle = window.VkSurface.Create(context.Instance.VkObjectNative.ToHandle(), acb);
+           
+                var handle = window.VkSurface.Create<AllocationCallbacks>(context.Instance.VkObjectNative.ToHandle(), default);
                 var surface = new SurfaceKHR(handle.Handle);
                 return new SDLSurfaceHandler(window, context, surface);
-            }
+           
 
         }
 
@@ -70,7 +69,7 @@ namespace RockEngine.Vulkan
                 {
                     _window.Resize -= SurfaceResized;
                     _surfaceApi.Dispose();
-                    _surfaceApi.DestroySurface(_context.Instance, _vkObject, in RenderingContext.CustomAllocator);
+                    _surfaceApi.DestroySurface(_context.Instance, _vkObject, default);
                     _vkObject = default;
                 }
 

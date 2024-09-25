@@ -16,7 +16,7 @@ namespace RockEngine.Vulkan
 
         public static unsafe VkCommandPool Create(RenderingContext context, in CommandPoolCreateInfo ci)
         {
-            RenderingContext.Vk.CreateCommandPool(context.Device, in ci, in RenderingContext.CustomAllocator, out var commandPool);
+            RenderingContext.Vk.CreateCommandPool(context.Device, in ci, in RenderingContext.CustomAllocator<VkCommandPool>(), out var commandPool);
             return new VkCommandPool(context, commandPool);
         }
 
@@ -116,7 +116,7 @@ namespace RockEngine.Vulkan
                     FreeCommandBuffers(_commandBuffers.ToArray());
                     // Should be already empty at that moment, but let it be for now
                     _commandBuffers.Clear();
-                    RenderingContext.Vk.DestroyCommandPool(_context.Device, _vkObject, in RenderingContext.CustomAllocator);
+                    RenderingContext.Vk.DestroyCommandPool(_context.Device, _vkObject, in RenderingContext.CustomAllocator<VkCommandPool>());
                 }
 
                 _disposed = true;

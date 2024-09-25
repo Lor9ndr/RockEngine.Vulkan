@@ -14,10 +14,10 @@
         public static float TimeScale { get; set; } = 1.0f;
         public static float ScaledDeltaTime => _deltaTime * TimeScale;
 
-        public static void Update(double currentTime)
+        public static void Update(double currentTime, double deltaTime)
         {
             float currentTimeFloat = (float)currentTime;
-            _deltaTime = currentTimeFloat - _lastFrameTime;
+            _deltaTime = (float)deltaTime;
             _lastFrameTime = currentTimeFloat;
 
             _totalTime = currentTimeFloat;

@@ -16,17 +16,13 @@ namespace RockEngine.Vulkan
 
         public static VkSemaphore Create(RenderingContext context)
         {
-            Semaphore semaphore;
             SemaphoreCreateInfo semaphoreCreateInfo = new SemaphoreCreateInfo
             {
                 SType = StructureType.SemaphoreCreateInfo
             };
 
-            unsafe
-            {
-                RenderingContext.Vk.CreateSemaphore(context.Device, &semaphoreCreateInfo, in RenderingContext.CustomAllocator, &semaphore)
-                    .VkAssertResult("Failed to create semaphore.");
-            }
+            RenderingContext.Vk.CreateSemaphore(context.Device, in semaphoreCreateInfo, in RenderingContext.CustomAllocator<VkSemaphore>(), out Semaphore semaphore)
+                .VkAssertResult("Failed to create semaphore.");
 
             return new VkSemaphore(context, semaphore);
         }
@@ -42,7 +38,7 @@ namespace RockEngine.Vulkan
 
                 unsafe
                 {
-                    RenderingContext.Vk.DestroySemaphore(_context.Device, _vkObject, in RenderingContext.CustomAllocator);
+                    RenderingContext.Vk.DestroySemaphore(_context.Device, _vkObject, in RenderingContext.CustomAllocator<VkSemaphore>());
                 }
 
                 _disposed = true;

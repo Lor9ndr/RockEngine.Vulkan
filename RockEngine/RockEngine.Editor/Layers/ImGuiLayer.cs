@@ -5,7 +5,6 @@ using RockEngine.Vulkan;
 using Silk.NET.Input;
 using System.Numerics;
 using Silk.NET.Vulkan;
-using System.Text;
 using RockEngine.Core;
 
 namespace RockEngine.Editor.Layers
@@ -16,20 +15,15 @@ namespace RockEngine.Editor.Layers
         private readonly GraphicsEngine _graphicsEngine;
         private readonly ImGuiController _imGuiController;
         private readonly List<AllocationInfo> _allocationInfoList = new List<AllocationInfo>();
-        private readonly StringBuilder _stringBuilder = new StringBuilder();
-
-        private long _totalAllocatedBytes;
-        private long _peakAllocatedBytes;
-        private int _totalAllocationCount;
-        private int _currentActiveAllocations;
-
         private struct AllocationInfo
         {
             public nint Address;
             public nuint Size;
             public SystemAllocationScope Scope;
             public string StackTrace;
+            public string AllocatorType;
         }
+
 
         public ImGuiLayer(RenderingContext context, GraphicsEngine graphicsEngine, RenderPassManager renderPassManager, IInputContext input)
         {
@@ -60,60 +54,75 @@ namespace RockEngine.Editor.Layers
 
         private void DrawAllocationStats()
         {
-            ImGui.Begin("Memory Allocation Diagram");
 
-            // Get memory stats
-            CustomAllocator.GetMemoryStats(out long totalAllocatedBytes, out long peakAllocatedBytes,
-                                           out int totalAllocationCount, out int currentActiveAllocations);
+            if(ImGui.Begin("Memory Allocation Diagram"))
+            {
+                // Get memory stats
+                CustomAllocator.GetMemoryStats(out long totalAllocatedBytes, out long peakAllocatedBytes,
+                                               out int totalAllocationCount, out int currentActiveAllocations);
 
-            // Draw bar graph for total and peak memory
-            ImGui.Text("Memory Usage");
-            float barHeight = 20;
-            Vector2 barSize = new Vector2(ImGui.GetContentRegionAvail().X, barHeight);
+                // Draw bar graph for total and peak memory
+                ImGui.Text("Memory Usage");
+                float barHeight = 20;
+                Vector2 barSize = new Vector2(ImGui.GetContentRegionAvail().X, barHeight);
 
-            ImGui.ProgressBar((float)totalAllocatedBytes / peakAllocatedBytes, barSize, $"Current: {FormatBytes(totalAllocatedBytes)}");
-            ImGui.ProgressBar(1.0f, barSize, $"Peak: {FormatBytes(peakAllocatedBytes)}");
+                ImGui.ProgressBar((float)totalAllocatedBytes / peakAllocatedBytes, barSize, $"Current: {FormatBytes(totalAllocatedBytes)}");
+                ImGui.ProgressBar(1.0f, barSize, $"Peak: {FormatBytes(peakAllocatedBytes)}");
 
-            // Display allocation counts
-            ImGui.Text($"Total Allocations: {totalAllocationCount}");
-            ImGui.Text($"Active Allocations: {currentActiveAllocations}");
+                // Display allocation counts
+                ImGui.Text($"Total Allocations: {totalAllocationCount}");
+                ImGui.Text($"Active Allocations: {currentActiveAllocations}");
+            }
+          
+            ImGui.End();
         }
 
         private void DrawAllocationTree()
         {
-
-            ImGui.SetNextWindowSize(new Vector2(700, 500), ImGuiCond.FirstUseEver);
+            ImGui.SetNextWindowSize(new Vector2(800, 600), ImGuiCond.FirstUseEver);
             if (ImGui.Begin("Allocation Tree"))
             {
                 if (ImGui.Button("Refresh Allocation Info"))
                 {
                     RefreshAllocationInfo();
                 }
-                if (ImGui.BeginTable("AllocationTable", 3, ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg | ImGuiTableFlags.Sortable | ImGuiTableFlags.SortTristate))
+
+                var groupedAllocations = _allocationInfoList.GroupBy(a => a.AllocatorType);
+
+                if (ImGui.BeginTable("AllocationTable", 4, ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg | ImGuiTableFlags.Sortable | ImGuiTableFlags.SortTristate))
                 {
+                    ImGui.TableSetupColumn("Allocator Type", ImGuiTableColumnFlags.WidthFixed, 150);
                     ImGui.TableSetupColumn("Address", ImGuiTableColumnFlags.WidthFixed, 100);
                     ImGui.TableSetupColumn("Size", ImGuiTableColumnFlags.WidthFixed, 100);
                     ImGui.TableSetupColumn("Stack Trace", ImGuiTableColumnFlags.IndentEnable | ImGuiTableColumnFlags.WidthStretch);
                     ImGui.TableHeadersRow();
 
-                    foreach (var allocationInfo in _allocationInfoList)
+                    foreach (var group in groupedAllocations)
                     {
                         ImGui.TableNextRow();
                         ImGui.TableSetColumnIndex(0);
-                        ImGui.Text($"0x{allocationInfo.Address:X}");
-                        ImGui.TableSetColumnIndex(1);
-                        ImGui.Text(FormatBytes((long)allocationInfo.Size));
-                        ImGui.TableSetColumnIndex(2);
-                        DrawStackTraceTree(allocationInfo.StackTrace, allocationInfo.Address);
+                        if (ImGui.TreeNode(group.Key))
+                        {
+                            foreach (var allocationInfo in group)
+                            {
+                                ImGui.TableNextRow();
+                                ImGui.TableSetColumnIndex(1);
+                                ImGui.Text($"0x{allocationInfo.Address:X}");
+                                ImGui.TableSetColumnIndex(2);
+                                ImGui.Text(FormatBytes((long)allocationInfo.Size));
+                                ImGui.TableSetColumnIndex(3);
+                                DrawStackTraceTree(allocationInfo.StackTrace, allocationInfo.Address);
+                            }
+                            ImGui.TreePop();
+                        }
                     }
-
                     ImGui.EndTable();
                 }
-
             }
-
-            ImGui.EndMenuBar();
+            ImGui.End();
         }
+
+
 
         private void DrawStackTraceTree(string stackTrace, nint address)
         {
@@ -195,10 +204,12 @@ namespace RockEngine.Editor.Layers
                     Address = info.Address,
                     Size = info.Size,
                     Scope = info.Scope,
-                    StackTrace = info.StackTrace
+                    StackTrace = info.StackTrace,
+                    AllocatorType = info.AllocatorType
                 });
             });
         }
+
 
         private static string FormatBytes(long bytes)
         {

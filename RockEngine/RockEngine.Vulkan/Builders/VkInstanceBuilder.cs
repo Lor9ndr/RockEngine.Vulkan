@@ -3,7 +3,7 @@
 using System.Runtime.InteropServices;
 using System.Text;
 
-namespace RockEngine.Vulkan
+namespace RockEngine.Vulkan.Builders
 {
     internal class VkInstanceBuilder
     {
@@ -75,7 +75,7 @@ namespace RockEngine.Vulkan
             }
             VkInstance instanceWrapper;
 
-            var result = RenderingContext.Vk.CreateInstance(in instanceInfo, null, out Instance instance);
+            var result = RenderingContext.Vk.CreateInstance(in instanceInfo, in CustomAllocator.CreateCallbacks<VkInstance>(), out Instance instance);
             if (result != Result.Success)
             {
                 throw new Exception($"Failed to create instance: {result}");
@@ -87,7 +87,7 @@ namespace RockEngine.Vulkan
             }
             if (_debugUtilsMessengerCreateInfoEXT.HasValue)
             {
-                var rslt = CreateDebugUtilsMessenger(instanceWrapper,_debugUtilsMessengerCreateInfoEXT.Value, out var messenger);
+                var rslt = CreateDebugUtilsMessenger(instanceWrapper, _debugUtilsMessengerCreateInfoEXT.Value, out var messenger);
                 if (rslt != Result.Success)
                 {
                     throw new Exception("Unable to create debug utils messenger");

@@ -2,15 +2,49 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFramework>net9.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <PublishAot>true</PublishAot>
+    <IsAotCompatible>true</IsAotCompatible>
     <InvariantGlobalization>true</InvariantGlobalization>
   </PropertyGroup>
+  
+
 
   <ItemGroup>
     <ProjectReference Include="..\RockEngine.Core\RockEngine.Core.csproj" />
   </ItemGroup>
+<!--For now let it be here-->
+  <ItemGroup>
+    <ShaderFiles Include="**\*.vert" />
+    <ShaderFiles Include="**\*.frag" />
+    <ShaderFiles Include="..\RockEngine.Core\**\*.vert" />
+    <ShaderFiles Include="..\RockEngine.Core\**\*.frag" />
+  </ItemGroup>
+  <PropertyGroup>
+    <ShadersOutputPath>bin\$(Configuration)\$(TargetFramework)\Shaders\</ShadersOutputPath>
+    <GenerateDocumentationFile>True</GenerateDocumentationFile>
+    <SignAssembly>True</SignAssembly>
+  </PropertyGroup>
+
+  <Target Name="PostBuild" AfterTargets="PostBuildEvent">
+    <!-- Echo each shader file found -->
+    <Message Importance="high" Text="Compiling shader file: %(ShaderFiles.FullPath)" />
+
+    <!-- Compile each shader file individually -->
+    <Exec Command="glslc.exe %(ShaderFiles.FullPath) -o %(ShaderFiles.FullPath).spv" />
+  </Target>
+
+  <ItemGroup>
+    <CompiledShader Include="**\*.spv" />
+    <CompiledShader Include="..\RockEngine.Core\**\*.spv" />
+  </ItemGroup>
+
+
+  <Target Name="CopyCompiledShaders" AfterTargets="PostBuild">
+    <Copy SourceFiles="@(CompiledShader)" DestinationFolder="$(ShadersOutputPath)" />
+  </Target>
+
 
 </Project>

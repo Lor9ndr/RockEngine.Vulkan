@@ -14,7 +14,7 @@ namespace RockEngine.Vulkan
 
         public static unsafe VkFramebuffer Create(RenderingContext context, in FramebufferCreateInfo framebufferCreateInfo)
         {
-            RenderingContext.Vk.CreateFramebuffer(context.Device, in framebufferCreateInfo, in RenderingContext.CustomAllocator, out Framebuffer framebuffer)
+            RenderingContext.Vk.CreateFramebuffer(context.Device, in framebufferCreateInfo, in RenderingContext.CustomAllocator<VkFramebuffer>(), out Framebuffer framebuffer)
                     .VkAssertResult("Failed to create framebuffer.");
 
             return new VkFramebuffer(context, framebuffer);
@@ -31,7 +31,7 @@ namespace RockEngine.Vulkan
 
                 unsafe
                 {
-                    RenderingContext.Vk.DestroyFramebuffer(_context.Device, _vkObject, in RenderingContext.CustomAllocator);
+                    RenderingContext.Vk.DestroyFramebuffer(_context.Device, _vkObject, in RenderingContext.CustomAllocator<VkFramebuffer>());
                 }
 
                 _disposed = true;

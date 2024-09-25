@@ -1,5 +1,7 @@
 ﻿
 
+using RockEngine.Vulkan.Builders;
+
 using Silk.NET.Core;
 using Silk.NET.Vulkan;
 using Silk.NET.Vulkan.Extensions.KHR;
@@ -17,7 +19,7 @@ namespace RockEngine.Vulkan
         public ISurfaceHandler Surface { get; }
         public int MaxFramesPerFlight { get; internal set;}
 
-        public static readonly AllocationCallbacks CustomAllocator  = Vulkan.CustomAllocator.CreateCallbacks();
+        public static ref AllocationCallbacks CustomAllocator<T>() => ref Vulkan.CustomAllocator.CreateCallbacks<T>();
 
         private static readonly string[] _validationLayers = ["VK_LAYER_KHRONOS_validation"];
         private static DebugUtilsMessengerCallbackFunctionEXT _debugCallback;

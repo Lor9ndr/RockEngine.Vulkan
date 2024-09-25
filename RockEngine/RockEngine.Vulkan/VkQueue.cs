@@ -40,11 +40,9 @@ namespace RockEngine.Vulkan
                         Submit(in si, fence);
                     }
                 }
-
             }
-           
-         
         }
+
         public void WaitIdle()
         {
             RenderingContext.Vk.QueueWaitIdle(this);

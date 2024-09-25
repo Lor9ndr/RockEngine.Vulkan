@@ -1,4 +1,5 @@
-﻿using RockEngine.Core.Rendering;
+﻿using RockEngine.Core.ECS;
+using RockEngine.Core.Rendering;
 using RockEngine.Vulkan;
 
 using Silk.NET.Input;
@@ -14,10 +15,12 @@ namespace RockEngine.Core
         protected LayerStack _layerStack;
         protected GraphicsEngine _graphicsEngine;
         protected IInputContext _inputContext;
-        protected CancellationTokenSource CancellationTokenSource { get; set; }
+        protected World _world;
+        protected event Action OnLoad;
+
+        public CancellationTokenSource CancellationTokenSource { get; set; }
         protected CancellationToken  CancellationToken => CancellationTokenSource.Token;
 
-        protected event Action OnLoad;
 
         public Application(string appName, int width, int height)
         {
@@ -32,6 +35,7 @@ namespace RockEngine.Core
                 _renderingContext = new RenderingContext(_window, _window.Title);
                 _graphicsEngine = new GraphicsEngine(_renderingContext);
                 _inputContext = _window.CreateInput();
+                _world = new World();
                 OnLoad?.Invoke();
             };
             _window.Render += Render;
@@ -41,25 +45,22 @@ namespace RockEngine.Core
 
         public async Task Run()
         {
-            try
-            {
-                await Task.Run(() => _window.Run(), CancellationToken)
-                    .ConfigureAwait(false);
-            }
-            catch (OperationCanceledException)
-            {
-                // Handle cancellation
-            }
+            await Task.Run(() => _window.Run(), CancellationToken)
+                .ConfigureAwait(false);
         }
 
         protected virtual void Update(double deltaTime)
         {
-             Time.Update(_window.Time);
+             Time.Update(_window.Time, deltaTime);
              _layerStack.Update();
         }
 
         protected virtual void Render(double time)
         {
+            if (_layerStack.Count == 0)
+            {
+                return;
+            }
             var vkCommandBuffer =  _graphicsEngine.Begin();
             if (vkCommandBuffer is null)
             {
@@ -70,7 +71,6 @@ namespace RockEngine.Core
             _graphicsEngine.End(vkCommandBuffer);
             _graphicsEngine.Submit([vkCommandBuffer.VkObjectNative]);
         }
-
 
         public void PushLayer(ILayer layer)
         {
@@ -84,8 +84,11 @@ namespace RockEngine.Core
 
         public virtual void Dispose()
         {
+            CancellationTokenSource.Cancel();
             _graphicsEngine.Dispose();
+
             _renderingContext.Dispose();
+            _window.Close();
             _window.Dispose();
         }
     }

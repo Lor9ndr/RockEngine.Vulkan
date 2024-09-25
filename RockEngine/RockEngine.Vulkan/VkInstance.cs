@@ -28,16 +28,13 @@ namespace RockEngine.Vulkan
                 {
                     if (DebugMessenger.HasValue)
                     {
-                        fixed(AllocationCallbacks* cb = &RenderingContext.CustomAllocator)
-                        {
-                            var destroyDebugUtils = RenderingContext.Vk.GetInstanceProcAddr(_vkObject, "vkDestroyDebugUtilsMessengerEXT");
-                            var del = Marshal.GetDelegateForFunctionPointer<DestroyDebugUtilsDelegate>(destroyDebugUtils);
-                            del(_vkObject, DebugMessenger.Value, cb);
-                        }
-                        
+                        var destroyDebugUtils = RenderingContext.Vk.GetInstanceProcAddr(_vkObject, "vkDestroyDebugUtilsMessengerEXT");
+                        var del = Marshal.GetDelegateForFunctionPointer<DestroyDebugUtilsDelegate>(destroyDebugUtils);
+                        del(_vkObject, DebugMessenger.Value, default);
+
                     }
 
-                    RenderingContext.Vk.DestroyInstance(_vkObject, in RenderingContext.CustomAllocator);
+                    RenderingContext.Vk.DestroyInstance(_vkObject, in RenderingContext.CustomAllocator<VkInstance>());
 
                     _vkObject = default;
                 }

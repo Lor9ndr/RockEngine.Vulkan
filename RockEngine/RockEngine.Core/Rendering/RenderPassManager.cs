@@ -9,15 +9,16 @@ namespace RockEngine.Core.Rendering
     public class RenderPassManager : IDisposable
     {
         private readonly RenderingContext _context;
-        private readonly Dictionary<string, VkRenderPass> _renderPasses;
+        private readonly Dictionary<RenderPassType, EngineRenderPass> _renderPasses;
 
         public RenderPassManager(RenderingContext context)
         {
             _context = context;
-            _renderPasses = new Dictionary<string, VkRenderPass>();
+            _renderPasses = new Dictionary<RenderPassType, EngineRenderPass>();
         }
 
-        public unsafe VkRenderPass CreateRenderPass(string name, SubpassDescription[] subpasses, AttachmentDescription[] attachments, SubpassDependency[] dependencies)
+
+        public unsafe EngineRenderPass CreateRenderPass(RenderPassType type, SubpassDescription[] subpasses, AttachmentDescription[] attachments, SubpassDependency[] dependencies)
         {
             var renderPassInfo = new RenderPassCreateInfo
             {
@@ -30,13 +31,19 @@ namespace RockEngine.Core.Rendering
                 PDependencies = (SubpassDependency*)Unsafe.AsPointer(ref dependencies[0])
             };
             var renderPass = VkRenderPass.Create(_context, in renderPassInfo);
-            _renderPasses[name] = renderPass;
-            return renderPass;
+            var engineRenderPass = new EngineRenderPass(type, renderPass);
+            _renderPasses[type] = engineRenderPass;
+            return engineRenderPass;
         }
 
-        public VkRenderPass? GetRenderPass(string name)
+        public EngineRenderPass? GetRenderPass(RenderPassType type)
         {
-            return _renderPasses.TryGetValue(name, out var renderPass) ? renderPass : null;
+            return _renderPasses.TryGetValue(type, out var renderPass) ? renderPass : null;
+        }
+
+        public IEnumerable<EngineRenderPass> GetRenderPasses()
+        {
+            return _renderPasses.Values;
         }
 
         public void Dispose()

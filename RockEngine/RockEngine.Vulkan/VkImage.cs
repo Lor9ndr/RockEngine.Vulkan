@@ -8,6 +8,9 @@ namespace RockEngine.Vulkan
         private readonly RenderingContext _context;
 
         public VkDeviceMemory ImageMemory => _imageMemory;
+
+        public ImageLayout CurrentLayout => _currentLayout;
+
         private ImageLayout _currentLayout;
 
         private VkImage(RenderingContext context, Image vkImage, VkDeviceMemory imageMemory, ImageLayout currentLayout)
@@ -21,7 +24,7 @@ namespace RockEngine.Vulkan
 
         public unsafe static VkImage Create(RenderingContext context, in ImageCreateInfo ci, MemoryPropertyFlags memPropertyFlags)
         {
-            RenderingContext.Vk.CreateImage(context.Device, in ci, in RenderingContext.CustomAllocator, out var vkImage)
+            RenderingContext.Vk.CreateImage(context.Device, in ci, in RenderingContext.CustomAllocator<VkImage>(), out var vkImage)
                 .VkAssertResult("Failed to create image!");
             RenderingContext.Vk.GetImageMemoryRequirements(context.Device, vkImage, out var memRequirements);
 
@@ -150,10 +153,11 @@ namespace RockEngine.Vulkan
         {
             if (disposing)
             {
-                RenderingContext.Vk.DestroyImage(_context.Device, _vkObject, in RenderingContext.CustomAllocator);
+                RenderingContext.Vk.DestroyImage(_context.Device, _vkObject, in RenderingContext.CustomAllocator<VkImage>());
                 ImageMemory.Dispose();
                 _disposed = true;
             }
         }
+
     }
 }

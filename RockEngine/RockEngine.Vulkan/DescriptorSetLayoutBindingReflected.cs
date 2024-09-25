@@ -31,6 +31,9 @@ namespace RockEngine.Vulkan
                  setLayoutBinding.PImmutableSamplers)
         { }
 
+        public static implicit operator DescriptorSetLayoutBinding(DescriptorSetLayoutBindingReflected value) 
+            => new DescriptorSetLayoutBinding(value.Binding, value.DescriptorType, value.DescriptorCount, value.StageFlags, value.PImmutableSamplers);
+
 
     }
 }

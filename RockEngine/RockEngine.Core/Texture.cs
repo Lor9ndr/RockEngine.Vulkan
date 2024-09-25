@@ -2,12 +2,11 @@
 using Silk.NET.Vulkan;
 using RockEngine.Vulkan;
 using RockEngine.Core.Rendering;
-using Silk.NET.Input;
-using System.Runtime.CompilerServices;
+using Silk.NET.GLFW;
 
 namespace RockEngine.Core
 {
-    public class Texture : IDisposable
+    public class Texture : IDisposable, IHaveBinding
     {
         private readonly RenderingContext _context;
         private readonly VkImage _image;
@@ -19,6 +18,7 @@ namespace RockEngine.Core
         public VkImageView ImageView => _imageView;
         public VkSampler Sampler => _sampler;
         public VkImage Image => _image;
+        public Dictionary<DescriptorSetLayout, DescriptorSet> Bindings { get;set;}
 
         private Texture(RenderingContext context, VkImage image, VkImageView imageView, VkSampler sampler)
         {
@@ -27,7 +27,6 @@ namespace RockEngine.Core
             _imageView = imageView;
             _sampler = sampler;
         }
-
        
         public static async Task<Texture> CreateAsync(RenderingContext context, string filePath, CancellationToken cancellationToken = default)
         {
@@ -66,18 +65,18 @@ namespace RockEngine.Core
                 MaxLod = 0.0f
             };
             var sampler = VkSampler.Create(context, in samplerCreateInfo);
-            return new Texture(context, image, imageView, sampler);
+            return new Texture(context,image, imageView, sampler);
         }
-        public unsafe static Texture Create(RenderingContext context, int width, int height, Format format, nint data)
-        {
 
+        public unsafe static Texture Create(RenderingContext context, int width, int height, Format format, nint data, VkCommandBuffer vkCommandBuffer = null)
+        {
             // Create the Vulkan image
             var vkImage = CreateVulkanImage(context, (uint)width, (uint)height, format);
 
             // Create the image view
             var imageView = CreateImageView(context, vkImage, format);
             // Copy image data from the pointer to the Vulkan image
-            CopyImageDataFromPointer(context, vkImage, data.ToPointer(), (uint)width, (uint)height, format);
+            CopyImageDataFromPointer(context, vkImage, data.ToPointer(), (uint)width, (uint)height, format, vkCommandBuffer);
 
             // Create a sampler
             var samplerCreateInfo = new SamplerCreateInfo
@@ -197,8 +196,8 @@ namespace RockEngine.Core
             // Transition the Vulkan image layout to SHADER_READ_ONLY_OPTIMAL
             vkImage.TransitionImageLayout(commandBuffer, format, ImageLayout.ShaderReadOnlyOptimal);
             commandBuffer.End();
-
         }
+
         private unsafe static void CopyImageDataFromPointer(RenderingContext context, VkImage vkImage, void* data, uint width, uint height, Format format, VkCommandBuffer? commandBuffer = null)
         {
             var imageSize = (ulong)(width * height * GetBytesPerPixel(format));
@@ -206,13 +205,15 @@ namespace RockEngine.Core
             // Create a staging buffer
             using var stagingBuffer = VkBuffer.CreateAndCopyToStagingBuffer(context, data, imageSize);
 
+            VkCommandPool? cmdPool = null;
             if (commandBuffer is null)
             {
                 /// 
-                var cmdPool = VkCommandPool.Create(context, CommandPoolCreateFlags.TransientBit, context.Device.QueueFamilyIndices.GraphicsFamily.Value);
+                cmdPool = VkCommandPool.Create(context, CommandPoolCreateFlags.TransientBit, context.Device.QueueFamilyIndices.GraphicsFamily.Value);
                 commandBuffer = cmdPool.AllocateCommandBuffer();
             }
             using var fence = VkFence.CreateNotSignaled(context);
+            var fenceNative = fence.VkObjectNative;
             commandBuffer.BeginSingleTimeCommand();
             // Transition the Vulkan image layout to TRANSFER_DST_OPTIMAL
             vkImage.TransitionImageLayout(commandBuffer, format, ImageLayout.TransferDstOptimal);
@@ -228,9 +229,10 @@ namespace RockEngine.Core
             var submitInfo = new SubmitInfo();
             submitInfo.SType = StructureType.SubmitInfo;
             submitInfo.CommandBufferCount = 1;
-            submitInfo.PCommandBuffers = (CommandBuffer*)Unsafe.AsPointer(ref realBuffer);
+            submitInfo.PCommandBuffers = &realBuffer;
             context.Device.GraphicsQueue.Submit(in submitInfo, fence);
-            RenderingContext.Vk.WaitForFences(context.Device, 1, fence, true, ulong.MaxValue);
+            RenderingContext.Vk.WaitForFences(context.Device, 1, in fenceNative, true, ulong.MaxValue);
+            cmdPool?.Dispose();
         }
 
 
@@ -253,8 +255,9 @@ namespace RockEngine.Core
             };
 
             RenderingContext.Vk.CmdCopyBufferToImage(commandBuffer, stagingBuffer, image, ImageLayout.TransferDstOptimal, 1, &region);
-
         }
+
+      
 
        /* public static Texture GetEmptyTexture(RenderingContext context)
         {
@@ -315,6 +318,55 @@ namespace RockEngine.Core
                 _imageView.Dispose();
                 _image.Dispose();
                 _disposed = true;
+            }
+        }
+
+        public unsafe void UpdateSet(DescriptorSet set, DescriptorSetLayout setLayout, uint binding, uint dstArrayElement = 0)
+        {
+            switch (Bindings)
+            {
+                case null:
+                    Bindings = new Dictionary<DescriptorSetLayout, DescriptorSet>()
+                    {
+                        {setLayout, set }
+                    };
+                    break;
+                default:
+                    Bindings[setLayout] = !Bindings.ContainsKey(setLayout) ? set : throw new InvalidOperationException("Already got binding on that setLayout");
+                    break;
+            }
+            var imageInfo = GetInfo();
+            WriteDescriptorSet writeDescriptorSet = new WriteDescriptorSet()
+            {
+                SType = StructureType.WriteDescriptorSet,
+                DstBinding = binding,
+                DescriptorType = DescriptorType.CombinedImageSampler,
+                DescriptorCount = 1,
+                DstArrayElement = dstArrayElement,
+                DstSet = set,
+                PImageInfo = &imageInfo
+            };
+            RenderingContext.Vk.UpdateDescriptorSets(_context.Device, 1, in writeDescriptorSet,0, default);
+        }
+
+        private DescriptorImageInfo GetInfo()
+        {
+            return new DescriptorImageInfo()
+            {
+                ImageLayout = _image.CurrentLayout,
+                ImageView = _imageView,
+                Sampler = _sampler,
+            };
+        }
+
+        public unsafe void Use(VkCommandBuffer commandBuffer, VkPipeline pipeline, uint dynamicOffset = 0, PipelineBindPoint bindPoint = PipelineBindPoint.Graphics)
+        {
+            foreach (var item in pipeline.Layout.DescriptorSetLayouts)
+            {
+                if(Bindings.TryGetValue(item.DescriptorSetLayout, out var set))
+                {
+                    RenderingContext.Vk.CmdBindDescriptorSets(commandBuffer, bindPoint, pipeline.Layout, 0, 1, in set, 0, &dynamicOffset);
+                }
             }
         }
     }

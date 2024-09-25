@@ -1,0 +1,35 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <ShadersOutputPath>bin\$(Configuration)\$(TargetFramework)\Shaders\</ShadersOutputPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Moq" Version="4.20.72" />
+    <PackageReference Include="TUnit" Version="0.1.783" />
+    <PackageReference Include="TUnit.Analyzers" Version="0.1.783" />
+    <PackageReference Include="TUnit.Assertions.Analyzers" Version="0.1.783" />
+    <PackageReference Include="TUnit.Engine" Version="0.1.783" />
+    <PackageReference Include="TUnit.Engine.SourceGenerator" Version="0.1.783" />
+
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\RockEngine.Core\RockEngine.Core.csproj" />
+    <ProjectReference Include="..\RockEngine.Editor\RockEngine.Editor.csproj" />
+    <ProjectReference Include="..\RockEngine.Vulkan\RockEngine.Vulkan.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <CompiledShader Include="**\*.spv" />
+    <CompiledShader Include="..\RockEngine.Core\**\*.spv" />
+    <CompiledShader Include="..\RockEngine.Editor\**\*.spv" />
+  </ItemGroup>
+
+  <Target Name="CopyCompiledShaders" AfterTargets="PostBuildEvent">
+    <Copy SourceFiles="@(CompiledShader)" DestinationFolder="$(ShadersOutputPath)" />
+  </Target>
+
+</Project>

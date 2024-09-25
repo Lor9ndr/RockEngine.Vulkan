@@ -32,7 +32,7 @@ namespace RockEngine.Vulkan
                 MemoryTypeIndex = FindMemoryType(context, memRequirements.MemoryTypeBits, properties)
             };
 
-            RenderingContext.Vk.AllocateMemory(context.Device, in allocInfo, in RenderingContext.CustomAllocator, out var memory)
+            RenderingContext.Vk.AllocateMemory(context.Device, in allocInfo, in RenderingContext.CustomAllocator<VkDeviceMemory>(), out var memory)
                  .VkAssertResult("Failed to allocate memory!");
 
             return new VkDeviceMemory(context, memory, memRequirements.Size);
@@ -84,7 +84,7 @@ namespace RockEngine.Vulkan
 
         protected override unsafe void Dispose(bool disposing)
         {
-            RenderingContext.Vk.FreeMemory(_context.Device, _memory, in RenderingContext.CustomAllocator);
+            RenderingContext.Vk.FreeMemory(_context.Device, _memory, in RenderingContext.CustomAllocator<VkDeviceMemory>());
             _mappedData = null;
             _disposed = true;
         }

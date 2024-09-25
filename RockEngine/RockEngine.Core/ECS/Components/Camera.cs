@@ -1,10 +1,12 @@
 ﻿using RockEngine.Core.Helpers;
+using RockEngine.Core.Rendering;
+using RockEngine.Vulkan;
 
 using System.Numerics;
 
 namespace RockEngine.Core.ECS.Components
 {
-    public struct Camera
+    public class Camera : IComponent, IRenderable
     {
         public const int MAX_FOV = 120;
         public const int MIN_FOV = 30;
@@ -25,14 +27,14 @@ namespace RockEngine.Core.ECS.Components
         private Vector3 _up;
         private Vector3 _front;
 
-        public readonly Vector3 Right => _right;
+        public Vector3 Right => _right;
 
-        public readonly Vector3 Up => _up;
-        public readonly Matrix4x4 ViewProjectionMatrix => _viewProjectionMatrix;
+        public Vector3 Up => _up;
+        public Matrix4x4 ViewProjectionMatrix => _viewProjectionMatrix;
 
         public float Fov
         {
-            readonly get => MathHelper.RadiansToDegrees(_fov);
+            get => MathHelper.RadiansToDegrees(_fov);
             set
             {
                 var angle = Math.Clamp(value, MIN_FOV, MAX_FOV);
@@ -42,7 +44,7 @@ namespace RockEngine.Core.ECS.Components
 
         public float AspectRatio
         {
-            readonly get => _aspectRatio;
+            get => _aspectRatio;
             set
             {
                 _aspectRatio = value;
@@ -52,7 +54,7 @@ namespace RockEngine.Core.ECS.Components
 
         public float NearClip
         {
-            readonly get => _nearClip;
+            get => _nearClip;
             set
             {
                 _nearClip = value;
@@ -62,20 +64,16 @@ namespace RockEngine.Core.ECS.Components
 
         public float FarClip
         {
-            readonly get => _farClip;
+            get => _farClip;
             set
             {
                 _farClip = value;
                 UpdateProjectionMatrix();
             }
         }
-
-
-       
-
         public Vector3 Front
         {
-            readonly get => _front;
+            get => _front;
             set
             {
                 _front = value;
@@ -84,7 +82,7 @@ namespace RockEngine.Core.ECS.Components
 
         public float Pitch
         {
-            readonly get => MathHelper.RadiansToDegrees(_pitch);
+            get => MathHelper.RadiansToDegrees(_pitch);
             set
             {
                 // We clamp the pitch value between -89 and 89 to prevent the camera from going upside down, and a bunch
@@ -97,14 +95,12 @@ namespace RockEngine.Core.ECS.Components
         }
         public float Yaw
         {
-            readonly get => MathHelper.RadiansToDegrees(_yaw);
+            get => MathHelper.RadiansToDegrees(_yaw);
             set
             {
                 _yaw = MathHelper.DegreesToRadians(value);
             }
         }
-
-
 
         public Camera()
         {
@@ -146,6 +142,21 @@ namespace RockEngine.Core.ECS.Components
             _right = Vector3.Normalize(Vector3.Cross(_front, Vector3.UnitY));
             _up = Vector3.Normalize(Vector3.Cross(_right, _front));
             UpdateViewMatrix(position);
+        }
+
+        public ValueTask Init(RenderingContext context, Renderer renderer)
+        {
+            return default;
+        }
+
+        public ValueTask Render(Renderer renderer)
+        {
+            return default;
+        }
+
+        public void Update()
+        {
+            throw new NotImplementedException();
         }
     }
 }

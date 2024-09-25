@@ -15,9 +15,7 @@ namespace RockEngine.Vulkan
         private readonly ISurfaceHandler _surface;
         private readonly VkImageView[] _swapChainImageViews;
 
-        private readonly VkSemaphore[] _imageAvailableSemaphores;
-        private readonly VkSemaphore[] _renderFinishedSemaphores;
-        private readonly VkFence[] _inFlightFences;
+        private readonly FrameData[] _frameData;
         private int _currentFrame = 0;
         private readonly VkSwapchain? _oldSwapchain;
         private VkImage _depthImage;
@@ -45,9 +43,11 @@ namespace RockEngine.Vulkan
             context.MaxFramesPerFlight = images.Length;
 
             _swapChainImageViews = new VkImageView[images.Length];
-            _imageAvailableSemaphores = new VkSemaphore[context.MaxFramesPerFlight];
-            _renderFinishedSemaphores = new VkSemaphore[context.MaxFramesPerFlight];
-            _inFlightFences = new VkFence[context.MaxFramesPerFlight];
+            _frameData = new FrameData[context.MaxFramesPerFlight];
+            for (int i = 0; i < context.MaxFramesPerFlight; i++)
+            {
+                _frameData[i] = new FrameData(context);
+            }
 
             _context = context;
             _khrSwapchain = khrSwapchainApi;
@@ -93,7 +93,7 @@ namespace RockEngine.Vulkan
             SetImageSharingMode(context, ref createInfo);
 
             var swapchainApi = new KhrSwapchain(RenderingContext.Vk.Context);
-            swapchainApi.CreateSwapchain(context.Device, in createInfo, in RenderingContext.CustomAllocator, out var swapChain)
+            swapchainApi.CreateSwapchain(context.Device, in createInfo, in RenderingContext.CustomAllocator<VkSwapchain>(), out var swapChain)
                 .VkAssertResult("Failed to create swapchain");
 
             uint countImages = 0;
@@ -163,7 +163,6 @@ namespace RockEngine.Vulkan
         {
             FillImageViews(_context, _images, _format, _swapChainImageViews);
             CreateDepthResources();
-            CreateSyncObjects();
         }
 
         private void FillImageViews(RenderingContext context, Image[] images, Format format, VkImageView[] swapChainImageViews)
@@ -221,21 +220,11 @@ namespace RockEngine.Vulkan
             }
         }
 
-        private void CreateSyncObjects()
-        {
-            var fenceInfo = new FenceCreateInfo { Flags = FenceCreateFlags.SignaledBit, SType = StructureType.FenceCreateInfo };
-
-            for (int i = 0; i < _context.MaxFramesPerFlight; i++)
-            {
-                _imageAvailableSemaphores[i] = VkSemaphore.Create(_context);
-                _renderFinishedSemaphores[i] = VkSemaphore.Create(_context);
-                _inFlightFences[i] = VkFence.Create(_context, in fenceInfo);
-            }
-        }
-
         public Result AcquireNextImage(ref uint imageIndex)
         {
-            var fence = _inFlightFences[_currentFrame].VkObjectNative;
+            var currentFrame = _frameData[_currentFrame];
+            var fence = currentFrame.InFlightFence.VkObjectNative;
+
             // Wait for the previous frame to finish
             RenderingContext.Vk.WaitForFences(_context.Device.VkObjectNative, 1, in fence, true, ulong.MaxValue);
 
@@ -243,7 +232,13 @@ namespace RockEngine.Vulkan
             RenderingContext.Vk.ResetFences(_context.Device.VkObjectNative, 1, in fence);
 
             // Acquire the next image
-            Result result = _khrSwapchain.AcquireNextImage(_context.Device.VkObjectNative, _vkObject, ulong.MaxValue, _imageAvailableSemaphores[_currentFrame], fence, ref imageIndex);
+            Result result = _khrSwapchain.AcquireNextImage(
+                _context.Device.VkObjectNative,
+                _vkObject,
+                ulong.MaxValue,
+                currentFrame.ImageAvailableSemaphore,
+                default,
+                ref imageIndex);
             return result;
 
         }
@@ -251,9 +246,10 @@ namespace RockEngine.Vulkan
 
         public unsafe void SubmitCommandBuffers(CommandBuffer[] buffers, uint imageIndex)
         {
-            var signalSemaphores = _renderFinishedSemaphores[_currentFrame].VkObjectNative;
-            var waitSemaphores =  _imageAvailableSemaphores[_currentFrame].VkObjectNative;
-            var currentFence = _inFlightFences[_currentFrame].VkObjectNative;
+            var currentFrame = _frameData[_currentFrame];
+            var signalSemaphores = currentFrame.RenderFinishedSemaphore.VkObjectNative;
+            var waitSemaphores = currentFrame.ImageAvailableSemaphore.VkObjectNative;
+            var currentFence = currentFrame.InFlightFence.VkObjectNative;
             var pStageFlag = PipelineStageFlags.ColorAttachmentOutputBit;
 
             fixed (CommandBuffer* pcBuffers = buffers)
@@ -270,7 +266,7 @@ namespace RockEngine.Vulkan
                     PSignalSemaphores = &signalSemaphores
                 };
 
-                RenderingContext.Vk.QueueSubmit(_context.Device.GraphicsQueue, 1, in submitInfo, default)
+                RenderingContext.Vk.QueueSubmit(_context.Device.GraphicsQueue, 1, in submitInfo, currentFence)
                     .VkAssertResult("failed to submit draw command buffer!");
 
             }
@@ -342,7 +338,7 @@ namespace RockEngine.Vulkan
 
                 SetImageSharingMode(_context, ref createInfo);
 
-                _khrSwapchain.CreateSwapchain(_context.Device, in createInfo, in RenderingContext.CustomAllocator, out var swapChain)
+                _khrSwapchain.CreateSwapchain(_context.Device, in createInfo, in RenderingContext.CustomAllocator<VkSwapchain>(), out var swapChain)
                     .VkAssertResult("Failed to create swapchain");
 
                 uint countImages = 0;
@@ -350,7 +346,7 @@ namespace RockEngine.Vulkan
                 var images = new Image[countImages];
                 _khrSwapchain.GetSwapchainImages(_context.Device, swapChain, &countImages, images);
 
-                _khrSwapchain.DestroySwapchain(_context.Device, oldSwapchain, in RenderingContext.CustomAllocator);
+                _khrSwapchain.DestroySwapchain(_context.Device, oldSwapchain, in RenderingContext.CustomAllocator<VkSwapchain>());
                 _vkObject = swapChain;
                 _images = images;
                 _extent = extent;
@@ -506,6 +502,32 @@ namespace RockEngine.Vulkan
             }
             throw new InvalidOperationException("Failed to find supported format.");
         }
+        public class FrameData
+        {
+            public VkSemaphore ImageAvailableSemaphore { get; }
+            public VkSemaphore RenderFinishedSemaphore { get; }
+            public VkFence InFlightFence { get; }
+
+            public FrameData(RenderingContext context)
+            {
+                ImageAvailableSemaphore = VkSemaphore.Create(context);
+                RenderFinishedSemaphore = VkSemaphore.Create(context);
+
+                var fenceInfo = new FenceCreateInfo
+                {
+                    Flags = FenceCreateFlags.SignaledBit,
+                    SType = StructureType.FenceCreateInfo
+                };
+                InFlightFence = VkFence.Create(context, in fenceInfo);
+            }
+
+            public void Dispose()
+            {
+                ImageAvailableSemaphore.Dispose();
+                RenderFinishedSemaphore.Dispose();
+                InFlightFence.Dispose();
+            }
+        }
 
         protected unsafe override void Dispose(bool disposing)
         {
@@ -516,17 +538,12 @@ namespace RockEngine.Vulkan
 
             DisposeImageViews();
 
-            foreach (var item in _imageAvailableSemaphores)
+            foreach (var frameData in _frameData)
             {
-                item.Dispose();
+                frameData.Dispose();
             }
 
-            foreach (var item in _renderFinishedSemaphores)
-            {
-                item.Dispose();
-            }
-
-            _khrSwapchain.DestroySwapchain(_context.Device, _vkObject, null);
+            _khrSwapchain.DestroySwapchain(_context.Device, _vkObject, in RenderingContext.CustomAllocator<VkSwapchain>());
             _vkObject = default;
             _disposed = true;
         }

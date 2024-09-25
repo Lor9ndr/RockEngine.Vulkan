@@ -75,14 +75,14 @@ namespace RockEngine.Vulkan
                 .VkAssertResult("Failed to flush mapped memory ranges");
         }
 
-        public unsafe void CopyTo(VkBuffer dstBuffer, VkCommandPool commandPool)
+        public unsafe void CopyTo(VkBuffer dstBuffer, VkCommandPool commandPool, ulong srcOffset = 0, ulong dstOffset = 0)
         {
             using var commandBuffer = VkHelper.BeginSingleTimeCommands(commandPool);
 
             var copyRegion = new BufferCopy
             {
-                SrcOffset = 0,
-                DstOffset = 0,
+                SrcOffset = srcOffset,
+                DstOffset = dstOffset,
                 Size = _size
             };
 
@@ -112,6 +112,104 @@ namespace RockEngine.Vulkan
                     }
             }
         }
+        public unsafe void WriteToBuffer(nint data, nint destination, ulong size = Vk.WholeSize, ulong offset = 0)
+        {
+            switch (size)
+            {
+                case Vk.WholeSize:
+                    System.Buffer.MemoryCopy(data.ToPointer(), destination.ToPointer(), _size, _size);
+                    break;
+                default:
+                    {
+                        if (size > _size)
+                        {
+                            return;
+                        }
+
+                        var memoryOffset = (ulong*)((ulong)destination + offset);
+                        System.Buffer.MemoryCopy(data.ToPointer(), memoryOffset, size, size);
+                        break;
+                    }
+            }
+        }
+
+        public ValueTask WriteToBufferAsync<T>(T[] data, ulong size = Vk.WholeSize, ulong offset = 0) where T : unmanaged
+        {
+            if (data == null || data.Length == 0)
+            {
+                throw new ArgumentException("Data array is null or empty", nameof(data));
+            }
+            ulong dataSize = (ulong)(data.Length * Marshal.SizeOf<T>());
+
+            if (size == Vk.WholeSize)
+            {
+                size = dataSize;
+            }
+            else if (size > dataSize)
+            {
+                throw new ArgumentException("Specified size is larger than the data array size", nameof(size));
+            }
+
+            if (offset + size > _size)
+            {
+                throw new ArgumentException("Data exceeds buffer size", nameof(size));
+            }
+
+            unsafe
+            {
+                void* destination = null;
+                Map(ref destination, size, offset);
+
+                /*MemoryMarshal.CreateSpan(ref destination, size);
+                MemoryMarshal.Cast<T, byte>(data);*/
+                try
+                {
+                    fixed (T* dataPtr = data)
+                    {
+                        WriteToBuffer(dataPtr, destination, size, 0);
+                    }
+                    Flush(size, offset);
+                }
+                finally
+                {
+                    Unmap();
+                }
+            }
+            return default;
+        }
+
+        public ValueTask WriteToBufferAsync<T>(T data, ulong size = Vk.WholeSize, ulong offset = 0) where T : unmanaged
+        {
+            ulong dataSize = (ulong)(Marshal.SizeOf<T>());
+
+            if (size == Vk.WholeSize)
+            {
+                size = dataSize;
+            }
+            else if (size > dataSize)
+            {
+                throw new ArgumentException("Specified size is larger than the data array size", nameof(size));
+            }
+
+            if (offset + size > _size)
+            {
+                throw new ArgumentException("Data exceeds buffer size", nameof(size));
+            }
+
+            unsafe
+            {
+                void* destination = null;
+                Map(ref destination, size, offset);
+
+                WriteToBuffer(&data, destination, size, 0);
+                Flush(size, offset);
+
+                Unmap();
+            }
+            return default;
+        }
+
+
         public static ulong GetAlignment(ulong bufferSize, ulong minOffsetAlignment)
         {
             return minOffsetAlignment > 0 ? ((bufferSize - 1) / minOffsetAlignment + 1) * minOffsetAlignment : bufferSize;
@@ -135,7 +233,7 @@ namespace RockEngine.Vulkan
         {
             RenderingContext.Vk.UnmapMemory(_context.Device, _deviceMemory);
         }
-        public void BindVertexBuffer(VkCommandBuffer commandBuffer, ulong vertexOffset)
+        public void BindVertexBuffer(VkCommandBuffer commandBuffer, ulong vertexOffset = 0)
         {
             RenderingContext.Vk.CmdBindVertexBuffers(commandBuffer, 0, 1, in _vkObject, ref vertexOffset);
         }
@@ -161,6 +259,6 @@ namespace RockEngine.Vulkan
             }
         }
 
-    
+       
     }
 }

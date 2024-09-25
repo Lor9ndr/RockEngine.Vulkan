@@ -53,6 +53,6 @@ namespace RockEngine.Vulkan
         Vec4,
         Mat4,
         Int,
-        // Add other types as needed
+        Custom
     }
 }

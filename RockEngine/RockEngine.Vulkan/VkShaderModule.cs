@@ -147,7 +147,7 @@ namespace RockEngine.Vulkan
                 _descriptorSetLayouts.Add(new DescriptorSetLayoutReflected
                 {
                     Set = descriptorSet->Set,
-                    Bindings = bindings
+                    Bindings = bindings.ToArray()
                 });
             }
 
@@ -155,11 +155,11 @@ namespace RockEngine.Vulkan
 
             // Extract push constants
             uint pushConstantCount = 0;
-            reflectorApi.EnumeratePushConstantBlocks(in _reflectShaderModule, &pushConstantCount, null);
+            reflectorApi.EnumeratePushConstants(in _reflectShaderModule, &pushConstantCount, null);
             var pushConstants = new BlockVariable*[pushConstantCount];
             fixed (BlockVariable** iPushConstant = pushConstants)
             {
-                reflectorApi.EnumeratePushConstantBlocks(in _reflectShaderModule, &pushConstantCount, iPushConstant);
+                reflectorApi.EnumeratePushConstants(in _reflectShaderModule, &pushConstantCount, iPushConstant);
 
                 for (int i = 0; i < pushConstantCount; i++)
                 {
@@ -203,6 +203,12 @@ namespace RockEngine.Vulkan
             return Create(context, shaderCode, stage);
         }
 
+        public static VkShaderModule Create(RenderingContext context, string path, ShaderStageFlags stage)
+        {
+            var shaderCode = File.ReadAllBytes(path);
+            return Create(context, shaderCode, stage);
+        }
+
         public unsafe static VkShaderModule Create(RenderingContext context, byte[] bytes, ShaderStageFlags stage)
         {
             fixed (byte* pshaderCode = bytes)
@@ -213,10 +219,14 @@ namespace RockEngine.Vulkan
                     CodeSize = (nuint)bytes.Length,
                     PCode = (uint*)pshaderCode
                 };
-                RenderingContext.Vk.CreateShaderModule(context.Device, in shaderModuleCreateInfo, in RenderingContext.CustomAllocator, out var shaderModule)
-                    .VkAssertResult($"Failed to create shader module: {stage}");
+                RenderingContext.Vk.CreateShaderModule(
+                    context.Device, 
+                    in shaderModuleCreateInfo,
+                    in RenderingContext.CustomAllocator<VkShaderModule>(),
+                    out var shaderModule).VkAssertResult($"Failed to create shader module: {stage}");
+
                 var reflectorApi = Reflect.GetApi();
-                var reflected = new ReflectShaderModule();
+                var reflected = new ReflectShaderModule(Generator.KhronosSpirvToolsAssembler);
                 reflectorApi.CreateShaderModule((nuint)bytes.Length, pshaderCode, ref reflected);
 
                 return new VkShaderModule(context, shaderModule, stage, ref reflected);
@@ -232,10 +242,10 @@ namespace RockEngine.Vulkan
                     CodeSize = (nuint)(data.Length * sizeof(uint)),
                     PCode = pshaderCode
                 };
-                RenderingContext.Vk.CreateShaderModule(context.Device, in shaderModuleCreateInfo, in RenderingContext.CustomAllocator, out var shaderModule)
+                RenderingContext.Vk.CreateShaderModule(context.Device, in shaderModuleCreateInfo, in RenderingContext.CustomAllocator<VkShaderModule>(), out var shaderModule)
                     .VkAssertResult($"Failed to create shader module: {stage}");
                 var reflectorApi = Reflect.GetApi();
-                var reflected = new ReflectShaderModule();
+                var reflected = new ReflectShaderModule(Generator.KhronosSpirvToolsAssembler);
                 reflectorApi.CreateShaderModule((nuint)data.Length, pshaderCode, ref reflected);
 
                 return new VkShaderModule(context, shaderModule, stage, ref reflected);
@@ -281,7 +291,7 @@ namespace RockEngine.Vulkan
             }
 
             // Add other cases as needed
-
+            return ShaderVariableType.Custom;
             throw new NotSupportedException($"Unsupported shader variable type with traits: {traits}");
         }
         protected unsafe override void Dispose(bool disposing)
@@ -295,7 +305,7 @@ namespace RockEngine.Vulkan
 
                 if (_vkObject.Handle != default)
                 {
-                    RenderingContext.Vk.DestroyShaderModule(_context.Device, _vkObject, in RenderingContext.CustomAllocator);
+                    RenderingContext.Vk.DestroyShaderModule(_context.Device, _vkObject, in RenderingContext.CustomAllocator<VkShaderModule>());
                 }
 
                 _disposed = true;

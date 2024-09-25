@@ -3,7 +3,7 @@ using RockEngine.Editor.Layers;
 
 namespace RockEngine.Editor
 {
-    internal class EditorApplication : Application
+    public class EditorApplication : Application
     {
         public EditorApplication(int width, int height)
             : base("RockEngine", width, height)

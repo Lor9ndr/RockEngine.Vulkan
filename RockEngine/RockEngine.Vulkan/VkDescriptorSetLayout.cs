@@ -15,6 +15,12 @@ namespace RockEngine.Vulkan
             Bindings = bindingsArr;
         }
 
+
+        public static void Create(RenderingContext context)
+        {
+            
+        }
+
         public bool Equals(VkDescriptorSetLayout other)
         {
             if (SetLocation == other.SetLocation)

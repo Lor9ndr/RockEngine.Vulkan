@@ -4,8 +4,8 @@ namespace RockEngine.Vulkan
 {
     internal class DescriptorSetLayoutReflected
     {
-        internal uint Set;
+        public uint Set;
 
-        public List<DescriptorSetLayoutBindingReflected> Bindings { get; set; }
+        public DescriptorSetLayoutBindingReflected[] Bindings;
     }
 }

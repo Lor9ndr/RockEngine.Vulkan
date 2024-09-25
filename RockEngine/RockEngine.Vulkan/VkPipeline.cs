@@ -13,7 +13,6 @@ namespace RockEngine.Vulkan
         public VkPipelineLayout Layout => _pipelineLayout;
         public VkRenderPass RenderPass => _renderPass;
 
-
         public VkPipeline(RenderingContext context, string name, Pipeline pipeline, VkPipelineLayout pipelineLayout, VkRenderPass renderPass)
             : base(pipeline)
         {
@@ -25,7 +24,7 @@ namespace RockEngine.Vulkan
 
         public unsafe static VkPipeline Create(RenderingContext context, string name, ref GraphicsPipelineCreateInfo ci, VkRenderPass renderPass, VkPipelineLayout layout)
         {
-            RenderingContext.Vk.CreateGraphicsPipelines(context.Device, pipelineCache: default, 1, in ci, in RenderingContext.CustomAllocator, out Pipeline pipeline)
+            RenderingContext.Vk.CreateGraphicsPipelines(context.Device, pipelineCache: default, 1, in ci, in RenderingContext.CustomAllocator<VkPipeline>(), out Pipeline pipeline)
                   .VkAssertResult("Failed to create pipeline");
             return new VkPipeline(context, name, pipeline, layout, renderPass);
         }
@@ -39,10 +38,7 @@ namespace RockEngine.Vulkan
                     // Dispose managed state (managed objects).
                 }
 
-                unsafe
-                {
-                    RenderingContext.Vk.DestroyPipeline(_context.Device, _vkObject, in RenderingContext.CustomAllocator);
-                }
+                RenderingContext.Vk.DestroyPipeline(_context.Device, _vkObject, in RenderingContext.CustomAllocator<VkPipeline>());
                 _disposed = true;
             }
         }
