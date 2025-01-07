@@ -75,11 +75,9 @@ namespace RockEngine.Vulkan.Builders
             }
             VkInstance instanceWrapper;
 
-            var result = RenderingContext.Vk.CreateInstance(in instanceInfo, in CustomAllocator.CreateCallbacks<VkInstance>(), out Instance instance);
-            if (result != Result.Success)
-            {
-                throw new Exception($"Failed to create instance: {result}");
-            }
+            RenderingContext.Vk.CreateInstance(in instanceInfo, in CustomAllocator.CreateCallbacks<VkInstance>(), out Instance instance)
+                .VkAssertResult($"Failed to create instance");
+           
             instanceWrapper = new VkInstance(instance);
             if (validationLayerNames != null)
             {

@@ -73,7 +73,7 @@ namespace RockEngine.Vulkan
                     RenderingContext.Vk.AllocateCommandBuffers(_context.Device, ref allocateInfo, pCommandBuffers);
                 }
             }
-            return commandBuffers.Select(s=>new VkCommandBuffer(_context, in s, this)).ToArray();
+            return commandBuffers.Select(s => new VkCommandBuffer(_context, in s, this)).ToArray();
         }
 
         public unsafe void FreeCommandBuffer(VkCommandBuffer commandBuffer)
@@ -88,13 +88,28 @@ namespace RockEngine.Vulkan
 
         public void FreeCommandBuffers(VkCommandBuffer[] commandBuffers)
         {
-            var buffers = _commandBuffers.Select(s => s.VkObjectNative).ToArray().AsSpan();
             foreach (var item in commandBuffers)
             {
                 // Will call FreeCommandBuffer and then removes the element from array
                 item.Dispose();
             }
 
+        }
+
+        public VkCommandBuffer BeginSingleTimeCommands()
+        {
+            var allocInfo = new CommandBufferAllocateInfo
+            {
+                SType = StructureType.CommandBufferAllocateInfo,
+                Level = CommandBufferLevel.Primary,
+                CommandPool = this,
+                CommandBufferCount = 1
+            };
+            var commandBuffer = VkCommandBuffer.Create(in allocInfo, this);
+
+            commandBuffer.BeginSingleTimeCommand();
+
+            return commandBuffer;
         }
 
         public void ResetCommandPool(CommandPoolResetFlags flags = 0)

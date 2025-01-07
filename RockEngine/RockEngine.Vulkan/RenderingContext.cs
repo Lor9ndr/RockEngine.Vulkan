@@ -1,6 +1,4 @@
-﻿
-
-using RockEngine.Vulkan.Builders;
+﻿using RockEngine.Vulkan.Builders;
 
 using Silk.NET.Core;
 using Silk.NET.Vulkan;
@@ -19,6 +17,10 @@ namespace RockEngine.Vulkan
         public ISurfaceHandler Surface { get; }
         public int MaxFramesPerFlight { get; internal set;}
 
+        private static RenderingContext? _renderingContext;
+
+        public static RenderingContext GetCurrent() => _renderingContext ?? throw new InvalidOperationException("Rendering context was not created yet");
+
         public static ref AllocationCallbacks CustomAllocator<T>() => ref Vulkan.CustomAllocator.CreateCallbacks<T>();
 
         private static readonly string[] _validationLayers = ["VK_LAYER_KHRONOS_validation"];
@@ -27,10 +29,18 @@ namespace RockEngine.Vulkan
 
         public RenderingContext(IWindow window, string appName, int maxFramesPerFlight = 3)
         {
+            if (_renderingContext is not null)
+            {
+                // Have to think about supporting multiple windows with different contexts
+                throw new NotSupportedException("For now it is unsupported to have multiple contexts");
+            }
             Instance = CreateInstance(window, appName);
             Surface  = CreateSurface(window);
             Device = CreateDevice(Surface, Instance);
             MaxFramesPerFlight = maxFramesPerFlight;
+           
+            _renderingContext = this;
+
         }
 
         private SDLSurfaceHandler CreateSurface(IWindow window)
@@ -103,7 +113,7 @@ namespace RockEngine.Vulkan
                     break;
             }
 
-            Console.WriteLine($"{messageSeverity} ||| {message}");
+            Console.WriteLine($"{messageSeverity} ||| {message}\n{Environment.StackTrace}");
 
             // Reset console color to default
             Console.ResetColor();

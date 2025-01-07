@@ -1,8 +1,6 @@
 ﻿
 using Silk.NET.Vulkan;
 
-using System.Collections.Concurrent;
-
 namespace RockEngine.Vulkan
 {
     public record VkPipelineLayout : VkObject<PipelineLayout>
@@ -12,15 +10,16 @@ namespace RockEngine.Vulkan
 
         private readonly RenderingContext _context;
 
-        private static readonly ConcurrentDictionary<int, VkDescriptorSetLayout> _descriptorSetLayoutCache = new();
-       
-
         private VkPipelineLayout(RenderingContext context, PipelineLayout layout, PushConstantRange[] pushConstantRanges, VkDescriptorSetLayout[] descriptorSetLayouts)
             : base(layout)
         {
             PushConstantRanges = pushConstantRanges;
             DescriptorSetLayouts = descriptorSetLayouts;
             _context = context;
+            for (int i = 0; i < DescriptorSetLayouts.Length; i++)
+            {
+                DescriptorSetLayouts[i].PipelineLayout = this;
+            }
         }
 
 
@@ -56,44 +55,25 @@ namespace RockEngine.Vulkan
             {
                 foreach (var layout in shader.DescriptorSetLayouts)
                 {
-                    var layoutHash = ComputeLayoutHash(layout);
-                    var descriptorSetLayout = _descriptorSetLayoutCache.GetOrAdd(layoutHash, _ =>
+                    fixed (DescriptorSetLayoutBinding* pBindings = layout.Bindings.Select(s => (DescriptorSetLayoutBinding)s).ToArray())
                     {
-                        fixed (DescriptorSetLayoutBinding* pBindings = layout.Bindings.Select(s=>(DescriptorSetLayoutBinding)s).ToArray())
+                        var layoutInfo = new DescriptorSetLayoutCreateInfo
                         {
-                            var layoutInfo = new DescriptorSetLayoutCreateInfo
-                            {
-                                SType = StructureType.DescriptorSetLayoutCreateInfo,
-                                BindingCount = (uint)layout.Bindings.Length,
-                                PBindings = pBindings
-                            };
+                            SType = StructureType.DescriptorSetLayoutCreateInfo,
+                            BindingCount = (uint)layout.Bindings.Length,
+                            PBindings = pBindings
+                        };
 
-                            RenderingContext.Vk.CreateDescriptorSetLayout(context.Device, in layoutInfo, in RenderingContext.CustomAllocator<VkPipelineLayout>(), out var descriptorSet)
-                                .VkAssertResult("Failed to create descriptor set layout");
+                        RenderingContext.Vk.CreateDescriptorSetLayout(context.Device, in layoutInfo, in RenderingContext.CustomAllocator<VkPipelineLayout>(), out var descriptorSet)
+                            .VkAssertResult("Failed to create descriptor set layout");
+                        var setLayout = new VkDescriptorSetLayout(descriptorSet, layout.Set, layout.Bindings);
+                        setLayouts.Add(setLayout);
+                    }
 
-                            return new VkDescriptorSetLayout(descriptorSet, layout.Set, layout.Bindings);
-                        }
-                    });
-
-                    setLayouts.Add(descriptorSetLayout);
                 }
             }
 
             return setLayouts.ToArray();
-        }
-
-        private static int ComputeLayoutHash(DescriptorSetLayoutReflected layout)
-        {
-            var hash = new HashCode();
-            hash.Add(layout.Set);
-            foreach (var binding in layout.Bindings)
-            {
-                hash.Add(binding.Binding);
-                hash.Add(binding.DescriptorType);
-                hash.Add(binding.DescriptorCount);
-                hash.Add(binding.StageFlags);
-            }
-            return hash.ToHashCode();
         }
 
         public VkDescriptorSetLayout GetSetLayout(uint location)

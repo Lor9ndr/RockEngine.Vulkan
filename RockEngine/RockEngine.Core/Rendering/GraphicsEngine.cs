@@ -21,7 +21,6 @@ namespace RockEngine.Core.Rendering
         public uint CurrentImageIndex { get => _currentImageIndex; private set => _currentImageIndex = value; }
 
         private readonly VkCommandBuffer[] _renderCommandBuffers;
-        private readonly SemaphoreSlim _renderSemaphore;
         public GraphicsEngine(RenderingContext renderingContext)
         {
             _renderingContext = renderingContext;
@@ -35,7 +34,6 @@ namespace RockEngine.Core.Rendering
             _renderCommandBuffers = _commandBufferPool.AllocateCommandBuffers((uint)_renderingContext.MaxFramesPerFlight);
             _swapchain = VkSwapchain.Create(_renderingContext, _renderingContext.Surface);
             _renderPassManager = new RenderPassManager(_renderingContext);
-            _renderSemaphore = new SemaphoreSlim(1, 1);
         }
 
         private VkCommandBuffer GetCurrentCommandBuffer()
@@ -68,7 +66,7 @@ namespace RockEngine.Core.Rendering
                 PInheritanceInfo = default
             };
             commandBuffer.Reset(CommandBufferResetFlags.None);
-            commandBuffer.Begin(ref beginInfo);
+            commandBuffer.Begin(in beginInfo);
 
             return commandBuffer;
         }

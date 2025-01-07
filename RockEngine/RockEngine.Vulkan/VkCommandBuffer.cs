@@ -14,14 +14,14 @@ namespace RockEngine.Vulkan
             _commandPool = commandPool;
         }
 
-        public void Begin(ref CommandBufferBeginInfo beginInfo)
+        public void Begin(in CommandBufferBeginInfo beginInfo)
         {
-            RenderingContext.Vk.BeginCommandBuffer(_vkObject, ref beginInfo)
+            RenderingContext.Vk.BeginCommandBuffer(_vkObject, in beginInfo)
                 .VkAssertResult("Failed to begin command buffer!");
         }
-        public void Begin(ref CommandBufferBeginInfo beginInfo, Action untilEndAction)
+        public void Begin(in CommandBufferBeginInfo beginInfo, Action untilEndAction)
         {
-            Begin(ref beginInfo);
+            Begin(in beginInfo);
             untilEndAction();
             End();
         }
@@ -40,17 +40,17 @@ namespace RockEngine.Vulkan
                 DstOffset = 0,
                 Size = size
             };
-            RenderingContext.Vk.CmdCopyBuffer(_vkObject, srcBuffer, dstBuffer, 1, ref bufferCopy);
+            RenderingContext.Vk.CmdCopyBuffer(_vkObject, srcBuffer, dstBuffer, 1, in bufferCopy);
         }
 
-        public void SetViewport(ref Viewport viewport)
+        public void SetViewport(in Viewport viewport)
         {
-            RenderingContext.Vk.CmdSetViewport(_vkObject, 0, 1, ref viewport);
+            RenderingContext.Vk.CmdSetViewport(_vkObject, 0, 1, in viewport);
         }
 
-        public void SetScissor(ref Rect2D scissor)
+        public void SetScissor(in Rect2D scissor)
         {
-            RenderingContext.Vk.CmdSetScissor(_vkObject, 0, 1, ref scissor);
+            RenderingContext.Vk.CmdSetScissor(_vkObject, 0, 1, in scissor);
         }
 
         public void Draw(uint vertexCount, uint instanceCount, uint firstVertex, uint firstInstance)
@@ -66,6 +66,10 @@ namespace RockEngine.Vulkan
         public void BeginRenderPass(in RenderPassBeginInfo renderPassBeginInfo, SubpassContents contents)
         {
             RenderingContext.Vk.CmdBeginRenderPass(this,in renderPassBeginInfo, contents);
+        }
+        public void EndRenderPass()
+        {
+            RenderingContext.Vk.CmdEndRenderPass(this);
         }
         public void BindVertexBuffer(VkBuffer vertexBuffer, ulong offset = 0)
         {

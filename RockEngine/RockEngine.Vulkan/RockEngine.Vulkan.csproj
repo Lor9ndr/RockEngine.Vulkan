@@ -10,11 +10,11 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Silk.NET.SPIRV.Reflect" Version="2.21.0" />
-    <PackageReference Include="Silk.NET.Vulkan" Version="2.21.0" />
-    <PackageReference Include="Silk.NET.Vulkan.Extensions.KHR" Version="2.21.0" />
-    <PackageReference Include="Silk.NET.Windowing" Version="2.21.0" />
-    <PackageReference Include="System.Text.Json" Version="8.0.4" />
+    <PackageReference Include="Silk.NET.SPIRV.Reflect" Version="2.22.0" />
+    <PackageReference Include="Silk.NET.Vulkan" Version="2.22.0" />
+    <PackageReference Include="Silk.NET.Vulkan.Extensions.KHR" Version="2.22.0" />
+    <PackageReference Include="Silk.NET.Windowing" Version="2.22.0" />
+    <PackageReference Include="System.Text.Json" Version="9.0.0" />
   </ItemGroup>
 
 </Project>

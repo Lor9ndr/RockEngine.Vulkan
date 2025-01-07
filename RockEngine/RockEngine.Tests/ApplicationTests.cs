@@ -10,14 +10,15 @@ using RockEngine.Editor;
 
 namespace RockEngine.Tests
 {
-    public class ApplicationTests
+    public class ApplicationTests 
     {
         private class TestLayer : ILayer
         {
             public bool IsAttached;
-            public void OnAttach()
+            public Task OnAttach()
             {
                 IsAttached = true;
+                return Task.CompletedTask;
             }
 
             public void OnDetach()
@@ -44,9 +45,10 @@ namespace RockEngine.Tests
                 OnLoad += TestApplication_OnLoad;
             }
 
-            private void TestApplication_OnLoad()
+            private Task TestApplication_OnLoad()
             {
                 Loaded = true;
+                return Task.CompletedTask;
             }
 
             public RenderingContext RenderingContext => _renderingContext;
@@ -68,17 +70,17 @@ namespace RockEngine.Tests
             }
         }
 
-        private static TestApplication _application;
+            
+        private static TestApplication _application = new TestApplication(Width, Height);
         private const int Width = 800;
         private const int Height = 600;
         private static Task _applicationTask;
 
 
-        [Before(Class)]
+        [Before( Class)]
         public static async Task SetUpApplication()
         {
-            _application = new TestApplication(Width, Height);
-            _applicationTask = Task.Run(() => _application.Run());
+            _applicationTask =  _application.Run();
 
             // Wait for the application to load
             while (!_application.Loaded)

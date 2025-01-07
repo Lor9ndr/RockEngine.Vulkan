@@ -20,7 +20,6 @@ namespace RockEngine.Vulkan
             return new VkDescriptorPool(context, descriptorPool);
         }
 
-
         public unsafe DescriptorSet AllocateDescriptorSet(DescriptorSetLayout setLayout)
         {
             var allocInfo = new DescriptorSetAllocateInfo
@@ -34,6 +33,7 @@ namespace RockEngine.Vulkan
                 .VkAssertResult("Failed to allocate descriptor set");
             return descriptorSet;
         }
+
         public unsafe DescriptorSet AllocateDescriptorSet(VkDescriptorSetLayout setLayout)
         {
             var allocInfo = new DescriptorSetAllocateInfo

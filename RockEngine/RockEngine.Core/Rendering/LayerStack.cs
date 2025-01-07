@@ -4,7 +4,7 @@ namespace RockEngine.Core.Rendering
 {
     public interface ILayer
     {
-        void OnAttach();
+        Task OnAttach();
         void OnDetach();
         void OnUpdate();
         void OnRender(VkCommandBuffer vkCommandBuffer);
@@ -14,12 +14,12 @@ namespace RockEngine.Core.Rendering
     public class LayerStack
     {
         public int Count => _layers.Count;
-        private readonly List<ILayer> _layers = new List<ILayer>(4);
+        private readonly List<ILayer> _layers = new List<ILayer>();
 
-        public void PushLayer(ILayer layer)
+        public Task PushLayer(ILayer layer)
         {
             _layers.Add(layer);
-            layer.OnAttach();
+            return layer.OnAttach();
         }
 
         public void PopLayer(ILayer layer)

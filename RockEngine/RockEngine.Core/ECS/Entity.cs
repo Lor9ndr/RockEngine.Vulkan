@@ -1,22 +1,70 @@
 ﻿using RockEngine.Core.ECS.Components;
+using RockEngine.Core.Rendering;
 
 namespace RockEngine.Core.ECS
 {
     public class Entity
     {
-        public List<IComponent> components = new List<IComponent>();
+        private static ulong _id = 0;
 
-        public void AddComponent<T>(T component) where T : IComponent
+        internal static ulong ID;
+
+        private readonly List<IComponent> _components = [];
+        public Transform Transform { get; private set; }
+
+        public event Action OnDestroy;
+
+        public Entity()
         {
-            components.Add(component);
+            ID = _id++;
+            Transform = AddComponent<Transform>();
         }
-        public void RemoveComponent<T>(T component) where T : IComponent
+
+        public T AddComponent<T>() where T : IComponent, new()
         {
-            components.Remove(component);
+            var component = new T();
+            _components.Add(component);
+            component.SetEntity(this);
+            return component;
         }
-        public T GetComponent<T>() where T : IComponent
+
+        public bool RemoveComponent<T>(T component) where T : IComponent
         {
-           return components.OfType<T>().FirstOrDefault() ?? throw new InvalidOperationException($"Failed to find component of type {typeof(T)}");
+            if (component is Transform)
+            {
+                throw new Exception("Can not remove Transform from entity");
+            }
+            return _components.Remove(component);
+        }
+
+        public T? GetComponent<T>() where T : IComponent
+        {
+           return _components.OfType<T>().FirstOrDefault();
+        }
+
+        public async ValueTask Update(Renderer renderer)
+        {
+            foreach (var item in _components)
+            {
+                await item.Update(renderer);
+            }
+        }
+
+        public async ValueTask OnStart(Renderer renderer)
+        {
+            foreach (var item in _components)
+            {
+                await item.OnStart(renderer);
+            }
+        }
+
+        public void Destroy()
+        {
+            foreach (var item in _components)
+            {
+                item.Destroy();
+            }
+            OnDestroy?.Invoke();
         }
     }
 }

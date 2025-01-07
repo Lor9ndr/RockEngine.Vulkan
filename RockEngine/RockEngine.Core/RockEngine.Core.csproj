@@ -10,16 +10,41 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <ShaderFiles Include="**\*.vert" />
+    <ShaderFiles Include="**\*.frag" />
+    <ShaderFilesInclude Include="**\*.glsl" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="AssimpNet" Version="4.1.0" />
     <PackageReference Include="ImGui.NET" Version="1.91.0.1" />
-    <PackageReference Include="Silk.NET.Input" Version="2.21.0" />
-    <PackageReference Include="Silk.NET.SDL" Version="2.21.0" />
-    <PackageReference Include="SkiaSharp" Version="2.88.8" />
-    <PackageReference Include="System.Text.Json" Version="8.0.4" />
+    <PackageReference Include="Silk.NET.Input" Version="2.22.0" />
+    <PackageReference Include="Silk.NET.SDL" Version="2.22.0" />
+    <PackageReference Include="SimpleInjector" Version="5.5.0" />
+    <PackageReference Include="SkiaSharp" Version="3.116.1" />
+    <PackageReference Include="System.Net.Http" Version="4.3.4" />
+    <PackageReference Include="System.Text.Json" Version="9.0.0" />
+    <PackageReference Include="System.Text.RegularExpressions" Version="4.3.1" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\RockEngine.Vulkan\RockEngine.Vulkan.csproj" />
   </ItemGroup>
 
+  <Target Name="CopyShaderIncludes" BeforeTargets="PostBuild">
+    <Copy SourceFiles="@(ShaderInclude)" DestinationFolder="$(ShadersOutputPath)" />
+  </Target>
+
+  <Target Name="PostBuild" AfterTargets="PostBuildEvent">
+    <!-- Echo each shader file found -->
+    <Message Importance="high" Text="Compiling shader file: %(ShaderFiles.FullPath)" />
+
+    <!-- Compile each shader file individually -->
+    <Exec Command="glslc.exe -I&quot;$(ProjectDir)Shaders\Include&quot; &quot;%(ShaderFiles.FullPath)&quot; -o &quot;%(ShaderFiles.FullPath).spv&quot;" />
+  </Target>
+
+  <Target Name="CopyCompiledShaders" AfterTargets="PostBuild">
+    <Copy SourceFiles="@(CompiledShader)" DestinationFolder="$(ShadersOutputPath)" />
+  </Target>
 
 </Project>

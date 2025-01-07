@@ -17,7 +17,7 @@ namespace RockEngine.Vulkan
 
         private readonly FrameData[] _frameData;
         private int _currentFrame = 0;
-        private readonly VkSwapchain? _oldSwapchain;
+        private VkSwapchain? _oldSwapchain;
         private VkImage _depthImage;
         private VkImageView _depthImageView;
         private Format _depthFormat;
@@ -82,7 +82,7 @@ namespace RockEngine.Vulkan
                 ImageColorSpace = surfaceFormat.ColorSpace,
                 ImageExtent = extent,
                 ImageArrayLayers = 1,
-                ImageUsage = ImageUsageFlags.ColorAttachmentBit,
+                ImageUsage = ImageUsageFlags.ColorAttachmentBit | ImageUsageFlags.TransferSrcBit,
                 PreTransform = swapChainSupport.Capabilities.CurrentTransform,
                 CompositeAlpha = CompositeAlphaFlagsKHR.OpaqueBitKhr,
                 PresentMode = presentMode,
@@ -161,8 +161,14 @@ namespace RockEngine.Vulkan
 
         private void InitializeSwapchainResources()
         {
+            // Recreate image views
             FillImageViews(_context, _images, _format, _swapChainImageViews);
+
+            // Recreate depth resources
             CreateDepthResources();
+            // Notify listeners about the swapchain recreation
+            OnSwapchainRecreate?.Invoke(this);
+
         }
 
         private void FillImageViews(RenderingContext context, Image[] images, Format format, VkImageView[] swapChainImageViews)
@@ -232,14 +238,13 @@ namespace RockEngine.Vulkan
             RenderingContext.Vk.ResetFences(_context.Device.VkObjectNative, 1, in fence);
 
             // Acquire the next image
-            Result result = _khrSwapchain.AcquireNextImage(
+            return _khrSwapchain.AcquireNextImage(
                 _context.Device.VkObjectNative,
                 _vkObject,
                 ulong.MaxValue,
                 currentFrame.ImageAvailableSemaphore,
                 default,
                 ref imageIndex);
-            return result;
 
         }
 
@@ -294,17 +299,21 @@ namespace RockEngine.Vulkan
 
         public void RecreateSwapchain()
         {
+            // Wait until the window is no longer minimized
             while (_surface.Window.WindowState == Silk.NET.Windowing.WindowState.Minimized)
             {
                 _surface.Window.DoEvents();
             }
+
+            // Wait for the device to finish any ongoing operations
             _context.Device.GraphicsQueue.WaitIdle();
             _context.Device.PresentQueue.WaitIdle();
 
-
-            var oldSwapchain = _vkObject;
-
+            // Dispose of old framebuffers and image views
             DisposeImageViews();
+
+            // Recreate the swapchain
+            var oldSwapchain = _vkObject;
 
             unsafe
             {
@@ -345,20 +354,19 @@ namespace RockEngine.Vulkan
                 _khrSwapchain.GetSwapchainImages(_context.Device, swapChain, ref countImages, null);
                 var images = new Image[countImages];
                 _khrSwapchain.GetSwapchainImages(_context.Device, swapChain, &countImages, images);
-
                 _khrSwapchain.DestroySwapchain(_context.Device, oldSwapchain, in RenderingContext.CustomAllocator<VkSwapchain>());
                 _vkObject = swapChain;
                 _images = images;
                 _extent = extent;
+
+                // Recreate image views and framebuffers
                 InitializeSwapchainResources();
                 _currentFrame = 0;
-                OnSwapchainRecreate?.Invoke(this);
             }
         }
 
         private void DisposeImageViews()
         {
-            
             foreach (var item in _swapChainImageViews)
             {
                 item.Dispose();
@@ -502,7 +510,8 @@ namespace RockEngine.Vulkan
             }
             throw new InvalidOperationException("Failed to find supported format.");
         }
-        public class FrameData
+
+        private class FrameData
         {
             public VkSemaphore ImageAvailableSemaphore { get; }
             public VkSemaphore RenderFinishedSemaphore { get; }

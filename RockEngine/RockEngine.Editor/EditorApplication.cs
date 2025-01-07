@@ -11,10 +11,10 @@ namespace RockEngine.Editor
             OnLoad += Load;
         }
 
-        private void Load()
+        private async Task Load()
         {
-            PushLayer(new EditorLayer());
-            PushLayer(new ImGuiLayer(_renderingContext, _graphicsEngine, _graphicsEngine.RenderPassManager, _inputContext));
+            await PushLayer(new EditorLayer(_world, _renderingContext,_graphicsEngine, _renderer, _inputContext));
+/*            await PushLayer(new ImGuiLayer(_renderingContext, _graphicsEngine, _graphicsEngine.RenderPassManager, _inputContext));*/
         }
     }
 }

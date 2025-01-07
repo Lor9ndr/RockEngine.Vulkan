@@ -1,7 +1,6 @@
 ﻿
 using Silk.NET.Vulkan;
 
-using System.Drawing;
 using System.Runtime.InteropServices;
 
 using Buffer = Silk.NET.Vulkan.Buffer;
@@ -12,31 +11,30 @@ namespace RockEngine.Vulkan
     {
         private readonly RenderingContext _context;
         private readonly VkDeviceMemory _deviceMemory;
-        private readonly ulong _size;
         private readonly BufferUsageFlags _usage;
-
-        public ulong Size => _size;
+      
+        public ulong Size => _deviceMemory.Size;
 
         public VkBuffer(RenderingContext context, in Buffer bufferNative, VkDeviceMemory deviceMemory, ulong size, BufferUsageFlags usage)
             : base(in bufferNative)
         {
             _context = context;
             _deviceMemory = deviceMemory;
-            _size = size;
             _usage = usage;
-            _size = usage switch
-            {
-                BufferUsageFlags.UniformBufferBit => GetAlignment(_size, _context.Device.PhysicalDevice.Properties.Limits.MinUniformBufferOffsetAlignment),
-                _ => GetAlignment(_size, 256),
-            };
+           
         }
 
         public unsafe static VkBuffer Create(RenderingContext context, ulong size, BufferUsageFlags usage, MemoryPropertyFlags properties)
         {
+            var allignmentSize = usage switch
+            {
+                BufferUsageFlags.UniformBufferBit => GetAlignment(size, context.Device.PhysicalDevice.Properties.Limits.MinUniformBufferOffsetAlignment),
+                _ => GetAlignment(size, 256),
+            };
             var bufferInfo = new BufferCreateInfo
             {
                 SType = StructureType.BufferCreateInfo,
-                Size = size,
+                Size = allignmentSize,
                 Usage = usage,
                 SharingMode = SharingMode.Exclusive
             };
@@ -52,18 +50,39 @@ namespace RockEngine.Vulkan
 
             return new VkBuffer(context, bufferHandle, deviceMemory, size, usage);
         }
-        public unsafe static VkBuffer CreateAndCopyToStagingBuffer(RenderingContext context, void* data, ulong size )
+
+        public unsafe static VkBuffer CreateAndCopyToStagingBuffer(RenderingContext context, void* data, ulong size)
         {
-            var stagingBuffer = Create(context, size, BufferUsageFlags.TransferSrcBit, MemoryPropertyFlags.HostVisibleBit);
+            // Create a staging buffer with TransferSrcBit and HostVisibleBit
+            var stagingBuffer = Create(context, size, BufferUsageFlags.TransferSrcBit, MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit);
+
+            // Map the staging buffer memory
             var destination = IntPtr.Zero.ToPointer();
             stagingBuffer.Map(ref destination);
+
+            // Write data to the staging buffer
             stagingBuffer.WriteToBuffer(data, destination);
+
+            // Flush the staging buffer to ensure data visibility
             stagingBuffer.Flush();
+
+            // Unmap the memory
+            stagingBuffer.Unmap();
+
+            return stagingBuffer;
+        }
+
+
+        public static async ValueTask<VkBuffer> CreateAndCopyToStagingBuffer<T>(RenderingContext context, T[] data, ulong size) where T:unmanaged
+        {
+            var stagingBuffer = Create(context, size, BufferUsageFlags.TransferSrcBit, MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit);
+            await stagingBuffer.WriteToBufferAsync(data);
             return stagingBuffer;
         }
 
         public unsafe void Flush(ulong size = Vk.WholeSize, ulong offset = 0)
         {
+
             var mappedRange = new MappedMemoryRange
             {
                 SType = StructureType.MappedMemoryRange,
@@ -71,25 +90,71 @@ namespace RockEngine.Vulkan
                 Offset = offset,
                 Size = size
             };
+
             RenderingContext.Vk.FlushMappedMemoryRanges(_context.Device, 1, &mappedRange)
                 .VkAssertResult("Failed to flush mapped memory ranges");
         }
 
+
         public unsafe void CopyTo(VkBuffer dstBuffer, VkCommandPool commandPool, ulong srcOffset = 0, ulong dstOffset = 0)
         {
-            using var commandBuffer = VkHelper.BeginSingleTimeCommands(commandPool);
+            using var commandBuffer = commandPool.BeginSingleTimeCommands();
 
             var copyRegion = new BufferCopy
             {
                 SrcOffset = srcOffset,
                 DstOffset = dstOffset,
-                Size = _size
+                Size = Size,
             };
 
-            RenderingContext.Vk.CmdCopyBuffer(commandBuffer, this, dstBuffer, 1, &copyRegion);
+            RenderingContext.Vk.CmdCopyBuffer(commandBuffer, this, dstBuffer, 1, in copyRegion);
 
-            VkHelper.EndSingleTimeCommands(commandBuffer);
+            commandBuffer.End();
+            var cmdNative = commandBuffer.VkObjectNative;
+            var submitInfo = new SubmitInfo() 
+            { 
+                SType = StructureType.SubmitInfo, 
+                PCommandBuffers = &cmdNative, 
+                CommandBufferCount = 1, 
+            };
+            _context.Device.GraphicsQueue.Submit(in submitInfo);
+            _context.Device.GraphicsQueue.WaitIdle();
+
         }
+        public unsafe void AddBufferMemoryBarrier(
+            VkCommandBuffer commandBuffer,
+            AccessFlags srcAccessMask,
+            AccessFlags dstAccessMask,
+            PipelineStageFlags srcStageMask,
+            PipelineStageFlags dstStageMask
+        )
+        {
+            var bufferMemoryBarrier = new BufferMemoryBarrier
+            {
+                SType = StructureType.BufferMemoryBarrier,
+                SrcAccessMask = srcAccessMask,
+                DstAccessMask = dstAccessMask,
+                SrcQueueFamilyIndex = 0,
+                DstQueueFamilyIndex = 0,
+                Buffer = _vkObject,
+                Offset = 0,
+                Size = Size,
+            };
+
+            RenderingContext.Vk.CmdPipelineBarrier(
+                commandBuffer,
+                srcStageMask,
+                dstStageMask,
+                0,
+                0,
+                null,
+                1,
+                &bufferMemoryBarrier,
+                0,
+                null
+            );
+        }
+
 
 
         public unsafe void WriteToBuffer(void* data, void* destination, ulong size = Vk.WholeSize, ulong offset = 0)
@@ -97,13 +162,13 @@ namespace RockEngine.Vulkan
             switch (size)
             {
                 case Vk.WholeSize:
-                    System.Buffer.MemoryCopy(data, destination, _size, _size);
+                    System.Buffer.MemoryCopy(data, destination, Size, Size);
                     break;
                 default:
                     {
-                        if (size > _size)
+                        if (size > Size)
                         {
-                            return;
+                            throw new Exception("Size more than buffer size");
                         }
 
                         var memoryOffset = (ulong*)((ulong)destination + offset);
@@ -112,27 +177,7 @@ namespace RockEngine.Vulkan
                     }
             }
         }
-        public unsafe void WriteToBuffer(nint data, nint destination, ulong size = Vk.WholeSize, ulong offset = 0)
-        {
-            switch (size)
-            {
-                case Vk.WholeSize:
-                    System.Buffer.MemoryCopy(data.ToPointer(), destination.ToPointer(), _size, _size);
-                    break;
-                default:
-                    {
-                        if (size > _size)
-                        {
-                            return;
-                        }
-
-                        var memoryOffset = (ulong*)((ulong)destination + offset);
-                        System.Buffer.MemoryCopy(data.ToPointer(), memoryOffset, size, size);
-                        break;
-                    }
-            }
-        }
-
+      
         public ValueTask WriteToBufferAsync<T>(T[] data, ulong size = Vk.WholeSize, ulong offset = 0) where T : unmanaged
         {
             if (data == null || data.Length == 0)
@@ -140,17 +185,17 @@ namespace RockEngine.Vulkan
                 throw new ArgumentException("Data array is null or empty", nameof(data));
             }
             ulong dataSize = (ulong)(data.Length * Marshal.SizeOf<T>());
-
+            ulong actualSize = size;
             if (size == Vk.WholeSize)
             {
-                size = dataSize;
+                actualSize = dataSize;
             }
-            else if (size > dataSize)
+            else if (actualSize > dataSize)
             {
                 throw new ArgumentException("Specified size is larger than the data array size", nameof(size));
             }
 
-            if (offset + size > _size)
+            if (offset + actualSize > Size)
             {
                 throw new ArgumentException("Data exceeds buffer size", nameof(size));
             }
@@ -159,14 +204,11 @@ namespace RockEngine.Vulkan
             {
                 void* destination = null;
                 Map(ref destination, size, offset);
-
-                /*MemoryMarshal.CreateSpan(ref destination, size);
-                MemoryMarshal.Cast<T, byte>(data);*/
                 try
                 {
                     fixed (T* dataPtr = data)
                     {
-                        WriteToBuffer(dataPtr, destination, size, 0);
+                        WriteToBuffer(dataPtr, destination, actualSize, 0);
                     }
                     Flush(size, offset);
                 }
@@ -181,17 +223,17 @@ namespace RockEngine.Vulkan
         public ValueTask WriteToBufferAsync<T>(T data, ulong size = Vk.WholeSize, ulong offset = 0) where T : unmanaged
         {
             ulong dataSize = (ulong)(Marshal.SizeOf<T>());
-
+            ulong actualSize = size;
             if (size == Vk.WholeSize)
             {
-                size = dataSize;
+                actualSize = dataSize;
             }
-            else if (size > dataSize)
+            else if (actualSize > dataSize)
             {
                 throw new ArgumentException("Specified size is larger than the data array size", nameof(size));
             }
 
-            if (offset + size > _size)
+            if (offset + actualSize > Size)
             {
                 throw new ArgumentException("Data exceeds buffer size", nameof(size));
             }
@@ -200,11 +242,15 @@ namespace RockEngine.Vulkan
             {
                 void* destination = null;
                 Map(ref destination, size, offset);
-
-                WriteToBuffer(&data, destination, size, 0);
-                Flush(size, offset);
-
-                Unmap();
+                try
+                {
+                    WriteToBuffer(&data, destination, actualSize, 0);
+                    Flush(size, offset);
+                }
+                finally
+                {
+                    Unmap();
+                }
             }
             return default;
         }
@@ -212,7 +258,7 @@ namespace RockEngine.Vulkan
 
         public static ulong GetAlignment(ulong bufferSize, ulong minOffsetAlignment)
         {
-            return minOffsetAlignment > 0 ? ((bufferSize - 1) / minOffsetAlignment + 1) * minOffsetAlignment : bufferSize;
+            return (bufferSize + minOffsetAlignment - 1) / minOffsetAlignment * minOffsetAlignment;
         }
 
 

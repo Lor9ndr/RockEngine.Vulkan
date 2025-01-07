@@ -2,11 +2,13 @@
 using RockEngine.Core.Rendering;
 using RockEngine.Vulkan;
 
+using System.Diagnostics;
 using System.Numerics;
+using System.Runtime.CompilerServices;
 
 namespace RockEngine.Core.ECS.Components
 {
-    public class Camera : IComponent, IRenderable
+    public class Camera : Component
     {
         public const int MAX_FOV = 120;
         public const int MIN_FOV = 30;
@@ -48,7 +50,6 @@ namespace RockEngine.Core.ECS.Components
             set
             {
                 _aspectRatio = value;
-                UpdateProjectionMatrix();
             }
         }
 
@@ -58,7 +59,6 @@ namespace RockEngine.Core.ECS.Components
             set
             {
                 _nearClip = value;
-                UpdateProjectionMatrix();
             }
         }
 
@@ -68,9 +68,9 @@ namespace RockEngine.Core.ECS.Components
             set
             {
                 _farClip = value;
-                UpdateProjectionMatrix();
             }
         }
+
         public Vector3 Front
         {
             get => _front;
@@ -90,9 +90,9 @@ namespace RockEngine.Core.ECS.Components
                 // If you want to read more about this you can try researching a topic called gimbal lock
                 var angle = Math.Clamp(value, -89f, 89f);
                 _pitch = MathHelper.DegreesToRadians(angle);
-
             }
         }
+
         public float Yaw
         {
             get => MathHelper.RadiansToDegrees(_yaw);
@@ -109,10 +109,10 @@ namespace RockEngine.Core.ECS.Components
             _nearClip = 0.1f;
             _farClip = 1000;
         }
-        public void UpdateViewMatrix(Vector3 position)
+        public void UpdateViewMatrix()
         {
-            _viewMatrix = Matrix4x4.CreateLookAt(position, position + Front, _up);
-            UpdateViewProjectionMatrix();
+            _viewMatrix = Matrix4x4.CreateLookAt(Entity.Transform.Position, Entity.Transform.Position + Front, _up);
+            UpdateProjectionMatrix();
         }
 
         public void UpdateProjectionMatrix()
@@ -128,7 +128,7 @@ namespace RockEngine.Core.ECS.Components
             _viewProjectionMatrix = _viewMatrix * _projectionMatrix;
         }
 
-        public void UpdateVectors(Vector3 position)
+        public void UpdateVectors()
         {
             // First the front matrix is calculated using some basic trigonometry
             _front = new Vector3(MathF.Cos(_pitch) * MathF.Cos(_yaw), MathF.Sin(_pitch), MathF.Cos(_pitch) * MathF.Sin(_yaw));
@@ -141,22 +141,25 @@ namespace RockEngine.Core.ECS.Components
             // not be what you need for all cameras so keep this in mind if you do not want a FPS camera
             _right = Vector3.Normalize(Vector3.Cross(_front, Vector3.UnitY));
             _up = Vector3.Normalize(Vector3.Cross(_right, _front));
-            UpdateViewMatrix(position);
+            UpdateViewMatrix();
         }
 
-        public ValueTask Init(RenderingContext context, Renderer renderer)
+        public override ValueTask OnStart(Renderer renderer)
         {
             return default;
         }
 
-        public ValueTask Render(Renderer renderer)
-        {
-            return default;
-        }
 
-        public void Update()
+        public override async ValueTask Update(Renderer renderer)
         {
-            throw new NotImplementedException();
+            UpdateVectors();
+            renderer.CurrentCamera = this;
+            //renderer.BindUniformBuffer(_cameraBuffer, 0);
+            //renderer.SetCamera(this);
+        }
+        private struct CameraData
+        {
+            public Matrix4x4 ViewProjectionMatrix;
         }
     }
 }

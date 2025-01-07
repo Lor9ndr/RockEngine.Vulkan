@@ -15,7 +15,7 @@ namespace RockEngine.Vulkan.Builders
         private PipelineStageBuilder _pipelineStageBuilder = new PipelineStageBuilder();
         private VulkanPipelineVertexInputStateBuilder _vertexInputStateBuilder;
         private VulkanInputAssemblyBuilder _inputAssemblyBuilder;
-        private VulkanViewportStateInfoBuilder _viewportStateBuilder;
+        private VulkanViewportStateInfoBuilder? _viewportStateBuilder;
         private VulkanRasterizerBuilder _rasterizerBuilder;
         private VulkanMultisampleStateInfoBuilder _multisampleStateBuilder;
         private VulkanColorBlendStateBuilder _colorBlendStateBuilder;
@@ -121,7 +121,7 @@ namespace RockEngine.Vulkan.Builders
             using var pInputAssembly = _inputAssemblyBuilder.Build();
             using var pMultisample = _multisampleStateBuilder.Build();
             using var pRasterizer = _rasterizerBuilder.Build();
-            using var pVpState = _viewportStateBuilder.Build();
+            using var pVpState = _viewportStateBuilder?.Build();
 
             // Ensure the SType is correctly set
             _depthStencilState.SType = StructureType.PipelineDepthStencilStateCreateInfo;
@@ -139,7 +139,7 @@ namespace RockEngine.Vulkan.Builders
                 PInputAssemblyState = (PipelineInputAssemblyStateCreateInfo*)pInputAssembly.Pointer,
                 PMultisampleState = (PipelineMultisampleStateCreateInfo*)pMultisample.Pointer,
                 PRasterizationState = (PipelineRasterizationStateCreateInfo*)pRasterizer.Pointer,
-                PViewportState = (PipelineViewportStateCreateInfo*)pVpState.Pointer,
+                PViewportState = (PipelineViewportStateCreateInfo*)pVpState.Value.Pointer,
                 PDepthStencilState = (PipelineDepthStencilStateCreateInfo*)pDepthState.Pointer,
                 Layout = _pipelineLayout,
                 RenderPass = _renderPass,

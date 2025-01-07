@@ -1,12 +1,10 @@
 ﻿using SkiaSharp;
 using Silk.NET.Vulkan;
 using RockEngine.Vulkan;
-using RockEngine.Core.Rendering;
-using Silk.NET.GLFW;
 
 namespace RockEngine.Core
 {
-    public class Texture : IDisposable, IHaveBinding
+    public class Texture : IDisposable
     {
         private readonly RenderingContext _context;
         private readonly VkImage _image;
@@ -18,7 +16,6 @@ namespace RockEngine.Core
         public VkImageView ImageView => _imageView;
         public VkSampler Sampler => _sampler;
         public VkImage Image => _image;
-        public Dictionary<DescriptorSetLayout, DescriptorSet> Bindings { get;set;}
 
         private Texture(RenderingContext context, VkImage image, VkImageView imageView, VkSampler sampler)
         {
@@ -28,7 +25,7 @@ namespace RockEngine.Core
             _sampler = sampler;
         }
        
-        public static async Task<Texture> CreateAsync(RenderingContext context, string filePath, CancellationToken cancellationToken = default)
+        public static async Task<Texture> CreateAsync(RenderingContext context, string filePath, VkCommandBuffer? commandBuffer = null, CancellationToken cancellationToken = default)
         {
             var bytes = await File.ReadAllBytesAsync(filePath, cancellationToken)
                 .ConfigureAwait(false);
@@ -42,7 +39,7 @@ namespace RockEngine.Core
             var imageView = CreateImageView(context, image, format);
 
             // Copy image data from SkiaSharp to Vulkan image
-            CopyImageData(context, skBitmap, image);
+            CopyImageData(context, skBitmap, image, commandBuffer);
 
             // Create a sampler
             var samplerCreateInfo = new SamplerCreateInfo
@@ -191,7 +188,7 @@ namespace RockEngine.Core
             vkImage.TransitionImageLayout(commandBuffer, format, ImageLayout.TransferDstOptimal);
 
             // Copy the data from the staging buffer to the Vulkan image
-            CopyBufferToImage(commandBuffer, stagingBuffer, vkImage, 200, 40);
+            CopyBufferToImage(commandBuffer, stagingBuffer, vkImage, (uint)skBitmap.Width, (uint)skBitmap.Height);
 
             // Transition the Vulkan image layout to SHADER_READ_ONLY_OPTIMAL
             vkImage.TransitionImageLayout(commandBuffer, format, ImageLayout.ShaderReadOnlyOptimal);
@@ -321,35 +318,7 @@ namespace RockEngine.Core
             }
         }
 
-        public unsafe void UpdateSet(DescriptorSet set, DescriptorSetLayout setLayout, uint binding, uint dstArrayElement = 0)
-        {
-            switch (Bindings)
-            {
-                case null:
-                    Bindings = new Dictionary<DescriptorSetLayout, DescriptorSet>()
-                    {
-                        {setLayout, set }
-                    };
-                    break;
-                default:
-                    Bindings[setLayout] = !Bindings.ContainsKey(setLayout) ? set : throw new InvalidOperationException("Already got binding on that setLayout");
-                    break;
-            }
-            var imageInfo = GetInfo();
-            WriteDescriptorSet writeDescriptorSet = new WriteDescriptorSet()
-            {
-                SType = StructureType.WriteDescriptorSet,
-                DstBinding = binding,
-                DescriptorType = DescriptorType.CombinedImageSampler,
-                DescriptorCount = 1,
-                DstArrayElement = dstArrayElement,
-                DstSet = set,
-                PImageInfo = &imageInfo
-            };
-            RenderingContext.Vk.UpdateDescriptorSets(_context.Device, 1, in writeDescriptorSet,0, default);
-        }
-
-        private DescriptorImageInfo GetInfo()
+        public DescriptorImageInfo GetDescriptorInfo()
         {
             return new DescriptorImageInfo()
             {
@@ -358,17 +327,7 @@ namespace RockEngine.Core
                 Sampler = _sampler,
             };
         }
-
-        public unsafe void Use(VkCommandBuffer commandBuffer, VkPipeline pipeline, uint dynamicOffset = 0, PipelineBindPoint bindPoint = PipelineBindPoint.Graphics)
-        {
-            foreach (var item in pipeline.Layout.DescriptorSetLayouts)
-            {
-                if(Bindings.TryGetValue(item.DescriptorSetLayout, out var set))
-                {
-                    RenderingContext.Vk.CmdBindDescriptorSets(commandBuffer, bindPoint, pipeline.Layout, 0, 1, in set, 0, &dynamicOffset);
-                }
-            }
-        }
+      
     }
 
 }

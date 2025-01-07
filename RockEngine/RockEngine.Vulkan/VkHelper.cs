@@ -62,21 +62,7 @@ namespace RockEngine.Vulkan
             return details;
         }
 
-        public static VkCommandBuffer BeginSingleTimeCommands(VkCommandPool commandPool)
-        {
-            var allocInfo = new CommandBufferAllocateInfo
-            {
-                SType = StructureType.CommandBufferAllocateInfo,
-                Level = CommandBufferLevel.Primary,
-                CommandPool = commandPool,
-                CommandBufferCount = 1
-            };
-            var commandBuffer = VkCommandBuffer.Create(in allocInfo, commandPool);
-
-            commandBuffer.BeginSingleTimeCommand();
-
-            return commandBuffer;
-        }
+       
 
         public static void BeginSingleTimeCommand(this VkCommandBuffer cmd)
         {
@@ -85,15 +71,19 @@ namespace RockEngine.Vulkan
                 SType = StructureType.CommandBufferBeginInfo,
                 Flags = CommandBufferUsageFlags.OneTimeSubmitBit
             };
-            cmd.Begin(ref beginInfo);
+            cmd.Begin(in beginInfo);
         }
 
-        public unsafe static void EndSingleTimeCommands(VkCommandBuffer commandBuffer)
+       
+
+        public static Result VkAssertResult(this Result result)
         {
-            commandBuffer.End();
-          
+            return result switch
+            {
+                Result.Success => result,
+                _ => throw new Exception(result.ToString()),
+            };
         }
-
         public static Result VkAssertResult(this Result result, string message)
         {
             return result switch

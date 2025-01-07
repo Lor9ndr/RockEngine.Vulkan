@@ -1,10 +1,10 @@
 ﻿using RockEngine.Core.ECS;
 using RockEngine.Core.Rendering;
+using RockEngine.Core.Rendering.Managers;
 using RockEngine.Vulkan;
 
 using Silk.NET.Input;
 using Silk.NET.Windowing;
-using Silk.NET.Windowing.Sdl;
 
 namespace RockEngine.Core
 {
@@ -15,44 +15,51 @@ namespace RockEngine.Core
         protected LayerStack _layerStack;
         protected GraphicsEngine _graphicsEngine;
         protected IInputContext _inputContext;
+        protected Renderer _renderer;
         protected World _world;
-        protected event Action OnLoad;
+        protected event Func<Task> OnLoad;
+
+        private PipelineManager _pipelineManager;
 
         public CancellationTokenSource CancellationTokenSource { get; set; }
         protected CancellationToken  CancellationToken => CancellationTokenSource.Token;
 
-
         public Application(string appName, int width, int height)
         {
-            SdlWindowing.Use();
             _window = Window.Create(WindowOptions.DefaultVulkan);
             _window.Title = appName;
             _window.Size = new Silk.NET.Maths.Vector2D<int>(width, height);
             _layerStack = new LayerStack();
             CancellationTokenSource = new CancellationTokenSource();
-            _window.Load += () =>
+            _window.Load += async () =>
             {
                 _renderingContext = new RenderingContext(_window, _window.Title);
                 _graphicsEngine = new GraphicsEngine(_renderingContext);
                 _inputContext = _window.CreateInput();
+                _pipelineManager = new PipelineManager(_renderingContext);
+                _renderer = new Renderer(_renderingContext, _graphicsEngine,_pipelineManager);
                 _world = new World();
-                OnLoad?.Invoke();
+                await OnLoad?.Invoke();
+
+                await _world.Start(_renderer);
+                _window.Render += Render;
+                _window.Update += async (s) => await Update(s);
             };
-            _window.Render += Render;
-            _window.Update += Update;
+           
 
         }
 
         public async Task Run()
         {
-            await Task.Run(() => _window.Run(), CancellationToken)
+            await Task.Run(_window.Run, CancellationToken)
                 .ConfigureAwait(false);
         }
 
-        protected virtual void Update(double deltaTime)
+        protected virtual async Task Update(double deltaTime)
         {
-             Time.Update(_window.Time, deltaTime);
-             _layerStack.Update();
+            Time.Update(_window.Time, deltaTime);
+            _layerStack.Update();
+            await _world.Update(_renderer);
         }
 
         protected virtual void Render(double time)
@@ -68,13 +75,14 @@ namespace RockEngine.Core
             }
             _layerStack.RenderImGui(vkCommandBuffer);
             _layerStack.Render(vkCommandBuffer);
+            _renderer.Render(vkCommandBuffer);
             _graphicsEngine.End(vkCommandBuffer);
             _graphicsEngine.Submit([vkCommandBuffer.VkObjectNative]);
         }
 
-        public void PushLayer(ILayer layer)
+        public  Task PushLayer(ILayer layer)
         {
-            _layerStack.PushLayer(layer);
+            return _layerStack.PushLayer(layer);
         }
 
         public void PopLayer(ILayer layer)

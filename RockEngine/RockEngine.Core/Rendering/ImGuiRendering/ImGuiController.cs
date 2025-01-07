@@ -31,6 +31,7 @@ namespace RockEngine.Core.Rendering.ImGuiRendering
         private Queue<char> _pressedChars = new Queue<char>();
         private ulong _bufferMemoryAlignment;
         private Texture _fontTexture;
+        private DescriptorSet _fontTextureDescriptorSet;
 
         public unsafe ImGuiController(RenderingContext vkContext, GraphicsEngine graphicsEngine, RenderPassManager renderPassManager, IInputContext inputContext, uint width, uint height)
         {
@@ -51,7 +52,6 @@ namespace RockEngine.Core.Rendering.ImGuiRendering
             CreateDescriptorSet();
 
             graphicsEngine.Swapchain.OnSwapchainRecreate += CreateFramebuffers;
-            CreateFramebuffers(graphicsEngine.Swapchain);
             ApplyDarkTheme();
             ImGui.GetIO().DisplaySize = new Vector2(width, height);
             _input.Keyboards[0].KeyChar += (s, c) => PressChar(c);
@@ -364,7 +364,16 @@ namespace RockEngine.Core.Rendering.ImGuiRendering
 
             // Setup desired Vulkan state
             RenderingContext.Vk.CmdBindPipeline(commandBuffer, PipelineBindPoint.Graphics, _pipeline);
-            _fontTexture.Use(commandBuffer, _pipeline);
+            DescriptorSet descriptorset = _fontTextureDescriptorSet;
+            uint setOffset = 0;
+            RenderingContext.Vk.CmdBindDescriptorSets(commandBuffer,
+                                                      PipelineBindPoint.Graphics,
+                                                      _pipelineLayout,
+                                                      0,
+                                                      1,
+                                                      in descriptorset,
+                                                      setOffset,
+                                                      in setOffset);
 
             // Bind Vertex And Index Buffer:
             if (drawData.TotalVtxCount > 0)
@@ -382,7 +391,7 @@ namespace RockEngine.Core.Rendering.ImGuiRendering
             viewport.Height = _graphicsEngine.Swapchain.Extent.Height;
             viewport.MinDepth = 0.0f;
             viewport.MaxDepth = 1.0f;
-            commandBuffer.SetViewport(ref viewport);
+            commandBuffer.SetViewport(in viewport);
 
             // Setup scale and translation:
             // Our visible imgui space lies from draw_data.DisplayPps (top left) to draw_data.DisplayPos+data_data.DisplaySize (bottom right). DisplayPos is (0,0) for single viewport apps.
@@ -486,7 +495,7 @@ namespace RockEngine.Core.Rendering.ImGuiRendering
         {
             var layout = _descriptorSetLayout.DescriptorSetLayout;
             var set = _descriptorPool.AllocateDescriptorSet(layout);
-            _fontTexture.UpdateSet(set, layout,0);
+            _fontTextureDescriptorSet = set;
         }
 
         private unsafe void CreateFontResources()

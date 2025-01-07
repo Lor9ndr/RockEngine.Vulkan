@@ -32,7 +32,7 @@ namespace RockEngine.Editor.Layers
             _imGuiController = new ImGuiController(context, graphicsEngine, renderPassManager, input, 800, 600);
         }
 
-        public void OnAttach() { }
+        public async Task OnAttach() { }
 
         public void OnDetach() { }
 

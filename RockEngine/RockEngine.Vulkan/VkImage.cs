@@ -118,7 +118,7 @@ namespace RockEngine.Vulkan
 
         public unsafe void CopyBufferToImage(VkCommandPool commandPool, VkBuffer buffer, VkImage image, ImageLayout layout, uint width, uint height)
         {
-            using var commandBuffer = VkHelper.BeginSingleTimeCommands(commandPool);
+            using var commandBuffer = commandPool.BeginSingleTimeCommands();
 
             var region = new BufferImageCopy
             {
@@ -145,7 +145,7 @@ namespace RockEngine.Vulkan
                 &region
             );
 
-            VkHelper.EndSingleTimeCommands(commandBuffer);
+            commandBuffer.End();
         }
 
 

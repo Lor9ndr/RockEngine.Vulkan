@@ -5,13 +5,15 @@ using System;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Runtime.Intrinsics.X86;
+using System.Runtime.Intrinsics;
 
 namespace RockEngine.Benchmarks
 {
     [MemoryDiagnoser]
     public unsafe class BufferCopyBenchmarks
     {
-        [Params(100, 500, 1000, 2000)]
+        [Params(2000, 20000)]
         public int MatrixCount { get; set; }
         private Matrix4x4[] _sourceMatrices;
         private byte[] _matrixDestinationData;
@@ -30,7 +32,7 @@ namespace RockEngine.Benchmarks
         }
 
        
-                [Benchmark]
+        //[Benchmark]
         public byte[] CopyMatricesUsingSpan()
         {
             Span<Matrix4x4> source = _sourceMatrices;
@@ -40,7 +42,7 @@ namespace RockEngine.Benchmarks
         }
 
 
-        [Benchmark]
+        //[Benchmark]
         public byte[] CopyMatricesUsingVector()
         {
             fixed (Matrix4x4* srcPtr = _sourceMatrices)
@@ -59,7 +61,7 @@ namespace RockEngine.Benchmarks
             return _matrixDestinationData;
         }
 
-        [Benchmark]
+        //[Benchmark]
         public byte[] CopyMatricesUsingGotoBased()
         {
             fixed (Matrix4x4* srcPtr = _sourceMatrices)
@@ -107,7 +109,7 @@ namespace RockEngine.Benchmarks
             return _matrixDestinationData;
         }
 
-        [Benchmark]
+        //[Benchmark]
         public byte[] CopyMatricesUsingRecursion()
         {
             fixed (Matrix4x4* srcPtr = _sourceMatrices)
@@ -131,7 +133,7 @@ namespace RockEngine.Benchmarks
             RecursiveMatrixCopy(src + halfCount, dest + halfCount * sizeof(Matrix4x4), count - halfCount);
         }
 
-        [Benchmark]
+        //[Benchmark]
         public byte[] CopyMatricesUsingPointerArithmetic()
         {
             fixed (Matrix4x4* srcPtr = _sourceMatrices)
@@ -149,7 +151,7 @@ namespace RockEngine.Benchmarks
             return _matrixDestinationData;
         }
 
-        [Benchmark]
+        //[Benchmark]
         public byte[] CopyMatricesUsingUnsafeAs()
         {
             fixed (Matrix4x4* srcPtr = _sourceMatrices)
@@ -167,14 +169,14 @@ namespace RockEngine.Benchmarks
             }
             return _matrixDestinationData;
         }
-        [Benchmark]
+        //[Benchmark]
         public byte[] CopyMatricesToBuffer()
         {
             Buffer.BlockCopy(_sourceMatrices, 0, _matrixDestinationData, 0, MatrixCount * Unsafe.SizeOf<Matrix4x4>());
             return _matrixDestinationData;
         }
 
-        [Benchmark]
+        //[Benchmark]
         public unsafe byte[] CopyMatricesToBufferUnsafe()
         {
             fixed (Matrix4x4* srcPtr = _sourceMatrices)
@@ -195,8 +197,16 @@ namespace RockEngine.Benchmarks
             }
             return _matrixDestinationData;
         }
-    
-
+        [Benchmark]
+        public unsafe byte[] WriteMatricesByAVXorSse()
+        {
+            fixed(byte* destPtr = _matrixDestinationData)
+            {
+                CopyMatricesToBufferByAVXOrSSe(_sourceMatrices, destPtr);
+                return _matrixDestinationData;
+            }
+          
+        }
 
         private unsafe void WriteToBuffer(void* data, void* destination, ulong size)
         {
@@ -206,6 +216,56 @@ namespace RockEngine.Benchmarks
         private unsafe void WriteToBuffer(nint data, nint destination, ulong size)
         {
             Buffer.MemoryCopy(data.ToPointer(), destination.ToPointer(), size, size);
+        }
+
+        public void CopyMatricesToBufferByAVXOrSSe(Matrix4x4[] matrices, void* destination)
+        {
+            fixed (Matrix4x4* source = matrices)
+            {
+                int matrixCount = matrices.Length;
+                int totalFloats = matrixCount * 16; // 16 floats per matrix
+                float* src = (float*)source;
+                float* dest = (float*)destination;
+
+                // Use AVX if available
+                if (Avx.IsSupported)
+                {
+                    int vectorSize = Vector256<float>.Count;
+                    int vectorCount = totalFloats / vectorSize;
+
+                    for (int i = 0; i < vectorCount; i++)
+                    {
+                        Vector256<float> vector = Avx.LoadVector256(src + i * vectorSize);
+                        Avx.Store(dest + i * vectorSize, vector);
+                    }
+
+                    src += vectorCount * vectorSize;
+                    dest += vectorCount * vectorSize;
+                    totalFloats -= vectorCount * vectorSize;
+                }
+                // Use SSE if available
+                else if (Sse.IsSupported)
+                {
+                    int vectorSize = Vector128<float>.Count;
+                    int vectorCount = totalFloats / vectorSize;
+
+                    for (int i = 0; i < vectorCount; i++)
+                    {
+                        Vector128<float> vector = Sse.LoadVector128(src + i * vectorSize);
+                        Sse.Store(dest + i * vectorSize, vector);
+                    }
+
+                    src += vectorCount * vectorSize;
+                    dest += vectorCount * vectorSize;
+                    totalFloats -= vectorCount * vectorSize;
+                }
+
+                // Copy remaining floats
+                for (int i = 0; i < totalFloats; i++)
+                {
+                    *dest++ = *src++;
+                }
+            }
         }
     }
 }

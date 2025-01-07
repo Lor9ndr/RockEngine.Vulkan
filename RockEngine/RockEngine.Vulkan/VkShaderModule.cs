@@ -101,7 +101,7 @@ namespace RockEngine.Vulkan
                             Binding = binding->Binding,
                             Size = binding->Block.Size,
                             Set = binding->Set,
-                            ShaderStage = _stage
+                            ShaderStage = _stage,
                         });
                     }
                     else if (binding->DescriptorType == DescriptorType.Sampler)

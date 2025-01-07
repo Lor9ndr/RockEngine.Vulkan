@@ -1,45 +1,42 @@
-﻿using RockEngine.Core.Info;
-using RockEngine.Core.Rendering;
+﻿using RockEngine.Core.Rendering;
 using RockEngine.Vulkan;
 
 using Silk.NET.Vulkan;
 
 namespace RockEngine.Core.ECS.Components
 {
-    public class Mesh : IComponent, IRenderable, IDisposable
+    public class Mesh : Component, IDisposable
     {
         public Vertex[] Vertices;
         public uint[]? Indices;
         public Material Material;
 
-        private VkBuffer _vertexBuffer;
-        private VkBuffer _indexBuffer;
+        public VkBuffer VertexBuffer;
+        public VkBuffer? IndexBuffer;
 
         public bool HasIndices => Indices?.Length > 0;
 
-        public Mesh(Vertex[] vertices, uint[]? indices = null)
+        public Mesh()
+        {
+        }
+
+        public void SetMeshData(Vertex[] vertices, uint[]? indices = null)
         {
             Vertices = vertices;
             Indices = indices;
         }
 
-        public async ValueTask Init(RenderingContext context, Renderer renderer)
+        public override async ValueTask OnStart(Renderer renderer)
         {
-            var setLayout = Material.Pipeline.Layout.GetSetLayout(DescriptorSetsInfo.MATERIAL_LOCATION);
-            var materialSet = renderer.DescriptorPool.AllocateDescriptorSet(setLayout.DescriptorSetLayout);
-            for (int i = 0; i < Material.Textures.Length; i++)
-            {
-                Texture? item = Material.Textures[i];
-                item.UpdateSet(materialSet,setLayout.DescriptorSetLayout, (uint)i);
-            }
-            await CreateVertexBufferAsync(context, renderer.CommandPool);
-            await CreateIndexBufferAsync(context, renderer.CommandPool);
+            await CreateVertexBufferAsync(RenderingContext.GetCurrent(), renderer.CommandPool);
+            await CreateIndexBufferAsync(RenderingContext.GetCurrent(), renderer.CommandPool);
         }
+      
        
         private async ValueTask CreateVertexBufferAsync(RenderingContext context, VkCommandPool commandPool)
         {
             ulong vertexBufferSize = (ulong)(Vertices.Length * Vertex.Size);
-            _vertexBuffer = await CreateDeviceLocalBufferAsync(context,vertexBufferSize, BufferUsageFlags.VertexBufferBit | BufferUsageFlags.TransferDstBit, Vertices, commandPool);
+            VertexBuffer = await CreateDeviceLocalBufferAsync(context,vertexBufferSize, BufferUsageFlags.VertexBufferBit | BufferUsageFlags.TransferDstBit, Vertices, commandPool);
         }
 
         private async ValueTask CreateIndexBufferAsync(RenderingContext context, VkCommandPool commandPool)
@@ -47,46 +44,33 @@ namespace RockEngine.Core.ECS.Components
             if (Indices != null)
             {
                 ulong indexBufferSize = (ulong)(Indices.Length * sizeof(uint));
-                _indexBuffer = await CreateDeviceLocalBufferAsync(context, indexBufferSize, BufferUsageFlags.IndexBufferBit | BufferUsageFlags.TransferDstBit, Indices, commandPool);
+                IndexBuffer = await CreateDeviceLocalBufferAsync(context, indexBufferSize, BufferUsageFlags.IndexBufferBit | BufferUsageFlags.TransferDstBit, Indices, commandPool);
             }
         }
 
         private static async ValueTask<VkBuffer> CreateDeviceLocalBufferAsync<T>(RenderingContext context, ulong bufferSize, BufferUsageFlags usage, T[] data, VkCommandPool commandPool) where T : unmanaged
         {
-            using var stagingBuffer = VkBuffer.Create(context, bufferSize, BufferUsageFlags.TransferSrcBit, MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit);
-
-            await stagingBuffer.WriteToBufferAsync(data);
+            using var stagingBuffer = await VkBuffer.CreateAndCopyToStagingBuffer(context,data, bufferSize);
 
             var deviceLocalBuffer = VkBuffer.Create(context, bufferSize, usage, MemoryPropertyFlags.DeviceLocalBit);
 
             stagingBuffer.CopyTo(deviceLocalBuffer, commandPool);
 
+
             return deviceLocalBuffer;
         }
 
-        public ValueTask Render(Renderer renderer)
-        {
-           /* renderer.UseMaterial(Material);
 
-            if (_indexBuffer != null)
-            {
-                renderer.DrawMesh(_vertexBuffer, _indexBuffer, (uint)Vertices.Length, (uint)Indices!.Length);
-            }
-            else
-            {
-                renderer.DrawMesh(_vertexBuffer, (uint)Vertices.Length);
-            }*/
+        public override ValueTask Update(Renderer renderer)
+        {
+            renderer.Draw(this);
             return default;
         }
 
         public void Dispose()
         {
-            _vertexBuffer.Dispose();
-            _indexBuffer.Dispose();
-        }
-
-        public void Update()
-        {
+            VertexBuffer.Dispose();
+            IndexBuffer?.Dispose();
         }
     }
 }

@@ -1,0 +1,11 @@
+Model Information:
+* title:	Sponza Atrium 3
+* source:	https://sketchfab.com/3d-models/sponza-atrium-3-4a6a731e6b444395b169bda7ce3e24d3
+* author:	Kevin.Yudi.Utama (https://sketchfab.com/Kevin.Yudi.Utama)
+
+Model License:
+* license type:	CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+* requirements:	Author must be credited. Commercial use is allowed.
+
+If you use this 3D model in your project be sure to copy paste this credit wherever you share it:
+This work is based on "Sponza Atrium 3" (https://sketchfab.com/3d-models/sponza-atrium-3-4a6a731e6b444395b169bda7ce3e24d3) by Kevin.Yudi.Utama (https://sketchfab.com/Kevin.Yudi.Utama) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
