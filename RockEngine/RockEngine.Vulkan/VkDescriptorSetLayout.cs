@@ -7,7 +7,6 @@ namespace RockEngine.Vulkan
         public DescriptorSetLayout DescriptorSetLayout;
         public uint SetLocation;
         public readonly DescriptorSetLayoutBindingReflected[] Bindings;
-        public VkPipelineLayout PipelineLayout;
 
         public VkDescriptorSetLayout(DescriptorSetLayout descriptorSetLayout, uint setLocation, DescriptorSetLayoutBindingReflected[] bindingsArr)
         {
@@ -16,11 +15,6 @@ namespace RockEngine.Vulkan
             Bindings = bindingsArr;
         }
 
-
-        public static void Create(RenderingContext context)
-        {
-            
-        }
 
         public bool Equals(VkDescriptorSetLayout other)
         {

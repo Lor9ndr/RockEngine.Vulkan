@@ -10,7 +10,6 @@ namespace RockEngine.Core.ECS
         {
             var entity = new Entity();
             _entities.Add(entity);
-            entity.OnDestroy += () => RemoveEntity(entity);
             return entity;
         }
 

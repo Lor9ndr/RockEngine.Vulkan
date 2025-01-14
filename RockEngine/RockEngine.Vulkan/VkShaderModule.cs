@@ -135,7 +135,7 @@ namespace RockEngine.Vulkan
                     var bindingReflected = new DescriptorSetLayoutBindingReflected(null,
                                                                                   binding->Binding,
                                                                                    ShouldBeDynamicUniformBuffer(binding, name) ?
-                                                                                            Silk.NET.Vulkan.DescriptorType.UniformBuffer :
+                                                                                            Silk.NET.Vulkan.DescriptorType.UniformBufferDynamic :
                                                                                             (Silk.NET.Vulkan.DescriptorType)binding->DescriptorType,
                                                                                   binding->Count,
                                                                                   _stage,

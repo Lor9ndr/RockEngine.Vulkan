@@ -139,7 +139,7 @@ namespace RockEngine.Tests
         public async Task PopLayer_RemovesLayerFromLayerStack()
         {
             var testLayer = new TestLayer();
-            _application.PushLayer(testLayer);
+            await _application.PushLayer(testLayer);
 
             await Assert.That(testLayer.IsAttached).IsTrue();
             _application.PopLayer(testLayer);

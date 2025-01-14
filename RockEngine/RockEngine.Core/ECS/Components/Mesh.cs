@@ -26,12 +26,6 @@ namespace RockEngine.Core.ECS.Components
             Indices = indices;
         }
 
-        public override async ValueTask OnStart(Renderer renderer)
-        {
-            await CreateVertexBufferAsync(RenderingContext.GetCurrent(), renderer.CommandPool);
-            await CreateIndexBufferAsync(RenderingContext.GetCurrent(), renderer.CommandPool);
-        }
-      
        
         private async ValueTask CreateVertexBufferAsync(RenderingContext context, VkCommandPool commandPool)
         {
@@ -60,7 +54,11 @@ namespace RockEngine.Core.ECS.Components
             return deviceLocalBuffer;
         }
 
-
+        public override async ValueTask OnStart(Renderer renderer)
+        {
+            await CreateVertexBufferAsync(RenderingContext.GetCurrent(), renderer.CommandPool);
+            await CreateIndexBufferAsync(RenderingContext.GetCurrent(), renderer.CommandPool);
+        }
         public override ValueTask Update(Renderer renderer)
         {
             renderer.Draw(this);

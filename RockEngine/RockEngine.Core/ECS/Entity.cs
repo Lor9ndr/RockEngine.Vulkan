@@ -64,7 +64,6 @@ namespace RockEngine.Core.ECS
             {
                 item.Destroy();
             }
-            OnDestroy?.Invoke();
         }
     }
 }

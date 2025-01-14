@@ -1,6 +1,8 @@
 ﻿
 using Silk.NET.Vulkan;
 
+using System;
+
 using Semaphore = Silk.NET.Vulkan.Semaphore;
 
 namespace RockEngine.Vulkan
@@ -41,6 +43,24 @@ namespace RockEngine.Vulkan
                     }
                 }
             }
+        }
+        public unsafe void Submit(VkCommandBuffer commandBuffer)
+        {
+            var nativeCmd = commandBuffer.VkObjectNative;
+
+            SubmitInfo si = new SubmitInfo()
+            {
+                SType = StructureType.SubmitInfo,
+                CommandBufferCount = 1,
+                PCommandBuffers = &nativeCmd,
+                PSignalSemaphores = null,
+                SignalSemaphoreCount = 0,
+                PWaitDstStageMask = null,
+                PWaitSemaphores = null,
+                WaitSemaphoreCount = 0
+            };
+            Submit(in si, null);
+
         }
 
         public void WaitIdle()

@@ -9,6 +9,7 @@ using RockEngine.Vulkan.Builders;
 using Silk.NET.Input;
 using Silk.NET.Vulkan;
 
+using System.Numerics;
 using System.Runtime.CompilerServices;
 
 namespace RockEngine.Editor.Layers
@@ -51,10 +52,10 @@ namespace RockEngine.Editor.Layers
             {
                 var entity = _world.CreateEntity();
                 entity.Transform.Scale = new System.Numerics.Vector3(0.1f);
-                entity.Transform.Position = new System.Numerics.Vector3(10);
+                entity.Transform.Position = new System.Numerics.Vector3(0);
                 var mesh = entity.AddComponent<Mesh>();
                 mesh.SetMeshData(item.Vertices, item.Indices);
-                mesh.Material = new Material(_pipeline, item.textures.ToArray());
+                mesh.Material = new Material(_pipeline, item.textures);
             }
         }
 
@@ -132,9 +133,25 @@ namespace RockEngine.Editor.Layers
         {
             
         }
-
+        private float _totalElapsedTime = 0f; // Track total elapsed time
+        private const float ANIMATION_DURATION = 5f; // Animation cycle duration in seconds
         public void OnUpdate()
         {
+            /*_totalElapsedTime += Time.DeltaTime; // Update elapsed time
+
+            // Calculate animation progress (0.0 to 1.0)
+            float animationProgress = (_totalElapsedTime % ANIMATION_DURATION) / ANIMATION_DURATION;
+
+            // Apply transformations to the entity (assuming index 5)
+            var targetEntity = _world.GetEntities().ElementAtOrDefault(5);
+            if (targetEntity != null)
+            {
+                // Example transformations (adjust as needed)
+                targetEntity.Transform.Rotation *= Quaternion.CreateFromAxisAngle(Vector3.UnitY, 0.01f); // Rotate over time
+                float scaleFactor = 1f + 0.5f * (float)Math.Sin(animationProgress * 2f * Math.PI); // Scale up and down
+                targetEntity.Transform.Scale = new Vector3(scaleFactor);
+                targetEntity.Transform.Position = new Vector3(10f * (float)Math.Cos(animationProgress * 2f * Math.PI), 0, 0); // Move in a circle
+            }*/
         }
     }
 }

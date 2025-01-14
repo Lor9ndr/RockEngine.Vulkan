@@ -116,38 +116,6 @@ namespace RockEngine.Vulkan
             _currentLayout = newLayout;
         }
 
-        public unsafe void CopyBufferToImage(VkCommandPool commandPool, VkBuffer buffer, VkImage image, ImageLayout layout, uint width, uint height)
-        {
-            using var commandBuffer = commandPool.BeginSingleTimeCommands();
-
-            var region = new BufferImageCopy
-            {
-                BufferOffset = 0,
-                BufferRowLength = 0,
-                BufferImageHeight = 0,
-                ImageSubresource = new ImageSubresourceLayers
-                {
-                    AspectMask = ImageAspectFlags.ColorBit,
-                    MipLevel = 0,
-                    BaseArrayLayer = 0,
-                    LayerCount = 1
-                },
-                ImageOffset = new Offset3D { X = 0, Y = 0, Z = 0 },
-                ImageExtent = new Extent3D { Width = width, Height = height, Depth = 1 }
-            };
-
-            RenderingContext.Vk.CmdCopyBufferToImage(
-                commandBuffer,
-                buffer,
-                image,
-                layout,
-                1,
-                &region
-            );
-
-            commandBuffer.End();
-        }
-
 
         protected unsafe override void Dispose(bool disposing)
         {

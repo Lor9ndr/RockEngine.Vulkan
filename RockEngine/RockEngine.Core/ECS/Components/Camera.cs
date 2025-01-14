@@ -150,16 +150,12 @@ namespace RockEngine.Core.ECS.Components
         }
 
 
-        public override async ValueTask Update(Renderer renderer)
+        public override ValueTask Update(Renderer renderer)
         {
             UpdateVectors();
             renderer.CurrentCamera = this;
-            //renderer.BindUniformBuffer(_cameraBuffer, 0);
-            //renderer.SetCamera(this);
+            return default;
         }
-        private struct CameraData
-        {
-            public Matrix4x4 ViewProjectionMatrix;
-        }
+    
     }
 }

@@ -1,7 +1,6 @@
 ﻿using RockEngine.Core.ECS.Components;
 using RockEngine.Core.Rendering.Commands;
 using RockEngine.Core.Rendering.Managers;
-using RockEngine.Core.Rendering.Managers.RockEngine.Core.Rendering.Managers;
 using RockEngine.Core.Rendering.ResourceBindings;
 using RockEngine.Core.Rendering.RockEngine.Core.Rendering;
 using RockEngine.Vulkan;
@@ -17,13 +16,10 @@ namespace RockEngine.Core.Rendering
     {
         private readonly GraphicsEngine _graphicsEngine;
         private readonly PipelineManager _pipelineManager;
-        private readonly DescriptorSetManager _descriptorSetManager;
         private readonly RenderingContext _vulkanContext;
         private GlobalUbo _globalUbo;
         private BindingManager _bindingManager;
 
-        // Use a dictionary to store descriptor sets for each frame
-        private readonly Dictionary<uint, DescriptorSet>[] _descriptorSets;
 
         public Camera CurrentCamera { get; set; }
         public VkCommandBuffer CurrentCommandBuffer { get; private set; }
@@ -47,11 +43,6 @@ namespace RockEngine.Core.Rendering
             CommandPool = _graphicsEngine.CommandBufferPool;
             _graphicsEngine.Swapchain.OnSwapchainRecreate += CreateFramebuffers;
 
-            _descriptorSets = new Dictionary<uint, DescriptorSet>[context.MaxFramesPerFlight];
-            for (int i = 0; i < _descriptorSets.Length; i++)
-            {
-                _descriptorSets[i] = new Dictionary<uint, DescriptorSet>();
-            }
 
             CreateRenderPass();
             CreateFramebuffers(_graphicsEngine.Swapchain);
@@ -61,25 +52,24 @@ namespace RockEngine.Core.Rendering
             {
                 new DescriptorPoolSize()
                 {
-                    DescriptorCount = (uint)graphicsEngine.Swapchain.Images.Length,
+                    DescriptorCount = 10_000_000,
                     Type = DescriptorType.UniformBuffer,
                 },
                 new DescriptorPoolSize()
                 {
                     Type = DescriptorType.CombinedImageSampler,
-                    DescriptorCount = (uint)graphicsEngine.Swapchain.Images.Length,
+                    DescriptorCount = 10_000_000,
                 }
             };
             _descriptorPool = VkDescriptorPool.Create(context, new DescriptorPoolCreateInfo()
             {
                 SType = StructureType.DescriptorPoolCreateInfo,
                 PoolSizeCount = 2,
-                MaxSets = 500,
+                MaxSets = 10_000_000,
                 PPoolSizes = poolSizes
 
             });
-            _descriptorSetManager = new DescriptorSetManager(context, _descriptorPool);
-            _bindingManager = new BindingManager(context, _descriptorSetManager, graphicsEngine);
+            _bindingManager = new BindingManager(context, _descriptorPool, graphicsEngine);
             _globalUbo = new GlobalUbo("GlobalData", 0, (ulong)Unsafe.SizeOf<Matrix4x4>());
 
         }
@@ -100,14 +90,15 @@ namespace RockEngine.Core.Rendering
                 ClearValueCount = 2,
                 Framebuffer = _framebuffers[_graphicsEngine.CurrentImageIndex],
                 PClearValues = clearValues,
-                RenderArea = new Rect2D() { Extent = _graphicsEngine.Swapchain.Extent, Offset = new Offset2D() },
+                RenderArea = new Rect2D(new Offset2D(), _graphicsEngine.Swapchain.Extent),
                 RenderPass = RenderPass.RenderPass
             };
 
-            CurrentCommandBuffer.BeginRenderPass(in renderPassBeginInfo, SubpassContents.Inline);
             var vp = new Viewport(0, 0, _graphicsEngine.Swapchain.Extent.Width, _graphicsEngine.Swapchain.Extent.Height, 0, 1);
-            CurrentCommandBuffer.SetViewport(in vp);
             var scissor = new Rect2D(new Offset2D(0, 0), _graphicsEngine.Swapchain.Extent);
+
+            CurrentCommandBuffer.BeginRenderPass(in renderPassBeginInfo, SubpassContents.Inline);
+            CurrentCommandBuffer.SetViewport(in vp);
             CurrentCommandBuffer.SetScissor(in scissor);
 
             VkPipeline? prevPipeline = null;
@@ -115,8 +106,8 @@ namespace RockEngine.Core.Rendering
             {
                  _globalUbo.ViewProjection = CurrentCamera.ViewProjectionMatrix;
 
-                    // BAD REPLACE TO SOMEWHERE ELSE THAT SHIT
-                 _globalUbo.UpdateAsync(_globalUbo.ViewProjection).GetAwaiter().GetResult();
+                    // BAD, REPLACE TO SOMEWHERE ELSE THAT SHIT
+                 _globalUbo.UpdateAsync().GetAwaiter().GetResult();
             }
                 
             var globalUboBinding = new UniformBufferBinding(_globalUbo, 0, 0);
@@ -128,27 +119,23 @@ namespace RockEngine.Core.Rendering
                 var command = _renderCommands.Dequeue();
                 switch (command)
                 {
-                    case DescriptorBindingCommand descriptorBindingCommand:
-                        BindDescriptorSet(in descriptorBindingCommand);
-                        break;
                     case MeshRenderCommand meshCommand:
                         {
                             var mesh = meshCommand.Mesh;
                             var material = mesh.Material;
-
+                            bool isBinded = false;
                             if (prevPipeline != material.Pipeline)
                             {
                                 RenderingContext.Vk.CmdBindPipeline(CurrentCommandBuffer, PipelineBindPoint.Graphics, material.Pipeline);
                                 prevPipeline = material.Pipeline;
+                                 mesh.Material.Bindings.Add(globalUboBinding);
+                                isBinded = true;
                             }
-                            mesh.Material.AddBinding(globalUboBinding);
-                            _bindingManager.BindResourcesForMaterial(material, vkCommandBuffer, material.Pipeline.Layout);
+                            _bindingManager.BindResourcesForMaterial(material, vkCommandBuffer);
 
                             // BAD WAY TO CLEAN LIST OF BINDINGS, as we touch list of bindings every render frame
-                            mesh.Material.RemoveBinding(globalUboBinding);
 
                             mesh.VertexBuffer.BindVertexBuffer(vkCommandBuffer);
-
                             if (mesh.HasIndices)
                             {
                                 mesh.IndexBuffer.BindIndexBuffer(vkCommandBuffer, 0, IndexType.Uint32);
@@ -158,6 +145,10 @@ namespace RockEngine.Core.Rendering
                             {
                                 vkCommandBuffer.Draw((uint)mesh.Vertices.Length, 1, 0, 0);
                             }
+                            if (isBinded)
+                            {
+                                material.Bindings.Remove(globalUboBinding);
+                            }
 
                             break;
                         }
@@ -166,22 +157,6 @@ namespace RockEngine.Core.Rendering
 
             CurrentCommandBuffer.EndRenderPass();
         }
-
-        private unsafe void BindDescriptorSet(in DescriptorBindingCommand descriptorBindingCommand)
-        {
-            var layout = _pipelineManager.GetPipelineByName("Main").Layout;
-            RenderingContext.Vk.CmdBindDescriptorSets(
-                CurrentCommandBuffer,
-                PipelineBindPoint.Graphics,
-                layout,
-                descriptorBindingCommand.SetLocation,
-                1,
-                [descriptorBindingCommand.DescriptorSet],
-                0,
-                []
-            );
-        }
-
 
         private unsafe void CreateRenderPass()
         {
@@ -244,56 +219,6 @@ namespace RockEngine.Core.Rendering
             };
 
             RenderPass = _graphicsEngine.RenderPassManager.CreateRenderPass(RenderPassType.ColorDepth, [description], [colorAttachment, depthAttachment], dependency);
-        }
-
-
-        public void BindUniformBuffer(UniformBuffer ubo, uint set = 0)
-        {
-            if (ubo.IsDynamic)
-            {
-                ubo.DynamicOffset = _dynamicOffset;
-                _dynamicOffset += (uint)ubo.Size; // Increment for the next dynamic buffer
-            }
-
-            var layout = _pipelineManager.TryGetLayout(ubo);
-
-            if (layout != default)
-            {
-                // Allocate descriptor set for the current frame if it doesn't exist
-                var currentFrameIndex = _graphicsEngine.CurrentImageIndex;
-                if (!_descriptorSets[currentFrameIndex].TryGetValue(set, out var descriptorSet))
-                {
-                    descriptorSet = _descriptorSetManager.AllocateDescriptorSet(layout);
-                    _descriptorSetManager.UpdateDescriptorSet(descriptorSet, ubo);
-                    _descriptorSets[currentFrameIndex][set] = descriptorSet;
-                }
-
-                // Enqueue the descriptor binding command
-                var command = new DescriptorBindingCommand(descriptorSet, layout.SetLocation, ubo.BindingLocation);
-                _renderCommands.Enqueue(command);
-            }
-            else
-            {
-                throw new Exception("Failed to find some layout");
-            }
-        }
-
-        internal void RegisterBuffer(UniformBuffer buffer, uint set = 0)
-        {
-            var layout = _pipelineManager.TryGetLayout(buffer);
-            if (layout == default)
-            {
-                throw new Exception("Unable to find layout by buffer");
-            }
-            var currentFrameIndex = _graphicsEngine.CurrentImageIndex;
-
-            if (!_descriptorSets[currentFrameIndex].TryGetValue(set, out var descriptorSet))
-            {
-                descriptorSet = _descriptorSetManager.AllocateDescriptorSet(layout);
-                _descriptorSets[currentFrameIndex][set] = descriptorSet;
-            }
-
-            _descriptorSetManager.UpdateDescriptorSet(descriptorSet, buffer);
         }
 
 

@@ -33,6 +33,7 @@ namespace RockEngine.Editor.EditorComponents
 
         public override ValueTask Update(Renderer renderer)
         {
+            _movementSpeed += _inputContext.Mice[0].ScrollWheels[0].Y;
             HandleKeyboardInput();
             return base.Update(renderer);
         }

@@ -171,29 +171,10 @@ namespace RockEngine.Core
 
         private unsafe static void CopyImageData(RenderingContext context, SKBitmap skBitmap, VkImage vkImage, VkCommandBuffer? commandBuffer = null)
         {
-            var format = GetVulkanFormat(skBitmap.Info.ColorType);
-            var imageSize = skBitmap.Info.BytesSize64;
-
-            // Create a staging buffer
-            using var stagingBuffer = VkBuffer.CreateAndCopyToStagingBuffer(context,skBitmap.GetPixels().ToPointer(), (ulong)imageSize);
-
-            if (commandBuffer is null)
-            {
-                using var cmdPool = VkCommandPool.Create(context, CommandPoolCreateFlags.TransientBit, context.Device.QueueFamilyIndices.GraphicsFamily.Value);
-                commandBuffer = cmdPool.AllocateCommandBuffer();
-            }
-            commandBuffer.BeginSingleTimeCommand();
-
-            // Transition the Vulkan image layout to TRANSFER_DST_OPTIMAL
-            vkImage.TransitionImageLayout(commandBuffer, format, ImageLayout.TransferDstOptimal);
-
-            // Copy the data from the staging buffer to the Vulkan image
-            CopyBufferToImage(commandBuffer, stagingBuffer, vkImage, (uint)skBitmap.Width, (uint)skBitmap.Height);
-
-            // Transition the Vulkan image layout to SHADER_READ_ONLY_OPTIMAL
-            vkImage.TransitionImageLayout(commandBuffer, format, ImageLayout.ShaderReadOnlyOptimal);
-            commandBuffer.End();
+            CopyImageDataFromPointer(context,vkImage, skBitmap.GetPixels().ToPointer(), (uint)skBitmap.Width, (uint)skBitmap.Height, GetVulkanFormat(skBitmap.ColorType), commandBuffer);
+           
         }
+
 
         private unsafe static void CopyImageDataFromPointer(RenderingContext context, VkImage vkImage, void* data, uint width, uint height, Format format, VkCommandBuffer? commandBuffer = null)
         {
@@ -254,13 +235,13 @@ namespace RockEngine.Core
             RenderingContext.Vk.CmdCopyBufferToImage(commandBuffer, stagingBuffer, image, ImageLayout.TransferDstOptimal, 1, &region);
         }
 
-      
 
-       /* public static Texture GetEmptyTexture(RenderingContext context)
+
+        public static Texture GetEmptyTexture(RenderingContext context)
         {
             _emptyTexture ??= CreateEmptyTexture(context);
             return _emptyTexture;
-        }*//*
+        }
 
         private static Texture CreateEmptyTexture(RenderingContext context)
         {
@@ -268,8 +249,8 @@ namespace RockEngine.Core
             using var surface = SKSurface.Create(new SKImageInfo(1, 1, SKColorType.Rgba8888));
             surface.Canvas.Clear(SKColors.Pink);
             using var image = surface.Snapshot();
-            return LoadFromSKImage(context, image.); ;
-        }*/
+            return LoadFromSKImage(context, SKBitmap.FromImage(image)); ;
+        }
 
         public static Texture LoadFromSKImage(RenderingContext context, SKBitmap skImage)
         {
@@ -279,8 +260,11 @@ namespace RockEngine.Core
             var vkImage = CreateVulkanImage(context, width, height, format);
             var imageView = CreateImageView(context, vkImage, format);
 
-            // Copy image data from SkiaSharp to Vulkan image
-            CopyImageData(context, skImage, vkImage);
+            unsafe
+            {
+                // Copy image data from SkiaSharp to Vulkan image
+                CopyImageDataFromPointer(context, vkImage, skImage.GetPixels().ToPointer(), width, height, format);
+            }
 
             // Create a sampler
             var samplerCreateInfo = new SamplerCreateInfo

@@ -14,7 +14,7 @@ layout(set = 0, binding = 0) uniform GlobalData
     mat4 viewProj;
 };
 
-layout(set = 1, binding = 0) uniform ModelData
+layout(set = 1, binding = 0) uniform ModelData_Dynamic
 {
     mat4 model;
 };

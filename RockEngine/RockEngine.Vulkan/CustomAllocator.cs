@@ -1,10 +1,12 @@
 ﻿using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 
 using Silk.NET.Vulkan;
 
 namespace RockEngine.Vulkan
 {
+    [DebuggerStepThrough]
     public static unsafe class CustomAllocator
     {
         private static readonly ConcurrentDictionary<IntPtr, AllocationInfo> _allocations = new();

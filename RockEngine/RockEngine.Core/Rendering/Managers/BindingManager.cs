@@ -6,152 +6,102 @@ using Silk.NET.Vulkan;
 
 namespace RockEngine.Core.Rendering.Managers
 {
-    namespace RockEngine.Core.Rendering.Managers
+    public class BindingManager
     {
-        public class BindingManager
+        private readonly RenderingContext _context;
+        private readonly VkDescriptorPool _descriptorPool;
+        private readonly GraphicsEngine _graphicsEngine;
+
+        public BindingManager(RenderingContext context, VkDescriptorPool descriptorPool, GraphicsEngine graphicsEngine)
         {
-            private readonly RenderingContext _context;
-            private readonly DescriptorSetManager _descriptorSetManager;
-            private readonly GraphicsEngine _graphicsEngine;
-            private readonly Dictionary<uint, DescriptorSet>[] _descriptorSets; // Per-frame descriptor sets
-            private uint _dynamicOffset = 0;
+            _context = context;
+            _descriptorPool = descriptorPool;
+            _graphicsEngine = graphicsEngine;
+        }
 
-            public BindingManager(RenderingContext context, DescriptorSetManager descriptorSetManager, GraphicsEngine graphicsEngine)
+        public void BindResourcesForMaterial(Material material, VkCommandBuffer commandBuffer)
+        {
+            var descriptorSets = new DescriptorSet[material.Bindings.Count];
+            var dynamicOffsets = new List<uint>();
+
+            int index = 0;
+
+            foreach (var binding in material.Bindings)
             {
-                _context = context;
-                _descriptorSetManager = descriptorSetManager;
-                _graphicsEngine = graphicsEngine;
-                _descriptorSets = new Dictionary<uint, DescriptorSet>[context.MaxFramesPerFlight];
-                for (int i = 0; i < _descriptorSets.Length; i++)
-                {
-                    _descriptorSets[i] = new Dictionary<uint, DescriptorSet>();
-                }
+                ProcessBinding(binding, material.Pipeline.Layout, descriptorSets, dynamicOffsets, ref index);
             }
 
-            public void BindResourcesForMaterial(Material material, VkCommandBuffer commandBuffer, VkPipelineLayout pipelineLayout)
+            BindDescriptorSetsToCommandBuffer(commandBuffer, material.Pipeline.Layout, descriptorSets, dynamicOffsets, material.Bindings.MinSetLocation);
+        }
+
+        private void ProcessBinding(
+            ResourceBinding binding,
+            VkPipelineLayout pipelineLayout,
+            DescriptorSet[] descriptorSets,
+            List<uint> dynamicOffsets,
+            ref int index)
+        {
+            if (binding is UniformBufferBinding uboBinding)
             {
-                _dynamicOffset = 0; // Reset dynamic offset for each material
-
-                var descriptorSets = new List<DescriptorSet>();
-                var dynamicOffsets = new List<uint>();
-
-                // Determine the maximum set index used by the material
-                uint maxSetIndex = 0;
-                uint minSetIndex = 0;
-                foreach (var binding in material.Bindings)
-                {
-                    // Assume ResourceBinding class has a Set property
-                    if (binding.SetLocation > maxSetIndex)
-                    {
-                        maxSetIndex = binding.SetLocation;
-                    }
-                    if (binding.SetLocation < minSetIndex)
-                    {
-                        minSetIndex = binding.SetLocation;
-                    }
-                }
-
-                // Create and bind descriptor sets for each set index
-                for (uint setIndex = 0; setIndex <= maxSetIndex; setIndex++)
-                {
-                    BindDescriptorSetForSetIndex(material, pipelineLayout, setIndex, descriptorSets, dynamicOffsets);
-                }
-
-                // Bind the array of descriptor sets
-                unsafe
-                {
-                    fixed (DescriptorSet* descriptorSetsPtr = descriptorSets.ToArray())
-                    fixed (uint* dynamicOffsetsPtr = dynamicOffsets.ToArray())
-                    {
-                        RenderingContext.Vk.CmdBindDescriptorSets(
-                            commandBuffer,
-                            PipelineBindPoint.Graphics,
-                            pipelineLayout,
-                            minSetIndex, // Assuming you are starting from set 0
-                            (uint)descriptorSets.Count,
-                            descriptorSetsPtr,
-                            (uint)dynamicOffsets.Count,
-                            dynamicOffsetsPtr
-                        );
-                    }
-                }
-            }
-            private void BindDescriptorSetForSetIndex(
-               Material material,
-               VkPipelineLayout pipelineLayout,
-               uint setIndex,
-               List<DescriptorSet> descriptorSets,
-               List<uint> dynamicOffsets)
-            {
-                List<ResourceBinding> bindingsForSet = material.Bindings
-                    .Where(b => b.SetLocation == setIndex)
-                    .ToList();
-
-                if (bindingsForSet.Count > 0)
-                {
-                    var descriptorSet = GetDescriptorSetForBinding(bindingsForSet, pipelineLayout, setIndex);
-
-                    // Update dynamic offset for dynamic uniform buffers
-                    foreach (var binding in bindingsForSet)
-                    {
-                        if (binding is UniformBufferBinding uboBinding && uboBinding.Buffer.IsDynamic)
-                        {
-                            dynamicOffsets.Add(_dynamicOffset);
-                            _dynamicOffset += (uint)uboBinding.Buffer.Size; // Assuming Size is already aligned
-                        }
-                    }
-
-                    descriptorSets.Add(descriptorSet);
-                }
+                HandleUniformBufferBinding(uboBinding, pipelineLayout, dynamicOffsets);
             }
 
-            private DescriptorSet GetDescriptorSetForBinding(List<ResourceBinding> bindingsForSet, VkPipelineLayout pipelineLayout, uint setIndex)
+            if (binding.DescriptorSet.Handle == default)
             {
-                var currentFrameIndex = _graphicsEngine.CurrentImageIndex;
-
-                if (!_descriptorSets[currentFrameIndex].TryGetValue(setIndex, out var descriptorSet))
-                {
-                    descriptorSet = _descriptorSetManager.AllocateDescriptorSet(pipelineLayout.GetSetLayout(setIndex));
-                    _descriptorSets[currentFrameIndex][setIndex] = descriptorSet;
-                    foreach (var binding in bindingsForSet)
-                    {
-                        UpdateDescriptorSet(descriptorSet, binding);
-                    }
-                }
-
-                return descriptorSet;
+                AllocateAndBindDescriptorSet(binding, pipelineLayout);
             }
 
-            private unsafe void UpdateDescriptorSet(DescriptorSet descriptorSet, ResourceBinding binding)
+            descriptorSets[index++] = binding.DescriptorSet;
+        }
+
+        private static void HandleUniformBufferBinding(UniformBufferBinding uboBinding, VkPipelineLayout pipelineLayout, List<uint> dynamicOffsets)
+        {
+            if (uboBinding.Buffer.IsDynamic)
             {
-                if (binding is UniformBufferBinding uboBinding)
-                {
-                    uint dynamicOffset = uboBinding.Buffer.IsDynamic ? uboBinding.Buffer.DynamicOffset : 0;
+                dynamicOffsets.Add((uint)uboBinding.Offset);
+            }
 
-                    var bufferInfo = new DescriptorBufferInfo
-                    {
-                        Buffer = uboBinding.Buffer.Buffer,
-                        Offset = dynamicOffset,
-                        Range = uboBinding.Buffer.Size
-                    };
+            // Check if the descriptor set is already cached for this pipeline layout
+            if (!uboBinding.Buffer.DescriptorSets.TryGetValue(pipelineLayout, out var cachedDescriptorSet) || cachedDescriptorSet.Handle == default)
+            {
+                // If not, cache it
+                uboBinding.Buffer.DescriptorSets[pipelineLayout] = uboBinding.DescriptorSet;
+            }
+            else
+            {
+                // If it is, reuse the cached descriptor set
+                uboBinding.DescriptorSet = cachedDescriptorSet;
+            }
+        }
 
-                    var writeDescriptorSet = new WriteDescriptorSet
-                    {
-                        SType = StructureType.WriteDescriptorSet,
-                        DstSet = descriptorSet,
-                        DstBinding = uboBinding.BindingLocation,
-                        DstArrayElement = 0,
-                        DescriptorType = DescriptorType.UniformBuffer,
-                        DescriptorCount = 1,
-                        PBufferInfo = &bufferInfo
-                    };
+        private void AllocateAndBindDescriptorSet(ResourceBinding binding, VkPipelineLayout pipelineLayout)
+        {
+            var setLayout = pipelineLayout.GetSetLayout(binding.SetLocation);
+            var set = _descriptorPool.AllocateDescriptorSet(setLayout);
+            binding.DescriptorSet = set;
+            binding.UpdateDescriptorSet(_context);
+        }
 
-                    RenderingContext.Vk.UpdateDescriptorSets(_context.Device, 1, in writeDescriptorSet, 0, null);
-                }
-
-                // Add similar logic for other binding types (TextureBinding, etc.)
+        private unsafe void BindDescriptorSetsToCommandBuffer(
+                VkCommandBuffer commandBuffer,
+                VkPipelineLayout pipelineLayout,
+                DescriptorSet[] descriptorSets,
+                List<uint> dynamicOffsets,
+                uint minSetIndex)
+        {
+            fixed (DescriptorSet* descriptorSetsPtr = descriptorSets)
+            fixed (uint* dynamicOffsetsPtr = dynamicOffsets.ToArray())
+            {
+                RenderingContext.Vk.CmdBindDescriptorSets(
+                    commandBuffer,
+                    PipelineBindPoint.Graphics,
+                    pipelineLayout,
+                    minSetIndex,
+                    (uint)descriptorSets.Length,
+                    descriptorSetsPtr,
+                    (uint)dynamicOffsets.Count,
+                    dynamicOffsetsPtr);
             }
         }
     }
-
 }

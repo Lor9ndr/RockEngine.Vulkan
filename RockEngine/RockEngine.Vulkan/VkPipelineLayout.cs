@@ -1,25 +1,24 @@
 ﻿
 using Silk.NET.Vulkan;
 
+using System.Collections.ObjectModel;
+
 namespace RockEngine.Vulkan
 {
     public record VkPipelineLayout : VkObject<PipelineLayout>
     {
         public readonly PushConstantRange[] PushConstantRanges;
-        public readonly VkDescriptorSetLayout[] DescriptorSetLayouts;
+        public readonly ReadOnlyDictionary<uint,VkDescriptorSetLayout> DescriptorSetLayouts;
 
         private readonly RenderingContext _context;
 
-        private VkPipelineLayout(RenderingContext context, PipelineLayout layout, PushConstantRange[] pushConstantRanges, VkDescriptorSetLayout[] descriptorSetLayouts)
+        private VkPipelineLayout(RenderingContext context, PipelineLayout layout, PushConstantRange[] pushConstantRanges, Dictionary<uint, VkDescriptorSetLayout> descriptorSetLayouts)
             : base(layout)
         {
             PushConstantRanges = pushConstantRanges;
-            DescriptorSetLayouts = descriptorSetLayouts;
+            DescriptorSetLayouts = descriptorSetLayouts.AsReadOnly();
             _context = context;
-            for (int i = 0; i < DescriptorSetLayouts.Length; i++)
-            {
-                DescriptorSetLayouts[i].PipelineLayout = this;
-            }
+           
         }
 
 
@@ -27,7 +26,7 @@ namespace RockEngine.Vulkan
         {
             var descriptorSetLayoutsWrapped = CreateDescriptorSetLayouts(context, shaders);
             var pushConstantRanges = shaders.SelectMany(s => s.ConstantRanges).ToArray();
-            var descriptorSetLayouts = descriptorSetLayoutsWrapped.Select(s => s.DescriptorSetLayout).ToArray();
+            var descriptorSetLayouts = descriptorSetLayoutsWrapped.Select(s => s.Value.DescriptorSetLayout).ToArray();
 
             fixed (DescriptorSetLayout* setLayout = descriptorSetLayouts)
             fixed (PushConstantRange* constantRange = pushConstantRanges)
@@ -35,7 +34,7 @@ namespace RockEngine.Vulkan
                 var layoutInfo = new PipelineLayoutCreateInfo
                 {
                     SType = StructureType.PipelineLayoutCreateInfo,
-                    SetLayoutCount = (uint)descriptorSetLayoutsWrapped.Length,
+                    SetLayoutCount = (uint)descriptorSetLayoutsWrapped.Count,
                     PSetLayouts = setLayout,
                     PushConstantRangeCount = (uint)pushConstantRanges.Length,
                     PPushConstantRanges = constantRange
@@ -47,7 +46,7 @@ namespace RockEngine.Vulkan
             }
         }
 
-        private static unsafe VkDescriptorSetLayout[] CreateDescriptorSetLayouts(RenderingContext context, VkShaderModule[] shaders)
+        private static unsafe Dictionary<uint, VkDescriptorSetLayout> CreateDescriptorSetLayouts(RenderingContext context, VkShaderModule[] shaders)
         {
             var setLayouts = new List<VkDescriptorSetLayout>();
 
@@ -64,8 +63,11 @@ namespace RockEngine.Vulkan
                             PBindings = pBindings
                         };
 
-                        RenderingContext.Vk.CreateDescriptorSetLayout(context.Device, in layoutInfo, in RenderingContext.CustomAllocator<VkPipelineLayout>(), out var descriptorSet)
+                        RenderingContext.Vk.CreateDescriptorSetLayout(context.Device, in layoutInfo,
+                                                                      in RenderingContext.CustomAllocator<VkPipelineLayout>(),
+                                                                      out var descriptorSet)
                             .VkAssertResult("Failed to create descriptor set layout");
+
                         var setLayout = new VkDescriptorSetLayout(descriptorSet, layout.Set, layout.Bindings);
                         setLayouts.Add(setLayout);
                     }
@@ -73,12 +75,12 @@ namespace RockEngine.Vulkan
                 }
             }
 
-            return setLayouts.ToArray();
+            return setLayouts.ToDictionary(s=>s.SetLocation);
         }
 
         public VkDescriptorSetLayout GetSetLayout(uint location)
         {
-            return DescriptorSetLayouts.FirstOrDefault(s => s.SetLocation == location);
+            return DescriptorSetLayouts[location];
         }
 
         protected override void Dispose(bool disposing)
@@ -98,7 +100,7 @@ namespace RockEngine.Vulkan
                     {
                         foreach (var item in DescriptorSetLayouts)
                         {
-                            RenderingContext.Vk.DestroyDescriptorSetLayout(_context.Device, item.DescriptorSetLayout, in RenderingContext.CustomAllocator<DescriptorSetLayout>());
+                            RenderingContext.Vk.DestroyDescriptorSetLayout(_context.Device, item.Value.DescriptorSetLayout, in RenderingContext.CustomAllocator<DescriptorSetLayout>());
                         }
 
                         RenderingContext.Vk.DestroyPipelineLayout(_context.Device, _vkObject, in RenderingContext.CustomAllocator<VkPipelineLayout>());

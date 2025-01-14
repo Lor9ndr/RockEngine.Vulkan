@@ -28,7 +28,7 @@ namespace RockEngine.Vulkan
         {
             var allignmentSize = usage switch
             {
-                BufferUsageFlags.UniformBufferBit => GetAlignment(size, context.Device.PhysicalDevice.Properties.Limits.MinUniformBufferOffsetAlignment),
+                BufferUsageFlags.UniformBufferBit | BufferUsageFlags.BufferUsageUniformBufferBit => GetAlignment(size, context.Device.PhysicalDevice.Properties.Limits.MinUniformBufferOffsetAlignment),
                 _ => GetAlignment(size, 256),
             };
             var bufferInfo = new BufferCreateInfo

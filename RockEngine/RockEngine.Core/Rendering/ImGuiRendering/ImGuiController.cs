@@ -526,7 +526,7 @@ namespace RockEngine.Core.Rendering.ImGuiRendering
         {
 
             _pipelineLayout = VkPipelineLayout.Create(_vkContext, vertShaderModule, fragShaderModule);
-            _descriptorSetLayout = _pipelineLayout.DescriptorSetLayouts.First(s=> s.SetLocation == 0);
+            _descriptorSetLayout = _pipelineLayout.DescriptorSetLayouts[0];
 
             var binding_desc = new VertexInputBindingDescription();
             binding_desc.Stride = (uint)Unsafe.SizeOf<ImDrawVert>();

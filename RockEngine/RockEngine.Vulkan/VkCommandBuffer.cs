@@ -6,7 +6,6 @@ namespace RockEngine.Vulkan
     {
         private readonly RenderingContext _context;
         private readonly VkCommandPool _commandPool;
-
         public VkCommandBuffer(RenderingContext context, in CommandBuffer commandBuffer, VkCommandPool commandPool)
             : base(in commandBuffer)
         {

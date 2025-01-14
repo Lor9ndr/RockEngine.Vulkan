@@ -34,14 +34,14 @@ namespace RockEngine.Core.Rendering.Managers
         {
             return _pipelines.SelectMany(
                 s => s.Layout.DescriptorSetLayouts.Where(
-                    layout => layout.Bindings.FirstOrDefault(
+                    layout => layout.Value.Bindings.FirstOrDefault(
                         s => s.Name == uniformBuffer.Name && s.Binding == uniformBuffer.BindingLocation) != null))
-                                    .FirstOrDefault();
+                                    .FirstOrDefault().Value;
         }
 
         public VkDescriptorSetLayout TryGetLayout(in Material material)
         {
-            return material.Pipeline.Layout.DescriptorSetLayouts.FirstOrDefault(s => s.SetLocation == 2);
+            return material.Pipeline.Layout.DescriptorSetLayouts[2];
         }
 
         public VkPipeline? GetPipelineByName(string name)
