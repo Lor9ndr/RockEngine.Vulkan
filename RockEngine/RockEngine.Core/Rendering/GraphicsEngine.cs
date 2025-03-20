@@ -2,6 +2,8 @@
 
 using Silk.NET.Vulkan;
 
+using SkiaSharp;
+
 namespace RockEngine.Core.Rendering
 {
     public class GraphicsEngine : IDisposable
@@ -71,9 +73,47 @@ namespace RockEngine.Core.Rendering
             return commandBuffer;
         }
 
-        public void Submit(CommandBuffer[] commandBuffers)
+        public void Submit(params CommandBuffer[] commandBuffers)
         {
             _swapchain.SubmitCommandBuffers(commandBuffers, _currentImageIndex);
+        }
+        public unsafe void SubmitSingleTimeCommand(Action<VkCommandBuffer> commandAction)
+        {
+            // Create temporary command pool
+            using var commandPool = VkCommandPool.Create(
+                _renderingContext,
+                new CommandPoolCreateInfo
+                {
+                    SType = StructureType.CommandPoolCreateInfo,
+                    Flags = CommandPoolCreateFlags.TransientBit,
+                    QueueFamilyIndex = _renderingContext.Device.QueueFamilyIndices.GraphicsFamily.Value
+                });
+
+            // Allocate command buffer
+            using var commandBuffer = commandPool.AllocateCommandBuffer();
+
+            // Create fence
+            using var fence = VkFence.CreateNotSignaled(_renderingContext);
+
+            // Record commands
+            commandBuffer.BeginSingleTimeCommand();
+            commandAction(commandBuffer);
+            commandBuffer.End();
+
+            // Submit to queue
+            var nativeBuffer = commandBuffer.VkObjectNative;
+            _renderingContext.Device.GraphicsQueue.Submit(
+                new SubmitInfo
+                {
+                    SType = StructureType.SubmitInfo,
+                    CommandBufferCount = 1,
+                    PCommandBuffers = &nativeBuffer
+                },
+                fence
+            );
+
+            // Wait for completion
+            fence.Wait();
         }
 
 

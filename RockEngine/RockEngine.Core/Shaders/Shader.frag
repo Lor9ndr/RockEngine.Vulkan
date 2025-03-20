@@ -19,7 +19,8 @@ const float lightIntensity = 1.5; // Intensity of the sunlight
 
 void main() {
     // Sample the albedo, metallic, and roughness textures
-    vec3 albedo = texture(albedoMap, texCoords).rgb;
+    vec4 albedoRgba = texture(albedoMap, texCoords);
+    vec3 albedo = albedoRgba.rgb;
     float metallic = texture(metallicMap, texCoords).r;
     float roughness = texture(roughnessMap, texCoords).r;
 
@@ -28,6 +29,10 @@ void main() {
     float NdotL = max(dot(normal, lightDirection), 0.0);
     vec3 diffuse = lightColor * albedo * NdotL * lightIntensity;
 
+    if(albedoRgba.a < 0.5)
+    {
+        discard;
+    }
     // Combine the properties into a single color output
     outColor = vec4(diffuse, 1.0);
 }

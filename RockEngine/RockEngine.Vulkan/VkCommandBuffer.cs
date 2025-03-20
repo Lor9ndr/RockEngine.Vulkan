@@ -115,5 +115,10 @@ namespace RockEngine.Vulkan
             _commandPool.FreeCommandBuffer(this);
             _vkObject = default;
         }
+
+        public void BindDescriptorSet(PipelineBindPoint pipelineBindPoint, VkPipelineLayout deferredPipelineLayout, uint firstSet, ReadOnlySpan<DescriptorSet> lightingDescriptorSet, ReadOnlySpan<uint> dynamicOffsets = default)
+        {
+            RenderingContext.Vk.CmdBindDescriptorSets(this, pipelineBindPoint, deferredPipelineLayout, firstSet, lightingDescriptorSet, dynamicOffsets);
+        }
     }
 }

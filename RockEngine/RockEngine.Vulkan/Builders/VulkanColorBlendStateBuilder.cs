@@ -20,6 +20,11 @@ namespace RockEngine.Vulkan.Builders
             _attachments.Add(attachment);
             return this;
         }
+        public VulkanColorBlendStateBuilder AddAttachment(params PipelineColorBlendAttachmentState[] attachment)
+        {
+            _attachments.AddRange(attachment);
+            return this;
+        }
 
         public unsafe MemoryHandle Build()
         {

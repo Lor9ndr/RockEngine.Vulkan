@@ -13,5 +13,4 @@ namespace RockEngine.Core.Rendering.ResourceBindings
 
         public abstract void UpdateDescriptorSet(RenderingContext renderingContext);
     }
-
 }

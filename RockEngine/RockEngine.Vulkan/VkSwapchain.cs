@@ -10,7 +10,7 @@ namespace RockEngine.Vulkan
         private readonly Format _format;
         private readonly RenderingContext _context;
 
-        private Image[] _images;
+        private VkImage[] _images;
         private Extent2D _extent;
         private readonly ISurfaceHandler _surface;
         private readonly VkImageView[] _swapChainImageViews;
@@ -23,7 +23,7 @@ namespace RockEngine.Vulkan
         private Format _depthFormat;
 
         public KhrSwapchain SwapchainApi => _khrSwapchain;
-        public Image[] Images => _images;
+        public VkImage[] VkImages => _images;
         public Format Format => _format;
         public Extent2D Extent => _extent;
         public VkImageView[] SwapChainImageViews => _swapChainImageViews;
@@ -37,7 +37,7 @@ namespace RockEngine.Vulkan
 
         public event Action<VkSwapchain>? OnSwapchainRecreate;
 
-        public VkSwapchain(RenderingContext context, SwapchainKHR swapchain, KhrSwapchain khrSwapchainApi, Image[] images, Format format, Extent2D extent, ISurfaceHandler surface)
+        public VkSwapchain(RenderingContext context, SwapchainKHR swapchain, KhrSwapchain khrSwapchainApi, VkImage[] images, Format format, Extent2D extent, ISurfaceHandler surface)
             : base(swapchain)
         {
             context.MaxFramesPerFlight = images.Length;
@@ -100,8 +100,7 @@ namespace RockEngine.Vulkan
             swapchainApi.GetSwapchainImages(context.Device, swapChain, &countImages, null);
             var images = new Image[countImages];
             swapchainApi.GetSwapchainImages(context.Device, swapChain, &countImages, images);
-
-            return new VkSwapchain(context, swapChain, swapchainApi, images, surfaceFormat.Format, extent, surface);
+            return new VkSwapchain(context, swapChain, swapchainApi, images.Select(s=> new VkImage(context, s, null, ImageLayout.Undefined, Format.R32G32B32A32Sfloat)).ToArray(), surfaceFormat.Format, extent, surface);
         }
 
         private unsafe static void SetImageSharingMode(RenderingContext context, ref SwapchainCreateInfoKHR createInfo)
@@ -171,7 +170,7 @@ namespace RockEngine.Vulkan
 
         }
 
-        private void FillImageViews(RenderingContext context, Image[] images, Format format, VkImageView[] swapChainImageViews)
+        private void FillImageViews(RenderingContext context, VkImage[] images, Format format, VkImageView[] swapChainImageViews)
         {
             for (int i = 0; i < images.Length; i++)
             {
@@ -198,18 +197,18 @@ namespace RockEngine.Vulkan
                         LayerCount = 1
                     }
                 };
-                swapChainImageViews[i] = VkImageView.Create(context, in ci);
+                swapChainImageViews[i] = VkImageView.Create(context, image, in ci);
             }
         }
 
 
-        private unsafe void FillFramebuffers(RenderingContext context, VkImageView[][] framebufferAttachments, VkRenderPass renderPass, Extent2D extent, Image[] images, VkFramebuffer[] swapchainFramebuffers)
+        private unsafe void FillFramebuffers(RenderingContext context, VkImageView[][] framebufferAttachments, VkRenderPass renderPass, Extent2D extent, Image[] images, VkFrameBuffer[] swapchainFramebuffers)
         {
             for (int i = 0; i < images.Length; i++)
             {
                 var image = images[i];
-                var attachment = framebufferAttachments[i].Select((s) => s.VkObjectNative).ToArray().AsSpan();
-                fixed (ImageView* pImageViews = attachment)
+                var attachment = framebufferAttachments[i];
+                fixed (ImageView* pImageViews = attachment.Select(s=>s.VkObjectNative).ToArray())
                 {
                     FramebufferCreateInfo ci = new FramebufferCreateInfo()
                     {
@@ -221,7 +220,7 @@ namespace RockEngine.Vulkan
                         Height = extent.Height,
                         Layers = 1
                     };
-                    swapchainFramebuffers[i] = VkFramebuffer.Create(context, in ci);
+                    swapchainFramebuffers[i] = VkFrameBuffer.Create(context, in ci, attachment);
                 }
             }
         }
@@ -356,7 +355,7 @@ namespace RockEngine.Vulkan
                 _khrSwapchain.GetSwapchainImages(_context.Device, swapChain, &countImages, images);
                 _khrSwapchain.DestroySwapchain(_context.Device, oldSwapchain, in RenderingContext.CustomAllocator<VkSwapchain>());
                 _vkObject = swapChain;
-                _images = images;
+                _images = images.Select(s => new VkImage(_context, s, null, ImageLayout.Undefined, Format.R32G32B32A32Sfloat)).ToArray();
                 _extent = extent;
 
                 // Recreate image views and framebuffers
@@ -488,7 +487,7 @@ namespace RockEngine.Vulkan
                     LayerCount = 1
                 }
             };
-            _depthImageView = VkImageView.Create(_context, in imageViewCi);
+            _depthImageView = VkImageView.Create(_context, depthImage, in imageViewCi);
         }
 
         private Format FindDepthFormat()

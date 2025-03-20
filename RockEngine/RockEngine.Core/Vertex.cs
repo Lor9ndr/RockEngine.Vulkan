@@ -1,6 +1,7 @@
 ﻿using Silk.NET.Vulkan;
 
 using System.Numerics;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
 namespace RockEngine.Core
@@ -10,10 +11,8 @@ namespace RockEngine.Core
         public Vector3 Position;
         public Vector3 Normal;
         public Vector2 TexCoord;
-
-
-        /*public Vector3 Tangent;
-        public Vector3 Bitangent;*/
+        public Vector3 Tangent;
+        public Vector3 Bitangent;
 
         public static float Size = Marshal.SizeOf<Vertex>();
 
@@ -39,27 +38,11 @@ namespace RockEngine.Core
 
         public static VertexInputAttributeDescription[] GetAttributeDescriptions() => new VertexInputAttributeDescription[]
         {
-            new VertexInputAttributeDescription()
-            {
-                 Binding = 0,
-                 Location = 0,
-                 Format = Format.R32G32B32Sfloat,
-                 Offset = (uint)Marshal.OffsetOf<Vertex>(nameof(Position))
-            },
-            new VertexInputAttributeDescription()
-            {
-                 Binding = 0,
-                 Location = 1,
-                 Format = Format.R32G32B32Sfloat,
-                 Offset = (uint)Marshal.OffsetOf<Vertex>(nameof(Normal))
-            },
-             new VertexInputAttributeDescription()
-            {
-                 Binding = 0,
-                 Location = 2,
-                 Format = Format.R32G32Sfloat,
-                 Offset = (uint)Marshal.OffsetOf<Vertex>(nameof(TexCoord))
-            },
+            new VertexInputAttributeDescription(0, 0, Format.R32G32B32Sfloat, 0),
+            new VertexInputAttributeDescription(1, 0, Format.R32G32B32Sfloat, (uint)Marshal.OffsetOf<Vertex>(nameof(Normal))),
+            new VertexInputAttributeDescription(2, 0, Format.R32G32Sfloat, (uint)Marshal.OffsetOf<Vertex>(nameof(TexCoord))),
+            new VertexInputAttributeDescription(3, 0, Format.R32G32B32Sfloat, (uint)Marshal.OffsetOf<Vertex>(nameof(Tangent))),
+            new VertexInputAttributeDescription(4, 0, Format.R32G32B32Sfloat, (uint)Marshal.OffsetOf<Vertex>(nameof(Bitangent)))
         };
     }
 }

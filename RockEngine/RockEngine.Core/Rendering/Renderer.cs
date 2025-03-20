@@ -4,6 +4,7 @@ using RockEngine.Core.Rendering.Managers;
 using RockEngine.Core.Rendering.ResourceBindings;
 using RockEngine.Core.Rendering.RockEngine.Core.Rendering;
 using RockEngine.Vulkan;
+using RockEngine.Vulkan.Builders;
 
 using Silk.NET.Vulkan;
 
@@ -12,15 +13,22 @@ using System.Runtime.CompilerServices;
 
 namespace RockEngine.Core.Rendering
 {
-    public class Renderer
+    public class Renderer:IDisposable
     {
         private readonly GraphicsEngine _graphicsEngine;
         private readonly PipelineManager _pipelineManager;
         private readonly RenderingContext _vulkanContext;
-        private GlobalUbo _globalUbo;
-        private BindingManager _bindingManager;
+        private readonly GlobalUbo _globalUbo;
+        private readonly UniformBufferBinding _globalUboBinding;
+        private readonly BindingManager _bindingManager;
+        private VkPipeline _deferredLightingPipeline;
+        private VkPipelineLayout _deferredPipelineLayout;
+        private VkFrameBuffer[] _framebuffers;
+        private readonly DescriptorPoolManager _descriptorPoolManager;
 
+        private readonly Queue<IRenderCommand> _renderCommands = new Queue<IRenderCommand>();
 
+        public readonly GBuffer GBuffer;
         public Camera CurrentCamera { get; set; }
         public VkCommandBuffer CurrentCommandBuffer { get; private set; }
         public VkDescriptorPool DescriptorPool { get; internal set; }
@@ -29,11 +37,7 @@ namespace RockEngine.Core.Rendering
         public PipelineManager PipelineManager => _pipelineManager;
 
         public EngineRenderPass RenderPass;
-        private VkFramebuffer[] _framebuffers;
-        private readonly VkDescriptorPool _descriptorPool;
-
-        private readonly Queue<IRenderCommand> _renderCommands = new Queue<IRenderCommand>();
-        private uint _dynamicOffset = 0;
+        
 
         public unsafe Renderer(RenderingContext context, GraphicsEngine graphicsEngine, PipelineManager pipelineManager)
         {
@@ -48,114 +52,155 @@ namespace RockEngine.Core.Rendering
             CreateFramebuffers(_graphicsEngine.Swapchain);
 
             // Create descriptor pool with enough capacity
-            var poolSizes = stackalloc DescriptorPoolSize[]
-            {
-                new DescriptorPoolSize()
-                {
-                    DescriptorCount = 10_000_000,
-                    Type = DescriptorType.UniformBuffer,
-                },
-                new DescriptorPoolSize()
-                {
-                    Type = DescriptorType.CombinedImageSampler,
-                    DescriptorCount = 10_000_000,
-                }
+            var poolSizes = new[]
+           {
+                new DescriptorPoolSize(DescriptorType.UniformBuffer, 5_000),
+                new DescriptorPoolSize(DescriptorType.CombinedImageSampler, 5_000)
             };
-            _descriptorPool = VkDescriptorPool.Create(context, new DescriptorPoolCreateInfo()
-            {
-                SType = StructureType.DescriptorPoolCreateInfo,
-                PoolSizeCount = 2,
-                MaxSets = 10_000_000,
-                PPoolSizes = poolSizes
+            _descriptorPoolManager = new DescriptorPoolManager(
+                context,
+                poolSizes,
+                maxSetsPerPool: 5_000
+            );
 
-            });
-            _bindingManager = new BindingManager(context, _descriptorPool, graphicsEngine);
+            _bindingManager = new BindingManager(context, _descriptorPoolManager, graphicsEngine);
             _globalUbo = new GlobalUbo("GlobalData", 0, (ulong)Unsafe.SizeOf<Matrix4x4>());
-
+            _globalUboBinding = new UniformBufferBinding(_globalUbo, 0, 0);
+            GBuffer = new GBuffer(context, graphicsEngine.Swapchain, graphicsEngine);
+            CreateLightingResources();
         }
 
-        public unsafe void Render(VkCommandBuffer vkCommandBuffer)
+        private unsafe void CreateLightingResources()
+        {
+            var vertShader = VkShaderModule.Create(_vulkanContext, "Shaders/deferred_lighting.vert.spv", ShaderStageFlags.VertexBit);
+            var fragShader = VkShaderModule.Create(_vulkanContext, "Shaders/deferred_lighting.frag.spv", ShaderStageFlags.FragmentBit);
+
+            _deferredPipelineLayout = VkPipelineLayout.Create(_vulkanContext, vertShader, fragShader);
+            
+             GBuffer.CreateLightingDescriptorSets(_bindingManager, _deferredPipelineLayout);
+
+            // Create pipeline
+            var colorBlendAttachment = new PipelineColorBlendAttachmentState
+            {
+                ColorWriteMask = ColorComponentFlags.RBit | ColorComponentFlags.GBit |
+                               ColorComponentFlags.BBit | ColorComponentFlags.ABit
+            };
+
+            using var pipelineBuilder = new GraphicsPipelineBuilder(_vulkanContext, "DeferredLighting")
+                .WithShaderModule(vertShader)
+                .WithShaderModule(fragShader)
+                .WithVertexInputState(new VulkanPipelineVertexInputStateBuilder())
+                .WithInputAssembly(new VulkanInputAssemblyBuilder()
+                                                            .Configure())
+                .WithViewportState(new VulkanViewportStateInfoBuilder()
+                    .AddViewport(new Viewport(0, 0, _graphicsEngine.Swapchain.Extent.Width,
+                                             _graphicsEngine.Swapchain.Extent.Height, 0, 1))
+                    .AddScissors(new Rect2D(new Offset2D(), _graphicsEngine.Swapchain.Extent)))
+                .WithRasterizer(new VulkanRasterizerBuilder().CullFace(CullModeFlags.None))
+                .WithMultisampleState(new VulkanMultisampleStateInfoBuilder().Configure(false, SampleCountFlags.Count1Bit))
+                .WithColorBlendState(new VulkanColorBlendStateBuilder().AddAttachment(colorBlendAttachment))
+                .AddRenderPass(RenderPass.RenderPass)
+                .WithPipelineLayout(_deferredPipelineLayout)
+                .WithDynamicState(new PipelineDynamicStateBuilder()
+                    .AddState(DynamicState.Viewport)
+                    .AddState(DynamicState.Scissor));
+
+            _deferredLightingPipeline = _pipelineManager.Create(pipelineBuilder);
+        }
+
+        public async Task Render(VkCommandBuffer vkCommandBuffer)
         {
             CurrentCommandBuffer = vkCommandBuffer;
+            await RenderGeometryPass();
+            RenderLightingPass();
+        }
 
-            var clearValues = stackalloc ClearValue[]
+        private async Task RenderGeometryPass()
+        {
+            GBuffer.BeginGeometryPass(CurrentCommandBuffer, _graphicsEngine.Swapchain.Extent);
+
+            CurrentCommandBuffer.SetViewport(new Viewport(0, 0, _graphicsEngine.Swapchain.Extent.Width, _graphicsEngine.Swapchain.Extent.Height, 0, 1));
+            CurrentCommandBuffer.SetScissor(new Rect2D(new Offset2D(), _graphicsEngine.Swapchain.Extent));
+
+            if (CurrentCamera != null)
             {
-                new ClearValue() { Color = new ClearColorValue(0.1f, 0.1f, 0.1f, 1f) },
-                new ClearValue() { DepthStencil = new ClearDepthStencilValue(1f, 0u) }
-            };
+                _globalUbo.ViewProjection = CurrentCamera.ViewProjectionMatrix;
+                await _globalUbo.UpdateAsync();
+            }
 
-            RenderPassBeginInfo renderPassBeginInfo = new RenderPassBeginInfo()
+            while (_renderCommands.Count > 0 && _renderCommands.Peek() is MeshRenderCommand)
+            {
+                var command = (MeshRenderCommand)_renderCommands.Dequeue();
+                ProcessGeometryCommand(command);
+            }
+
+            CurrentCommandBuffer.EndRenderPass();
+        }
+
+        private unsafe void RenderLightingPass()
+        {
+            var clearValues = stackalloc ClearValue[2];
+            clearValues[0] = new ClearValue { Color = new ClearColorValue(0.1f, 0.1f, 0.1f, 1f) };
+            clearValues[1] = new ClearValue { DepthStencil = new ClearDepthStencilValue(1f, 0) }; // Valid depth value
+
+            var renderPassBeginInfo = new RenderPassBeginInfo
             {
                 SType = StructureType.RenderPassBeginInfo,
-                ClearValueCount = 2,
+                RenderPass = RenderPass.RenderPass,
                 Framebuffer = _framebuffers[_graphicsEngine.CurrentImageIndex],
+                ClearValueCount = 2, 
                 PClearValues = clearValues,
-                RenderArea = new Rect2D(new Offset2D(), _graphicsEngine.Swapchain.Extent),
-                RenderPass = RenderPass.RenderPass
+                RenderArea = new Rect2D { Extent = _graphicsEngine.Swapchain.Extent }
             };
 
-            var vp = new Viewport(0, 0, _graphicsEngine.Swapchain.Extent.Width, _graphicsEngine.Swapchain.Extent.Height, 0, 1);
-            var scissor = new Rect2D(new Offset2D(0, 0), _graphicsEngine.Swapchain.Extent);
 
             CurrentCommandBuffer.BeginRenderPass(in renderPassBeginInfo, SubpassContents.Inline);
-            CurrentCommandBuffer.SetViewport(in vp);
-            CurrentCommandBuffer.SetScissor(in scissor);
+            CurrentCommandBuffer.SetViewport(new Viewport(0, 0,
+                _graphicsEngine.Swapchain.Extent.Width,
+                _graphicsEngine.Swapchain.Extent.Height, 0, 1));
+            CurrentCommandBuffer.SetScissor(new Rect2D(new Offset2D(), _graphicsEngine.Swapchain.Extent));
 
-            VkPipeline? prevPipeline = null;
-            if (CurrentCamera is not null)
-            {
-                 _globalUbo.ViewProjection = CurrentCamera.ViewProjectionMatrix;
+            CurrentCommandBuffer.BindPipeline(_deferredLightingPipeline, PipelineBindPoint.Graphics);
 
-                    // BAD, REPLACE TO SOMEWHERE ELSE THAT SHIT
-                 _globalUbo.UpdateAsync().GetAwaiter().GetResult();
-            }
-                
-            var globalUboBinding = new UniformBufferBinding(_globalUbo, 0, 0);
+            GBuffer.BindResources(_bindingManager, _deferredPipelineLayout, CurrentCommandBuffer);
+            
+            CurrentCommandBuffer.Draw(3, 1, 0, 0);
 
-
-            // Process render commands
             while (_renderCommands.Count > 0)
             {
                 var command = _renderCommands.Dequeue();
-                switch (command)
+                if (command is ImguiRenderCommand imguiCommand)
                 {
-                    case MeshRenderCommand meshCommand:
-                        {
-                            var mesh = meshCommand.Mesh;
-                            var material = mesh.Material;
-                            bool isBinded = false;
-                            if (prevPipeline != material.Pipeline)
-                            {
-                                RenderingContext.Vk.CmdBindPipeline(CurrentCommandBuffer, PipelineBindPoint.Graphics, material.Pipeline);
-                                prevPipeline = material.Pipeline;
-                                 mesh.Material.Bindings.Add(globalUboBinding);
-                                isBinded = true;
-                            }
-                            _bindingManager.BindResourcesForMaterial(material, vkCommandBuffer);
-
-                            // BAD WAY TO CLEAN LIST OF BINDINGS, as we touch list of bindings every render frame
-
-                            mesh.VertexBuffer.BindVertexBuffer(vkCommandBuffer);
-                            if (mesh.HasIndices)
-                            {
-                                mesh.IndexBuffer.BindIndexBuffer(vkCommandBuffer, 0, IndexType.Uint32);
-                                vkCommandBuffer.DrawIndexed((uint)mesh.Indices.Length, 1, 0, 0, 0);
-                            }
-                            else
-                            {
-                                vkCommandBuffer.Draw((uint)mesh.Vertices.Length, 1, 0, 0);
-                            }
-                            if (isBinded)
-                            {
-                                material.Bindings.Remove(globalUboBinding);
-                            }
-
-                            break;
-                        }
+                    imguiCommand.RenderCommand.Invoke(CurrentCommandBuffer, _graphicsEngine.Swapchain.Extent);
                 }
             }
 
             CurrentCommandBuffer.EndRenderPass();
+        }
+
+        private unsafe void ProcessGeometryCommand(MeshRenderCommand command)
+        {
+            var mesh = command.Mesh;
+            var material = mesh.Material;
+
+            // Use geometry-specific pipeline
+            RenderingContext.Vk.CmdBindPipeline(CurrentCommandBuffer,
+                PipelineBindPoint.Graphics,
+                material.GeometryPipeline);
+            mesh.Material.Bindings.Add(_globalUboBinding);
+            _bindingManager.BindResourcesForMaterial(material, CurrentCommandBuffer);
+            mesh.Material.Bindings.Remove(_globalUboBinding);
+
+            mesh.VertexBuffer.BindVertexBuffer(CurrentCommandBuffer);
+            if (mesh.HasIndices)
+            {
+                mesh.IndexBuffer.BindIndexBuffer(CurrentCommandBuffer, 0, IndexType.Uint32);
+                CurrentCommandBuffer.DrawIndexed((uint)mesh.Indices.Length, 1, 0, 0, 0);
+            }
+            else
+            {
+                CurrentCommandBuffer.Draw((uint)mesh.Vertices.Length, 1, 0, 0);
+            }
         }
 
         private unsafe void CreateRenderPass()
@@ -243,14 +288,14 @@ namespace RockEngine.Core.Rendering
             }
             else
             {
-                _framebuffers = new VkFramebuffer[swapChainImageViews.Length];
+                _framebuffers = new VkFrameBuffer[swapChainImageViews.Length];
             }
 
 
             for (int i = 0; i < swapChainImageViews.Length; i++)
             {
-                var attachments = new ImageView[] { swapChainImageViews[i].VkObjectNative, swapChainDepthImageView };
-                fixed (ImageView* attachmentsPtr = attachments)
+                var vkAttachments = new VkImageView[] { swapChainImageViews[i], swapChainDepthImageView };
+                fixed (ImageView* attachmentsPtr = vkAttachments.Select(s=>s.VkObjectNative).ToArray())
                 {
                     var framebufferInfo = new FramebufferCreateInfo
                     {
@@ -262,10 +307,20 @@ namespace RockEngine.Core.Rendering
                         Height = swapChainExtent.Height,
                         Layers = 1
                     };
-                    var framebuffer = VkFramebuffer.Create(_vulkanContext, in framebufferInfo);
+                    var framebuffer = VkFrameBuffer.Create(_vulkanContext, in framebufferInfo, vkAttachments);
                     _framebuffers[i] = framebuffer;
                 }
             }
+        }
+
+        public void AddCommand(IRenderCommand imguiRenderCommand)
+        {
+            _renderCommands.Enqueue(imguiRenderCommand);
+        }
+
+        public void Dispose()
+        {
+            _globalUbo.Dispose();
         }
     }
 }

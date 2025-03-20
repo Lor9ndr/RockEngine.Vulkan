@@ -46,7 +46,7 @@ namespace RockEngine.Core.ECS
         {
             foreach (var item in _components)
             {
-                await item.Update(renderer);
+                await item.Update(renderer).ConfigureAwait(false);
             }
         }
 
@@ -54,7 +54,7 @@ namespace RockEngine.Core.ECS
         {
             foreach (var item in _components)
             {
-                await item.OnStart(renderer);
+                await item.OnStart(renderer).ConfigureAwait(false);
             }
         }
 

@@ -1,6 +1,6 @@
 ﻿namespace RockEngine.Core.Rendering.Commands
 {
-    internal interface IRenderCommand
+    public interface IRenderCommand
     {
     }
 }

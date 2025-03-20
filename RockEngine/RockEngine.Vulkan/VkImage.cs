@@ -6,20 +6,24 @@ namespace RockEngine.Vulkan
     {
         private readonly VkDeviceMemory _imageMemory;
         private readonly RenderingContext _context;
+        private readonly Format _format;
 
         public VkDeviceMemory ImageMemory => _imageMemory;
 
         public ImageLayout CurrentLayout => _currentLayout;
 
+        public Format Format => _format;
+
         private ImageLayout _currentLayout;
 
-        private VkImage(RenderingContext context, Image vkImage, VkDeviceMemory imageMemory, ImageLayout currentLayout)
+        public VkImage(RenderingContext context, Image vkImage, VkDeviceMemory imageMemory, ImageLayout currentLayout, Format format)
             : base(vkImage)
 
         {
             _imageMemory = imageMemory;
             _currentLayout = currentLayout;
             _context = context;
+            _format = format;
         }
 
         public unsafe static VkImage Create(RenderingContext context, in ImageCreateInfo ci, MemoryPropertyFlags memPropertyFlags)
@@ -31,7 +35,45 @@ namespace RockEngine.Vulkan
             var imageMemory = VkDeviceMemory.Allocate(context, memRequirements, memPropertyFlags);
 
             RenderingContext.Vk.BindImageMemory(context.Device, vkImage, imageMemory, 0);
-            return new VkImage(context, vkImage, imageMemory, ci.InitialLayout);
+            return new VkImage(context, vkImage, imageMemory, ci.InitialLayout,ci.Format);
+        }
+        public static VkImage Create(
+           RenderingContext context,
+           uint width,
+           uint height,
+           Format format,
+           ImageTiling tiling,
+           ImageUsageFlags usage,
+           MemoryPropertyFlags memProperties,
+           ImageLayout initialLayout = ImageLayout.Undefined,
+           uint mipLevels = 1,
+           uint arrayLayers = 1,
+           SampleCountFlags samples = SampleCountFlags.Count1Bit)
+        {
+            var imageCreateInfo = new ImageCreateInfo
+            {
+                SType = StructureType.ImageCreateInfo,
+                ImageType = ImageType.Type2D,
+                Format = format,
+                Extent = new Extent3D(width, height, 1),
+                MipLevels = mipLevels,
+                ArrayLayers = arrayLayers,
+                Samples = samples,
+                Tiling = tiling,
+                Usage = usage,
+                InitialLayout = initialLayout,
+                SharingMode = SharingMode.Exclusive
+            };
+
+            return Create(context, imageCreateInfo, memProperties);
+        }
+
+        public unsafe VkImageView CreateView(
+            ImageAspectFlags aspectFlags,
+            uint mipLevels = 1,
+            uint arrayLayers = 1)
+        {
+            return VkImageView.Create(_context,this, Format, aspectFlags, mipLevels: mipLevels, arrayLayers: arrayLayers);
         }
 
         public unsafe void TransitionImageLayout(VkCommandBuffer commandBuffer, Format format, ImageLayout newLayout)
@@ -97,6 +139,13 @@ namespace RockEngine.Vulkan
                 srcStage = PipelineStageFlags.TopOfPipeBit;
                 dstStage = PipelineStageFlags.EarlyFragmentTestsBit;
             }
+            else if (_currentLayout == ImageLayout.Undefined && newLayout == ImageLayout.ShaderReadOnlyOptimal)
+            {
+                barrier.SrcAccessMask = AccessFlags.ColorAttachmentWriteBit;
+                barrier.DstAccessMask = AccessFlags.ShaderReadBit;
+                srcStage = PipelineStageFlags.ColorAttachmentOutputBit;
+                dstStage = PipelineStageFlags.FragmentShaderBit;
+            }
             else
             {
                 throw new Exception("Unsupported layout transition");
@@ -127,5 +176,6 @@ namespace RockEngine.Vulkan
             }
         }
 
+       
     }
 }

@@ -6,5 +6,6 @@
         ImGui = 1,
         Depth = 2,
         ColorDepth = 3,
+        Deferred = 4,
     }
 }

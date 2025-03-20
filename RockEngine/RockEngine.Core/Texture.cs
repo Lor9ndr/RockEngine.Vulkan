@@ -17,7 +17,7 @@ namespace RockEngine.Core
         public VkSampler Sampler => _sampler;
         public VkImage Image => _image;
 
-        private Texture(RenderingContext context, VkImage image, VkImageView imageView, VkSampler sampler)
+        public Texture(RenderingContext context, VkImage image, VkImageView imageView, VkSampler sampler)
         {
             _context = context;
             _image = image;
@@ -68,7 +68,7 @@ namespace RockEngine.Core
         public unsafe static Texture Create(RenderingContext context, int width, int height, Format format, nint data, VkCommandBuffer vkCommandBuffer = null)
         {
             // Create the Vulkan image
-            var vkImage = CreateVulkanImage(context, (uint)width, (uint)height, format);
+            var vkImage = CreateVulkanImage(context, (uint)width, (uint)height, format, ImageUsageFlags.TransferDstBit | ImageUsageFlags.SampledBit | ImageUsageFlags.ColorAttachmentBit);
 
             // Create the image view
             var imageView = CreateImageView(context, vkImage, format);
@@ -100,7 +100,12 @@ namespace RockEngine.Core
             return new Texture(context, vkImage, imageView, sampler);
         }
 
-        private static VkImage CreateVulkanImage(RenderingContext context, uint width, uint height, Format format)
+        private static VkImage CreateVulkanImage(
+            RenderingContext context, 
+            uint width, 
+            uint height, 
+            Format format, 
+            ImageUsageFlags imageUsageFlags = ImageUsageFlags.TransferDstBit | ImageUsageFlags.SampledBit)
         {
             var imageInfo = new ImageCreateInfo
             {
@@ -117,7 +122,7 @@ namespace RockEngine.Core
                 ArrayLayers = 1,
                 Samples = SampleCountFlags.Count1Bit,
                 Tiling = ImageTiling.Optimal,
-                Usage = ImageUsageFlags.TransferDstBit | ImageUsageFlags.SampledBit,
+                Usage = imageUsageFlags,
                 SharingMode = SharingMode.Exclusive,
                 InitialLayout = ImageLayout.Undefined
             };
@@ -143,7 +148,7 @@ namespace RockEngine.Core
                 }
             };
 
-            return VkImageView.Create(context, in viewInfo);
+            return VkImageView.Create(context,vkImage, in viewInfo);
         }
 
         private static Format GetVulkanFormat(SKColorType colorType)
@@ -172,12 +177,17 @@ namespace RockEngine.Core
         private unsafe static void CopyImageData(RenderingContext context, SKBitmap skBitmap, VkImage vkImage, VkCommandBuffer? commandBuffer = null)
         {
             CopyImageDataFromPointer(context,vkImage, skBitmap.GetPixels().ToPointer(), (uint)skBitmap.Width, (uint)skBitmap.Height, GetVulkanFormat(skBitmap.ColorType), commandBuffer);
-           
         }
 
 
         private unsafe static void CopyImageDataFromPointer(RenderingContext context, VkImage vkImage, void* data, uint width, uint height, Format format, VkCommandBuffer? commandBuffer = null)
         {
+            if (data == null)
+            {
+                // Handle the case where data is null
+                // For example, you might want to initialize the image with a default color or skip the copy
+                return;
+            }
             var imageSize = (ulong)(width * height * GetBytesPerPixel(format));
 
             // Create a staging buffer
@@ -249,7 +259,8 @@ namespace RockEngine.Core
             using var surface = SKSurface.Create(new SKImageInfo(1, 1, SKColorType.Rgba8888));
             surface.Canvas.Clear(SKColors.Pink);
             using var image = surface.Snapshot();
-            return LoadFromSKImage(context, SKBitmap.FromImage(image)); ;
+            using var bitmap = SKBitmap.FromImage(image);
+            return LoadFromSKImage(context, bitmap);
         }
 
         public static Texture LoadFromSKImage(RenderingContext context, SKBitmap skImage)
@@ -287,15 +298,15 @@ namespace RockEngine.Core
                 MaxLod = 0.0f
             };
             var sampler = VkSampler.Create(context, in samplerCreateInfo);
+            skImage.Dispose();
             return new Texture(context, vkImage, imageView, sampler);
         }
 
 
-        public unsafe void Dispose()
+        public void Dispose()
         {
             if (!_disposed)
             {
-                _sampler.Dispose();
                 _imageView.Dispose();
                 _image.Dispose();
                 _disposed = true;

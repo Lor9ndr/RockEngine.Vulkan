@@ -42,27 +42,25 @@ namespace RockEngine.Core
                 await OnLoad?.Invoke();
 
                 await _world.Start(_renderer);
-                _window.Render += Render;
+                _window.Render += async(s) => await Render(s);
                 _window.Update += async (s) => await Update(s);
             };
-           
-
         }
 
-        public async Task Run()
+        public Task Run()
         {
-            await Task.Run(_window.Run, CancellationToken)
-                .ConfigureAwait(false);
+            return Task.Factory.StartNew(_window.Run, CancellationToken, TaskCreationOptions.LongRunning, TaskScheduler.Default);
         }
 
         protected virtual async Task Update(double deltaTime)
         {
             Time.Update(_window.Time, deltaTime);
             _layerStack.Update();
-            await _world.Update(_renderer);
+            await _world.Update(_renderer)
+                .ConfigureAwait(false);
         }
 
-        protected virtual void Render(double time)
+        protected virtual async Task Render(double time)
         {
             if (_layerStack.Count == 0)
             {
@@ -75,7 +73,7 @@ namespace RockEngine.Core
             }
             _layerStack.RenderImGui(vkCommandBuffer);
             _layerStack.Render(vkCommandBuffer);
-            _renderer.Render(vkCommandBuffer);
+            await _renderer.Render(vkCommandBuffer);
             _graphicsEngine.End(vkCommandBuffer);
             _graphicsEngine.Submit([vkCommandBuffer.VkObjectNative]);
         }
@@ -93,6 +91,7 @@ namespace RockEngine.Core
         public virtual void Dispose()
         {
             CancellationTokenSource.Cancel();
+            _renderer.Dispose();
             _graphicsEngine.Dispose();
 
             _renderingContext.Dispose();

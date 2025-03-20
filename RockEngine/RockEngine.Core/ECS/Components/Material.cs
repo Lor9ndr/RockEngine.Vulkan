@@ -4,17 +4,20 @@ using RockEngine.Vulkan;
 using Silk.NET.Vulkan;
 
 using System.Collections;
+using System.Linq;
 
 namespace RockEngine.Core.ECS.Components
 {
     public class Material
     {
-        public const int SET_LOCATION = 2;
+        public const int TEXTURE_SET_LOCATION = 2;
 
         public VkPipeline Pipeline;
         public Texture[] Textures;
-
+       
+        public Pipeline GeometryPipeline { get; set; }
         public BindingCollection Bindings { get; private set; }
+
         public DescriptorSet TexturesDescriptorSet;
         public Material(VkPipeline pipeline, params List<Texture> textures)
         {
@@ -22,14 +25,14 @@ namespace RockEngine.Core.ECS.Components
 
             Bindings = new BindingCollection();
 
-            var setLayout = Pipeline.Layout.GetSetLayout(SET_LOCATION);
-            while (setLayout.Bindings.Length != textures.Count)
+            var setLayout = Pipeline.Layout.GetSetLayout(TEXTURE_SET_LOCATION);
+            while (setLayout.Bindings.Length >= textures.Count)
             {
                 textures.Add(Texture.GetEmptyTexture(RenderingContext.GetCurrent()));
             }
             Textures = textures.ToArray();
             // Add texture bindings to the bindings list
-            Bindings.Add(new TextureBinding(SET_LOCATION, 0, Textures));
+            Bindings.Add(new TextureBinding(TEXTURE_SET_LOCATION, 0, Textures.Take(setLayout.Bindings.Length).ToArray()));
         }
     }
 

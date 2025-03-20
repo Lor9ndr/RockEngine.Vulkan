@@ -15,7 +15,7 @@ namespace RockEngine.Vulkan
       
         public ulong Size => _deviceMemory.Size;
 
-        public VkBuffer(RenderingContext context, in Buffer bufferNative, VkDeviceMemory deviceMemory, ulong size, BufferUsageFlags usage)
+        public VkBuffer(RenderingContext context, in Buffer bufferNative, VkDeviceMemory deviceMemory, BufferUsageFlags usage)
             : base(in bufferNative)
         {
             _context = context;
@@ -48,7 +48,7 @@ namespace RockEngine.Vulkan
 
             RenderingContext.Vk.BindBufferMemory(context.Device, bufferHandle, deviceMemory, 0);
 
-            return new VkBuffer(context, bufferHandle, deviceMemory, size, usage);
+            return new VkBuffer(context, bufferHandle, deviceMemory, usage);
         }
 
         public unsafe static VkBuffer CreateAndCopyToStagingBuffer(RenderingContext context, void* data, ulong size)

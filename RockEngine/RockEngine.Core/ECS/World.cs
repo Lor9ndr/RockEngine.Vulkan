@@ -2,7 +2,7 @@
 
 namespace RockEngine.Core.ECS
 {
-    public class World:IDisposable
+    public class World : IDisposable
     {
         private readonly List<Entity> _entities = new List<Entity>();
 
@@ -27,7 +27,7 @@ namespace RockEngine.Core.ECS
         {
             foreach (var item in _entities)
             {
-                await item.OnStart(renderer);
+                await item.OnStart(renderer).ConfigureAwait(false);
             }
         }
 
@@ -35,7 +35,7 @@ namespace RockEngine.Core.ECS
         {
             foreach (var entity in _entities)
             {
-                await entity.Update(renderer);
+                await entity.Update(renderer).ConfigureAwait(false);
             }
         }
 

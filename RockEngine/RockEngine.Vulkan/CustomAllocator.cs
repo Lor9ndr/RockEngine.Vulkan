@@ -6,7 +6,7 @@ using Silk.NET.Vulkan;
 
 namespace RockEngine.Vulkan
 {
-    [DebuggerStepThrough]
+    //[DebuggerStepThrough]
     public static unsafe class CustomAllocator
     {
         private static readonly ConcurrentDictionary<IntPtr, AllocationInfo> _allocations = new();
@@ -26,6 +26,7 @@ namespace RockEngine.Vulkan
 
         private static void* Allocate<T>(void* pUserData, nuint size, nuint alignment, SystemAllocationScope allocationScope)
         {
+            Console.WriteLine($"Attempting to allocate {size} bytes."); 
             var ptr = (void*)Marshal.AllocHGlobal((int)size);
             var name = typeof(T).Name;
             var allocInfo = new AllocationInfo

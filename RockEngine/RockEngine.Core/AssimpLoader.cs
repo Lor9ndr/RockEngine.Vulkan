@@ -12,6 +12,7 @@ namespace RockEngine.Core
     {
         private readonly AssimpContext _assimpContext;
         private readonly LogStream _logStream;
+        Dictionary<string, Texture> loadedTextures = new Dictionary<string, Texture>();
 
         public AssimpLoader()
         {
@@ -58,6 +59,20 @@ namespace RockEngine.Core
                     {
                         vertex.TexCoord = new Vector2(mesh.TextureCoordinateChannels[0][iv].X, mesh.TextureCoordinateChannels[0][iv].Y);
                     }
+                    // Add tangent/bitangent data
+                    if (mesh.HasTangentBasis)
+                    {
+                        vertex.Tangent = new Vector3(
+                            mesh.Tangents[iv].X,
+                            mesh.Tangents[iv].Y,
+                            mesh.Tangents[iv].Z
+                        );
+                        vertex.Bitangent = new Vector3(
+                            mesh.BiTangents[iv].X,
+                            mesh.BiTangents[iv].Y,
+                            mesh.BiTangents[iv].Z
+                        );
+                    }
 
                     vertices[iv] = vertex;
                 }
@@ -67,23 +82,35 @@ namespace RockEngine.Core
                 if (material.HasTextureDiffuse)
                 {
                     var texturePath = material.TextureDiffuse.FilePath;
-                    var texture = await Texture.CreateAsync(context,Directory.GetParent(filePath) + "\\" + texturePath, commandBuffer);
+                    if (!loadedTextures.TryGetValue(texturePath, out var texture))
+                    {
+                        texture = await Texture.CreateAsync(context, Directory.GetParent(filePath) + "\\" + texturePath, commandBuffer);
+                        loadedTextures[texturePath] = texture;
+                    }
                     textures.Add(texture);
                 }
                 if (material.HasTextureNormal)
                 {
                     var texturePath = material.TextureNormal.FilePath;
-                    var texture = await Texture.CreateAsync(context, Directory.GetParent(filePath) + "\\" + texturePath, commandBuffer);
+                    if (!loadedTextures.TryGetValue(texturePath, out var texture))
+                    {
+                        texture = await Texture.CreateAsync(context, Directory.GetParent(filePath) + "\\" + texturePath, commandBuffer);
+                        loadedTextures[texturePath] = texture;
+                    }
                     textures.Add(texture);
                 }
 
 
-                /*if (scene.Materials[mesh.MaterialIndex].HasTextureSpecular)
+                if (material.HasTextureDisplacement)
                 {
-                    var texturePath = scene.Materials[mesh.MaterialIndex].TextureSpecular.FilePath;
-                    var texture = new Texture(Directory.GetParent(filePath) + "\\" + texturePath);
+                    var texturePath = material.TextureSpecular.FilePath;
+                    if (!loadedTextures.TryGetValue(texturePath, out var texture))
+                    {
+                        texture = await Texture.CreateAsync(context, Directory.GetParent(filePath) + "\\" + texturePath, commandBuffer);
+                        loadedTextures[texturePath] = texture;
+                    }
                     textures.Add(texture);
-                }*/
+                }
 
                 MeshData meshData = new MeshData(mesh.Name, vertices, mesh.GetUnsignedIndices(), textures);
                 meshes.Add(meshData);
@@ -98,5 +125,5 @@ namespace RockEngine.Core
         }
     }
 
-    public record MeshData(string Name, Vertex[] Vertices,uint[] Indices, List<Texture> textures);
+    public record struct MeshData(string Name, Vertex[] Vertices,uint[] Indices, List<Texture> Textures);
 }

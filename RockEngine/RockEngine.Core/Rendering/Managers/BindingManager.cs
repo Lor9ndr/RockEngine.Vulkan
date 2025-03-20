@@ -1,4 +1,5 @@
-﻿using RockEngine.Core.ECS.Components;
+﻿
+using RockEngine.Core.ECS.Components;
 using RockEngine.Core.Rendering.ResourceBindings;
 using RockEngine.Vulkan;
 
@@ -9,13 +10,13 @@ namespace RockEngine.Core.Rendering.Managers
     public class BindingManager
     {
         private readonly RenderingContext _context;
-        private readonly VkDescriptorPool _descriptorPool;
+        private readonly DescriptorPoolManager _descriptorPoolManager;
         private readonly GraphicsEngine _graphicsEngine;
 
-        public BindingManager(RenderingContext context, VkDescriptorPool descriptorPool, GraphicsEngine graphicsEngine)
+        public BindingManager(RenderingContext context, DescriptorPoolManager descriptorPool, GraphicsEngine graphicsEngine)
         {
             _context = context;
-            _descriptorPool = descriptorPool;
+            _descriptorPoolManager = descriptorPool;
             _graphicsEngine = graphicsEngine;
         }
 
@@ -34,6 +35,18 @@ namespace RockEngine.Core.Rendering.Managers
             BindDescriptorSetsToCommandBuffer(commandBuffer, material.Pipeline.Layout, descriptorSets, dynamicOffsets, material.Bindings.MinSetLocation);
         }
 
+        public void BindBinding(ResourceBinding binding, VkPipelineLayout layout, VkCommandBuffer commandBuffer, uint minSetIndex = 0)
+        {
+            var descriptorSets = new DescriptorSet[1];
+            var dynamicOffsets = new List<uint>();
+
+            int index = 0;
+            ProcessBinding(binding, layout, descriptorSets, dynamicOffsets, ref index);
+
+            BindDescriptorSetsToCommandBuffer(commandBuffer, layout, descriptorSets, dynamicOffsets, minSetIndex);
+
+        }
+
         private void ProcessBinding(
             ResourceBinding binding,
             VkPipelineLayout pipelineLayout,
@@ -48,7 +61,7 @@ namespace RockEngine.Core.Rendering.Managers
 
             if (binding.DescriptorSet.Handle == default)
             {
-                AllocateAndBindDescriptorSet(binding, pipelineLayout);
+                AllocateAndUpdateDescriptorSet(binding, pipelineLayout);
             }
 
             descriptorSets[index++] = binding.DescriptorSet;
@@ -74,10 +87,10 @@ namespace RockEngine.Core.Rendering.Managers
             }
         }
 
-        private void AllocateAndBindDescriptorSet(ResourceBinding binding, VkPipelineLayout pipelineLayout)
+        public void AllocateAndUpdateDescriptorSet(ResourceBinding binding, VkPipelineLayout pipelineLayout)
         {
             var setLayout = pipelineLayout.GetSetLayout(binding.SetLocation);
-            var set = _descriptorPool.AllocateDescriptorSet(setLayout);
+            var set = _descriptorPoolManager.AllocateDescriptorSet(setLayout);
             binding.DescriptorSet = set;
             binding.UpdateDescriptorSet(_context);
         }
@@ -103,5 +116,6 @@ namespace RockEngine.Core.Rendering.Managers
                     dynamicOffsetsPtr);
             }
         }
+      
     }
 }

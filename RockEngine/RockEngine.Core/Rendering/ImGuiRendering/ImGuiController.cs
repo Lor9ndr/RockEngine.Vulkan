@@ -16,10 +16,9 @@ namespace RockEngine.Core.Rendering.ImGuiRendering
     {
         private const string ImguiRenderPass = "ImGuiPass";
         private readonly RenderingContext _vkContext;
-        private readonly RenderPassManager _renderPassManager;
         private readonly GraphicsEngine _graphicsEngine;
         private readonly IInputContext _input;
-        private VkFramebuffer[] _framebuffers;
+        private VkFrameBuffer[] _framebuffers;
         private VkDescriptorPool _descriptorPool;
         private VkPipelineLayout _pipelineLayout;
         private VkDescriptorSetLayout _descriptorSetLayout;
@@ -33,10 +32,10 @@ namespace RockEngine.Core.Rendering.ImGuiRendering
         private Texture _fontTexture;
         private DescriptorSet _fontTextureDescriptorSet;
 
-        public unsafe ImGuiController(RenderingContext vkContext, GraphicsEngine graphicsEngine, RenderPassManager renderPassManager, IInputContext inputContext, uint width, uint height)
+        public unsafe ImGuiController(RenderingContext vkContext, GraphicsEngine graphicsEngine, EngineRenderPass renderPass, IInputContext inputContext, uint width, uint height)
         {
             _vkContext = vkContext;
-            _renderPassManager = renderPassManager;
+            _renderPass = renderPass;
             _graphicsEngine = graphicsEngine;
             _input = inputContext;
             ImGui.CreateContext();
@@ -46,11 +45,10 @@ namespace RockEngine.Core.Rendering.ImGuiRendering
             _indexBuffers = new VkBuffer[_vkContext.MaxFramesPerFlight];
             CreateDescriptorPool();
             CreateFontResources();
-            CreateDefaultRenderPass();
 
             CreateDeviceObjects();
             CreateDescriptorSet();
-
+            CreateFramebuffers(graphicsEngine.Swapchain);
             graphicsEngine.Swapchain.OnSwapchainRecreate += CreateFramebuffers;
             ApplyDarkTheme();
             ImGui.GetIO().DisplaySize = new Vector2(width, height);
@@ -185,67 +183,7 @@ namespace RockEngine.Core.Rendering.ImGuiRendering
             io.DeltaTime = deltaSeconds; // DeltaTime is in seconds.
         }
 
-        private unsafe void CreateDefaultRenderPass()
-        {
-            var colorAttachment = new AttachmentDescription
-            {
-                Format = _graphicsEngine.Swapchain.Format,
-                Samples = SampleCountFlags.Count1Bit,
-                LoadOp = AttachmentLoadOp.Clear,
-                StoreOp = AttachmentStoreOp.Store,
-                StencilLoadOp = AttachmentLoadOp.Clear,
-                StencilStoreOp = AttachmentStoreOp.DontCare,
-                InitialLayout = ImageLayout.Undefined,
-                FinalLayout = ImageLayout.PresentSrcKhr
-            };
-
-            var colorAttachmentReference = new AttachmentReference
-            {
-                Attachment = 0,
-                Layout = ImageLayout.ColorAttachmentOptimal,
-
-            };
-
-
-            /* var depthAttachment = new AttachmentDescription
-             {
-                 Format = _graphicsEngine.Swapchain.DepthFormat,
-                 Samples = SampleCountFlags.Count1Bit,
-                 LoadOp = AttachmentLoadOp.Clear,
-                 StoreOp = AttachmentStoreOp.DontCare,
-                 StencilLoadOp = AttachmentLoadOp.DontCare,
-                 StencilStoreOp = AttachmentStoreOp.DontCare,
-                 InitialLayout = ImageLayout.Undefined,
-                 FinalLayout = ImageLayout.DepthStencilAttachmentOptimal
-             };
-
-             var depthAttachmentReference = new AttachmentReference
-             {
-                 Attachment = 1,
-                 Layout = ImageLayout.DepthStencilAttachmentOptimal
-             };*/
-
-            var description = new SubpassDescription
-            {
-                PipelineBindPoint = PipelineBindPoint.Graphics,
-                ColorAttachmentCount = 1,
-                PColorAttachments = &colorAttachmentReference,
-                //PDepthStencilAttachment = &depthAttachmentReference,
-            };
-
-            var dependency = new SubpassDependency
-            {
-                SrcSubpass = Vk.SubpassExternal,
-                DstSubpass = 0,
-                SrcStageMask = PipelineStageFlags.ColorAttachmentOutputBit,
-                SrcAccessMask = AccessFlags.None,
-                DstStageMask = PipelineStageFlags.ColorAttachmentOutputBit,
-                DstAccessMask = AccessFlags.ColorAttachmentReadBit,
-            };
-
-            _renderPass = _renderPassManager.CreateRenderPass(RenderPassType.ImGui, [description], [colorAttachment], [dependency]);
-        }
-
+       
 
         private unsafe void CreateFramebuffers(VkSwapchain swapchain)
         {
@@ -262,26 +200,26 @@ namespace RockEngine.Core.Rendering.ImGuiRendering
             }
             else
             {
-                _framebuffers = new VkFramebuffer[swapChainImageViews.Length];
+                _framebuffers = new VkFrameBuffer[swapChainImageViews.Length];
             }
 
 
             for (int i = 0; i < swapChainImageViews.Length; i++)
             {
-                var attachments = new ImageView[] { swapChainImageViews[i].VkObjectNative };
-                fixed (ImageView* attachmentsPtr = attachments)
+                var attachments = new VkImageView[] { swapChainImageViews[i], swapChainDepthImageView };
+                fixed (ImageView* attachmentsPtr = attachments.Select(s=>s.VkObjectNative).ToArray())
                 {
                     var framebufferInfo = new FramebufferCreateInfo
                     {
                         SType = StructureType.FramebufferCreateInfo,
                         RenderPass = _renderPass.RenderPass,
-                        AttachmentCount = 1,
+                        AttachmentCount = 2,
                         PAttachments = attachmentsPtr,
                         Width = swapChainExtent.Width,
                         Height = swapChainExtent.Height,
                         Layers = 1
                     };
-                    var framebuffer = VkFramebuffer.Create(_vkContext, in framebufferInfo);
+                    var framebuffer = VkFrameBuffer.Create(_vkContext, in framebufferInfo, attachments);
                     _framebuffers[i] = framebuffer;
                 }
             }
@@ -299,6 +237,8 @@ namespace RockEngine.Core.Rendering.ImGuiRendering
             SetPerFrameImGuiData(Time.DeltaTime);
             UpdateImGuiInput(_input);
             _frameBegun = true;
+            ImGui.EndFrame();
+
             ImGui.NewFrame();
         }
 
@@ -316,20 +256,7 @@ namespace RockEngine.Core.Rendering.ImGuiRendering
 
         private unsafe void RenderImDrawData(ImDrawDataPtr drawData, VkCommandBuffer commandBuffer, Extent2D swapChainExtent)
         {
-            var clearValues = stackalloc ClearValue[] {
-                new ClearValue() { Color = new ClearColorValue(.01f, .01f, .01f, 1f) },
-                new ClearValue() { DepthStencil = new ClearDepthStencilValue(1f, 0u) } };
-            RenderPassBeginInfo renderPassBeginInfo = new RenderPassBeginInfo()
-            {
-                SType = StructureType.RenderPassBeginInfo,
-                ClearValueCount = 2,
-                Framebuffer = _framebuffers[_graphicsEngine.CurrentImageIndex],
-                PClearValues = clearValues,
-                RenderArea = new Rect2D() { Extent = swapChainExtent, Offset = new Offset2D() },
-                RenderPass = _renderPass.RenderPass
-            };
-            commandBuffer.BeginRenderPass(renderPassBeginInfo, SubpassContents.Inline);
-
+            // INJECT INTO RENDERER class somehow
 
             ref var vertexBuffer = ref _vertexBuffers[_graphicsEngine.CurrentImageIndex];
             ref var indexBuffer = ref _indexBuffers![_graphicsEngine.CurrentImageIndex];
@@ -453,7 +380,7 @@ namespace RockEngine.Core.Rendering.ImGuiRendering
                 indexOffset += cmd_list->IdxBuffer.Size;
                 vertexOffset += cmd_list->VtxBuffer.Size;
             }
-            RenderingContext.Vk.CmdEndRenderPass(commandBuffer);
+          
         }
 
         private void CreateOrResizeBuffer(ref VkBuffer? buffer, ulong size, BufferUsageFlags usage)
@@ -496,6 +423,23 @@ namespace RockEngine.Core.Rendering.ImGuiRendering
             var layout = _descriptorSetLayout.DescriptorSetLayout;
             var set = _descriptorPool.AllocateDescriptorSet(layout);
             _fontTextureDescriptorSet = set;
+            var imageInfo = new DescriptorImageInfo
+            {
+                Sampler = _fontTexture.Sampler,
+                ImageView = _fontTexture.ImageView,
+                ImageLayout = ImageLayout.ShaderReadOnlyOptimal
+            };
+
+            var descriptorWrite = new WriteDescriptorSet
+            {
+                SType = StructureType.WriteDescriptorSet,
+                DstSet = _fontTextureDescriptorSet,
+                DescriptorCount = 1,
+                DescriptorType = DescriptorType.CombinedImageSampler,
+                PImageInfo = &imageInfo
+            };
+
+            RenderingContext.Vk.UpdateDescriptorSets(_vkContext.Device, 1, &descriptorWrite, 0, null);
         }
 
         private unsafe void CreateFontResources()
@@ -524,7 +468,6 @@ namespace RockEngine.Core.Rendering.ImGuiRendering
 
         private unsafe void SetPipeline(VkShaderModule vertShaderModule, VkShaderModule fragShaderModule)
         {
-
             _pipelineLayout = VkPipelineLayout.Create(_vkContext, vertShaderModule, fragShaderModule);
             _descriptorSetLayout = _pipelineLayout.DescriptorSetLayouts[0];
 
@@ -652,7 +595,6 @@ namespace RockEngine.Core.Rendering.ImGuiRendering
             colors[(int)ImGuiCol.DockingPreview] = new Vector4(0.26f, 0.59f, 0.98f, 0.70f);
             colors[(int)ImGuiCol.DockingEmptyBg] = new Vector4(0.20f, 0.20f, 0.20f, 1.00f);
             colors[(int)ImGuiCol.DragDropTarget] = new Vector4(1.00f, 1.00f, 0.00f, 0.90f);
-            colors[(int)ImGuiCol.NavHighlight] = new Vector4(0.26f, 0.59f, 0.98f, 1.00f);
             colors[(int)ImGuiCol.NavWindowingHighlight] = new Vector4(1.00f, 1.00f, 1.00f, 0.70f);
             colors[(int)ImGuiCol.NavWindowingDimBg] = new Vector4(0.80f, 0.80f, 0.80f, 0.20f);
         }

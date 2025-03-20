@@ -14,7 +14,6 @@ namespace RockEngine.Editor
         private async Task Load()
         {
             await PushLayer(new EditorLayer(_world, _renderingContext,_graphicsEngine, _renderer, _inputContext));
-/*            await PushLayer(new ImGuiLayer(_renderingContext, _graphicsEngine, _graphicsEngine.RenderPassManager, _inputContext));*/
         }
     }
 }
