@@ -75,9 +75,9 @@ namespace RockEngine.Vulkan.Builders
             }
             VkInstance instanceWrapper;
 
-            RenderingContext.Vk.CreateInstance(in instanceInfo, in CustomAllocator.CreateCallbacks<VkInstance>(), out Instance instance)
+            VulkanContext.Vk.CreateInstance(in instanceInfo, in CustomAllocator.CreateCallbacks<VkInstance>(), out Instance instance)
                 .VkAssertResult($"Failed to create instance");
-           
+
             instanceWrapper = new VkInstance(instance);
             if (validationLayerNames != null)
             {
@@ -99,7 +99,7 @@ namespace RockEngine.Vulkan.Builders
         }
         private unsafe Result CreateDebugUtilsMessenger(VkInstance instance, DebugUtilsMessengerCreateInfoEXT ci, out DebugUtilsMessengerEXT messenger)
         {
-            nint vkCreateDebugUtilsMessengerEXTPtr = RenderingContext.Vk.GetInstanceProcAddr(instance, CREATE_DEBUG_UTILS_MESSENGER);
+            nint vkCreateDebugUtilsMessengerEXTPtr = VulkanContext.Vk.GetInstanceProcAddr(instance, CREATE_DEBUG_UTILS_MESSENGER);
             if (vkCreateDebugUtilsMessengerEXTPtr == nint.Zero)
             {
                 throw new Exception("Failed to load vkCreateDebugUtilsMessengerEXT");
@@ -113,12 +113,12 @@ namespace RockEngine.Vulkan.Builders
         private unsafe bool CheckValidationLayerSupport()
         {
             uint layerCount = 0;
-            RenderingContext.Vk.EnumerateInstanceLayerProperties(ref layerCount, null);
+            VulkanContext.Vk.EnumerateInstanceLayerProperties(ref layerCount, null);
 
             LayerProperties[] availableLayers = new LayerProperties[layerCount];
             fixed (LayerProperties* pLayerProperties = availableLayers)
             {
-                RenderingContext.Vk.EnumerateInstanceLayerProperties(ref layerCount, pLayerProperties);
+                VulkanContext.Vk.EnumerateInstanceLayerProperties(ref layerCount, pLayerProperties);
             }
             foreach (var validationLayer in _validationLayers!)
             {

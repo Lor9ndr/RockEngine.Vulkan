@@ -1,5 +1,7 @@
-﻿using RockEngine.Core.Rendering.Managers;
+﻿using RockEngine.Core.ECS.Components;
+using RockEngine.Core.Rendering.Managers;
 using RockEngine.Core.Rendering.ResourceBindings;
+using RockEngine.Core.Rendering.Texturing;
 using RockEngine.Vulkan;
 
 using Silk.NET.Vulkan;
@@ -8,27 +10,35 @@ namespace RockEngine.Core.Rendering
 {
     public class GBuffer
     {
-        private readonly RenderingContext _context;
+        private readonly VulkanContext _context;
         private VkSwapchain _swapchain;
-        private TextureBinding _binding;
-        private BindingManager _currentBindingManager;
-        private VkPipelineLayout _currentLayout;
+        private InputAttachmentBinding _attachmentBinding;
+        private readonly BindingManager _bindingManager;
+        private VkPipeline? _pipeline;
         private readonly GraphicsEngine _graphicsEngine;
 
         public VkImageView[] ColorAttachments { get; private set; }
         public VkImageView DepthAttachment { get; private set; }
-        public VkFrameBuffer FrameBuffer { get; private set; }
-        public VkRenderPass RenderPass { get; private set; }
         public VkSampler Sampler { get; private set; }
         public Texture[] ColorTextures { get; private set; }
         public DescriptorSet[] LightingDescriptorSets { get; private set; }
 
-        public GBuffer(RenderingContext context, VkSwapchain swapchain, GraphicsEngine graphicsEngine)
+        private static readonly Format[] ColorAttachmentFormats =
+        [
+            Format.R16G16B16A16Sfloat,    // Position (RGBA16F) - 8 bytes
+            Format.R8G8Unorm,               // Normal (2 bytes)
+            Format.R8G8B8A8Srgb           // Albedo + Specular (SRGB) - 4 bytes
+        ];
+
+        public Material Material { get; private set; }
+        public VkSampler[] Samplers { get; private set; }
+
+        public GBuffer(VulkanContext context, VkSwapchain swapchain, GraphicsEngine graphicsEngine, BindingManager bindingManager)
         {
             _context = context;
             _swapchain = swapchain;
             _graphicsEngine = graphicsEngine;
-            _swapchain.OnSwapchainRecreate += Recreate;
+            _bindingManager = bindingManager;
 
             Initialize();
         }
@@ -36,20 +46,39 @@ namespace RockEngine.Core.Rendering
         private void Initialize()
         {
             CreateAttachments();
-            CreateSampler();
+            CreateSamplers();
             CreateTextures();
-            CreateRenderPass();
-            CreateFramebuffer();
+
         }
+        public void CreateLightingDescriptorSets(VkPipeline pipeline)
+        {
+            if (_pipeline != pipeline)
+            {
+                _pipeline = pipeline;
+                Material = new Material(_pipeline, ColorTextures!.ToList());
+            }
+
+            Material.Bindings.Remove(_attachmentBinding);
+            _attachmentBinding = new InputAttachmentBinding(
+                setLocation: 2,
+                bindingLocation: 0,
+                ColorAttachments[0],  // Position
+                ColorAttachments[1],  // Normal
+                ColorAttachments[2]   // Albedo
+            );
+            _bindingManager.AllocateAndUpdateDescriptorSet(_attachmentBinding, _pipeline.Layout);
+            Material.Bindings.Add(_attachmentBinding);
+        }
+
         private void CreateAttachments()
         {
             ColorAttachments = new VkImageView[3];
             for (int i = 0; i < ColorAttachments.Length; i++)
             {
-                ColorAttachments[i] = CreateColorAttachment();
+                ColorAttachments[i] = CreateColorAttachment(ColorAttachmentFormats[i]);
             }
             DepthAttachment = CreateDepthAttachment();
-            _graphicsEngine.SubmitSingleTimeCommand(cmd =>
+            _context.SubmitSingleTimeCommand(cmd =>
             {
                 foreach (var attachment in ColorAttachments)
                 {
@@ -61,18 +90,18 @@ namespace RockEngine.Core.Rendering
                 }
             });
         }
-        private VkImageView CreateColorAttachment()
+        private VkImageView CreateColorAttachment(Format format)
         {
             var image = VkImage.Create(
-                                _context,
-                                _swapchain.Extent.Width,
-                                _swapchain.Extent.Height,
-                                Format.R16G16B16A16Sfloat,
-                                ImageTiling.Optimal,
-                                ImageUsageFlags.ColorAttachmentBit |
-                                ImageUsageFlags.InputAttachmentBit |
-                                ImageUsageFlags.SampledBit,
-                                MemoryPropertyFlags.DeviceLocalBit);
+                _context,
+                _swapchain.Extent.Width,
+                _swapchain.Extent.Height,
+                format,
+                ImageTiling.Optimal,
+                ImageUsageFlags.ColorAttachmentBit |
+                ImageUsageFlags.InputAttachmentBit |
+                ImageUsageFlags.SampledBit,
+                MemoryPropertyFlags.DeviceLocalBit);
 
             return image.CreateView(ImageAspectFlags.ColorBit);
         }
@@ -89,18 +118,40 @@ namespace RockEngine.Core.Rendering
 
             return image.CreateView(ImageAspectFlags.DepthBit);
         }
-        private void CreateSampler()
+        private void CreateSamplers()
+        {
+            // Create separate samplers for different texture types
+            var positionSampler = CreateSampler(Filter.Nearest);  // Position benefits from nearest
+            var normalSampler = CreateSampler(Filter.Linear);     // Normals need smooth interpolation
+            var albedoSampler = CreateSampler(Filter.Linear);     // Albedo with sRGB handling
+
+            Samplers = new[] { positionSampler, normalSampler, albedoSampler };
+        }
+
+        private VkSampler CreateSampler(Filter filter)
         {
             var samplerInfo = new SamplerCreateInfo
             {
                 SType = StructureType.SamplerCreateInfo,
-                MagFilter = Filter.Linear,
-                MinFilter = Filter.Linear,
+                MagFilter = filter,
+                MinFilter = filter,
                 AddressModeU = SamplerAddressMode.ClampToEdge,
                 AddressModeV = SamplerAddressMode.ClampToEdge,
-                AddressModeW = SamplerAddressMode.ClampToEdge
+                AddressModeW = SamplerAddressMode.ClampToEdge,
+                MipmapMode = SamplerMipmapMode.Linear,
+                MinLod = 0.0f,
+                MaxLod = 0.0f,  // Disable mipmapping
+                BorderColor = BorderColor.FloatOpaqueBlack,
+                UnnormalizedCoordinates = false
             };
-            Sampler = VkSampler.Create(_context, samplerInfo);
+
+            if (filter == Filter.Linear)
+            {
+                samplerInfo.AnisotropyEnable = true;
+                samplerInfo.MaxAnisotropy = _context.Device.PhysicalDevice.Properties.Limits.MaxSamplerAnisotropy;
+            }
+
+            return VkSampler.Create(_context, samplerInfo);
         }
         private void CreateTextures()
         {
@@ -111,12 +162,22 @@ namespace RockEngine.Core.Rendering
                     _context,
                     ColorAttachments[i].Image,
                     ColorAttachments[i],
-                    Sampler
-                );
+                    Samplers[i], // Use appropriate sampler for each texture
+                null);
+            }
+            foreach (var texture in ColorTextures)
+            {
+                if (texture.Image.CurrentLayout != ImageLayout.ShaderReadOnlyOptimal)
+                {
+                    throw new InvalidOperationException(
+                        $"Texture layout {texture.Image.CurrentLayout} is invalid for descriptor set"
+                    );
+                }
             }
         }
 
-        private void Recreate(VkSwapchain swapchain)
+
+        public void Recreate(VkSwapchain swapchain)
         {
             _context.Device.GraphicsQueue.WaitIdle();
 
@@ -124,158 +185,15 @@ namespace RockEngine.Core.Rendering
             foreach (var attachment in ColorAttachments) attachment?.Dispose();
             foreach (var texture in ColorTextures) texture?.Dispose();
             DepthAttachment?.Dispose();
-            FrameBuffer?.Dispose();
 
             // Update swapchain reference
             _swapchain = swapchain;
 
             CreateAttachments();
             CreateTextures();
-            CreateFramebuffer();
-            _context.Device.GraphicsQueue.WaitIdle();
-            RecreateDescriptors(); 
-        }
-        public void RecreateDescriptors()
-        {
-            if (_currentBindingManager == null || _currentLayout == null) return;
-
-            // Create new descriptors with updated textures
-            CreateLightingDescriptorSets(_currentBindingManager, _currentLayout);
-        }
-        private unsafe void CreateRenderPass()
-        {
-            var colorAttachmentDescriptions = new AttachmentDescription[ColorAttachments.Length];
-            for (int i = 0; i < colorAttachmentDescriptions.Length; i++)
-            {
-                colorAttachmentDescriptions[i] = new AttachmentDescription
-                {
-                    Format = Format.R16G16B16A16Sfloat,
-                    Samples = SampleCountFlags.Count1Bit,
-                    LoadOp = AttachmentLoadOp.Clear,
-                    StoreOp = AttachmentStoreOp.Store,
-                    StencilLoadOp = AttachmentLoadOp.DontCare,
-                    StencilStoreOp = AttachmentStoreOp.DontCare,
-                    InitialLayout = ImageLayout.Undefined,
-                    FinalLayout = ImageLayout.ShaderReadOnlyOptimal
-                };
-            }
-
-            var depthAttachmentDescription = new AttachmentDescription
-            {
-                Format = _swapchain.DepthFormat,
-                Samples = SampleCountFlags.Count1Bit,
-                LoadOp = AttachmentLoadOp.Clear,
-                StoreOp = AttachmentStoreOp.DontCare,
-                StencilLoadOp = AttachmentLoadOp.DontCare,
-                StencilStoreOp = AttachmentStoreOp.DontCare,
-                InitialLayout = ImageLayout.Undefined,
-                FinalLayout = ImageLayout.DepthStencilAttachmentOptimal
-            };
-
-            var colorAttachmentReferences = stackalloc AttachmentReference[ColorAttachments.Length];
-            for (int i = 0; i < ColorAttachments.Length; i++)
-            {
-                colorAttachmentReferences[i] = new AttachmentReference { Attachment = (uint)i, Layout = ImageLayout.ColorAttachmentOptimal };
-            }
-
-            var depthAttachmentReference = new AttachmentReference { Attachment = (uint)ColorAttachments.Length, Layout = ImageLayout.DepthStencilAttachmentOptimal };
-
-            var subpassDescription = new SubpassDescription
-            {
-                PipelineBindPoint = PipelineBindPoint.Graphics,
-                ColorAttachmentCount = (uint)ColorAttachments.Length,
-                PColorAttachments = colorAttachmentReferences,
-                PDepthStencilAttachment = &depthAttachmentReference
-            };
-
-            var subpassDependency = new SubpassDependency
-            {
-                SrcSubpass = Vk.SubpassExternal,
-                DstSubpass = 0,
-                SrcStageMask = PipelineStageFlags.ColorAttachmentOutputBit | PipelineStageFlags.EarlyFragmentTestsBit,
-                SrcAccessMask = AccessFlags.None,
-                DstStageMask = PipelineStageFlags.ColorAttachmentOutputBit | PipelineStageFlags.EarlyFragmentTestsBit,
-                DstAccessMask = AccessFlags.ColorAttachmentWriteBit | AccessFlags.DepthStencilAttachmentWriteBit
-            };
-
-            var attachments = colorAttachmentDescriptions.Concat(new[] { depthAttachmentDescription }).ToArray();
-            RenderPass =  VkRenderPass.Create(_context, new RenderPassCreateInfo
-            {
-                SType = StructureType.RenderPassCreateInfo,
-                AttachmentCount = (uint)attachments.Length,
-                PAttachments = (AttachmentDescription*)attachments.AsMemory().Pin().Pointer,
-                SubpassCount = 1,
-                PSubpasses = &subpassDescription,
-                DependencyCount = 1,
-                PDependencies = &subpassDependency
-            });
+            CreateLightingDescriptorSets(_pipeline);
         }
 
-        private unsafe void CreateFramebuffer()
-        {
-            var attachments = ColorAttachments.Concat([DepthAttachment]).ToArray();
-
-            fixed(ImageView* pAttachments = attachments.Select(s => s.VkObjectNative).ToArray())
-            {
-                FrameBuffer =  VkFrameBuffer.Create(_context, new FramebufferCreateInfo
-                {
-                    SType = StructureType.FramebufferCreateInfo,
-                    RenderPass = RenderPass,
-                    AttachmentCount = (uint)attachments.Length,
-                    PAttachments = pAttachments,
-                    Width = _swapchain.Extent.Width,
-                    Height = _swapchain.Extent.Height,
-                    Layers = 1
-                }, attachments);
-            }
-        }
-
-        public void CreateLightingDescriptorSets(BindingManager bindingManager, VkPipelineLayout layout)
-        {
-            _currentBindingManager = bindingManager;
-            _currentLayout = layout;
-
-
-            _binding = new TextureBinding(0, 0, ColorTextures);
-            bindingManager.AllocateAndUpdateDescriptorSet(_binding, layout);
-        }
-
-        public void BindResources(BindingManager bindingManager, VkPipelineLayout layout, VkCommandBuffer commandBuffer)
-        {
-            bindingManager.BindBinding(_binding, layout, commandBuffer, 0);
-        }
-
-        public unsafe void BeginGeometryPass(VkCommandBuffer commandBuffer, Extent2D extent)
-        {
-            int clearValuesLength = ColorAttachments.Length + 1;
-            ClearValue* clearValues = stackalloc ClearValue[clearValuesLength];
-
-            // Initialize color clear values
-            for (int i = 0; i < ColorAttachments.Length; i++)
-            {
-                clearValues[i] = new ClearValue
-                {
-                    Color = new ClearColorValue(0.0f, 0.0f, 0.0f, 1.0f)
-                };
-            }
-
-            // Initialize depth clear value
-            clearValues[ColorAttachments.Length] = new ClearValue
-            {
-                DepthStencil = new ClearDepthStencilValue(1.0f, 0)
-            };
-
-            var beginInfo = new RenderPassBeginInfo
-            {
-                SType = StructureType.RenderPassBeginInfo,
-                RenderPass = RenderPass,
-                Framebuffer = FrameBuffer,
-                ClearValueCount = (uint)clearValuesLength,
-                PClearValues = clearValues,
-                RenderArea = new Rect2D { Extent = extent }
-            };
-
-            commandBuffer.BeginRenderPass(in beginInfo, SubpassContents.Inline);
-        }
     }
 }
+

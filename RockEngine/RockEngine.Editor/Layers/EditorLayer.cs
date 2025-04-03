@@ -6,6 +6,7 @@ using RockEngine.Core.ECS.Components;
 using RockEngine.Core.Rendering;
 using RockEngine.Core.Rendering.Commands;
 using RockEngine.Core.Rendering.ImGuiRendering;
+using RockEngine.Core.Rendering.Texturing;
 using RockEngine.Editor.EditorComponents;
 using RockEngine.Vulkan;
 using RockEngine.Vulkan.Builders;
@@ -21,39 +22,45 @@ namespace RockEngine.Editor.Layers
     public class EditorLayer : ILayer
     {
         private readonly World _world;
-        private readonly RenderingContext _context;
+        private readonly VulkanContext _context;
         private readonly GraphicsEngine _graphicsEngine;
         private readonly Renderer _renderer;
         private readonly IInputContext _inputContext;
+        private readonly TextureStreamer _textureStreamer;
         private readonly ImGuiController _imGuiController;
         private VkPipelineLayout _pipelineLayout;
         private VkPipeline _pipeline;
 
-    
-        public EditorLayer(World world, RenderingContext context, GraphicsEngine graphicsEngine, Renderer renderer, IInputContext inputContext)
+
+        private List<Vector3> _lightCenters = new List<Vector3>();
+        private List<float> _lightSpeeds = new List<float>();
+        private List<float> _lightRadii = new List<float>();
+
+        public EditorLayer(World world, VulkanContext context, GraphicsEngine graphicsEngine, Renderer renderer, IInputContext inputContext, TextureStreamer textureStreamer)
         {
             _world = world;
             _context = context;
             _graphicsEngine = graphicsEngine;
             _renderer = renderer;
             _inputContext = inputContext;
+            _textureStreamer = textureStreamer;
             _imGuiController = new ImGuiController(context, graphicsEngine, _renderer.RenderPass, _inputContext, graphicsEngine.Swapchain.Extent.Width, graphicsEngine.Swapchain.Extent.Height);
         }
 
         public async Task OnAttach()
         {
             await CretePipeline();
-            using var pool = VkCommandPool.Create(_context, new CommandPoolCreateInfo 
-            { 
+            using var pool = VkCommandPool.Create(_context, new CommandPoolCreateInfo
+            {
                 SType = StructureType.CommandPoolCreateInfo,
                 Flags = CommandPoolCreateFlags.TransientBit | CommandPoolCreateFlags.ResetCommandBufferBit
             });
-            using AssimpLoader assimpLoader = new AssimpLoader();
+            using AssimpLoader assimpLoader = new AssimpLoader(_textureStreamer);
             var meshes = await assimpLoader.LoadMeshesAsync("F:\\RockEngine.Vulkan\\RockEngine\\RockEngine.Editor\\Resources\\Models\\SponzaAtrium\\scene.gltf", _context, pool.AllocateCommandBuffer());
             var cam = _world.CreateEntity();
             var debugCam = cam.AddComponent<DebugCamera>();
             debugCam.SetInputContext(_inputContext);
-            
+
             foreach (var item in meshes)
             {
                 var entity = _world.CreateEntity();
@@ -63,6 +70,66 @@ namespace RockEngine.Editor.Layers
                 mesh.SetMeshData(item.Vertices, item.Indices);
                 mesh.Material = new Material(_pipeline, item.Textures);
                 mesh.Material.GeometryPipeline = _pipeline;
+            }
+
+            for (int i = 0; i < 100; i++)
+            {
+                var lightEntity = _world.CreateEntity();
+                var light = lightEntity.AddComponent<Light>();
+                var transform = lightEntity.Transform;
+
+                // Random position within 200X200X200 cube centered at origin
+                transform.Position = new Vector3(
+                    (Random.Shared.NextSingle() * 200) - 100,
+                    (Random.Shared.NextSingle() * 200) - 100,
+                    (Random.Shared.NextSingle() * 200) - 100
+                );
+
+                // Random light type distribution
+                float typeRand = Random.Shared.NextSingle();
+                if (typeRand < 0.7f) // 70% Point lights
+                {
+                    light.Type = LightType.Point;
+                    light.Color = new Vector3(
+                        Random.Shared.NextSingle(),
+                        Random.Shared.NextSingle(),
+                        Random.Shared.NextSingle()
+                    );
+                    light.Radius = Random.Shared.NextSingle() * 20 + 5;
+
+                    // Store movement parameters
+                    _lightCenters.Add(transform.Position);
+                    _lightSpeeds.Add(Random.Shared.NextSingle() * 2 + 0.5f);
+                    _lightRadii.Add(Random.Shared.NextSingle() * 5 + 2);
+                }
+                else if (typeRand < 0.9f) // 20% Spot lights
+                {
+                    light.Type = LightType.Spot;
+                    light.Color = new Vector3(
+                        Random.Shared.NextSingle(),
+                        Random.Shared.NextSingle(),
+                        Random.Shared.NextSingle()
+                    );
+                    light.Radius = Random.Shared.NextSingle() * 15 + 5;
+                    light.InnerCutoff = 0.85f;
+                    light.OuterCutoff = 0.6f;
+
+                    // Store movement parameters
+                    _lightCenters.Add(transform.Position);
+                    _lightSpeeds.Add(Random.Shared.NextSingle() * 1.5f + 0.5f);
+                    _lightRadii.Add(Random.Shared.NextSingle() * 3 + 1);
+                }
+                /*else // 10% Directional lights
+                {
+                    light.Type = LightType.Directional;
+                    light.Color = new Vector3(1, 1, 0.8f);
+                    light.Intensity = 0.3f;
+                    light.Direction = Vector3.Normalize(new Vector3(
+                        Random.Shared.NextSingle() - 0.5f,
+                        -1.0f,
+                        Random.Shared.NextSingle() - 0.5f
+                    ));
+                }*/
             }
         }
 
@@ -117,15 +184,15 @@ namespace RockEngine.Editor.Layers
                      .Add(Vertex.GetBindingDescription(), Vertex.GetAttributeDescriptions()))
                  .WithViewportState(new VulkanViewportStateInfoBuilder()
                      .AddViewport(new Viewport() { Height = _graphicsEngine.Swapchain.Surface.Size.Y, Width = _graphicsEngine.Swapchain.Surface.Size.X })
-                     .AddScissors(new Rect2D() 
+                     .AddScissors(new Rect2D()
                      {
                          Offset = new Offset2D(),
-                         Extent = new Extent2D((uint?)_graphicsEngine.Swapchain.Surface.Size.X, (uint?)_graphicsEngine.Swapchain.Surface.Size.Y) 
-                         }))
+                         Extent = new Extent2D((uint?)_graphicsEngine.Swapchain.Surface.Size.X, (uint?)_graphicsEngine.Swapchain.Surface.Size.Y)
+                     }))
                  .WithMultisampleState(new VulkanMultisampleStateInfoBuilder().Configure(false, SampleCountFlags.Count1Bit))
                  .WithColorBlendState(new VulkanColorBlendStateBuilder()
                      .AddAttachment(color_attachments))
-                 .AddRenderPass(_renderer.GBuffer.RenderPass)
+                 .AddRenderPass(_renderer.RenderPass.RenderPass)
                  .WithPipelineLayout(_pipelineLayout)
                  .WithDynamicState(new PipelineDynamicStateBuilder()
                     .AddState(DynamicState.Viewport)
@@ -153,7 +220,7 @@ namespace RockEngine.Editor.Layers
             ImGui.ShowDemoWindow();
             DrawFps();
             DrawAllocationStats();
-            DrawAllocationTree();
+            DrawPerformanceMetrics();
         }
         public void OnRender(VkCommandBuffer vkCommandBuffer)
         {
@@ -163,6 +230,66 @@ namespace RockEngine.Editor.Layers
         public void OnUpdate()
         {
             _imGuiController.Update();
+            float time = (float)Time.TotalTime;
+            var lightEntities = _world.GetEntities().Where(s => s.GetComponent<Light>() != null).ToArray();
+            var camEntity = _world.GetEntities().FirstOrDefault(s => s.GetComponent<Camera>() != null);
+
+            for (int i = 0; i < lightEntities.Length; i++)
+            {
+                Entity entity = lightEntities[i];
+                var light = entity.GetComponent<Light>();
+                var transform = entity.Transform;
+
+                switch (light.Type)
+                {
+                    case LightType.Point when i < _lightCenters.Count:
+                        // Orbital movement around initial position
+                        Vector3 center = _lightCenters[i];
+                        float speed = _lightSpeeds[i];
+                        float radius = _lightRadii[i];
+
+                        transform.Position = center + new Vector3(
+                            MathF.Sin(time * speed) * radius,
+                            MathF.Sin(time * speed * 0.8f) * radius * 0.5f,
+                            MathF.Cos(time * speed) * radius
+                        );
+                        break;
+
+                    case LightType.Spot when i < _lightCenters.Count:
+                        // Vertical circular movement
+                        if (i % 10 == 0) // Every 10th spot light follows camera
+                        {
+                            if (camEntity != null)
+                            {
+                                transform.Position = camEntity.Transform.Position;
+                                light.Direction = camEntity.GetComponent<Camera>().Front;
+                            }
+                        }
+                        else
+                        {
+                            center = _lightCenters[i];
+                            speed = _lightSpeeds[i];
+                            radius = _lightRadii[i];
+
+                            transform.Position = center + new Vector3(
+                                MathF.Cos(time * speed) * radius,
+                                MathF.Sin(time * speed * 2) * radius,
+                                MathF.Sin(time * speed) * radius
+                            );
+                            light.Direction = Vector3.Normalize(center - transform.Position);
+                        }
+                        break;
+
+                    case LightType.Directional:
+                        // Slow directional rotation
+                        Quaternion rot = Quaternion.CreateFromAxisAngle(
+                            Vector3.Normalize(light.Direction),
+                            (float)Time.DeltaTime * 0.3f
+                        );
+                        light.Direction = Vector3.Transform(light.Direction, rot);
+                        break;
+                }
+            }
         }
 
         private void DrawFps()
@@ -172,6 +299,10 @@ namespace RockEngine.Editor.Layers
                 ImGui.Text(Time.FPS.ToString());
                 ImGui.End();
             }
+        }
+        private void DrawPerformanceMetrics()
+        {
+            PerformanceTracer.DrawMetrics();
         }
 
         private void DrawAllocationStats()
@@ -199,143 +330,12 @@ namespace RockEngine.Editor.Layers
             ImGui.End();
         }
 
-        private void DrawAllocationTree()
-        {
-            ImGui.SetNextWindowSize(new Vector2(800, 600), ImGuiCond.FirstUseEver);
-            if (ImGui.Begin("Allocation Tree"))
-            {
-                if (ImGui.Button("Refresh Allocation Info"))
-                {
-                    RefreshAllocationInfo();
-                }
 
-                var groupedAllocations = _allocationInfoList.GroupBy(a => a.AllocatorType);
-
-                if (ImGui.BeginTable("AllocationTable", 4, ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg | ImGuiTableFlags.Sortable | ImGuiTableFlags.SortTristate))
-                {
-                    ImGui.TableSetupColumn("Allocator Type", ImGuiTableColumnFlags.WidthFixed, 150);
-                    ImGui.TableSetupColumn("Address", ImGuiTableColumnFlags.WidthFixed, 100);
-                    ImGui.TableSetupColumn("Size", ImGuiTableColumnFlags.WidthFixed, 100);
-                    ImGui.TableSetupColumn("Stack Trace", ImGuiTableColumnFlags.IndentEnable | ImGuiTableColumnFlags.WidthStretch);
-                    ImGui.TableHeadersRow();
-
-                    foreach (var group in groupedAllocations)
-                    {
-                        ImGui.TableNextRow();
-                        ImGui.TableSetColumnIndex(0);
-                        if (ImGui.TreeNode(group.Key))
-                        {
-                            foreach (var allocationInfo in group)
-                            {
-                                ImGui.TableNextRow();
-                                ImGui.TableSetColumnIndex(1);
-                                ImGui.Text($"0x{allocationInfo.Address:X}");
-                                ImGui.TableSetColumnIndex(2);
-                                ImGui.Text(FormatBytes((long)allocationInfo.Size));
-                                ImGui.TableSetColumnIndex(3);
-                                DrawStackTraceTree(allocationInfo.StackTrace, allocationInfo.Address);
-                            }
-                            ImGui.TreePop();
-                        }
-                    }
-                    ImGui.EndTable();
-                }
-            }
-            ImGui.End();
-        }
-
-
-
-        private void DrawStackTraceTree(string stackTrace, nint address)
-        {
-            if (ImGui.TreeNode($"Stack Trace##{address}"))
-            {
-                foreach (var frame in ParseStackTrace(stackTrace))
-                {
-                    DrawStackFrame(frame);
-                }
-                ImGui.TreePop();
-            }
-        }
-
-        private void DrawStackFrame(in StackFrame frame)
-        {
-            ImGui.PushStyleColor(ImGuiCol.Text, frame.IsUserCode ? new Vector4(1, 1, 1, 1) : new Vector4(0.7f, 0.7f, 0.7f, 1));
-            if (ImGui.TreeNode($"{frame.MethodName}##{frame.GetHashCode()}"))
-            {
-                ImGui.TextWrapped($"File: {frame.FileName}");
-                ImGui.Text($"Line: {frame.LineNumber}");
-                ImGui.TreePop();
-            }
-
-            ImGui.PopStyleColor();
-        }
-
-        private static IEnumerable<StackFrame> ParseStackTrace(string stackTrace)
-        {
-            return stackTrace.Split(new[] { Environment.NewLine }, StringSplitOptions.RemoveEmptyEntries)
-                             .Select(ParseStackFrame)
-                             .Where(s => s.HasValue)
-                             .Select(s => s!.Value);
-        }
-
-        private static StackFrame? ParseStackFrame(string line)
-        {
-            var parts = line.Trim().Split(new[] { " in " }, StringSplitOptions.RemoveEmptyEntries);
-            if (parts.Length < 2) return null;
-
-            var methodPart = parts[0];
-            var filePart = parts[1];
-
-            var lastColonIndex = filePart.LastIndexOf(':');
-            if (lastColonIndex != -1 && int.TryParse(filePart[(lastColonIndex + 1)..].Replace("line", ""), out int lineNumber))
-            {
-                return new StackFrame
-                {
-                    MethodName = methodPart,
-                    FileName = filePart[..lastColonIndex],
-                    LineNumber = lineNumber,
-                    IsUserCode = !filePart.Contains("System.") && !filePart.Contains("Microsoft.")
-                };
-            }
-
-            return new StackFrame
-            {
-                MethodName = methodPart,
-                FileName = filePart,
-                LineNumber = 0,
-                IsUserCode = !filePart.Contains("System.") && !filePart.Contains("Microsoft.")
-            };
-        }
-
-        private readonly struct StackFrame
-        {
-            public string MethodName { get; init; }
-            public string FileName { get; init; }
-            public int LineNumber { get; init; }
-            public bool IsUserCode { get; init; }
-        }
-
-        private void RefreshAllocationInfo()
-        {
-            _allocationInfoList.Clear();
-            CustomAllocator.GetAllocationInfo(info =>
-            {
-                _allocationInfoList.Add(new AllocationInfo
-                {
-                    Address = info.Address,
-                    Size = info.Size,
-                    Scope = info.Scope,
-                    StackTrace = info.StackTrace,
-                    AllocatorType = info.AllocatorType
-                });
-            });
-        }
-
+     
 
         private static string FormatBytes(long bytes)
         {
-            string[] suffixes = { "B", "KB", "MB", "GB", "TB" };
+            string[] suffixes = ["B", "KB", "MB", "GB", "TB"];
             int order = 0;
             double size = bytes;
 
@@ -346,18 +346,6 @@ namespace RockEngine.Editor.Layers
             }
 
             return $"{size:0.##} {suffixes[order]}";
-        }
-
-
-
-        private readonly List<AllocationInfo> _allocationInfoList = new List<AllocationInfo>();
-        private struct AllocationInfo
-        {
-            public nint Address;
-            public nuint Size;
-            public SystemAllocationScope Scope;
-            public string StackTrace;
-            public string AllocatorType;
         }
 
     }

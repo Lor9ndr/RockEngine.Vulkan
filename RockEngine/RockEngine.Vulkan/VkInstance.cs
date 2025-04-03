@@ -14,7 +14,7 @@ namespace RockEngine.Vulkan
         }
 
 
-        protected unsafe override void Dispose(bool disposing)
+        protected override unsafe void Dispose(bool disposing)
         {
             if (!_disposed)
             {
@@ -28,13 +28,13 @@ namespace RockEngine.Vulkan
                 {
                     if (DebugMessenger.HasValue)
                     {
-                        var destroyDebugUtils = RenderingContext.Vk.GetInstanceProcAddr(_vkObject, "vkDestroyDebugUtilsMessengerEXT");
+                        var destroyDebugUtils = VulkanContext.Vk.GetInstanceProcAddr(_vkObject, "vkDestroyDebugUtilsMessengerEXT");
                         var del = Marshal.GetDelegateForFunctionPointer<DestroyDebugUtilsDelegate>(destroyDebugUtils);
                         del(_vkObject, DebugMessenger.Value, default);
 
                     }
 
-                    RenderingContext.Vk.DestroyInstance(_vkObject, in RenderingContext.CustomAllocator<VkInstance>());
+                    VulkanContext.Vk.DestroyInstance(_vkObject, in VulkanContext.CustomAllocator<VkInstance>());
 
                     _vkObject = default;
                 }

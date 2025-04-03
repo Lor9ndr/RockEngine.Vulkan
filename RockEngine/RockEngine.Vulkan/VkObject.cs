@@ -8,7 +8,7 @@ namespace RockEngine.Vulkan
         protected T _vkObject;
         protected bool _disposed;
         public T VkObjectNative => _vkObject;
-        protected Vk Vk => RenderingContext.Vk;
+        protected Vk Vk => VulkanContext.Vk;
 
         protected VkObject(in T vkObject)
         {

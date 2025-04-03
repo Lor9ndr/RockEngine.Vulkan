@@ -2,7 +2,7 @@
 
 namespace RockEngine.Core.Rendering
 {
-    public sealed class EngineRenderPass :IDisposable
+    public sealed class EngineRenderPass : IDisposable
     {
         public RenderPassType Type { get; }
         public VkRenderPass RenderPass { get; }

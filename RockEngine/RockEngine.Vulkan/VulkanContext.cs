@@ -9,25 +9,25 @@ using System.Runtime.InteropServices;
 
 namespace RockEngine.Vulkan
 {
-    public class RenderingContext :IDisposable
+    public class VulkanContext : IDisposable
     {
         public static Vk Vk = Vk.GetApi();
         public VkLogicalDevice Device { get; }
         public VkInstance Instance { get; }
         public ISurfaceHandler Surface { get; }
-        public int MaxFramesPerFlight { get; internal set;}
-
-        private static RenderingContext? _renderingContext;
-
-        public static RenderingContext GetCurrent() => _renderingContext ?? throw new InvalidOperationException("Rendering context was not created yet");
+        public int MaxFramesPerFlight { get; internal set; }
+        public SamplerCache SamplerCache { get; }
+        private static VulkanContext? _renderingContext;
+        public static VulkanContext GetCurrent() => _renderingContext ?? throw new InvalidOperationException("Rendering context was not created yet");
 
         public static ref AllocationCallbacks CustomAllocator<T>() => ref Vulkan.CustomAllocator.CreateCallbacks<T>();
 
         private static readonly string[] _validationLayers = ["VK_LAYER_KHRONOS_validation"];
         private static DebugUtilsMessengerCallbackFunctionEXT _debugCallback;
+        private readonly object _submissionLock = new object();
 
 
-        public RenderingContext(IWindow window, string appName, int maxFramesPerFlight = 3)
+        public VulkanContext(IWindow window, string appName, int maxFramesPerFlight = 3)
         {
             if (_renderingContext is not null)
             {
@@ -35,12 +35,11 @@ namespace RockEngine.Vulkan
                 throw new NotSupportedException("For now it is unsupported to have multiple contexts");
             }
             Instance = CreateInstance(window, appName);
-            Surface  = CreateSurface(window);
-            Device = CreateDevice(Surface, Instance);
+            Surface = CreateSurface(window);
+            Device = CreateDevice(Surface, Instance, this);
             MaxFramesPerFlight = maxFramesPerFlight;
-           
             _renderingContext = this;
-
+            SamplerCache = new SamplerCache(this);
         }
 
         private SDLSurfaceHandler CreateSurface(IWindow window)
@@ -128,10 +127,10 @@ namespace RockEngine.Vulkan
         }
 
 
-        private static VkLogicalDevice CreateDevice(ISurfaceHandler surface, VkInstance instance)
+        private static VkLogicalDevice CreateDevice(ISurfaceHandler surface, VkInstance instance, VulkanContext vulkanContext)
         {
             var device = VkPhysicalDevice.Create(instance);
-            return VkLogicalDevice.Create(Vk, device, surface, KhrSwapchain.ExtensionName);
+            return VkLogicalDevice.Create(vulkanContext, device, surface, KhrSwapchain.ExtensionName);
         }
 
         public void Dispose()
@@ -139,6 +138,64 @@ namespace RockEngine.Vulkan
             Surface.Dispose();
             Device.Dispose();
             Instance.Dispose();
+        }
+
+        public unsafe void SubmitSingleTimeCommand(Action<VkCommandBuffer> value)
+        {
+            lock (_renderingContext.Device.GraphicsQueue._queueLock)
+            {
+                VkFence fence = VkFence.CreateNotSignaled(_renderingContext);
+                var cmdPool = VkCommandPool.Create(
+                    this,
+                    CommandPoolCreateFlags.TransientBit,
+                    Device.QueueFamilyIndices.GraphicsFamily.Value
+                );
+
+                var cmdBuffer = cmdPool.AllocateCommandBuffer();
+                cmdBuffer.BeginSingleTimeCommand();
+                value.Invoke(cmdBuffer);
+                var cmd = cmdBuffer.VkObjectNative;
+                cmdBuffer.End();
+                // Direct call to unsafe implementation
+                Device.GraphicsQueue.Submit(new SubmitInfo
+                {
+                    SType = StructureType.SubmitInfo,
+                    CommandBufferCount = 1,
+                    PCommandBuffers = &cmd
+                }
+                   ,
+                    fence
+                );
+                cmdBuffer.Dispose();
+            }
+        }
+
+        public void SubmitSingleTimeCommand(VkCommandPool commandPool, Action<VkCommandBuffer> value)
+        {
+            var cmdBuffer = commandPool.AllocateCommandBuffer();
+            cmdBuffer.BeginSingleTimeCommand();
+            value.Invoke(cmdBuffer);
+            SubmitCommandBuffer(cmdBuffer);
+
+
+        }
+
+
+        private unsafe void SubmitCommandBuffer(VkCommandBuffer cmd)
+        {
+            cmd.End();
+
+            using var fence = VkFence.CreateNotSignaled(this);
+            var commandBufferNative = cmd.VkObjectNative;
+            var submitInfo = new SubmitInfo
+            {
+                SType = StructureType.SubmitInfo,
+                CommandBufferCount = 1,
+                PCommandBuffers = &commandBufferNative
+            };
+
+            Device.GraphicsQueue.Submit(submitInfo, fence);
+            fence.Wait();
         }
     }
 }

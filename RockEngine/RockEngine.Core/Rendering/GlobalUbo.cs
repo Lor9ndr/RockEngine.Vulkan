@@ -1,4 +1,6 @@
-﻿using System.Numerics;
+﻿using RockEngine.Core.Rendering.ResourceBindings;
+
+using System.Numerics;
 using System.Runtime.InteropServices;
 
 namespace RockEngine.Core.Rendering
@@ -7,15 +9,34 @@ namespace RockEngine.Core.Rendering
     {
         public sealed class GlobalUbo : UniformBuffer
         {
-            public Matrix4x4 ViewProjection { get; set; }
+            private UniformBufferBinding _binding;
 
-            public GlobalUbo(string name, uint bindingLocation, ulong size)
-                : base(name, bindingLocation, size, Marshal.SizeOf<Matrix4x4>(), false) { }
+            public GlobalUboData GlobalData { get; set; }
 
-            public ValueTask UpdateAsync()
+            public GlobalUbo(string name, uint bindingLocation)
+                : base(name, bindingLocation, (ulong)Marshal.SizeOf<GlobalUboData>(), Marshal.SizeOf<GlobalUboData>(), false) 
+                { 
+                _binding = new UniformBufferBinding(this, 0,0);
+                }
+
+            public async Task UpdateAsync()
             {
-                return this.UpdateAsync(ViewProjection);
+                await this.UpdateAsync(GlobalData);
+            }
+
+            internal ResourceBinding GetBinding()
+            {
+                return _binding;
+            }
+
+            public struct GlobalUboData
+            {
+                public Matrix4x4 ViewProjection;
+                public Vector3 Position;
+               /* public Vector4 ClusterSizes;
+                public Vector4 ScreenToView;*/
             }
         }
+
     }
 }

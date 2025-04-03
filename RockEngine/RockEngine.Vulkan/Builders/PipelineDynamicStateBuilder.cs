@@ -6,7 +6,7 @@ namespace RockEngine.Vulkan.Builders
 {
     public class PipelineDynamicStateBuilder : DisposableBuilder
     {
-        private List<DynamicState> _dynamicStates = new List<DynamicState>();
+        private readonly List<DynamicState> _dynamicStates = new List<DynamicState>();
 
         public PipelineDynamicStateBuilder AddState(DynamicState state)
         {

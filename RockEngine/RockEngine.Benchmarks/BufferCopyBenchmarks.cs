@@ -1,12 +1,10 @@
 ﻿using BenchmarkDotNet.Attributes;
-using BenchmarkDotNet.Running;
 
-using System;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using System.Runtime.Intrinsics.X86;
 using System.Runtime.Intrinsics;
+using System.Runtime.Intrinsics.X86;
 
 namespace RockEngine.Benchmarks
 {
@@ -31,7 +29,7 @@ namespace RockEngine.Benchmarks
             _matrixDestinationData = new byte[MatrixCount * sizeof(Matrix4x4)];
         }
 
-       
+
         //[Benchmark]
         public byte[] CopyMatricesUsingSpan()
         {
@@ -160,11 +158,11 @@ namespace RockEngine.Benchmarks
                 for (int i = 0; i < MatrixCount; i++)
                 {
                     ref byte srcByte = ref Unsafe.As<Matrix4x4, byte>(ref srcPtr[i]);
-                    fixed(byte* pByte = &srcByte)
+                    fixed (byte* pByte = &srcByte)
                     {
                         Unsafe.CopyBlock(destPtr + i * sizeof(Matrix4x4), pByte, (uint)sizeof(Matrix4x4));
                     }
-                  
+
                 }
             }
             return _matrixDestinationData;
@@ -200,12 +198,12 @@ namespace RockEngine.Benchmarks
         [Benchmark]
         public unsafe byte[] WriteMatricesByAVXorSse()
         {
-            fixed(byte* destPtr = _matrixDestinationData)
+            fixed (byte* destPtr = _matrixDestinationData)
             {
                 CopyMatricesToBufferByAVXOrSSe(_sourceMatrices, destPtr);
                 return _matrixDestinationData;
             }
-          
+
         }
 
         private unsafe void WriteToBuffer(void* data, void* destination, ulong size)

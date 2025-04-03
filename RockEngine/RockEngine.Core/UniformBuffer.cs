@@ -1,11 +1,12 @@
-﻿using Silk.NET.Vulkan;
-using RockEngine.Vulkan;
+﻿using RockEngine.Vulkan;
+
+using Silk.NET.Vulkan;
 
 namespace RockEngine.Core
 {
     public class UniformBuffer : IDisposable
     {
-        private readonly RenderingContext _context;
+        private readonly VulkanContext _context;
         private readonly string _name;
         private readonly VkBuffer _buffer;
         private readonly bool _isDynamic;
@@ -21,7 +22,7 @@ namespace RockEngine.Core
         public int DataSize { get; init; }
         public Dictionary<VkPipelineLayout, DescriptorSet> DescriptorSets { get; } = new Dictionary<VkPipelineLayout, DescriptorSet>();
 
-        public UniformBuffer(RenderingContext context, string name, uint bindingLocation, ulong size, int dataSize, bool isDynamic = false)
+        public UniformBuffer(VulkanContext context, string name, uint bindingLocation, ulong size, int dataSize, bool isDynamic = false)
         {
             _context = context;
             _name = name;
@@ -29,23 +30,20 @@ namespace RockEngine.Core
             _isDynamic = isDynamic;
             DataSize = dataSize;
 
-            var bufferUsage =  BufferUsageFlags.UniformBufferBit;
+            var bufferUsage = BufferUsageFlags.UniformBufferBit;
             var memoryProperties = MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit;
 
-            if (isDynamic)
-            {
-                bufferUsage |= BufferUsageFlags.TransferDstBit;
-            }
+            bufferUsage |= BufferUsageFlags.TransferDstBit;
 
             _buffer = VkBuffer.Create(context, size, bufferUsage, memoryProperties);
         }
 
-        public UniformBuffer(string name, uint bindingLocation, ulong size, int dataSize, bool isDynamic = false) 
-            :this(RenderingContext.GetCurrent(), name, bindingLocation, size, dataSize, isDynamic)
+        public UniformBuffer(string name, uint bindingLocation, ulong size, int dataSize, bool isDynamic = false)
+            : this(VulkanContext.GetCurrent(), name, bindingLocation, size, dataSize, isDynamic)
         {
         }
 
-        public ValueTask UpdateAsync<T>(T data,ulong size = Vk.WholeSize, ulong offset = 0) where T : unmanaged
+        public ValueTask UpdateAsync<T>(T data, ulong size = Vk.WholeSize, ulong offset = 0) where T : unmanaged
         {
             return Buffer.WriteToBufferAsync(data, size, offset);
         }
@@ -64,6 +62,6 @@ namespace RockEngine.Core
             }
         }
 
-      
+
     }
 }

@@ -8,7 +8,7 @@ namespace RockEngine.Vulkan
         public uint Binding { get; set; }
         public DescriptorType DescriptorType { get; }
         public uint DescriptorCount { get; }
-        public ShaderStageFlags StageFlags { get; }
+        public ShaderStageFlags StageFlags { get; set; }
         public unsafe Sampler* PImmutableSamplers { get; internal set; }
 
 
@@ -31,7 +31,7 @@ namespace RockEngine.Vulkan
                  setLayoutBinding.PImmutableSamplers)
         { }
 
-        public static implicit operator DescriptorSetLayoutBinding(DescriptorSetLayoutBindingReflected value) 
+        public static implicit operator DescriptorSetLayoutBinding(DescriptorSetLayoutBindingReflected value)
             => new DescriptorSetLayoutBinding(value.Binding, value.DescriptorType, value.DescriptorCount, value.StageFlags, value.PImmutableSamplers);
 
 

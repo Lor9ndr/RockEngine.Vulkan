@@ -48,7 +48,7 @@ namespace RockEngine.Vulkan
             return true;
         }
 
-        private unsafe static bool BindingsEqual(DescriptorSetLayoutBindingReflected a, DescriptorSetLayoutBindingReflected b)
+        private static unsafe bool BindingsEqual(DescriptorSetLayoutBindingReflected a, DescriptorSetLayoutBindingReflected b)
         {
             return a.Binding == b.Binding &&
                    a.DescriptorType == b.DescriptorType &&
@@ -62,7 +62,7 @@ namespace RockEngine.Vulkan
             return obj is VkDescriptorSetLayout layout && Equals(layout);
         }
 
-        public unsafe override int GetHashCode()
+        public override unsafe int GetHashCode()
         {
             unchecked
             {

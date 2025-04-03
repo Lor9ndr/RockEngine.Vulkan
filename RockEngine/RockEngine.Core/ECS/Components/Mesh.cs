@@ -3,6 +3,8 @@ using RockEngine.Vulkan;
 
 using Silk.NET.Vulkan;
 
+using System.Runtime.CompilerServices;
+
 namespace RockEngine.Core.ECS.Components
 {
     public class Mesh : Component, IDisposable
@@ -26,38 +28,44 @@ namespace RockEngine.Core.ECS.Components
             Indices = indices;
         }
 
-       
-        private async ValueTask CreateVertexBufferAsync(RenderingContext context, VkCommandPool commandPool)
-        {
-            ulong vertexBufferSize = (ulong)(Vertices.Length * Vertex.Size);
-            VertexBuffer = await CreateDeviceLocalBufferAsync(context,vertexBufferSize, BufferUsageFlags.VertexBufferBit | BufferUsageFlags.TransferDstBit, Vertices, commandPool);
-        }
-
-        private async ValueTask CreateIndexBufferAsync(RenderingContext context, VkCommandPool commandPool)
-        {
-            if (Indices != null)
-            {
-                ulong indexBufferSize = (ulong)(Indices.Length * sizeof(uint));
-                IndexBuffer = await CreateDeviceLocalBufferAsync(context, indexBufferSize, BufferUsageFlags.IndexBufferBit | BufferUsageFlags.TransferDstBit, Indices, commandPool);
-            }
-        }
-
-        private static async ValueTask<VkBuffer> CreateDeviceLocalBufferAsync<T>(RenderingContext context, ulong bufferSize, BufferUsageFlags usage, T[] data, VkCommandPool commandPool) where T : unmanaged
-        {
-            using var stagingBuffer = await VkBuffer.CreateAndCopyToStagingBuffer(context,data, bufferSize);
-
-            var deviceLocalBuffer = VkBuffer.Create(context, bufferSize, usage, MemoryPropertyFlags.DeviceLocalBit);
-
-            stagingBuffer.CopyTo(deviceLocalBuffer, commandPool);
-
-
-            return deviceLocalBuffer;
-        }
 
         public override async ValueTask OnStart(Renderer renderer)
         {
-            await CreateVertexBufferAsync(RenderingContext.GetCurrent(), renderer.CommandPool);
-            await CreateIndexBufferAsync(RenderingContext.GetCurrent(), renderer.CommandPool);
+            var submitContext = renderer.SubmitContext;
+            var batch = submitContext.CreateBatch();
+            var context = VulkanContext.GetCurrent();
+            // Create device-local buffers
+            VertexBuffer = VkBuffer.Create(
+                context,
+                (ulong)(Unsafe.SizeOf<Vertex>() * Vertices.Length),
+                BufferUsageFlags.VertexBufferBit | BufferUsageFlags.TransferDstBit,
+                MemoryPropertyFlags.DeviceLocalBit);
+
+            // Stage vertex data
+            batch.StageToBuffer(
+                Vertices,
+                VertexBuffer,
+                0,
+                (ulong)(Unsafe.SizeOf<Vertex>() * Vertices.Length));
+
+            if (HasIndices)
+            {
+                IndexBuffer = VkBuffer.Create(
+                    context,
+                    (ulong)(Unsafe.SizeOf<uint>() * Indices!.Length),
+                    BufferUsageFlags.IndexBufferBit | BufferUsageFlags.TransferDstBit,
+                    MemoryPropertyFlags.DeviceLocalBit);
+
+                // Stage index data
+                batch.StageToBuffer(
+                    Indices,
+                    IndexBuffer,
+                    0,
+                    (ulong)(Unsafe.SizeOf<uint>() * Indices.Length));
+            }
+
+            batch.Submit(submitContext);
+            await submitContext.FlushAsync();
         }
         public override ValueTask Update(Renderer renderer)
         {

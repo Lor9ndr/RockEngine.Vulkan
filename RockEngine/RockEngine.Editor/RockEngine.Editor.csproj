@@ -8,9 +8,25 @@
     <PublishAot>true</PublishAot>
     <IsAotCompatible>true</IsAotCompatible>
     <InvariantGlobalization>true</InvariantGlobalization>
+    <TrimMode>full</TrimMode>
+    <IlcGenerateStackTraceData>false</IlcGenerateStackTraceData>
+    <InvariantGlobalization>true</InvariantGlobalization>
     <GenerateDocumentationFile>True</GenerateDocumentationFile>
     <SignAssembly>True</SignAssembly>
     <ShadersOutputPath>bin\$(Configuration)\$(TargetFramework)\Shaders\</ShadersOutputPath>
+    <Configurations>Debug;Release;Editor</Configurations>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
+    <DefineConstants>$(DefineConstants);Editor</DefineConstants>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
+    <DefineConstants>$(DefineConstants);Editor</DefineConstants>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Editor|AnyCPU'">
+    <DefineConstants>$(DefineConstants);Editor</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>
@@ -20,7 +36,8 @@
   <ItemGroup>
     <CompiledShader Include="..\RockEngine.Core\**\*.spv" />
   </ItemGroup>
-
+  
+  
   <ItemGroup>
     <EmbeddedResource Include="..\RockEngine.Core\**\*.vert" />
     <EmbeddedResource Include="..\RockEngine.Core\**\*.frag" />

@@ -1,38 +1,38 @@
-﻿using System.Numerics;
-using System.Runtime.CompilerServices;
-using Silk.NET.Vulkan;
+﻿using ImGuiNET;
+
+using RockEngine.Core.Rendering.Texturing;
 using RockEngine.Vulkan;
-using System;
-using Silk.NET.Core.Native;
-using System.Runtime.InteropServices;
-using Silk.NET.Input;
-using ImGuiNET;
 using RockEngine.Vulkan.Builders;
-using System.IO;
+
+using Silk.NET.Input;
+using Silk.NET.Vulkan;
+
+using System.Numerics;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 
 namespace RockEngine.Core.Rendering.ImGuiRendering
 {
     public class ImGuiController : IDisposable
     {
         private const string ImguiRenderPass = "ImGuiPass";
-        private readonly RenderingContext _vkContext;
+        private readonly VulkanContext _vkContext;
         private readonly GraphicsEngine _graphicsEngine;
         private readonly IInputContext _input;
-        private VkFrameBuffer[] _framebuffers;
         private VkDescriptorPool _descriptorPool;
         private VkPipelineLayout _pipelineLayout;
         private VkDescriptorSetLayout _descriptorSetLayout;
         private readonly VkBuffer?[] _vertexBuffers;
         private readonly VkBuffer?[] _indexBuffers;
         private bool _frameBegun;
-        private EngineRenderPass _renderPass;
+        private readonly EngineRenderPass _renderPass;
         private VkPipeline _pipeline;
-        private Queue<char> _pressedChars = new Queue<char>();
-        private ulong _bufferMemoryAlignment;
+        private readonly Queue<char> _pressedChars = new Queue<char>();
+        private readonly ulong _bufferMemoryAlignment;
         private Texture _fontTexture;
         private DescriptorSet _fontTextureDescriptorSet;
 
-        public unsafe ImGuiController(RenderingContext vkContext, GraphicsEngine graphicsEngine, EngineRenderPass renderPass, IInputContext inputContext, uint width, uint height)
+        public unsafe ImGuiController(VulkanContext vkContext, GraphicsEngine graphicsEngine, EngineRenderPass renderPass, IInputContext inputContext, uint width, uint height)
         {
             _vkContext = vkContext;
             _renderPass = renderPass;
@@ -48,8 +48,6 @@ namespace RockEngine.Core.Rendering.ImGuiRendering
 
             CreateDeviceObjects();
             CreateDescriptorSet();
-            CreateFramebuffers(graphicsEngine.Swapchain);
-            graphicsEngine.Swapchain.OnSwapchainRecreate += CreateFramebuffers;
             ApplyDarkTheme();
             ImGui.GetIO().DisplaySize = new Vector2(width, height);
             _input.Keyboards[0].KeyChar += (s, c) => PressChar(c);
@@ -183,49 +181,6 @@ namespace RockEngine.Core.Rendering.ImGuiRendering
             io.DeltaTime = deltaSeconds; // DeltaTime is in seconds.
         }
 
-       
-
-        private unsafe void CreateFramebuffers(VkSwapchain swapchain)
-        {
-            var swapChainImageViews = swapchain.SwapChainImageViews;
-            var swapChainDepthImageView = swapchain.DepthImageView;
-            var swapChainExtent = swapchain.Extent;
-
-            if (_framebuffers is not null)
-            {
-                foreach (var item in _framebuffers)
-                {
-                    item.Dispose();
-                }
-            }
-            else
-            {
-                _framebuffers = new VkFrameBuffer[swapChainImageViews.Length];
-            }
-
-
-            for (int i = 0; i < swapChainImageViews.Length; i++)
-            {
-                var attachments = new VkImageView[] { swapChainImageViews[i], swapChainDepthImageView };
-                fixed (ImageView* attachmentsPtr = attachments.Select(s=>s.VkObjectNative).ToArray())
-                {
-                    var framebufferInfo = new FramebufferCreateInfo
-                    {
-                        SType = StructureType.FramebufferCreateInfo,
-                        RenderPass = _renderPass.RenderPass,
-                        AttachmentCount = 2,
-                        PAttachments = attachmentsPtr,
-                        Width = swapChainExtent.Width,
-                        Height = swapChainExtent.Height,
-                        Layers = 1
-                    };
-                    var framebuffer = VkFrameBuffer.Create(_vkContext, in framebufferInfo, attachments);
-                    _framebuffers[i] = framebuffer;
-                }
-            }
-        }
-
-
 
         public void Update()
         {
@@ -290,10 +245,10 @@ namespace RockEngine.Core.Rendering.ImGuiRendering
             }
 
             // Setup desired Vulkan state
-            RenderingContext.Vk.CmdBindPipeline(commandBuffer, PipelineBindPoint.Graphics, _pipeline);
+            VulkanContext.Vk.CmdBindPipeline(commandBuffer, PipelineBindPoint.Graphics, _pipeline);
             DescriptorSet descriptorset = _fontTextureDescriptorSet;
             uint setOffset = 0;
-            RenderingContext.Vk.CmdBindDescriptorSets(commandBuffer,
+            VulkanContext.Vk.CmdBindDescriptorSets(commandBuffer,
                                                       PipelineBindPoint.Graphics,
                                                       _pipelineLayout,
                                                       0,
@@ -328,8 +283,8 @@ namespace RockEngine.Core.Rendering.ImGuiRendering
             Span<float> translate = stackalloc float[2];
             translate[0] = -1.0f - drawData.DisplayPos.X * scale[0];
             translate[1] = -1.0f - drawData.DisplayPos.Y * scale[1];
-            RenderingContext.Vk.CmdPushConstants(commandBuffer, _pipelineLayout, ShaderStageFlags.VertexBit, sizeof(float) * 0, sizeof(float) * 2, scale);
-            RenderingContext.Vk.CmdPushConstants(commandBuffer, _pipelineLayout, ShaderStageFlags.VertexBit, sizeof(float) * 2, sizeof(float) * 2, translate);
+            VulkanContext.Vk.CmdPushConstants(commandBuffer, _pipelineLayout, ShaderStageFlags.VertexBit, sizeof(float) * 0, sizeof(float) * 2, scale);
+            VulkanContext.Vk.CmdPushConstants(commandBuffer, _pipelineLayout, ShaderStageFlags.VertexBit, sizeof(float) * 2, sizeof(float) * 2, translate);
 
             // Will project scissor/clipping rectangles into framebuffer space
             Vector2 clipOff = drawData.DisplayPos;         // (0,0) unless using multi-viewports
@@ -371,16 +326,16 @@ namespace RockEngine.Core.Rendering.ImGuiRendering
                         scissor.Offset.Y = (int)clipRect.Y;
                         scissor.Extent.Width = (uint)(clipRect.Z - clipRect.X);
                         scissor.Extent.Height = (uint)(clipRect.W - clipRect.Y);
-                        RenderingContext.Vk.CmdSetScissor(commandBuffer, 0, 1, &scissor);
+                        VulkanContext.Vk.CmdSetScissor(commandBuffer, 0, 1, &scissor);
 
                         // Draw
-                        RenderingContext.Vk.CmdDrawIndexed(commandBuffer, pcmd.ElemCount, 1, pcmd.IdxOffset + (uint)indexOffset, (int)pcmd.VtxOffset + vertexOffset, 0);
+                        VulkanContext.Vk.CmdDrawIndexed(commandBuffer, pcmd.ElemCount, 1, pcmd.IdxOffset + (uint)indexOffset, (int)pcmd.VtxOffset + vertexOffset, 0);
                     }
                 }
                 indexOffset += cmd_list->IdxBuffer.Size;
                 vertexOffset += cmd_list->VtxBuffer.Size;
             }
-          
+
         }
 
         private void CreateOrResizeBuffer(ref VkBuffer? buffer, ulong size, BufferUsageFlags usage)
@@ -439,7 +394,7 @@ namespace RockEngine.Core.Rendering.ImGuiRendering
                 PImageInfo = &imageInfo
             };
 
-            RenderingContext.Vk.UpdateDescriptorSets(_vkContext.Device, 1, &descriptorWrite, 0, null);
+            VulkanContext.Vk.UpdateDescriptorSets(_vkContext.Device, 1, &descriptorWrite, 0, null);
         }
 
         private unsafe void CreateFontResources()
@@ -521,6 +476,7 @@ namespace RockEngine.Core.Rendering.ImGuiRendering
                  .WithColorBlendState(new VulkanColorBlendStateBuilder()
                      .AddAttachment(color_attachment))
                  .AddRenderPass(_renderPass.RenderPass)
+                 .WithSubpass(2)
                  .WithPipelineLayout(_pipelineLayout)
                  .WithDynamicState(new PipelineDynamicStateBuilder()
                     .AddState(DynamicState.Viewport)
@@ -530,7 +486,7 @@ namespace RockEngine.Core.Rendering.ImGuiRendering
             _pipeline = pipelineBuilder.Build();
         }
 
-       
+
         public static void ApplyDarkTheme()
         {
             var style = ImGui.GetStyle();
@@ -597,6 +553,12 @@ namespace RockEngine.Core.Rendering.ImGuiRendering
             colors[(int)ImGuiCol.DragDropTarget] = new Vector4(1.00f, 1.00f, 0.00f, 0.90f);
             colors[(int)ImGuiCol.NavWindowingHighlight] = new Vector4(1.00f, 1.00f, 1.00f, 0.70f);
             colors[(int)ImGuiCol.NavWindowingDimBg] = new Vector4(0.80f, 0.80f, 0.80f, 0.20f);
+
+            colors[(int)ImGuiCol.WindowBg] = new Vector4(0.1f, 0.1f, 0.1f, 1.0f);
+            colors[(int)ImGuiCol.Button] = new Vector4(0.2f, 0.2f, 0.2f, 1.0f);
+            colors[(int)ImGuiCol.ButtonHovered] = new Vector4(0.3f, 0.3f, 0.3f, 1.0f);
+            colors[(int)ImGuiCol.ButtonActive] = new Vector4(0.4f, 0.4f, 0.4f, 1.0f);
+            style.FrameRounding = 3.0f;
         }
 
 

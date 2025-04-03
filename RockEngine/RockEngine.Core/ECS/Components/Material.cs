@@ -1,10 +1,10 @@
 ﻿using RockEngine.Core.Rendering.ResourceBindings;
+using RockEngine.Core.Rendering.Texturing;
 using RockEngine.Vulkan;
 
 using Silk.NET.Vulkan;
 
 using System.Collections;
-using System.Linq;
 
 namespace RockEngine.Core.ECS.Components
 {
@@ -14,8 +14,8 @@ namespace RockEngine.Core.ECS.Components
 
         public VkPipeline Pipeline;
         public Texture[] Textures;
-       
-        public Pipeline GeometryPipeline { get; set; }
+
+        public VkPipeline GeometryPipeline { get; set; }
         public BindingCollection Bindings { get; private set; }
 
         public DescriptorSet TexturesDescriptorSet;
@@ -28,7 +28,7 @@ namespace RockEngine.Core.ECS.Components
             var setLayout = Pipeline.Layout.GetSetLayout(TEXTURE_SET_LOCATION);
             while (setLayout.Bindings.Length >= textures.Count)
             {
-                textures.Add(Texture.GetEmptyTexture(RenderingContext.GetCurrent()));
+                textures.Add(Texture.GetEmptyTexture(VulkanContext.GetCurrent()));
             }
             Textures = textures.ToArray();
             // Add texture bindings to the bindings list
@@ -37,53 +37,101 @@ namespace RockEngine.Core.ECS.Components
     }
 
 
-    public class BindingCollection : IEnumerable<ResourceBinding>
+    public class BindingCollection : IEnumerable<(uint Set, PerSetBindings)>
     {
-        private readonly SortedList<(uint SetLocation, uint BindingLocation), ResourceBinding> _bindings;
+        private readonly SortedDictionary<uint, PerSetBindings> _setBindings
+            = new SortedDictionary<uint, PerSetBindings>();
+        private readonly List<uint> _dynamicOffsets = new List<uint>();
 
-        public uint MinSetLocation { get; private set; } = uint.MaxValue;
-        public uint MaxSetLocation { get; private set; } = uint.MinValue;
-        public uint Count { get; private set; }
+        public uint MinSetLocation => _setBindings.Keys.FirstOrDefault();
+        public uint MaxSetLocation => _setBindings.Keys.LastOrDefault();
+        public int CountAllBindings => _setBindings.Sum(kvp => kvp.Value.Count);
+        public int Count => _setBindings.Count;
+        public IReadOnlyList<uint> DynamicOffsets => _dynamicOffsets;
 
-        public BindingCollection()
+        public void Add(ResourceBinding binding)
         {
-            _bindings = new SortedList<(uint SetLocation, uint BindingLocation), ResourceBinding>();
+            if (!_setBindings.TryGetValue(binding.SetLocation, out var setBindings))
+            {
+                setBindings = new PerSetBindings(binding.SetLocation);
+                _setBindings[binding.SetLocation] = setBindings;
+            }
+
+            setBindings.Add(binding);
+
+            if (binding is UniformBufferBinding ubo && ubo.Buffer.IsDynamic)
+            {
+                _dynamicOffsets.Add((uint)ubo.Offset);
+            }
+        }
+
+        public bool Remove(ResourceBinding binding)
+        {
+            if (binding is null)
+            {
+                return false;
+            }
+            if (!_setBindings.TryGetValue(binding.SetLocation, out var setBindings))
+                return false;
+
+            var removed = setBindings.Remove(binding);
+
+            if (removed && binding is UniformBufferBinding ubo && ubo.Buffer.IsDynamic)
+            {
+                _dynamicOffsets.Remove((uint)ubo.Offset);
+            }
+
+            if (setBindings.Count == 0)
+            {
+                _setBindings.Remove(binding.SetLocation);
+            }
+
+            return removed;
+        }
+
+        public IEnumerator<(uint Set, PerSetBindings)> GetEnumerator()
+        {
+            foreach (var kvp in _setBindings)
+            {
+                yield return (kvp.Key, kvp.Value);
+            }
+        }
+
+        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+
+        public bool TryGetBindings(uint set, out PerSetBindings bindings)
+        {
+            return _setBindings.TryGetValue(set, out bindings);
+        }
+    }
+
+    public class PerSetBindings : IEnumerable<ResourceBinding>
+    {
+        private readonly SortedList<uint, ResourceBinding> _bindings
+            = new SortedList<uint, ResourceBinding>();
+
+        public uint Set { get; }
+        public int Count => _bindings.Count;
+
+        public PerSetBindings(uint set)
+        {
+            Set = set;
         }
 
         public void Add(ResourceBinding binding)
         {
-            _bindings.Add((binding.SetLocation, binding.BindingLocation), binding);
-            MinSetLocation = Math.Min(MinSetLocation, binding.SetLocation);
-            MaxSetLocation = Math.Max(MaxSetLocation, binding.SetLocation);
-            Count++;
+            if (binding.SetLocation != Set)
+                throw new ArgumentException($"Binding set {binding.SetLocation} doesn't match collection set {Set}");
+
+            _bindings[binding.BindingLocation] = binding;
         }
 
-        public void Remove(ResourceBinding binding)
+        public bool Remove(ResourceBinding binding)
         {
-            _bindings.Remove((binding.SetLocation, binding.BindingLocation));
-            // Recalculate min/max if needed
-            if (_bindings.Count > 0)
-            {
-                MinSetLocation = _bindings.Keys.Min(b => b.SetLocation);
-                MaxSetLocation = _bindings.Keys.Max(b => b.SetLocation);
-            }
-            else
-            {
-                MinSetLocation = uint.MaxValue;
-                MaxSetLocation = uint.MinValue;
-            }
-            Count--;
+            return _bindings.Remove(binding.BindingLocation);
         }
 
-        public IEnumerator<ResourceBinding> GetEnumerator()
-        {
-            return _bindings.Values.GetEnumerator();
-        }
-
-        IEnumerator IEnumerable.GetEnumerator()
-        {
-            return GetEnumerator();
-        }
+        public IEnumerator<ResourceBinding> GetEnumerator() => _bindings.Values.GetEnumerator();
+        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
     }
-
 }

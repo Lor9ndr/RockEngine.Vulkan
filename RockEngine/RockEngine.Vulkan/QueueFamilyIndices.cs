@@ -2,7 +2,7 @@
 {
     public struct QueueFamilyIndices
     {
-        public uint? PresentFamily { get;set;} = null;
+        public uint? PresentFamily { get; set; } = null;
         public uint? GraphicsFamily { get; set; } = null;
         public uint? ComputeFamily { get; set; } = null;
         public uint? TransferFamily { get; set; } = null;

@@ -1,5 +1,6 @@
 ﻿using Assimp;
 
+using RockEngine.Core.Rendering.Texturing;
 using RockEngine.Vulkan;
 
 using System.Numerics;
@@ -12,18 +13,20 @@ namespace RockEngine.Core
     {
         private readonly AssimpContext _assimpContext;
         private readonly LogStream _logStream;
-        Dictionary<string, Texture> loadedTextures = new Dictionary<string, Texture>();
+        private readonly TextureStreamer _textureStreamer;
+        readonly Dictionary<string, Texture> loadedTextures = new Dictionary<string, Texture>();
 
-        public AssimpLoader()
+        public AssimpLoader(TextureStreamer streamer)
         {
             _assimpContext = new AssimpContext();
 
             // Create a LogStream that writes to console
             _logStream = new ConsoleLogStream();
             _logStream.Attach();
+            _textureStreamer = streamer;
         }
 
-        public async ValueTask<List<MeshData>> LoadMeshesAsync(string filePath, RenderingContext context, VkCommandBuffer? commandBuffer = null)
+        public async ValueTask<List<MeshData>> LoadMeshesAsync(string filePath, VulkanContext context, VkCommandBuffer? commandBuffer = null)
         {
             var pathExtension = Path.GetExtension(filePath);
             if (!_assimpContext.IsImportFormatSupported(pathExtension))
@@ -84,7 +87,16 @@ namespace RockEngine.Core
                     var texturePath = material.TextureDiffuse.FilePath;
                     if (!loadedTextures.TryGetValue(texturePath, out var texture))
                     {
-                        texture = await Texture.CreateAsync(context, Directory.GetParent(filePath) + "\\" + texturePath, commandBuffer);
+                        // Create streamable texture with base mip
+                        var baseImage = await Texture.CreateBaseImageAsync(context, Directory.GetParent(filePath) + "\\" + texturePath);
+                        texture = new StreamableTexture(
+                            context,
+                            baseImage.Image,
+                            baseImage.ImageView,
+                            baseImage.Sampler, Directory.GetParent(filePath) + "\\" + texturePath);
+
+                        // Schedule mip streaming
+                        await ((StreamableTexture)texture).StreamNextMipAsync(_textureStreamer, 1.0f);
                         loadedTextures[texturePath] = texture;
                     }
                     textures.Add(texture);
@@ -94,7 +106,7 @@ namespace RockEngine.Core
                     var texturePath = material.TextureNormal.FilePath;
                     if (!loadedTextures.TryGetValue(texturePath, out var texture))
                     {
-                        texture = await Texture.CreateAsync(context, Directory.GetParent(filePath) + "\\" + texturePath, commandBuffer);
+                        texture = await Texture.CreateAsync(context, Directory.GetParent(filePath) + "\\" + texturePath);
                         loadedTextures[texturePath] = texture;
                     }
                     textures.Add(texture);
@@ -106,7 +118,7 @@ namespace RockEngine.Core
                     var texturePath = material.TextureSpecular.FilePath;
                     if (!loadedTextures.TryGetValue(texturePath, out var texture))
                     {
-                        texture = await Texture.CreateAsync(context, Directory.GetParent(filePath) + "\\" + texturePath, commandBuffer);
+                        texture = await Texture.CreateAsync(context, Directory.GetParent(filePath) + "\\" + texturePath);
                         loadedTextures[texturePath] = texture;
                     }
                     textures.Add(texture);
@@ -125,5 +137,5 @@ namespace RockEngine.Core
         }
     }
 
-    public record struct MeshData(string Name, Vertex[] Vertices,uint[] Indices, List<Texture> Textures);
+    public record struct MeshData(string Name, Vertex[] Vertices, uint[] Indices, List<Texture> Textures);
 }

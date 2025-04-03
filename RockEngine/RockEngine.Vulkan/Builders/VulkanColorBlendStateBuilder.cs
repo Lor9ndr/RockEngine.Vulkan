@@ -7,7 +7,7 @@ namespace RockEngine.Vulkan.Builders
     public class VulkanColorBlendStateBuilder : DisposableBuilder
     {
         private LogicOp _op;
-        private List<PipelineColorBlendAttachmentState> _attachments = new List<PipelineColorBlendAttachmentState>();
+        private readonly List<PipelineColorBlendAttachmentState> _attachments = new List<PipelineColorBlendAttachmentState>();
 
         public VulkanColorBlendStateBuilder Configure(LogicOp op)
         {

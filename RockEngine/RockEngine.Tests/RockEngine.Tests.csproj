@@ -5,6 +5,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <ShadersOutputPath>bin\$(Configuration)\$(TargetFramework)\Shaders\</ShadersOutputPath>
+    <Configurations>Debug;Release;Editor</Configurations>
   </PropertyGroup>
 
   <ItemGroup>

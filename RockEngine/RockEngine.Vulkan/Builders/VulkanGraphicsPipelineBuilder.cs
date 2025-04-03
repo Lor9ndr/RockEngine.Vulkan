@@ -8,11 +8,11 @@ namespace RockEngine.Vulkan.Builders
     public class GraphicsPipelineBuilder : DisposableBuilder
     {
         private MemoryHandle _entryPoint;
-        private readonly RenderingContext _context;
+        private readonly VulkanContext _context;
         private readonly string _name;
         private VkRenderPass _renderPass;
         private VkPipelineLayout _pipelineLayout;
-        private PipelineStageBuilder _pipelineStageBuilder = new PipelineStageBuilder();
+        private readonly PipelineStageBuilder _pipelineStageBuilder = new PipelineStageBuilder();
         private VulkanPipelineVertexInputStateBuilder _vertexInputStateBuilder;
         private VulkanInputAssemblyBuilder _inputAssemblyBuilder;
         private VulkanViewportStateInfoBuilder? _viewportStateBuilder;
@@ -21,8 +21,9 @@ namespace RockEngine.Vulkan.Builders
         private VulkanColorBlendStateBuilder _colorBlendStateBuilder;
         private PipelineDynamicStateBuilder _dynamicStateBuilder;
         private PipelineDepthStencilStateCreateInfo _depthStencilState;
+        private uint _subpass;
 
-        public GraphicsPipelineBuilder(RenderingContext context, string name)
+        public GraphicsPipelineBuilder(VulkanContext context, string name)
         {
             _entryPoint = CreateMemoryHandle(Encoding.ASCII.GetBytes("main"));
             _context = context;
@@ -95,7 +96,11 @@ namespace RockEngine.Vulkan.Builders
             return this;
         }
 
-
+        public GraphicsPipelineBuilder WithSubpass(uint subpass)
+        {
+            _subpass = subpass;
+            return this;
+        }
 
         /// <summary>
         /// Building the whole pipeline
@@ -143,10 +148,12 @@ namespace RockEngine.Vulkan.Builders
                 PDepthStencilState = (PipelineDepthStencilStateCreateInfo*)pDepthState.Pointer,
                 Layout = _pipelineLayout,
                 RenderPass = _renderPass,
-                Subpass = 0,
+                Subpass = _subpass,
             };
 
             return VkPipeline.Create(_context, _name, ref ci, _renderPass, _pipelineLayout);
         }
+
+
     }
 }

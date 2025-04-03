@@ -2,5 +2,6 @@
 {
     public interface IRenderCommand
     {
+        RenderPhase Phase { get; }
     }
 }

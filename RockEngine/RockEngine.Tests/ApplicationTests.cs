@@ -1,13 +1,8 @@
 ﻿using RockEngine.Core;
-using RockEngine.Core.ECS;
 using RockEngine.Core.Rendering;
 using RockEngine.Vulkan;
-using Silk.NET.Input;
+
 using Silk.NET.Windowing;
-using Silk.NET.Maths;
-using RockEngine.Editor;
-using TUnit.Assertions;
-using TUnit.Assertions.Extensions;
 
 namespace RockEngine.Tests
 {
@@ -37,7 +32,7 @@ namespace RockEngine.Tests
             public bool UpdateCalled;
             public ManualResetEventSlim LoadedEvent = new();
 
-            public RenderingContext RenderingContext => _renderingContext;
+            public VulkanContext RenderingContext => _renderingContext;
             public IWindow Window => _window;
 
             public TestApplication() : base("TEST", 800, 600)
@@ -58,14 +53,14 @@ namespace RockEngine.Tests
         private CancellationTokenSource _cts;
 
         [Before(Test)]
-        public  async Task SetUp()
+        public async Task SetUp()
         {
             _cts = new CancellationTokenSource(TimeSpan.FromMinutes(2));
             _application = new TestApplication();
-            
+
             // Запускаем приложение в фоне
             var runTask = _application.Run();
-            
+
             // Ждем инициализации с таймаутом
             if (!_application.LoadedEvent.Wait(TimeSpan.FromSeconds(200), _cts.Token))
             {
@@ -74,7 +69,7 @@ namespace RockEngine.Tests
         }
 
         [After(Test)]
-        public  async Task TearDown()
+        public async Task TearDown()
         {
             _cts.Cancel();
             _application.Dispose();
@@ -93,9 +88,9 @@ namespace RockEngine.Tests
         {
             var layer = new TestLayer();
             await _application.PushLayer(layer);
-            
+
             await Assert.That(layer.IsAttached).IsTrue();
-            
+
             _application.PopLayer(layer);
             await Assert.That(layer.IsAttached).IsFalse();
         }
@@ -105,7 +100,7 @@ namespace RockEngine.Tests
         {
             var initialTime = Time.TotalTime;
             _application.InvokeUpdate(0.016);
-            
+
             await Assert.That(Time.TotalTime).IsGreaterThan(initialTime);
         }
     }

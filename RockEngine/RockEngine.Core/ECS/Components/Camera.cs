@@ -1,10 +1,7 @@
 ﻿using RockEngine.Core.Helpers;
 using RockEngine.Core.Rendering;
-using RockEngine.Vulkan;
 
-using System.Diagnostics;
 using System.Numerics;
-using System.Runtime.CompilerServices;
 
 namespace RockEngine.Core.ECS.Components
 {
@@ -156,6 +153,6 @@ namespace RockEngine.Core.ECS.Components
             renderer.CurrentCamera = this;
             return default;
         }
-    
+
     }
 }

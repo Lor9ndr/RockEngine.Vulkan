@@ -4,26 +4,30 @@ namespace RockEngine.Vulkan
 {
     public record VkDeviceMemory : VkObject<DeviceMemory>
     {
-        private readonly RenderingContext _context;
+        private readonly VulkanContext _context;
         private readonly DeviceMemory _memory;
         private readonly ulong _size;
+        private readonly MemoryPropertyFlags properties;
+
         public ulong Size => _size;
         public bool IsMapped => _mappedData.HasValue;
 
         public nint? MappedData => _mappedData;
+        public MemoryPropertyFlags Properties => properties;
 
         private nint? _mappedData;
 
-        private VkDeviceMemory(RenderingContext context, DeviceMemory memory, ulong size)
+        private VkDeviceMemory(VulkanContext context, DeviceMemory memory, ulong size, MemoryPropertyFlags properties)
             : base(memory)
         {
             _context = context;
             _memory = memory;
             _size = size;
+            this.properties = properties;
         }
 
 
-        public static unsafe VkDeviceMemory Allocate(RenderingContext context, MemoryRequirements memRequirements, MemoryPropertyFlags properties)
+        public static unsafe VkDeviceMemory Allocate(VulkanContext context, MemoryRequirements memRequirements, MemoryPropertyFlags properties)
         {
             var allocInfo = new MemoryAllocateInfo
             {
@@ -32,16 +36,16 @@ namespace RockEngine.Vulkan
                 MemoryTypeIndex = FindMemoryType(context, memRequirements.MemoryTypeBits, properties)
             };
 
-            RenderingContext.Vk.AllocateMemory(context.Device, in allocInfo, in RenderingContext.CustomAllocator<VkDeviceMemory>(), out var memory)
+            VulkanContext.Vk.AllocateMemory(context.Device, in allocInfo, in VulkanContext.CustomAllocator<VkDeviceMemory>(), out var memory)
                  .VkAssertResult("Failed to allocate memory!");
 
-            return new VkDeviceMemory(context, memory, memRequirements.Size);
+            return new VkDeviceMemory(context, memory, memRequirements.Size, properties);
         }
 
 
-        private static uint FindMemoryType(RenderingContext context, uint typeFilter, MemoryPropertyFlags properties)
+        private static uint FindMemoryType(VulkanContext context, uint typeFilter, MemoryPropertyFlags properties)
         {
-            RenderingContext.Vk.GetPhysicalDeviceMemoryProperties(context.Device.PhysicalDevice, out PhysicalDeviceMemoryProperties pMemoryProperties);
+            VulkanContext.Vk.GetPhysicalDeviceMemoryProperties(context.Device.PhysicalDevice, out PhysicalDeviceMemoryProperties pMemoryProperties);
             for (uint i = 0; i < pMemoryProperties.MemoryTypeCount; i++)
             {
                 if ((typeFilter & 1 << (int)i) != 0 && (pMemoryProperties.MemoryTypes[(int)i].PropertyFlags & properties) == properties)
@@ -60,7 +64,7 @@ namespace RockEngine.Vulkan
         public unsafe void Map(ulong bufferSize, ulong offset)
         {
             void* mappedMemory = null;
-            RenderingContext.Vk.MapMemory(_context.Device, _vkObject, offset, bufferSize, 0, &mappedMemory)
+            VulkanContext.Vk.MapMemory(_context.Device, _vkObject, offset, bufferSize, 0, &mappedMemory)
                 .VkAssertResult("Failed to map memory");
             _mappedData = new nint(mappedMemory);
         }
@@ -68,23 +72,24 @@ namespace RockEngine.Vulkan
         public unsafe void Map()
         {
             void* mappedMemory = null;
-            RenderingContext.Vk.MapMemory(_context.Device, _vkObject, 0, _size, 0, &mappedMemory)
+            VulkanContext.Vk.MapMemory(_context.Device, _vkObject, 0, _size, 0, &mappedMemory)
                 .VkAssertResult("Failed to map memory");
             _mappedData = new nint(mappedMemory);
 
         }
-      
+
 
         public void Unmap()
         {
-            RenderingContext.Vk.UnmapMemory(_context.Device, _vkObject);
+            VulkanContext.Vk.UnmapMemory(_context.Device, _vkObject);
             _mappedData = null;
 
         }
 
         protected override unsafe void Dispose(bool disposing)
         {
-            RenderingContext.Vk.FreeMemory(_context.Device, _memory, in RenderingContext.CustomAllocator<VkDeviceMemory>());
+            if (_disposed) return;
+            VulkanContext.Vk.FreeMemory(_context.Device, _memory, in VulkanContext.CustomAllocator<VkDeviceMemory>());
             _mappedData = null;
             _disposed = true;
         }

@@ -1,5 +1,5 @@
-﻿using Silk.NET.Core.Native;
-using Silk.NET.Core;
+﻿using Silk.NET.Core;
+using Silk.NET.Core.Native;
 using Silk.NET.Vulkan;
 
 namespace RockEngine.Vulkan
@@ -39,7 +39,7 @@ namespace RockEngine.Vulkan
         }
 
 
-        protected unsafe override void Dispose(bool disposing)
+        protected override unsafe void Dispose(bool disposing)
         {
             if (!_disposed)
             {
@@ -60,8 +60,9 @@ namespace RockEngine.Vulkan
 
 
 
-        public static VkLogicalDevice Create(Vk api, VkPhysicalDevice physicalDevice, ISurfaceHandler surface, params string[] extensions)
+        public static VkLogicalDevice Create(VulkanContext context, VkPhysicalDevice physicalDevice, ISurfaceHandler surface, params string[] extensions)
         {
+            var api = VulkanContext.Vk;
             // Find queue families
             QueueFamilyIndices indices = FindQueueFamilies(api, physicalDevice, surface);
 
@@ -88,10 +89,20 @@ namespace RockEngine.Vulkan
                 queueCreateInfos[i] = queueCreateInfo;
             }
 
-            PhysicalDeviceFeatures deviceFeatures = new PhysicalDeviceFeatures()
+
+            var vulkan11Features = new PhysicalDeviceVulkan11Features
             {
-                SamplerAnisotropy = true,
-                DepthClamp = true,
+                SType = StructureType.PhysicalDeviceVulkan11Features,
+                ShaderDrawParameters = true
+            };
+            PhysicalDeviceFeatures2 deviceFeatures2 = new PhysicalDeviceFeatures2()
+            {
+                 Features = new PhysicalDeviceFeatures()
+                 {
+                     SamplerAnisotropy = true,
+                     DepthClamp = true,
+                     MultiDrawIndirect = true,
+                 }, 
             };
 
             using var pqueueCreateInfo = queueCreateInfos.AsMemory().Pin();
@@ -101,7 +112,8 @@ namespace RockEngine.Vulkan
                 SType = StructureType.DeviceCreateInfo,
                 QueueCreateInfoCount = (uint)queueCreateInfos.Length,
                 PQueueCreateInfos = (DeviceQueueCreateInfo*)pqueueCreateInfo.Pointer,
-                PEnabledFeatures = &deviceFeatures
+                PEnabledFeatures = &deviceFeatures2.Features,
+                PNext = &vulkan11Features
 
             };
 
@@ -121,7 +133,7 @@ namespace RockEngine.Vulkan
             // Retrieve queue handles
             api.GetDeviceQueue(logicalDevice, indices.GraphicsFamily.Value, 0, out Queue graphicsQueue);
             api.GetDeviceQueue(logicalDevice, indices.PresentFamily.Value, 0, out Queue presentQueue);
-            
+
 
             // Free unmanaged memory
             if (deviceCreateInfo.EnabledExtensionCount != 0)
@@ -130,7 +142,7 @@ namespace RockEngine.Vulkan
             }
             SilkMarshal.Free((nint)deviceCreateInfo.PQueueCreateInfos);
 
-            return new VkLogicalDevice(api, logicalDevice, new VkQueue(in graphicsQueue),  new VkQueue(in presentQueue), indices, physicalDevice);
+            return new VkLogicalDevice(api, logicalDevice, new VkQueue(context, in graphicsQueue), new VkQueue(context, in presentQueue), indices, physicalDevice);
         }
 
         private static unsafe QueueFamilyIndices FindQueueFamilies(Vk api, PhysicalDevice device, ISurfaceHandler surface)

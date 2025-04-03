@@ -1,10 +1,14 @@
-﻿using RockEngine.Core.ECS.Components;
+﻿
+using RockEngine.Core.ECS.Components;
 
 namespace RockEngine.Core.Rendering.Commands
 {
-    internal readonly record struct MeshRenderCommand : IRenderCommand
+    internal class MeshRenderCommand : IRenderCommand
     {
         public Mesh Mesh { get; }
+        public uint TransformIndex { get; set; }
+
+        public RenderPhase Phase => RenderPhase.Geometry;
 
         public MeshRenderCommand(Mesh mesh)
         {

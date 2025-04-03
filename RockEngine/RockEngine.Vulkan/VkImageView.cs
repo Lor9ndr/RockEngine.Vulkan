@@ -5,31 +5,32 @@ namespace RockEngine.Vulkan
 {
     public record VkImageView : VkObject<ImageView>
     {
-        private readonly RenderingContext _context;
+        private readonly VulkanContext _context;
         private readonly VkImage _image;
         public VkImage Image => _image;
 
-        private VkImageView(RenderingContext context, VkImage image, in ImageView vkObject)
+        private VkImageView(VulkanContext context, VkImage image, in ImageView vkObject)
             : base(in vkObject)
         {
             _context = context;
             _image = image;
         }
 
-        public unsafe static VkImageView Create(RenderingContext context, VkImage image, in ImageViewCreateInfo ci)
+        public static unsafe VkImageView Create(VulkanContext context, VkImage image, in ImageViewCreateInfo ci)
         {
-            RenderingContext.Vk.CreateImageView(context.Device, in ci, in RenderingContext.CustomAllocator<VkImageView>(), out var imageView)
+            VulkanContext.Vk.CreateImageView(context.Device, in ci, in VulkanContext.CustomAllocator<VkImageView>(), out var imageView)
                .VkAssertResult("Failed to create image view!");
             return new VkImageView(context, image, imageView);
         }
         public static VkImageView Create(
-            RenderingContext context,
+            VulkanContext context,
             VkImage image,
             Format format,
             ImageAspectFlags aspectFlags,
             ImageViewType viewType = ImageViewType.Type2D,
             uint mipLevels = 1,
-            uint arrayLayers = 1)
+            uint arrayLayers = 1,
+            uint baseMipLevel = 0)
         {
             var createInfo = new ImageViewCreateInfo
             {
@@ -41,7 +42,7 @@ namespace RockEngine.Vulkan
                 SubresourceRange = new ImageSubresourceRange
                 {
                     AspectMask = aspectFlags,
-                    BaseMipLevel = 0,
+                    BaseMipLevel = baseMipLevel,
                     LevelCount = mipLevels,
                     BaseArrayLayer = 0,
                     LayerCount = arrayLayers
@@ -52,13 +53,13 @@ namespace RockEngine.Vulkan
         }
 
 
-        protected unsafe override void Dispose(bool disposing)
+        protected override unsafe void Dispose(bool disposing)
         {
             if (_disposed)
             {
                 return;
             }
-            RenderingContext.Vk.DestroyImageView(_context.Device, _vkObject, in RenderingContext.CustomAllocator<VkImageView>());
+            VulkanContext.Vk.DestroyImageView(_context.Device, _vkObject, in VulkanContext.CustomAllocator<VkImageView>());
             _disposed = true;
         }
     }

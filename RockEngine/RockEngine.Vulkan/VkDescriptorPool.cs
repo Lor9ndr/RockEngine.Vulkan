@@ -4,17 +4,17 @@ namespace RockEngine.Vulkan
 {
     public record VkDescriptorPool : VkObject<DescriptorPool>
     {
-        private readonly RenderingContext _context;
+        private readonly VulkanContext _context;
 
-        private VkDescriptorPool(RenderingContext context, in DescriptorPool descriptorPool)
+        private VkDescriptorPool(VulkanContext context, in DescriptorPool descriptorPool)
             : base(in descriptorPool)
         {
             _context = context;
         }
 
-        public unsafe static VkDescriptorPool Create(RenderingContext context, in DescriptorPoolCreateInfo createInfo)
+        public static unsafe VkDescriptorPool Create(VulkanContext context, in DescriptorPoolCreateInfo createInfo)
         {
-            RenderingContext.Vk.CreateDescriptorPool(context.Device, in createInfo, in RenderingContext.CustomAllocator<VkDescriptorPool>(), out var descriptorPool)
+            VulkanContext.Vk.CreateDescriptorPool(context.Device, in createInfo, in VulkanContext.CustomAllocator<VkDescriptorPool>(), out var descriptorPool)
                 .VkAssertResult("Failed to create descriptor pool");
 
             return new VkDescriptorPool(context, descriptorPool);
@@ -29,7 +29,7 @@ namespace RockEngine.Vulkan
                 DescriptorSetCount = 1,
                 PSetLayouts = &setLayout
             };
-            RenderingContext.Vk.AllocateDescriptorSets(_context.Device, in allocInfo, out var descriptorSet)
+            VulkanContext.Vk.AllocateDescriptorSets(_context.Device, in allocInfo, out var descriptorSet)
                 .VkAssertResult("Failed to allocate descriptor set");
             return descriptorSet;
         }
@@ -43,12 +43,12 @@ namespace RockEngine.Vulkan
                 DescriptorSetCount = 1,
                 PSetLayouts = &setLayout.DescriptorSetLayout
             };
-            RenderingContext.Vk.AllocateDescriptorSets(_context.Device, in allocInfo, out var descriptorSet)
+            VulkanContext.Vk.AllocateDescriptorSets(_context.Device, in allocInfo, out var descriptorSet)
                 .VkAssertResult("Failed to allocate descriptor set");
             return descriptorSet;
         }
 
-        protected unsafe override void Dispose(bool disposing)
+        protected override unsafe void Dispose(bool disposing)
         {
             if (!_disposed)
             {
@@ -59,7 +59,7 @@ namespace RockEngine.Vulkan
 
                 if (_vkObject.Handle != default)
                 {
-                    RenderingContext.Vk.DestroyDescriptorPool(_context.Device, _vkObject, in RenderingContext.CustomAllocator<VkDescriptorPool>());
+                    VulkanContext.Vk.DestroyDescriptorPool(_context.Device, _vkObject, in VulkanContext.CustomAllocator<VkDescriptorPool>());
                 }
 
                 _disposed = true;

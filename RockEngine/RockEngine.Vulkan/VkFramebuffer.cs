@@ -4,11 +4,11 @@ namespace RockEngine.Vulkan
 {
     public record VkFrameBuffer : VkObject<Framebuffer>
     {
-        private readonly RenderingContext _context;
+        private readonly VulkanContext _context;
 
         public VkImageView[] ColorAttachmentViews { get; }
         public VkSampler Sampler { get; }
-        private VkFrameBuffer(RenderingContext context,  in Framebuffer framebuffer, VkImageView[] attachments)
+        private VkFrameBuffer(VulkanContext context, in Framebuffer framebuffer, VkImageView[] attachments)
             : base(framebuffer)
         {
             _context = context;
@@ -25,9 +25,9 @@ namespace RockEngine.Vulkan
             Sampler = VkSampler.Create(context, samplerInfo);
         }
 
-        public static unsafe VkFrameBuffer Create(RenderingContext context, in FramebufferCreateInfo framebufferCreateInfo, VkImageView[] attachments)
+        public static unsafe VkFrameBuffer Create(VulkanContext context, in FramebufferCreateInfo framebufferCreateInfo, VkImageView[] attachments)
         {
-            RenderingContext.Vk.CreateFramebuffer(context.Device, in framebufferCreateInfo, in RenderingContext.CustomAllocator<VkFrameBuffer>(), out Framebuffer framebuffer)
+            VulkanContext.Vk.CreateFramebuffer(context.Device, in framebufferCreateInfo, in VulkanContext.CustomAllocator<VkFrameBuffer>(), out Framebuffer framebuffer)
                     .VkAssertResult("Failed to create framebuffer.");
 
             return new VkFrameBuffer(context, framebuffer, attachments);
@@ -49,7 +49,7 @@ namespace RockEngine.Vulkan
 
                 unsafe
                 {
-                    RenderingContext.Vk.DestroyFramebuffer(_context.Device, _vkObject, in RenderingContext.CustomAllocator<VkFrameBuffer>());
+                    VulkanContext.Vk.DestroyFramebuffer(_context.Device, _vkObject, in VulkanContext.CustomAllocator<VkFrameBuffer>());
                 }
 
                 _disposed = true;

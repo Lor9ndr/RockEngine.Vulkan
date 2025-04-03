@@ -10,10 +10,10 @@ using static RockEngine.Vulkan.ISurfaceHandler;
 
 namespace RockEngine.Vulkan
 {
-    internal record SDLSurfaceHandler :  VkObject<SurfaceKHR>, ISurfaceHandler
+    internal record SDLSurfaceHandler : VkObject<SurfaceKHR>, ISurfaceHandler
     {
         private readonly IWindow _window;
-        private readonly RenderingContext _context;
+        private readonly VulkanContext _context;
         private readonly KhrSurface _surfaceApi;
         private Vector2 _size;
         public IVkSurface? VkSurfaceNative { get; }
@@ -27,24 +27,24 @@ namespace RockEngine.Vulkan
 
         public event FramebufferResizeHandler? OnFramebufferResize;
 
-        public SDLSurfaceHandler(IWindow window, RenderingContext context, in SurfaceKHR surface)
-            :base(in surface)
+        public SDLSurfaceHandler(IWindow window, VulkanContext context, in SurfaceKHR surface)
+            : base(in surface)
         {
             VkSurfaceNative = window.VkSurface;
             _window = window;
             _context = context;
-            _surfaceApi = new KhrSurface(RenderingContext.Vk.Context);
+            _surfaceApi = new KhrSurface(VulkanContext.Vk.Context);
             _size = new Vector2(_window.Size.X, _window.Size.Y);
             _window.Resize += SurfaceResized;
         }
 
-        public static unsafe SDLSurfaceHandler CreateSurface(IWindow window, RenderingContext context)
+        public static unsafe SDLSurfaceHandler CreateSurface(IWindow window, VulkanContext context)
         {
-           
-                var handle = window.VkSurface.Create<AllocationCallbacks>(context.Instance.VkObjectNative.ToHandle(), default);
-                var surface = new SurfaceKHR(handle.Handle);
-                return new SDLSurfaceHandler(window, context, surface);
-           
+
+            var handle = window.VkSurface.Create<AllocationCallbacks>(context.Instance.VkObjectNative.ToHandle(), default);
+            var surface = new SurfaceKHR(handle.Handle);
+            return new SDLSurfaceHandler(window, context, surface);
+
 
         }
 
@@ -54,7 +54,7 @@ namespace RockEngine.Vulkan
             OnFramebufferResize?.Invoke(_size);
         }
 
-        protected unsafe override void Dispose(bool disposing)
+        protected override unsafe void Dispose(bool disposing)
         {
             if (!_disposed)
             {

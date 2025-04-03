@@ -1,16 +1,18 @@
 ﻿using RockEngine.Core.ECS;
 using RockEngine.Core.Rendering;
 using RockEngine.Core.Rendering.Managers;
+using RockEngine.Core.Rendering.Texturing;
 using RockEngine.Vulkan;
 
 using Silk.NET.Input;
+using Silk.NET.Maths;
 using Silk.NET.Windowing;
 
 namespace RockEngine.Core
 {
     public abstract class Application : IDisposable
     {
-        protected RenderingContext _renderingContext;
+        protected VulkanContext _renderingContext;
         protected IWindow _window;
         protected LayerStack _layerStack;
         protected GraphicsEngine _graphicsEngine;
@@ -18,27 +20,29 @@ namespace RockEngine.Core
         protected Renderer _renderer;
         protected World _world;
         protected event Func<Task> OnLoad;
+        protected TextureStreamer _textureStreamer;
 
         private PipelineManager _pipelineManager;
 
         public CancellationTokenSource CancellationTokenSource { get; set; }
-        protected CancellationToken  CancellationToken => CancellationTokenSource.Token;
+        protected CancellationToken CancellationToken => CancellationTokenSource.Token;
 
         public Application(string appName, int width, int height)
         {
             _window = Window.Create(WindowOptions.DefaultVulkan);
             _window.Title = appName;
-            _window.Size = new Silk.NET.Maths.Vector2D<int>(width, height);
+            _window.Size = new Vector2D<int>(width, height);
             _layerStack = new LayerStack();
             CancellationTokenSource = new CancellationTokenSource();
             _window.Load += async () =>
             {
-                _renderingContext = new RenderingContext(_window, _window.Title);
+                _renderingContext = new VulkanContext(_window, _window.Title, 10);
                 _graphicsEngine = new GraphicsEngine(_renderingContext);
                 _inputContext = _window.CreateInput();
                 _pipelineManager = new PipelineManager(_renderingContext);
-                _renderer = new Renderer(_renderingContext, _graphicsEngine,_pipelineManager);
+                _renderer = new Renderer(_renderingContext, _graphicsEngine, _pipelineManager);
                 _world = new World();
+                _textureStreamer = new TextureStreamer(_renderingContext, _renderer);
                 await OnLoad?.Invoke();
 
                 await _world.Start(_renderer);
@@ -58,27 +62,41 @@ namespace RockEngine.Core
             _layerStack.Update();
             await _world.Update(_renderer)
                 .ConfigureAwait(false);
+
+            await _renderer.UpdateAsync();
         }
 
         protected virtual async Task Render(double time)
         {
-            if (_layerStack.Count == 0)
+            using (PerformanceTracer.BeginSection("Whole Render"))
             {
-                return;
+                if (_layerStack.Count == 0)
+                {
+                    return;
+                }
+                var vkCommandBuffer = _graphicsEngine.Begin();
+                if (vkCommandBuffer is null)
+                {
+                    return;
+                }
+                using (PerformanceTracer.BeginSection("_layerStack.RenderImGui"))
+                {
+                    _layerStack.RenderImGui(vkCommandBuffer);
+                }
+                using (PerformanceTracer.BeginSection("_layerStack.Render"))
+                {
+                    _layerStack.Render(vkCommandBuffer);
+                }
+                await _renderer.Render(vkCommandBuffer);
+                using (PerformanceTracer.BeginSection("_graphicsEngine.end & Submit"))
+                {
+                    _graphicsEngine.End(vkCommandBuffer);
+                    _graphicsEngine.Submit([vkCommandBuffer.VkObjectNative]);
+                }
             }
-            var vkCommandBuffer =  _graphicsEngine.Begin();
-            if (vkCommandBuffer is null)
-            {
-                return;
-            }
-            _layerStack.RenderImGui(vkCommandBuffer);
-            _layerStack.Render(vkCommandBuffer);
-            await _renderer.Render(vkCommandBuffer);
-            _graphicsEngine.End(vkCommandBuffer);
-            _graphicsEngine.Submit([vkCommandBuffer.VkObjectNative]);
         }
 
-        public  Task PushLayer(ILayer layer)
+        public Task PushLayer(ILayer layer)
         {
             return _layerStack.PushLayer(layer);
         }

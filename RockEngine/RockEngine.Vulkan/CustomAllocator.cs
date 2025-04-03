@@ -1,12 +1,12 @@
-﻿using System.Collections.Concurrent;
+﻿using Silk.NET.Vulkan;
+
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 
-using Silk.NET.Vulkan;
-
 namespace RockEngine.Vulkan
 {
-    //[DebuggerStepThrough]
+    [DebuggerStepThrough]
     public static unsafe class CustomAllocator
     {
         private static readonly ConcurrentDictionary<IntPtr, AllocationInfo> _allocations = new();
@@ -26,14 +26,13 @@ namespace RockEngine.Vulkan
 
         private static void* Allocate<T>(void* pUserData, nuint size, nuint alignment, SystemAllocationScope allocationScope)
         {
-            Console.WriteLine($"Attempting to allocate {size} bytes."); 
             var ptr = (void*)Marshal.AllocHGlobal((int)size);
             var name = typeof(T).Name;
             var allocInfo = new AllocationInfo
             {
                 Size = size,
                 Scope = allocationScope,
-                StackTrace = Environment.StackTrace,
+                //StackTrace = Environment.StackTrace,
                 AllocatorType = name
             };
             if (name == null)
@@ -55,7 +54,7 @@ namespace RockEngine.Vulkan
             var oldSize = _allocations[(IntPtr)pOriginal].Size;
             var ptr = (void*)Marshal.ReAllocHGlobal((nint)pOriginal, (IntPtr)size);
 
-           
+
             _allocations[(IntPtr)ptr] = new AllocationInfo
             {
                 Size = size,
@@ -67,7 +66,7 @@ namespace RockEngine.Vulkan
             Interlocked.Add(ref _totalAllocatedBytes, (long)size - (long)oldSize);
             UpdatePeakMemoryUsage();
 
-            Console.WriteLine($"{typeof(T)}[REALLOC] Old Address: 0x{(nint)pOriginal:X}, New Address: 0x{(nint)ptr:X}, New Size: {size} bytes, Alignment: {alignment}, Scope: {allocationScope}");
+            //Console.WriteLine($"{typeof(T)}[REALLOC] Old Address: 0x{(nint)pOriginal:X}, New Address: 0x{(nint)ptr:X}, New Size: {size} bytes, Alignment: {alignment}, Scope: {allocationScope}");
             return ptr;
         }
 
@@ -79,18 +78,18 @@ namespace RockEngine.Vulkan
                 Interlocked.Decrement(ref _totalAllocationCount);
             }
 
-            Console.WriteLine($"{typeof(T)} [FREE] Address: 0x{(nint)pMemory:X}");
+            //Console.WriteLine($"{typeof(T)} [FREE] Address: 0x{(nint)pMemory:X}");
             Marshal.FreeHGlobal((nint)pMemory);
         }
 
         private static void InternalAllocationNotification<T>(void* pUserData, nuint size, InternalAllocationType allocationType, SystemAllocationScope allocationScope)
         {
-            Console.WriteLine($"{typeof(T)} [INTERNAL ALLOC] Size: {size} bytes, Type: {allocationType}, Scope: {allocationScope}");
+            //Console.WriteLine($"{typeof(T)} [INTERNAL ALLOC] Size: {size} bytes, Type: {allocationType}, Scope: {allocationScope}");
         }
 
         private static void InternalFreeNotification<T>(void* pUserData, nuint size, InternalAllocationType allocationType, SystemAllocationScope allocationScope)
         {
-            Console.WriteLine($"{typeof(T)} [INTERNAL FREE] Size: {size} bytes, Type: {allocationType}, Scope: {allocationScope}");
+            //Console.WriteLine($"{typeof(T)} [INTERNAL FREE] Size: {size} bytes, Type: {allocationType}, Scope: {allocationScope}");
         }
 
         private static void UpdatePeakMemoryUsage()
@@ -109,7 +108,7 @@ namespace RockEngine.Vulkan
             var type = typeof(T);
             if (!_callbacksMap.ContainsKey(type))
             {
-                Console.WriteLine($"[CUSTOM ALLOCATOR] Creating allocation callbacks for type {type.Name}");
+                //Console.WriteLine($"[CUSTOM ALLOCATOR] Creating allocation callbacks for type {type.Name}");
                 _callbacksMap[type] = new AllocationCallbacks
                 {
                     PfnAllocation = new PfnAllocationFunction(Allocate<T>),

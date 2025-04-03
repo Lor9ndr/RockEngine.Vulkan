@@ -1,28 +1,33 @@
 ﻿
 using Silk.NET.Vulkan;
 
-using System;
-
 using Semaphore = Silk.NET.Vulkan.Semaphore;
 
 namespace RockEngine.Vulkan
 {
     public record VkQueue : VkObject<Queue>
     {
-        public VkQueue(in Queue vkObject) 
+        internal readonly Lock _queueLock = new Lock();
+        private readonly VulkanContext _context;
+
+        public VkQueue(VulkanContext context, in Queue vkObject)
             : base(vkObject)
         {
+            _context = context;
         }
 
         public void Submit(in SubmitInfo submitInfo, VkFence? fence = null)
         {
-            RenderingContext.Vk.QueueSubmit(this, 1, in submitInfo, fence is null ? default: fence.VkObjectNative)
-                .VkAssertResult("Failed to submit to queue");
+            lock (_queueLock)
+            {
+                SubmitUnsafe(submitInfo, fence);
+            }
+
         }
         public unsafe void Submit(VkCommandBuffer commandBuffer, Semaphore[] singaleSemaphores, Semaphore[] waitSemaphores, PipelineStageFlags[] stageFlags, VkFence? fence = null)
         {
             var nativeCmd = commandBuffer.VkObjectNative;
-            fixed(Semaphore* vkSemaphores = singaleSemaphores)
+            fixed (Semaphore* vkSemaphores = singaleSemaphores)
             {
                 fixed (PipelineStageFlags* pstageflags = stageFlags)
                 {
@@ -39,33 +44,59 @@ namespace RockEngine.Vulkan
                             PWaitSemaphores = pWaitSemaphores,
                             WaitSemaphoreCount = (uint)waitSemaphores.Length
                         };
-                        Submit(in si, fence);
+                        SubmitUnsafe(in si, fence);
                     }
                 }
             }
         }
-        public unsafe void Submit(VkCommandBuffer commandBuffer)
+        public unsafe void Submit(VkCommandBuffer commandBuffer, VkFence? fence = null)
         {
-            var nativeCmd = commandBuffer.VkObjectNative;
-
-            SubmitInfo si = new SubmitInfo()
+            lock (_queueLock)
             {
-                SType = StructureType.SubmitInfo,
-                CommandBufferCount = 1,
-                PCommandBuffers = &nativeCmd,
-                PSignalSemaphores = null,
-                SignalSemaphoreCount = 0,
-                PWaitDstStageMask = null,
-                PWaitSemaphores = null,
-                WaitSemaphoreCount = 0
-            };
-            Submit(in si, null);
+                var nativeCmd = commandBuffer.VkObjectNative;
+                var submitInfo = new SubmitInfo
+                {
+                    SType = StructureType.SubmitInfo,
+                    CommandBufferCount = 1,
+                    PCommandBuffers = &nativeCmd
+                };
+                SubmitUnsafe(in submitInfo, fence);
+            }
+        }
+        public unsafe void Submit(VkFence? fence, params CommandBuffer[] commandBuffers)
+        {
+            lock (_queueLock)
+            {
+                fixed (CommandBuffer* nativeCmd = commandBuffers.ToArray())
+                {
+                    var submitInfo = new SubmitInfo
+                    {
+                        SType = StructureType.SubmitInfo,
+                        CommandBufferCount = 1,
+                        PCommandBuffers = nativeCmd
+                    };
+                    SubmitUnsafe(in submitInfo, fence);
+                }
+               
+            }
+        }
 
+        internal void SubmitUnsafe(in SubmitInfo submitInfo, VkFence? fence)
+        {
+            fence ??= VkFence.CreateNotSignaled(_context);
+
+            VulkanContext.Vk.QueueSubmit(
+                this,
+                1,
+                in submitInfo,
+                fence.VkObjectNative
+            ).VkAssertResult("Failed to submit to queue");
+            fence.Wait();
         }
 
         public void WaitIdle()
         {
-            RenderingContext.Vk.QueueWaitIdle(this);
+            VulkanContext.Vk.QueueWaitIdle(this);
         }
 
         protected override void Dispose(bool disposing)

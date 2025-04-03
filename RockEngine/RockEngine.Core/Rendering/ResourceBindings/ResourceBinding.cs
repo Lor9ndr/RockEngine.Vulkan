@@ -11,6 +11,6 @@ namespace RockEngine.Core.Rendering.ResourceBindings
         public uint BindingLocation { get; } = bindingLocation;
         public bool IsDirty { get; set; } = true;
 
-        public abstract void UpdateDescriptorSet(RenderingContext renderingContext);
+        public abstract void UpdateDescriptorSet(VulkanContext renderingContext);
     }
 }

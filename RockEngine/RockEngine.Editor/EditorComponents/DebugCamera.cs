@@ -12,7 +12,7 @@ namespace RockEngine.Editor.EditorComponents
     {
         private IInputContext _inputContext;
         private float _movementSpeed = 5.0f; // Speed of movement
-        private float _mouseSensitivity = 0.1f; // Sensitivity for mouse movement
+        private readonly float _mouseSensitivity = 0.1f; // Sensitivity for mouse movement
         private Vector2 _lastMousePosition;
         private bool _firstMouse = true;
 

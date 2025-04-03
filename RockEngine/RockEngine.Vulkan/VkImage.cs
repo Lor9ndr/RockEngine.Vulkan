@@ -5,8 +5,14 @@ namespace RockEngine.Vulkan
     public record VkImage : VkObject<Image>
     {
         private readonly VkDeviceMemory _imageMemory;
-        private readonly RenderingContext _context;
+        private readonly VulkanContext _context;
         private readonly Format _format;
+        private readonly uint _mipLevels;
+
+        private ImageLayout _currentLayout;
+
+        private Extent3D _extent;
+        private readonly ImageLayout[] _mipLayouts;
 
         public VkDeviceMemory ImageMemory => _imageMemory;
 
@@ -14,9 +20,14 @@ namespace RockEngine.Vulkan
 
         public Format Format => _format;
 
-        private ImageLayout _currentLayout;
+        public uint MipLevels => _mipLevels;
 
-        public VkImage(RenderingContext context, Image vkImage, VkDeviceMemory imageMemory, ImageLayout currentLayout, Format format)
+        public uint Width => _extent.Width;
+        public uint Height => _extent.Height;
+
+
+
+        public VkImage(VulkanContext context, Image vkImage, VkDeviceMemory imageMemory, ImageLayout currentLayout, Format format, uint mipLevels, Extent3D extent = default)
             : base(vkImage)
 
         {
@@ -24,21 +35,24 @@ namespace RockEngine.Vulkan
             _currentLayout = currentLayout;
             _context = context;
             _format = format;
+            _mipLevels = mipLevels;
+            _extent = extent;
+            _mipLayouts = new ImageLayout[mipLevels];
+            Array.Fill(_mipLayouts, ImageLayout.Undefined);
         }
 
-        public unsafe static VkImage Create(RenderingContext context, in ImageCreateInfo ci, MemoryPropertyFlags memPropertyFlags)
+        public static unsafe VkImage Create(VulkanContext context, in ImageCreateInfo ci, MemoryPropertyFlags memPropertyFlags)
         {
-            RenderingContext.Vk.CreateImage(context.Device, in ci, in RenderingContext.CustomAllocator<VkImage>(), out var vkImage)
+            VulkanContext.Vk.CreateImage(context.Device, in ci, in VulkanContext.CustomAllocator<VkImage>(), out var vkImage)
                 .VkAssertResult("Failed to create image!");
-            RenderingContext.Vk.GetImageMemoryRequirements(context.Device, vkImage, out var memRequirements);
-
+            VulkanContext.Vk.GetImageMemoryRequirements(context.Device, vkImage, out var memRequirements);
             var imageMemory = VkDeviceMemory.Allocate(context, memRequirements, memPropertyFlags);
 
-            RenderingContext.Vk.BindImageMemory(context.Device, vkImage, imageMemory, 0);
-            return new VkImage(context, vkImage, imageMemory, ci.InitialLayout,ci.Format);
+            VulkanContext.Vk.BindImageMemory(context.Device, vkImage, imageMemory, 0);
+            return new VkImage(context, vkImage, imageMemory, ci.InitialLayout, ci.Format, ci.MipLevels, ci.Extent);
         }
         public static VkImage Create(
-           RenderingContext context,
+           VulkanContext context,
            uint width,
            uint height,
            Format format,
@@ -71,13 +85,73 @@ namespace RockEngine.Vulkan
         public unsafe VkImageView CreateView(
             ImageAspectFlags aspectFlags,
             uint mipLevels = 1,
-            uint arrayLayers = 1)
+            uint arrayLayers = 1,
+            uint baseMipLevel = 0)
         {
-            return VkImageView.Create(_context,this, Format, aspectFlags, mipLevels: mipLevels, arrayLayers: arrayLayers);
+            return VkImageView.Create(_context, this, Format, aspectFlags, mipLevels: mipLevels, arrayLayers: arrayLayers, baseMipLevel: baseMipLevel);
         }
+
+        public unsafe void TransitionMipLayout(VkCommandBuffer commandBuffer, ImageLayout newLayout, uint mipLevel)
+        {
+            ImageLayout oldLayout = GetMipLayout(mipLevel);
+            var barrier = new ImageMemoryBarrier
+            {
+                SType = StructureType.ImageMemoryBarrier,
+                OldLayout = oldLayout,
+                NewLayout = newLayout,
+                Image = this,
+                SubresourceRange = new ImageSubresourceRange
+                {
+                    AspectMask = ImageAspectFlags.ColorBit,
+                    BaseMipLevel = mipLevel,
+                    LevelCount = 1,
+                    BaseArrayLayer = 0,
+                    LayerCount = 1
+                }
+            };
+
+            VulkanContext.Vk.CmdPipelineBarrier(commandBuffer,
+                GetSrcStage(oldLayout),
+                GetDstStage(newLayout),
+                0, 0, null, 0, null, 1, &barrier);
+            SetMipLayout(mipLevel, newLayout);
+        }
+
+        public ImageLayout GetMipLayout(uint mipLevel) => _mipLayouts[mipLevel];
+        public void SetMipLayout(uint mipLevel, ImageLayout layout) => _mipLayouts[mipLevel] = layout;
+
+        private PipelineStageFlags GetSrcStage(ImageLayout layout) => layout switch
+        {
+            ImageLayout.ShaderReadOnlyOptimal => PipelineStageFlags.FragmentShaderBit,
+            ImageLayout.TransferDstOptimal => PipelineStageFlags.TransferBit,
+            _ => PipelineStageFlags.TopOfPipeBit
+        };
+
+        private PipelineStageFlags GetDstStage(ImageLayout layout) => layout switch
+        {
+            ImageLayout.TransferDstOptimal => PipelineStageFlags.TransferBit,
+            ImageLayout.ShaderReadOnlyOptimal => PipelineStageFlags.FragmentShaderBit,
+            _ => PipelineStageFlags.BottomOfPipeBit
+        };
+
 
         public unsafe void TransitionImageLayout(VkCommandBuffer commandBuffer, Format format, ImageLayout newLayout)
         {
+            var subresourceRange = new ImageSubresourceRange
+            {
+                AspectMask = newLayout == ImageLayout.DepthStencilAttachmentOptimal
+                    ? ImageAspectFlags.DepthBit
+                    : ImageAspectFlags.ColorBit,
+                BaseMipLevel = 0,
+                LevelCount = MipLevels, // Transition all mip levels
+                BaseArrayLayer = 0,
+                LayerCount = 1
+            };
+
+            if (format.HasStencilComponent() && newLayout == ImageLayout.DepthStencilAttachmentOptimal)
+            {
+                subresourceRange.AspectMask |= ImageAspectFlags.StencilBit;
+            }
 
             var barrier = new ImageMemoryBarrier
             {
@@ -87,95 +161,197 @@ namespace RockEngine.Vulkan
                 Image = _vkObject,
                 SrcQueueFamilyIndex = Vk.QueueFamilyIgnored,
                 DstQueueFamilyIndex = Vk.QueueFamilyIgnored,
-                SubresourceRange = new ImageSubresourceRange
-                {
-                    AspectMask = ImageAspectFlags.ColorBit,
-                    BaseMipLevel = 0,
-                    LevelCount = 1,
-                    BaseArrayLayer = 0,
-                    LayerCount = 1
-                }
+                SubresourceRange = subresourceRange
             };
 
-            PipelineStageFlags srcStage;
-            PipelineStageFlags dstStage;
+            // Determine pipeline stages and access masks
+            (PipelineStageFlags srcStage, PipelineStageFlags dstStage) = GetPipelineStages(_currentLayout, newLayout);
+            (barrier.SrcAccessMask, barrier.DstAccessMask) = GetAccessMasks(_currentLayout, newLayout);
 
-            if (newLayout == ImageLayout.DepthStencilAttachmentOptimal)
-            {
-                barrier.SubresourceRange.AspectMask = ImageAspectFlags.DepthBit;
-
-                if (format.HasStencilComponent())
-                {
-                    barrier.SubresourceRange.AspectMask |= ImageAspectFlags.StencilBit;
-                }
-            }
-            else
-            {
-                barrier.SubresourceRange.AspectMask = ImageAspectFlags.ColorBit;
-            }
-
-
-            if (_currentLayout == ImageLayout.Undefined && newLayout == ImageLayout.TransferDstOptimal)
-            {
-                barrier.SrcAccessMask = 0;
-                barrier.DstAccessMask = AccessFlags.TransferWriteBit;
-
-                srcStage = PipelineStageFlags.TopOfPipeBit;
-                dstStage = PipelineStageFlags.TransferBit;
-            }
-            else if (_currentLayout == ImageLayout.TransferDstOptimal && newLayout == ImageLayout.ShaderReadOnlyOptimal)
-            {
-                barrier.SrcAccessMask = AccessFlags.TransferWriteBit;
-                barrier.DstAccessMask = AccessFlags.ShaderReadBit;
-
-                srcStage = PipelineStageFlags.TransferBit;
-                dstStage = PipelineStageFlags.FragmentShaderBit;
-            }
-            else if (_currentLayout == ImageLayout.Undefined && newLayout == ImageLayout.DepthStencilAttachmentOptimal)
-            {
-                barrier.SrcAccessMask = 0;
-                barrier.DstAccessMask = AccessFlags.DepthStencilAttachmentReadBit | AccessFlags.DepthStencilAttachmentWriteBit;
-
-                srcStage = PipelineStageFlags.TopOfPipeBit;
-                dstStage = PipelineStageFlags.EarlyFragmentTestsBit;
-            }
-            else if (_currentLayout == ImageLayout.Undefined && newLayout == ImageLayout.ShaderReadOnlyOptimal)
-            {
-                barrier.SrcAccessMask = AccessFlags.ColorAttachmentWriteBit;
-                barrier.DstAccessMask = AccessFlags.ShaderReadBit;
-                srcStage = PipelineStageFlags.ColorAttachmentOutputBit;
-                dstStage = PipelineStageFlags.FragmentShaderBit;
-            }
-            else
-            {
-                throw new Exception("Unsupported layout transition");
-            }
-
-            RenderingContext.Vk.CmdPipelineBarrier(commandBuffer,
-                                                   srcStage,
-                                                   dstStage,
-                                                   0,
-                                                   0,
-                                                   null,
-                                                   0,
-                                                   null,
-                                                   1,
-                                                   &barrier);
+            VulkanContext.Vk.CmdPipelineBarrier(commandBuffer,
+                srcStage, dstStage,
+                0, 0, null, 0, null, 1, &barrier);
 
             _currentLayout = newLayout;
         }
+        private (PipelineStageFlags, PipelineStageFlags) GetPipelineStages(ImageLayout oldLayout, ImageLayout newLayout)
+        {
+            return (oldLayout, newLayout) switch
+            {
+                // Existing transitions
+                (ImageLayout.Undefined, ImageLayout.TransferDstOptimal) =>
+                    (PipelineStageFlags.TopOfPipeBit, PipelineStageFlags.TransferBit),
+                (ImageLayout.TransferDstOptimal, ImageLayout.ShaderReadOnlyOptimal) =>
+                    (PipelineStageFlags.TransferBit, PipelineStageFlags.FragmentShaderBit),
+                (ImageLayout.TransferSrcOptimal, ImageLayout.ShaderReadOnlyOptimal) =>
+                    (PipelineStageFlags.TransferBit, PipelineStageFlags.FragmentShaderBit),
+                (ImageLayout.TransferDstOptimal, ImageLayout.TransferSrcOptimal) =>
+                    (PipelineStageFlags.TransferBit, PipelineStageFlags.TransferBit),
 
+                // Add depth/stencil transitions
+                (ImageLayout.Undefined, ImageLayout.DepthStencilAttachmentOptimal) =>
+                    (PipelineStageFlags.TopOfPipeBit, PipelineStageFlags.EarlyFragmentTestsBit),
+                (ImageLayout.Undefined, ImageLayout.ShaderReadOnlyOptimal) =>
+                    (PipelineStageFlags.TopOfPipeBit, PipelineStageFlags.FragmentShaderBit),
 
-        protected unsafe override void Dispose(bool disposing)
+                _ => throw new NotSupportedException($"Unsupported layout transition: {oldLayout} -> {newLayout}")
+            };
+        }
+
+        private (AccessFlags, AccessFlags) GetAccessMasks(ImageLayout oldLayout, ImageLayout newLayout)
+        {
+            return (oldLayout, newLayout) switch
+            {
+                // Existing transitions
+                (ImageLayout.Undefined, ImageLayout.TransferDstOptimal) =>
+                    (AccessFlags.None, AccessFlags.TransferWriteBit),
+                (ImageLayout.TransferDstOptimal, ImageLayout.ShaderReadOnlyOptimal) =>
+                    (AccessFlags.TransferWriteBit, AccessFlags.ShaderReadBit),
+                (ImageLayout.TransferSrcOptimal, ImageLayout.ShaderReadOnlyOptimal) =>
+                    (AccessFlags.TransferReadBit, AccessFlags.ShaderReadBit),
+                (ImageLayout.TransferDstOptimal, ImageLayout.TransferSrcOptimal) =>
+                    (AccessFlags.TransferWriteBit, AccessFlags.TransferReadBit),
+
+                // Add depth/stencil transitions
+                (ImageLayout.Undefined, ImageLayout.DepthStencilAttachmentOptimal) =>
+                    (AccessFlags.None, AccessFlags.DepthStencilAttachmentReadBit | AccessFlags.DepthStencilAttachmentWriteBit),
+                (ImageLayout.Undefined, ImageLayout.ShaderReadOnlyOptimal) =>
+                    (AccessFlags.None, AccessFlags.ShaderReadBit),
+
+                _ => throw new NotSupportedException($"Unsupported layout transition: {oldLayout} -> {newLayout}")
+            };
+        }
+
+        public unsafe void GenerateMipmaps(VkCommandBuffer cmd, Format format)
+        {
+            var vk = VulkanContext.Vk;
+            var mipLevels = MipLevels;
+
+            var formatProperties = _context.Device.PhysicalDevice.GetFormatProperties(format);
+
+            if ((formatProperties.OptimalTilingFeatures & FormatFeatureFlags.SampledImageFilterLinearBit) == 0)
+                throw new NotSupportedException($"Texture format {format} doesn't support linear blitting!");
+
+            for (uint i = 1; i < mipLevels; i++)
+            {
+                var barrier = new ImageMemoryBarrier()
+                {
+                    SType = StructureType.ImageMemoryBarrier,
+                    Image = this,
+                    SubresourceRange = new ImageSubresourceRange
+                    {
+                        AspectMask = ImageAspectFlags.ColorBit,
+                        BaseMipLevel = i - 1,
+                        LevelCount = 1,
+                        BaseArrayLayer = 0,
+                        LayerCount = 1
+                    },
+                    OldLayout = ImageLayout.TransferDstOptimal,
+                    NewLayout = ImageLayout.TransferSrcOptimal,
+                    SrcAccessMask = AccessFlags.TransferWriteBit,
+                    DstAccessMask = AccessFlags.TransferReadBit
+                };
+
+                vk.CmdPipelineBarrier(cmd,
+                    PipelineStageFlags.TransferBit,
+                    PipelineStageFlags.TransferBit,
+                    0,
+                    0, null,
+                    0, null,
+                    1, &barrier);
+
+                var blit = new ImageBlit
+                {
+                    SrcSubresource = new ImageSubresourceLayers
+                    {
+                        AspectMask = ImageAspectFlags.ColorBit,
+                        MipLevel = i - 1,
+                        BaseArrayLayer = 0,
+                        LayerCount = 1
+                    },
+                    SrcOffsets = new ImageBlit.SrcOffsetsBuffer
+                    {
+                        Element0 = new Offset3D(0, 0, 0),
+                        Element1 = new Offset3D((int)Width >> (int)(i - 1), (int)Height >> (int)(i - 1), 1)
+                    },
+                    DstSubresource = new ImageSubresourceLayers
+                    {
+                        AspectMask = ImageAspectFlags.ColorBit,
+                        MipLevel = i,
+                        BaseArrayLayer = 0,
+                        LayerCount = 1
+                    },
+                    DstOffsets = new ImageBlit.DstOffsetsBuffer
+                    {
+                        Element0 = new Offset3D(0, 0, 0),
+                        Element1 = new Offset3D((int)Width >> (int)i, (int)Height >> (int)i, 1)
+                    }
+                };
+
+                vk.CmdBlitImage(cmd,
+                    this, ImageLayout.TransferSrcOptimal,
+                    this, ImageLayout.TransferDstOptimal,
+                    1, &blit,
+                    Filter.Linear);
+
+                barrier.OldLayout = ImageLayout.TransferSrcOptimal;
+                barrier.NewLayout = ImageLayout.ShaderReadOnlyOptimal;
+                barrier.SrcAccessMask = AccessFlags.TransferReadBit;
+                barrier.DstAccessMask = AccessFlags.ShaderReadBit;
+
+                vk.CmdPipelineBarrier(cmd,
+                    PipelineStageFlags.TransferBit,
+                    PipelineStageFlags.FragmentShaderBit,
+                    0,
+                    0, null,
+                    0, null,
+                    1, &barrier);
+            }
+
+            var finalBarrier = new ImageMemoryBarrier
+            {
+                SType = StructureType.ImageMemoryBarrier,
+                Image = this,
+                SubresourceRange = new ImageSubresourceRange
+                {
+                    AspectMask = ImageAspectFlags.ColorBit,
+                    BaseMipLevel = mipLevels - 1,
+                    LevelCount = 1,
+                    BaseArrayLayer = 0,
+                    LayerCount = 1
+                },
+                OldLayout = ImageLayout.TransferDstOptimal,
+                NewLayout = ImageLayout.ShaderReadOnlyOptimal,
+                SrcAccessMask = AccessFlags.TransferWriteBit,
+                DstAccessMask = AccessFlags.ShaderReadBit
+            };
+
+            vk.CmdPipelineBarrier(cmd,
+                PipelineStageFlags.TransferBit,
+                PipelineStageFlags.FragmentShaderBit,
+                0,
+                0, null,
+                0, null,
+                1, &finalBarrier);
+            for (uint i = 0; i < MipLevels; i++)
+            {
+                SetMipLayout(i, finalBarrier.NewLayout);
+            }
+        }
+
+        protected override unsafe void Dispose(bool disposing)
         {
             if (disposing)
             {
-                RenderingContext.Vk.DestroyImage(_context.Device, _vkObject, in RenderingContext.CustomAllocator<VkImage>());
+                VulkanContext.Vk.DestroyImage(_context.Device, _vkObject, in VulkanContext.CustomAllocator<VkImage>());
                 ImageMemory.Dispose();
                 _disposed = true;
             }
         }
 
-       
+        public void SetCurrentLayout(ImageLayout layout)
+        {
+            _currentLayout = layout;
+        }
     }
 }

@@ -1,6 +1,4 @@
-﻿using Silk.NET.Vulkan;
-
-namespace RockEngine.Vulkan
+﻿namespace RockEngine.Vulkan
 {
     internal class DescriptorSetLayoutReflected
     {

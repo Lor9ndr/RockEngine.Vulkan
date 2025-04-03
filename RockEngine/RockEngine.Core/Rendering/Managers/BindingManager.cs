@@ -9,11 +9,11 @@ namespace RockEngine.Core.Rendering.Managers
 {
     public class BindingManager
     {
-        private readonly RenderingContext _context;
+        private readonly VulkanContext _context;
         private readonly DescriptorPoolManager _descriptorPoolManager;
         private readonly GraphicsEngine _graphicsEngine;
 
-        public BindingManager(RenderingContext context, DescriptorPoolManager descriptorPool, GraphicsEngine graphicsEngine)
+        public BindingManager(VulkanContext context, DescriptorPoolManager descriptorPool, GraphicsEngine graphicsEngine)
         {
             _context = context;
             _descriptorPoolManager = descriptorPool;
@@ -22,41 +22,68 @@ namespace RockEngine.Core.Rendering.Managers
 
         public void BindResourcesForMaterial(Material material, VkCommandBuffer commandBuffer)
         {
-            var descriptorSets = new DescriptorSet[material.Bindings.Count];
-            var dynamicOffsets = new List<uint>();
-
+            var setsToBind = new DescriptorSet[material.Bindings.Count];
             int index = 0;
 
-            foreach (var binding in material.Bindings)
+            foreach (var (setLocation, perSetBindings) in material.Bindings)
             {
-                ProcessBinding(binding, material.Pipeline.Layout, descriptorSets, dynamicOffsets, ref index);
+                ProcessSet(material.Pipeline.Layout, setLocation, perSetBindings, setsToBind, ref index);
             }
 
-            BindDescriptorSetsToCommandBuffer(commandBuffer, material.Pipeline.Layout, descriptorSets, dynamicOffsets, material.Bindings.MinSetLocation);
+            BindDescriptorSetsToCommandBuffer(
+                commandBuffer,
+                material.Pipeline.Layout,
+                setsToBind,
+                material.Bindings.DynamicOffsets,
+                material.Bindings.MinSetLocation
+            );
         }
-
-        public void BindBinding(ResourceBinding binding, VkPipelineLayout layout, VkCommandBuffer commandBuffer, uint minSetIndex = 0)
+        private void ProcessSet(VkPipelineLayout pipelineLayout, uint setLocation, PerSetBindings perSetBindings, DescriptorSet[] setsToBind, ref int index)
         {
-            var descriptorSets = new DescriptorSet[1];
-            var dynamicOffsets = new List<uint>();
+            // Get or allocate descriptor set
+            var descriptorSet = GetOrCreateDescriptorSet(pipelineLayout, setLocation, perSetBindings);
 
-            int index = 0;
-            ProcessBinding(binding, layout, descriptorSets, dynamicOffsets, ref index);
-
-            BindDescriptorSetsToCommandBuffer(commandBuffer, layout, descriptorSets, dynamicOffsets, minSetIndex);
-
+            setsToBind[index++] = descriptorSet;
         }
+
+        private DescriptorSet GetOrCreateDescriptorSet(VkPipelineLayout pipelineLayout, uint setLocation, PerSetBindings perSetBindings)
+        {
+            // Проверяем, есть ли актуальный набор дескрипторов
+            var existingSet = perSetBindings.FirstOrDefault(b => b.DescriptorSet.Handle != default)?.DescriptorSet;
+            bool needsUpdate = perSetBindings.Any(b => b.IsDirty);
+
+            if (existingSet.HasValue && !needsUpdate)
+            {
+                return existingSet.Value;
+            }
+
+            // Выделяем новый набор или обновляем существующий
+            var setLayout = pipelineLayout.GetSetLayout(setLocation);
+            var descriptorSet = existingSet ?? _descriptorPoolManager.AllocateDescriptorSet(setLayout);
+
+            foreach (var binding in perSetBindings)
+            {
+                binding.DescriptorSet = descriptorSet;
+                if (binding.IsDirty)
+                {
+                    binding.UpdateDescriptorSet(_context);
+                    binding.IsDirty = false;
+                }
+            }
+
+            return descriptorSet;
+        }
+
 
         private void ProcessBinding(
             ResourceBinding binding,
             VkPipelineLayout pipelineLayout,
             DescriptorSet[] descriptorSets,
-            List<uint> dynamicOffsets,
             ref int index)
         {
             if (binding is UniformBufferBinding uboBinding)
             {
-                HandleUniformBufferBinding(uboBinding, pipelineLayout, dynamicOffsets);
+                HandleUniformBufferBinding(uboBinding, pipelineLayout);
             }
 
             if (binding.DescriptorSet.Handle == default)
@@ -67,13 +94,8 @@ namespace RockEngine.Core.Rendering.Managers
             descriptorSets[index++] = binding.DescriptorSet;
         }
 
-        private static void HandleUniformBufferBinding(UniformBufferBinding uboBinding, VkPipelineLayout pipelineLayout, List<uint> dynamicOffsets)
+        private static void HandleUniformBufferBinding(UniformBufferBinding uboBinding, VkPipelineLayout pipelineLayout)
         {
-            if (uboBinding.Buffer.IsDynamic)
-            {
-                dynamicOffsets.Add((uint)uboBinding.Offset);
-            }
-
             // Check if the descriptor set is already cached for this pipeline layout
             if (!uboBinding.Buffer.DescriptorSets.TryGetValue(pipelineLayout, out var cachedDescriptorSet) || cachedDescriptorSet.Handle == default)
             {
@@ -99,13 +121,13 @@ namespace RockEngine.Core.Rendering.Managers
                 VkCommandBuffer commandBuffer,
                 VkPipelineLayout pipelineLayout,
                 DescriptorSet[] descriptorSets,
-                List<uint> dynamicOffsets,
+                IReadOnlyList<uint> dynamicOffsets,
                 uint minSetIndex)
         {
             fixed (DescriptorSet* descriptorSetsPtr = descriptorSets)
             fixed (uint* dynamicOffsetsPtr = dynamicOffsets.ToArray())
             {
-                RenderingContext.Vk.CmdBindDescriptorSets(
+                VulkanContext.Vk.CmdBindDescriptorSets(
                     commandBuffer,
                     PipelineBindPoint.Graphics,
                     pipelineLayout,
@@ -116,6 +138,6 @@ namespace RockEngine.Core.Rendering.Managers
                     dynamicOffsetsPtr);
             }
         }
-      
+
     }
 }

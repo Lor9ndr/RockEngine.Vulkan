@@ -18,6 +18,7 @@ namespace RockEngine.Core.ECS.Components
         public Vector3 Scale = Vector3.One;
 
         private readonly int _dataSize = Marshal.SizeOf<Matrix4x4>();
+        private Matrix4x4 _matrix;
 
         public Transform(Vector3 position, Quaternion rotation, Vector3 scale)
         {
@@ -40,25 +41,32 @@ namespace RockEngine.Core.ECS.Components
 
         public override ValueTask OnStart(Renderer renderer)
         {
-            var mesh = Entity.GetComponent<Mesh>();
+            //var mesh = Entity.GetComponent<Mesh>();
             // Initialize only once
-            if (mesh is not null && _buffer == null) 
+           /* if (mesh is not null && _buffer == null)
             {
-                _buffer = new UniformBuffer("ModelData", 0, (ulong)(1024 * 1024 * _dataSize), _dataSize, true); 
+                _buffer = new UniformBuffer("ModelData", 0, (ulong)(1024 * 1024 * _dataSize), _dataSize, true);
             }
-            mesh?.Material.Bindings.Add(new UniformBufferBinding(_buffer!, 0, 1, _offset));
+            mesh?.Material.Bindings.Add(new UniformBufferBinding(_buffer!, 0, 1, _offset));*/
 
             return default;
         }
 
         public override ValueTask Update(Renderer renderer)
         {
-            if (_buffer is null)
+           /* var mesh = Entity.GetComponent<Mesh>();
+            if (_buffer is null || mesh is null)
             {
                 return default;
             }
             // Use the calculated offset when updating
-            return _buffer.UpdateAsync(GetModelMatrix(), (ulong)_dataSize, _offset);
+            var newMatrix = GetModelMatrix();
+            if (newMatrix != _matrix)
+            {
+                _matrix = newMatrix;
+                return _buffer.UpdateAsync(_matrix, (ulong)_dataSize, _offset);
+            }*/
+            return default;
         }
     }
 }

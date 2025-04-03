@@ -1,6 +1,7 @@
 ﻿
 using Silk.NET.Vulkan;
 
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
 using Buffer = Silk.NET.Vulkan.Buffer;
@@ -9,26 +10,32 @@ namespace RockEngine.Vulkan
 {
     public record VkBuffer : VkObject<Buffer>
     {
-        private readonly RenderingContext _context;
+        private readonly VulkanContext _context;
         private readonly VkDeviceMemory _deviceMemory;
         private readonly BufferUsageFlags _usage;
-      
+
         public ulong Size => _deviceMemory.Size;
 
-        public VkBuffer(RenderingContext context, in Buffer bufferNative, VkDeviceMemory deviceMemory, BufferUsageFlags usage)
+        public VkBuffer(VulkanContext context, in Buffer bufferNative, VkDeviceMemory deviceMemory, BufferUsageFlags usage)
             : base(in bufferNative)
         {
             _context = context;
             _deviceMemory = deviceMemory;
             _usage = usage;
-           
+            // Persistently map if memory is host-visible
+            if ((_deviceMemory.Properties & MemoryPropertyFlags.HostVisibleBit) != 0)
+            {
+                _deviceMemory.Map();
+            }
+
         }
 
-        public unsafe static VkBuffer Create(RenderingContext context, ulong size, BufferUsageFlags usage, MemoryPropertyFlags properties)
+        public static unsafe VkBuffer Create(VulkanContext context, ulong size, BufferUsageFlags usage, MemoryPropertyFlags properties)
         {
             var allignmentSize = usage switch
             {
                 BufferUsageFlags.UniformBufferBit | BufferUsageFlags.BufferUsageUniformBufferBit => GetAlignment(size, context.Device.PhysicalDevice.Properties.Limits.MinUniformBufferOffsetAlignment),
+
                 _ => GetAlignment(size, 256),
             };
             var bufferInfo = new BufferCreateInfo
@@ -38,20 +45,20 @@ namespace RockEngine.Vulkan
                 Usage = usage,
                 SharingMode = SharingMode.Exclusive
             };
-            
-            RenderingContext.Vk.CreateBuffer(context.Device, in bufferInfo, null, out var bufferHandle)
+
+            VulkanContext.Vk.CreateBuffer(context.Device, in bufferInfo, null, out var bufferHandle)
                 .VkAssertResult("Failed to create buffer");
 
-            RenderingContext.Vk.GetBufferMemoryRequirements(context.Device, bufferHandle, out var memRequirements);
+            VulkanContext.Vk.GetBufferMemoryRequirements(context.Device, bufferHandle, out var memRequirements);
 
             var deviceMemory = VkDeviceMemory.Allocate(context, memRequirements, properties);
 
-            RenderingContext.Vk.BindBufferMemory(context.Device, bufferHandle, deviceMemory, 0);
+            VulkanContext.Vk.BindBufferMemory(context.Device, bufferHandle, deviceMemory, 0);
 
             return new VkBuffer(context, bufferHandle, deviceMemory, usage);
         }
 
-        public unsafe static VkBuffer CreateAndCopyToStagingBuffer(RenderingContext context, void* data, ulong size)
+        public static unsafe VkBuffer CreateAndCopyToStagingBuffer(VulkanContext context, void* data, ulong size)
         {
             // Create a staging buffer with TransferSrcBit and HostVisibleBit
             var stagingBuffer = Create(context, size, BufferUsageFlags.TransferSrcBit, MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit);
@@ -73,53 +80,66 @@ namespace RockEngine.Vulkan
         }
 
 
-        public static async ValueTask<VkBuffer> CreateAndCopyToStagingBuffer<T>(RenderingContext context, T[] data, ulong size) where T:unmanaged
+        public static async ValueTask<VkBuffer> CreateAndCopyToStagingBuffer<T>(VulkanContext context, T[] data, ulong size) where T : unmanaged
         {
             var stagingBuffer = Create(context, size, BufferUsageFlags.TransferSrcBit, MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit);
             await stagingBuffer.WriteToBufferAsync(data);
             return stagingBuffer;
         }
 
+
         public unsafe void Flush(ulong size = Vk.WholeSize, ulong offset = 0)
         {
+            if ((_deviceMemory.Properties & MemoryPropertyFlags.HostCoherentBit) != 0)
+            {
+                return;
+            }
+
+            ulong nonCoherentAtomSize = _context.Device.PhysicalDevice.Properties.Limits.NonCoherentAtomSize;
+            ulong bufferSize = _deviceMemory.Size;
+
+            // Calculate actual flush size
+            ulong actualSize = (size == Vk.WholeSize) ? (bufferSize - offset) : size;
+            actualSize = Math.Min(actualSize, bufferSize - offset);
+
+            // Align flush size to nonCoherentAtomSize
+            ulong alignedSize = (actualSize + nonCoherentAtomSize - 1) & ~(nonCoherentAtomSize - 1);
+            alignedSize = Math.Min(alignedSize, bufferSize - offset);
 
             var mappedRange = new MappedMemoryRange
             {
                 SType = StructureType.MappedMemoryRange,
                 Memory = _deviceMemory,
                 Offset = offset,
-                Size = size
+                Size = alignedSize
             };
 
-            RenderingContext.Vk.FlushMappedMemoryRanges(_context.Device, 1, &mappedRange)
+            VulkanContext.Vk.FlushMappedMemoryRanges(_context.Device, 1, &mappedRange)
                 .VkAssertResult("Failed to flush mapped memory ranges");
         }
 
 
         public unsafe void CopyTo(VkBuffer dstBuffer, VkCommandPool commandPool, ulong srcOffset = 0, ulong dstOffset = 0)
         {
-            using var commandBuffer = commandPool.BeginSingleTimeCommands();
-
-            var copyRegion = new BufferCopy
+            _context.SubmitSingleTimeCommand(commandPool, (cmd) =>
             {
-                SrcOffset = srcOffset,
-                DstOffset = dstOffset,
-                Size = Size,
-            };
+                var copyRegion = new BufferCopy
+                {
+                    SrcOffset = srcOffset,
+                    DstOffset = dstOffset,
+                    Size = Size,
+                };
 
-            RenderingContext.Vk.CmdCopyBuffer(commandBuffer, this, dstBuffer, 1, in copyRegion);
+                VulkanContext.Vk.CmdCopyBuffer(cmd, this, dstBuffer, 1, in copyRegion);
 
-            commandBuffer.End();
-            var cmdNative = commandBuffer.VkObjectNative;
-            var submitInfo = new SubmitInfo() 
-            { 
-                SType = StructureType.SubmitInfo, 
-                PCommandBuffers = &cmdNative, 
-                CommandBufferCount = 1, 
-            };
-            _context.Device.GraphicsQueue.Submit(in submitInfo);
-            _context.Device.GraphicsQueue.WaitIdle();
-
+                var cmdNative = cmd.VkObjectNative;
+                var submitInfo = new SubmitInfo()
+                {
+                    SType = StructureType.SubmitInfo,
+                    PCommandBuffers = &cmdNative,
+                    CommandBufferCount = 1,
+                };
+            });
         }
         public unsafe void AddBufferMemoryBarrier(
             VkCommandBuffer commandBuffer,
@@ -141,7 +161,7 @@ namespace RockEngine.Vulkan
                 Size = Size,
             };
 
-            RenderingContext.Vk.CmdPipelineBarrier(
+            VulkanContext.Vk.CmdPipelineBarrier(
                 commandBuffer,
                 srcStageMask,
                 dstStageMask,
@@ -177,7 +197,8 @@ namespace RockEngine.Vulkan
                     }
             }
         }
-      
+     
+
         public ValueTask WriteToBufferAsync<T>(T[] data, ulong size = Vk.WholeSize, ulong offset = 0) where T : unmanaged
         {
             if (data == null || data.Length == 0)
@@ -202,22 +223,40 @@ namespace RockEngine.Vulkan
 
             unsafe
             {
-                void* destination = null;
-                Map(ref destination, size, offset);
-                try
+                if (_deviceMemory.IsMapped)
                 {
+                    // Use persistent mapped pointer
                     fixed (T* dataPtr = data)
                     {
-                        WriteToBuffer(dataPtr, destination, actualSize, 0);
+                        WriteToBuffer(dataPtr, (byte*)_deviceMemory.MappedData!.Value + offset, actualSize, 0);
                     }
-                    Flush(size, offset);
+                    // Flush only if memory is not coherent
+                    if ((_deviceMemory.Properties & MemoryPropertyFlags.HostCoherentBit) == 0)
+                    {
+                        Flush(actualSize, offset);
+                    }
                 }
-                finally
+                else
                 {
-                    Unmap();
+                    // Fallback to temporary mapping for non-host-visible buffers
+                    void* destination = null;
+                    Map(ref destination, size, offset);
+                    try
+                    {
+                        fixed (T* dataPtr = data)
+                        {
+                            WriteToBuffer(dataPtr, destination, actualSize, 0);
+                        }
+                        Flush(size, offset);
+                    }
+                    finally
+                    {
+                        Unmap();
+                    }
                 }
             }
             return default;
+
         }
 
         public ValueTask WriteToBufferAsync<T>(T data, ulong size = Vk.WholeSize, ulong offset = 0) where T : unmanaged
@@ -240,17 +279,21 @@ namespace RockEngine.Vulkan
 
             unsafe
             {
-                void* destination = null;
-                Map(ref destination, size, offset);
-                try
+                if (!_deviceMemory.IsMapped)
                 {
+                    void* destination = null;
+                    Map(ref destination, size, offset);
                     WriteToBuffer(&data, destination, actualSize, 0);
                     Flush(size, offset);
-                }
-                finally
-                {
                     Unmap();
                 }
+                else
+                {
+                    WriteToBuffer(&data, _deviceMemory.MappedData!.Value.ToPointer(), actualSize, 0);
+                    Flush(size, offset);
+                    Unmap();
+                }
+
             }
             return default;
         }
@@ -264,8 +307,14 @@ namespace RockEngine.Vulkan
 
         public unsafe void Map(ref void* pdata, ulong size = Vk.WholeSize, ulong offset = 0)
         {
-            RenderingContext.Vk.MapMemory(_context.Device, _deviceMemory, offset, size, 0, ref pdata)
-                .VkAssertResult("Failed to mapMemory");
+            if (_deviceMemory.IsMapped)
+            {
+                pdata = _deviceMemory.MappedData.Value.ToPointer();
+                return;
+            }
+            _deviceMemory.Map(size, offset);
+            pdata = _deviceMemory.MappedData.Value.ToPointer();
+
         }
 
         public unsafe void Map(out nint pdata, ulong size = Vk.WholeSize, ulong offset = 0)
@@ -277,19 +326,19 @@ namespace RockEngine.Vulkan
 
         public void Unmap()
         {
-            RenderingContext.Vk.UnmapMemory(_context.Device, _deviceMemory);
+            _deviceMemory.Unmap();
         }
         public void BindVertexBuffer(VkCommandBuffer commandBuffer, ulong vertexOffset = 0)
         {
-            RenderingContext.Vk.CmdBindVertexBuffers(commandBuffer, 0, 1, in _vkObject, ref vertexOffset);
+            VulkanContext.Vk.CmdBindVertexBuffers(commandBuffer, 0, 1, in _vkObject, ref vertexOffset);
         }
 
         public void BindIndexBuffer(VkCommandBuffer commandBuffer, ulong indexOffset, IndexType type)
         {
-            RenderingContext.Vk.CmdBindIndexBuffer(commandBuffer, _vkObject, indexOffset, type);
+            VulkanContext.Vk.CmdBindIndexBuffer(commandBuffer, _vkObject, indexOffset, type);
         }
 
-        protected unsafe override void Dispose(bool disposing)
+        protected override unsafe void Dispose(bool disposing)
         {
             if (!_disposed)
             {
@@ -297,14 +346,17 @@ namespace RockEngine.Vulkan
                 {
                     // Dispose managed state (managed objects).
                 }
-
-                RenderingContext.Vk.DestroyBuffer(_context.Device, _vkObject, null);
+                if (_deviceMemory.IsMapped)
+                {
+                    _deviceMemory.Unmap();
+                }
+                VulkanContext.Vk.DestroyBuffer(_context.Device, _vkObject, null);
                 _deviceMemory.Dispose();
 
                 _disposed = true;
             }
         }
 
-       
+
     }
 }

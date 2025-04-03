@@ -8,10 +8,10 @@ namespace RockEngine.Core.Rendering
 {
     public class RenderPassManager : IDisposable
     {
-        private readonly RenderingContext _context;
+        private readonly VulkanContext _context;
         private readonly Dictionary<RenderPassType, EngineRenderPass> _renderPasses;
 
-        public RenderPassManager(RenderingContext context)
+        public RenderPassManager(VulkanContext context)
         {
             _context = context;
             _renderPasses = new Dictionary<RenderPassType, EngineRenderPass>();
@@ -46,6 +46,13 @@ namespace RockEngine.Core.Rendering
             return _renderPasses.Values;
         }
 
+        internal EngineRenderPass CreateRenderPassFromInfo(in RenderPassCreateInfo renderPassInfo)
+        {
+            var renderPass = VkRenderPass.Create(_context, in renderPassInfo);
+            var engineRenderPass = new EngineRenderPass(RenderPassType.None, renderPass);
+            return engineRenderPass;
+        }
+
         public void Dispose()
         {
             foreach (var renderPass in _renderPasses.Values)
@@ -54,6 +61,8 @@ namespace RockEngine.Core.Rendering
             }
             _renderPasses.Clear();
         }
+
+
     }
 
 }

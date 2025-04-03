@@ -1,4 +1,4 @@
-#version 450
+#version 460
 #extension GL_KHR_vulkan_glsl:enable
 
 layout(location = 0) in vec3 aPosition;
@@ -8,14 +8,14 @@ layout(location = 3) in vec3 aTangent;
 layout(location = 4) in vec3 aBitangent;
 
 
-layout(set = 1, binding = 0) uniform ModelData_Dynamic
-{
-    mat4 model;
+layout(set = 1, binding = 0) readonly buffer ModelData {
+    mat4 models[];
 };
 
 
 layout(set = 0, binding = 0) uniform GlobalUbo {
     mat4 viewProj;
+    vec3 camPos;
 } ubo;
 
 layout(location = 0) out vec3 vWorldPos;
@@ -25,7 +25,8 @@ layout(location = 2) out vec2 vTexCoord;
 layout(location = 3) out mat3 vTBN;
 
 void main() {
-    vec4 worldPos = model * vec4(aPosition, 1.0);
+    mat4 model = models[gl_BaseInstance];
+    vec4 worldPos =  model * vec4(aPosition, 1.0);
     gl_Position = ubo.viewProj * worldPos;
     vWorldPos = worldPos.xyz;
     vNormal = mat3(transpose(inverse(model))) * aNormal;

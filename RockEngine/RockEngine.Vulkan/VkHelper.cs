@@ -8,7 +8,7 @@ namespace RockEngine.Vulkan
 {
     public static class VkHelper
     {
-        public unsafe static bool IsExtensionSupported(string extension)
+        public static unsafe bool IsExtensionSupported(string extension)
         {
             var api = Vk.GetApi();
             uint extensionCount = 0;
@@ -62,7 +62,7 @@ namespace RockEngine.Vulkan
             return details;
         }
 
-       
+
 
         public static void BeginSingleTimeCommand(this VkCommandBuffer cmd)
         {
@@ -74,7 +74,7 @@ namespace RockEngine.Vulkan
             cmd.Begin(in beginInfo);
         }
 
-       
+
 
         public static Result VkAssertResult(this Result result)
         {

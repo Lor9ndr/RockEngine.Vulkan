@@ -2,20 +2,17 @@
 
 using Silk.NET.Vulkan;
 
-using System;
-using System.Collections.Generic;
-
 namespace RockEngine.Core.Rendering.Managers
 {
     public class DescriptorPoolManager : IDisposable
     {
-        private readonly RenderingContext _context;
+        private readonly VulkanContext _context;
         private readonly DescriptorPoolSize[] _poolSizes;
         private readonly uint _maxSetsPerPool;
         private readonly List<VkDescriptorPool> _pools = new List<VkDescriptorPool>();
         private readonly List<VkDescriptorPool> _exhaustedPools = new List<VkDescriptorPool>();
 
-        public DescriptorPoolManager(RenderingContext context, DescriptorPoolSize[] poolSizes, uint maxSetsPerPool)
+        public DescriptorPoolManager(VulkanContext context, DescriptorPoolSize[] poolSizes, uint maxSetsPerPool)
         {
             _context = context;
             _poolSizes = poolSizes ?? throw new ArgumentNullException(nameof(poolSizes));
@@ -59,7 +56,7 @@ namespace RockEngine.Core.Rendering.Managers
                     PSetLayouts = &layout.DescriptorSetLayout
                 };
 
-                var result = RenderingContext.Vk.AllocateDescriptorSets(_context.Device, &allocInfo, out DescriptorSet descriptorSet)
+                var result = VulkanContext.Vk.AllocateDescriptorSets(_context.Device, &allocInfo, out DescriptorSet descriptorSet)
                     .VkAssertResult("Failed to allocate descriptor set", Result.ErrorOutOfPoolMemory);
                 if (result == Result.Success)
                 {
@@ -81,7 +78,7 @@ namespace RockEngine.Core.Rendering.Managers
             };
 
             DescriptorSet newDescriptorSet;
-            RenderingContext.Vk.AllocateDescriptorSets(_context.Device, &newAllocInfo, out newDescriptorSet)
+            VulkanContext.Vk.AllocateDescriptorSets(_context.Device, &newAllocInfo, out newDescriptorSet)
                 .VkAssertResult("Failed to allocate descriptor set from new pool");
             return newDescriptorSet;
         }

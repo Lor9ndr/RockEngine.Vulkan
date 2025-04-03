@@ -5,37 +5,47 @@ namespace RockEngine.Vulkan
 {
     public record VkFence : VkObject<Fence>
     {
-        private readonly RenderingContext _context;
+        private readonly VulkanContext _context;
 
-        public VkFence(RenderingContext context, in Fence fence)
+        public VkFence(VulkanContext context, in Fence fence)
             : base(fence)
         {
             _context = context;
         }
 
-        public unsafe static VkFence Create(RenderingContext context, in FenceCreateInfo fenceCreateInfo)
+        public static unsafe VkFence Create(VulkanContext context, in FenceCreateInfo fenceCreateInfo)
         {
-            RenderingContext.Vk.CreateFence(context.Device, in fenceCreateInfo, in RenderingContext.CustomAllocator<VkFence>(), out Fence fence)
+            VulkanContext.Vk.CreateFence(context.Device, in fenceCreateInfo, in VulkanContext.CustomAllocator<VkFence>(), out Fence fence)
                 .VkAssertResult("Failed to create fence.");
 
             return new VkFence(context, in fence);
         }
 
-        public unsafe static VkFence CreateSignaled(RenderingContext context)
+        public static unsafe VkFence CreateSignaled(VulkanContext context)
         {
             FenceCreateInfo fci = new FenceCreateInfo(StructureType.FenceCreateInfo, flags: FenceCreateFlags.SignaledBit);
             return Create(context, fci);
         }
-        public unsafe static VkFence CreateNotSignaled(RenderingContext context)
+        public static unsafe VkFence CreateNotSignaled(VulkanContext context)
         {
             FenceCreateInfo fci = new FenceCreateInfo(StructureType.FenceCreateInfo, flags: FenceCreateFlags.None);
             return Create(context, fci);
+        }
+
+        public void Reset()
+        {
+            Vk.ResetFences(_context.Device, 1, in _vkObject);
         }
 
         public void Wait()
         {
             Vk.WaitForFences(_context.Device, 1, in _vkObject, true, ulong.MaxValue)
                 .VkAssertResult("Failed to wait fence");
+        }
+        public ValueTask WaitAsync()
+        {
+            Wait();
+            return default;
         }
 
         protected override void Dispose(bool disposing)
@@ -56,11 +66,13 @@ namespace RockEngine.Vulkan
                     //vkDestroyFence(): fence (VkFence 0x9389c50000000061[]) is in use.
                     //The Vulkan spec states: All queue submission commands that refer to fence must have completed execution 
 
-                    Vk.DestroyFence(_context.Device, _vkObject, in RenderingContext.CustomAllocator<VkFence>());
+                    Vk.DestroyFence(_context.Device, _vkObject, in VulkanContext.CustomAllocator<VkFence>());
                 }
 
                 _disposed = true;
             }
         }
+
+       
     }
 }

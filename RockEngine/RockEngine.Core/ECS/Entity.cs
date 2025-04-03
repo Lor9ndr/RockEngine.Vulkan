@@ -7,7 +7,7 @@ namespace RockEngine.Core.ECS
     {
         private static ulong _id = 0;
 
-        internal static ulong ID;
+        internal ulong ID;
 
         private readonly List<IComponent> _components = [];
         public Transform Transform { get; private set; }
@@ -39,7 +39,7 @@ namespace RockEngine.Core.ECS
 
         public T? GetComponent<T>() where T : IComponent
         {
-           return _components.OfType<T>().FirstOrDefault();
+            return _components.OfType<T>().FirstOrDefault();
         }
 
         public async ValueTask Update(Renderer renderer)

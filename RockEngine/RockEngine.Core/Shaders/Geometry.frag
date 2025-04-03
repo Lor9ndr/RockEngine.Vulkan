@@ -12,12 +12,20 @@ layout(location = 2) out vec4 gAlbedo;
 layout(set = 2, binding = 0) uniform sampler2D uAlbedo;
 layout(set = 2, binding = 1) uniform sampler2D uNormalMap;
 
+vec2 octEncode(vec3 n) {
+   n /= (abs(n.x) + abs(n.y) + abs(n.z));
+    n.xy = n.z >= 0.0 ? n.xy : (1.0 - abs(n.yx)) * sign(n.xy);
+    return n.xy * 0.5 + 0.5;
+}
+
 void main() {
     gPosition = vWorldPos;
    
     vec3 tangentNormal = texture(uNormalMap, vTexCoord).xyz * 2.0 - 1.0;
     
     // Transform to world space
-    gNormal = normalize(vTBN * tangentNormal);
+    vec3 worldNormal = normalize(vTBN * tangentNormal);
+    gNormal.xy = octEncode(worldNormal); // Store compressed normal
     gAlbedo = texture(uAlbedo, vTexCoord);
 }
+

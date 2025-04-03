@@ -1,5 +1,4 @@
-﻿using RockEngine.Core.ECS.Components;
-using RockEngine.Vulkan;
+﻿using RockEngine.Vulkan;
 using RockEngine.Vulkan.Builders;
 
 using Silk.NET.Vulkan;
@@ -8,10 +7,10 @@ namespace RockEngine.Core.Rendering.Managers
 {
     public class PipelineManager : IDisposable
     {
-        private readonly RenderingContext _context;
+        private readonly VulkanContext _context;
         private readonly List<VkPipeline> _pipelines = new List<VkPipeline>();
 
-        public PipelineManager(RenderingContext context)
+        public PipelineManager(VulkanContext context)
         {
             _context = context;
         }
@@ -30,19 +29,6 @@ namespace RockEngine.Core.Rendering.Managers
             return pipeline;
         }
 
-        public VkDescriptorSetLayout TryGetLayout(UniformBuffer uniformBuffer)
-        {
-            return _pipelines.SelectMany(
-                s => s.Layout.DescriptorSetLayouts.Where(
-                    layout => layout.Value.Bindings.FirstOrDefault(
-                        s => s.Name == uniformBuffer.Name && s.Binding == uniformBuffer.BindingLocation) != null))
-                                    .FirstOrDefault().Value;
-        }
-
-        public VkDescriptorSetLayout TryGetLayout(in Material material)
-        {
-            return material.Pipeline.Layout.DescriptorSetLayouts[2];
-        }
 
         public VkPipeline? GetPipelineByName(string name)
         {

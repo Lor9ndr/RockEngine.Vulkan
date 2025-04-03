@@ -4,9 +4,9 @@ namespace RockEngine.Vulkan
 {
     public record VkRenderPass : VkObject<RenderPass>
     {
-        private readonly RenderingContext _context;
+        private readonly VulkanContext _context;
 
-        public VkRenderPass(RenderingContext context, RenderPass renderPass)
+        public VkRenderPass(VulkanContext context, RenderPass renderPass)
             : base(renderPass)
         {
             _context = context;
@@ -24,20 +24,20 @@ namespace RockEngine.Vulkan
 
                 unsafe
                 {
-                    RenderingContext.Vk.DestroyRenderPass(_context.Device, _vkObject, in RenderingContext.CustomAllocator<VkRenderPass>());
+                    VulkanContext.Vk.DestroyRenderPass(_context.Device, _vkObject, in VulkanContext.CustomAllocator<VkRenderPass>());
                 }
 
                 _disposed = true;
             }
         }
-        public unsafe static VkRenderPass Create(RenderingContext context, in RenderPassCreateInfo createInfo)
+        public static unsafe VkRenderPass Create(VulkanContext context, in RenderPassCreateInfo createInfo)
         {
-            RenderingContext.Vk.CreateRenderPass(context.Device, in createInfo, in RenderingContext.CustomAllocator<VkRenderPass>(), out RenderPass renderPass)
+            VulkanContext.Vk.CreateRenderPass(context.Device, in createInfo, in VulkanContext.CustomAllocator<VkRenderPass>(), out RenderPass renderPass)
                      .VkAssertResult("Failed to create render pass.");
 
             return new VkRenderPass(context, renderPass);
         }
-        public unsafe static VkRenderPass Create(RenderingContext context, SubpassDescription[] subpasses, AttachmentDescription[] attachments, SubpassDependency[] dependencies)
+        public static unsafe VkRenderPass Create(VulkanContext context, SubpassDescription[] subpasses, AttachmentDescription[] attachments, SubpassDependency[] dependencies)
         {
             RenderPass renderPass;
             fixed (SubpassDescription* pSubpasses = subpasses)
@@ -57,7 +57,7 @@ namespace RockEngine.Vulkan
                     PDependencies = pDependencies
                 };
 
-                RenderingContext.Vk.CreateRenderPass(context.Device, in createInfo, in RenderingContext.CustomAllocator<VkRenderPass>(), out renderPass)
+                VulkanContext.Vk.CreateRenderPass(context.Device, in createInfo, in VulkanContext.CustomAllocator<VkRenderPass>(), out renderPass)
                     .VkAssertResult("Failed to create render pass.");
             }
 
