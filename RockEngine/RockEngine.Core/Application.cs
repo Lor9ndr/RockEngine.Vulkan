@@ -12,7 +12,7 @@ namespace RockEngine.Core
 {
     public abstract class Application : IDisposable
     {
-        protected VulkanContext _renderingContext;
+        protected VulkanContext _context;
         protected IWindow _window;
         protected LayerStack _layerStack;
         protected GraphicsEngine _graphicsEngine;
@@ -36,13 +36,13 @@ namespace RockEngine.Core
             CancellationTokenSource = new CancellationTokenSource();
             _window.Load += async () =>
             {
-                _renderingContext = new VulkanContext(_window, _window.Title, 10);
-                _graphicsEngine = new GraphicsEngine(_renderingContext);
+                _context = new VulkanContext(_window, _window.Title, 10);
+                _graphicsEngine = new GraphicsEngine(_context);
                 _inputContext = _window.CreateInput();
-                _pipelineManager = new PipelineManager(_renderingContext);
-                _renderer = new Renderer(_renderingContext, _graphicsEngine, _pipelineManager);
+                _pipelineManager = new PipelineManager(_context);
+                _renderer = new Renderer(_context, _graphicsEngine, _pipelineManager);
                 _world = new World();
-                _textureStreamer = new TextureStreamer(_renderingContext, _renderer);
+                _textureStreamer = new TextureStreamer(_context, _renderer);
                 await OnLoad?.Invoke();
 
                 await _world.Start(_renderer);
@@ -58,16 +58,21 @@ namespace RockEngine.Core
 
         protected virtual async Task Update(double deltaTime)
         {
+
             Time.Update(_window.Time, deltaTime);
             _layerStack.Update();
             await _world.Update(_renderer)
                 .ConfigureAwait(false);
 
-            await _renderer.UpdateAsync();
+            await _renderer.UpdateFrameData();
+            await _context.SubmitContext.FlushAsync();
+
+
         }
 
         protected virtual async Task Render(double time)
         {
+            _context.DisposePendingDisposals();
             using (PerformanceTracer.BeginSection("Whole Render"))
             {
                 if (_layerStack.Count == 0)
@@ -91,9 +96,10 @@ namespace RockEngine.Core
                 using (PerformanceTracer.BeginSection("_graphicsEngine.end & Submit"))
                 {
                     _graphicsEngine.End(vkCommandBuffer);
-                    _graphicsEngine.Submit([vkCommandBuffer.VkObjectNative]);
+                    _graphicsEngine.SubmitAndPresent([vkCommandBuffer.VkObjectNative]);
                 }
             }
+
         }
 
         public Task PushLayer(ILayer layer)
@@ -112,7 +118,7 @@ namespace RockEngine.Core
             _renderer.Dispose();
             _graphicsEngine.Dispose();
 
-            _renderingContext.Dispose();
+            _context.Dispose();
             _window.Close();
             _window.Dispose();
         }

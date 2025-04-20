@@ -2,7 +2,7 @@
 
 namespace RockEngine.Vulkan
 {
-    public record VkSampler : VkObject<Sampler>
+    public class VkSampler : VkObject<Sampler>
     {
         private readonly VulkanContext _context;
 

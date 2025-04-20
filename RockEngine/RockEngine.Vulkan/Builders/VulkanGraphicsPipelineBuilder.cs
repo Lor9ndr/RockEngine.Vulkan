@@ -102,11 +102,6 @@ namespace RockEngine.Vulkan.Builders
             return this;
         }
 
-        /// <summary>
-        /// Building the whole pipeline
-        /// after finishing disposing layout and all the builders that are sended into it
-        /// so you have not dispose them after all.
-        /// <returns>disposable pipeline wrapper</returns>
         public unsafe VkPipeline Build()
         {
             ArgumentNullException.ThrowIfNull(_pipelineLayout, nameof(_pipelineLayout));

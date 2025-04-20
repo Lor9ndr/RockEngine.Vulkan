@@ -23,7 +23,7 @@ namespace RockEngine.Core.ECS.Systems
         {
             _renderer = renderer;
             _context = VulkanContext.GetCurrent();
-            _lightBuffers = new UniformBuffer[_context.MaxFramesPerFlight];
+/*            _lightBuffers = new UniformBuffer[_context.MaxFramesPerFlight];
             _lightBindings = new UniformBufferBinding[_lightBuffers.Length];
             for (int i = 0; i < _lightBuffers.Length; i++)
             {
@@ -33,7 +33,7 @@ namespace RockEngine.Core.ECS.Systems
             _countLightUbo = new UniformBuffer("LightCount", 1, sizeof(uint), sizeof(uint));
 
             _countLightUboBinding = new UniformBufferBinding(_countLightUbo, 1, 1);
-            renderer.GBuffer.Material.Bindings.Add(_countLightUboBinding);
+            renderer.GBuffer.Material.Bindings.Add(_countLightUboBinding);*/
         }
 
 

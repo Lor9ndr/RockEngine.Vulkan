@@ -1,5 +1,4 @@
-﻿using RockEngine.Core.Rendering;
-using RockEngine.Vulkan;
+﻿using RockEngine.Vulkan;
 
 using Silk.NET.Vulkan;
 

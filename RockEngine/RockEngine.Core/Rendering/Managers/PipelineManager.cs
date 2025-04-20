@@ -8,7 +8,7 @@ namespace RockEngine.Core.Rendering.Managers
     public class PipelineManager : IDisposable
     {
         private readonly VulkanContext _context;
-        private readonly List<VkPipeline> _pipelines = new List<VkPipeline>();
+        private readonly Dictionary<string, VkPipeline> _pipelines = new Dictionary<string, VkPipeline>();
 
         public PipelineManager(VulkanContext context)
         {
@@ -18,28 +18,36 @@ namespace RockEngine.Core.Rendering.Managers
         public VkPipeline Create(GraphicsPipelineBuilder builder)
         {
             var pipeline = builder.Build();
-            _pipelines.Add(pipeline);
+            CheckPipeline(pipeline);
+            _pipelines[pipeline.Name] = pipeline;
             return pipeline;
         }
 
         public VkPipeline Create(string name, ref GraphicsPipelineCreateInfo info, VkRenderPass renderPass, VkPipelineLayout layout)
         {
             var pipeline = VkPipeline.Create(_context, name, ref info, renderPass, layout);
-            _pipelines.Add(pipeline);
+            CheckPipeline(pipeline);
+            _pipelines[pipeline.Name] = pipeline;
             return pipeline;
         }
 
-
-        public VkPipeline? GetPipelineByName(string name)
+        private void CheckPipeline(VkPipeline pipeline)
         {
-            return _pipelines.FirstOrDefault(p => p.Name == name);
+            if (_pipelines.ContainsKey(pipeline.Name))
+            {
+                throw new Exception("Pipeline with that name already exists");
+            }
+        }
+        public VkPipeline GetPipelineByName(string name)
+        {
+            return _pipelines[name];
         }
 
         public void Dispose()
         {
             foreach (var item in _pipelines)
             {
-                item.Dispose();
+                item.Value.Dispose();
             }
         }
     }

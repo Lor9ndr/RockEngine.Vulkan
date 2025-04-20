@@ -3,7 +3,7 @@
 
 namespace RockEngine.Vulkan
 {
-    public record VkCommandPool : VkObject<CommandPool>
+    public class VkCommandPool : VkObject<CommandPool>
     {
         private readonly VulkanContext _context;
         private readonly List<VkCommandBuffer> _commandBuffers = new List<VkCommandBuffer>();

@@ -11,7 +11,7 @@ namespace RockEngine.Vulkan
         public PresentModeKHR[] PresentModes;
     }
 
-    public unsafe record VkLogicalDevice : VkObject<Device>
+    public unsafe class VkLogicalDevice : VkObject<Device>
     {
         private readonly Vk _api;
         private readonly VkQueue _presentQueue;

@@ -1,26 +1,26 @@
-﻿using RockEngine.Core.Rendering.Contexts;
-using RockEngine.Core.Rendering.Managers;
-using RockEngine.Vulkan;
+﻿using RockEngine.Core.Rendering.Managers;
 
 using Silk.NET.Vulkan;
 
-namespace RockEngine.Core.Rendering
+namespace RockEngine.Vulkan
 {
     public sealed class UploadBatch : IDisposable
     {
         private readonly VulkanContext _context;
         private readonly StagingManager _stagingManager;
         private readonly VkCommandPool _pool;
+        private readonly SubmitContext _submitContext;
         private VkCommandBuffer _commandBuffer;
         private bool _isDisposed;
 
         public VkCommandBuffer CommandBuffer => _commandBuffer;
 
-        public UploadBatch(VulkanContext context, StagingManager stagingManager, VkCommandPool pool)
+        public UploadBatch(VulkanContext context, StagingManager stagingManager, VkCommandPool pool, SubmitContext submitContext)
         {
             _context = context;
             _stagingManager = stagingManager;
             _pool = pool;
+            _submitContext = submitContext;
             AllocateCommandBuffer();
         }
 
@@ -76,10 +76,10 @@ namespace RockEngine.Core.Rendering
             );
         }
 
-        public void Submit(SubmitContext submitContext)
+        public void Submit()
         {
             _commandBuffer.End();
-            submitContext.AddSubmission(_commandBuffer);
+            _submitContext.AddSubmission(_commandBuffer);
         }
 
         public void Dispose()

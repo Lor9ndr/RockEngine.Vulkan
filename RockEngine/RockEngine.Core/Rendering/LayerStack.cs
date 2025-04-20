@@ -16,6 +16,11 @@ namespace RockEngine.Core.Rendering
         public int Count => _layers.Count;
         private readonly List<ILayer> _layers = new List<ILayer>();
 
+        /// <summary>
+        /// Pushing layer and calls the <see cref="ILayer.OnAttach"/> method
+        /// </summary>
+        /// <param name="layer">layer that will be attached</param>
+        /// <returns>Task of the <see cref="ILayer.OnAttach"/> method</returns>
         public Task PushLayer(ILayer layer)
         {
             _layers.Add(layer);

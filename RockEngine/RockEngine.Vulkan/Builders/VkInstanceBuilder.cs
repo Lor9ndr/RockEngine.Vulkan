@@ -75,7 +75,7 @@ namespace RockEngine.Vulkan.Builders
             }
             VkInstance instanceWrapper;
 
-            VulkanContext.Vk.CreateInstance(in instanceInfo, in CustomAllocator.CreateCallbacks<VkInstance>(), out Instance instance)
+            VulkanContext.Vk.CreateInstance(in instanceInfo, null, out Instance instance)
                 .VkAssertResult($"Failed to create instance");
 
             instanceWrapper = new VkInstance(instance);

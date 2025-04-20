@@ -2,7 +2,7 @@
 
 namespace RockEngine.Vulkan
 {
-    public record VkPipeline : VkObject<Pipeline>
+    public class VkPipeline : VkObject<Pipeline>
     {
         private readonly string _name;
         private readonly VulkanContext _context;

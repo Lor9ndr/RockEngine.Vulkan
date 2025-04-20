@@ -8,7 +8,7 @@ using DescriptorType = Silk.NET.SPIRV.Reflect.DescriptorType;
 
 namespace RockEngine.Vulkan
 {
-    public record VkShaderModule : VkObject<ShaderModule>
+    public class VkShaderModule : VkObject<ShaderModule>
     {
         private const string UNDEFINED_NAME = "UNDEFINED";
         private const string DYNAMIC_UBO_END = "_Dynamic";

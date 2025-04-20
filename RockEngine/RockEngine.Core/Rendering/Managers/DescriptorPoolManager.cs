@@ -2,6 +2,10 @@
 
 using Silk.NET.Vulkan;
 
+using System;
+using System.Collections.Generic;
+using System.Threading;
+
 namespace RockEngine.Core.Rendering.Managers
 {
     public class DescriptorPoolManager : IDisposable
@@ -9,18 +13,28 @@ namespace RockEngine.Core.Rendering.Managers
         private readonly VulkanContext _context;
         private readonly DescriptorPoolSize[] _poolSizes;
         private readonly uint _maxSetsPerPool;
-        private readonly List<VkDescriptorPool> _pools = new List<VkDescriptorPool>();
-        private readonly List<VkDescriptorPool> _exhaustedPools = new List<VkDescriptorPool>();
+        private readonly ThreadLocal<List<VkDescriptorPool>> _pools;
+        private readonly ThreadLocal<List<VkDescriptorPool>> _exhaustedPools;
 
         public DescriptorPoolManager(VulkanContext context, DescriptorPoolSize[] poolSizes, uint maxSetsPerPool)
         {
+            ArgumentNullException.ThrowIfNull(context, nameof(context));
+            ArgumentNullException.ThrowIfNull(poolSizes, nameof(poolSizes));
             _context = context;
-            _poolSizes = poolSizes ?? throw new ArgumentNullException(nameof(poolSizes));
+            _poolSizes = poolSizes;
             _maxSetsPerPool = maxSetsPerPool;
-            CreateNewPool();
+
+            _pools = new ThreadLocal<List<VkDescriptorPool>>(() =>
+            {
+                var list = new List<VkDescriptorPool>();
+                CreateNewPool(list); // Create initial pool for each thread
+                return list;
+            });
+
+            _exhaustedPools = new ThreadLocal<List<VkDescriptorPool>>(() => new List<VkDescriptorPool>());
         }
 
-        private unsafe VkDescriptorPool CreateNewPool()
+        private unsafe VkDescriptorPool CreateNewPool(List<VkDescriptorPool> targetList)
         {
             fixed (DescriptorPoolSize* poolSizesPtr = _poolSizes)
             {
@@ -30,67 +44,55 @@ namespace RockEngine.Core.Rendering.Managers
                     PoolSizeCount = (uint)_poolSizes.Length,
                     PPoolSizes = poolSizesPtr,
                     MaxSets = _maxSetsPerPool,
-                    Flags = DescriptorPoolCreateFlags.None
+                    Flags = DescriptorPoolCreateFlags.FreeDescriptorSetBit
                 };
 
                 var pool = VkDescriptorPool.Create(_context, createInfo);
-                _pools.Add(pool);
+                targetList.Add(pool);
                 return pool;
             }
         }
 
-        public unsafe DescriptorSet AllocateDescriptorSet(VkDescriptorSetLayout layout)
+        public unsafe VkDescriptorSet AllocateDescriptorSet(VkDescriptorSetLayout layout)
         {
-            foreach (var pool in _pools)
+            var currentPools = _pools.Value!;
+            var currentExhausted = _exhaustedPools.Value!;
+
+            foreach (var pool in currentPools)
             {
-                if (_exhaustedPools.Contains(pool))
-                {
+                if (currentExhausted.Contains(pool))
                     continue;
-                }
 
-                var allocInfo = new DescriptorSetAllocateInfo
-                {
-                    SType = StructureType.DescriptorSetAllocateInfo,
-                    DescriptorPool = pool,
-                    DescriptorSetCount = 1,
-                    PSetLayouts = &layout.DescriptorSetLayout
-                };
-
-                var result = VulkanContext.Vk.AllocateDescriptorSets(_context.Device, &allocInfo, out DescriptorSet descriptorSet)
+                var result = pool.AllocateDescriptorSet(layout.DescriptorSetLayout, out var descriptorSet)
                     .VkAssertResult("Failed to allocate descriptor set", Result.ErrorOutOfPoolMemory);
+
                 if (result == Result.Success)
-                {
                     return descriptorSet;
-                }
-                _exhaustedPools.Add(pool);
 
-
+                currentExhausted.Add(pool);
             }
 
-            // All existing pools exhausted; create a new one
-            var newPool = CreateNewPool();
-            var newAllocInfo = new DescriptorSetAllocateInfo
-            {
-                SType = StructureType.DescriptorSetAllocateInfo,
-                DescriptorPool = newPool,
-                DescriptorSetCount = 1,
-                PSetLayouts = &layout.DescriptorSetLayout
-            };
-
-            DescriptorSet newDescriptorSet;
-            VulkanContext.Vk.AllocateDescriptorSets(_context.Device, &newAllocInfo, out newDescriptorSet)
+            // All pools exhausted, create new one
+            var newPool = CreateNewPool(currentPools);
+            newPool.AllocateDescriptorSet(layout.DescriptorSetLayout, out var newDescriptorSet)
                 .VkAssertResult("Failed to allocate descriptor set from new pool");
+
             return newDescriptorSet;
         }
 
         public void Dispose()
         {
-            foreach (var pool in _pools)
+            foreach (var pools in _pools.Values)
             {
-                pool.Dispose();
+                foreach (var pool in pools)
+                    pool.Dispose();
+                pools.Clear();
             }
-            _pools.Clear();
-            _exhaustedPools.Clear();
+            _pools.Dispose();
+
+            foreach (var exhausted in _exhaustedPools.Values)
+                exhausted.Clear();
+            _exhaustedPools.Dispose();
         }
     }
 }

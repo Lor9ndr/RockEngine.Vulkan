@@ -4,7 +4,7 @@ using Silk.NET.Vulkan.Extensions.KHR;
 
 namespace RockEngine.Vulkan
 {
-    public record VkSwapchain : VkObject<SwapchainKHR>
+    public class VkSwapchain : VkObject<SwapchainKHR>
     {
         private readonly KhrSwapchain _khrSwapchain;
         private readonly Format _format;
@@ -16,11 +16,12 @@ namespace RockEngine.Vulkan
         private readonly VkImageView[] _swapChainImageViews;
 
         private readonly FrameData[] _frameData;
-        private int _currentFrame = 0;
+        private int _currentFrameIndex = 0;
         private readonly VkSwapchain? _oldSwapchain;
         private VkImage _depthImage;
         private VkImageView _depthImageView;
         private Format _depthFormat;
+        private uint _currentImageIndex;
 
         public KhrSwapchain SwapchainApi => _khrSwapchain;
         public VkImage[] VkImages => _images;
@@ -31,7 +32,8 @@ namespace RockEngine.Vulkan
         public int SwapChainImagesCount => _images.Length;
         public Format DepthFormat => _depthFormat;
         public ISurfaceHandler Surface => _surface;
-        public int CurrentFrameIndex => _currentFrame;
+        public int CurrentFrameIndex => _currentFrameIndex;
+        public uint CurrentImageIndex => _currentImageIndex;
 
         public VkImageView DepthImageView { get => _depthImageView; private set => _depthImageView = value; }
 
@@ -85,7 +87,7 @@ namespace RockEngine.Vulkan
                 ImageColorSpace = surfaceFormat.ColorSpace,
                 ImageExtent = extent,
                 ImageArrayLayers = 1,
-                ImageUsage = ImageUsageFlags.ColorAttachmentBit | ImageUsageFlags.TransferSrcBit,
+                ImageUsage = ImageUsageFlags.ColorAttachmentBit | ImageUsageFlags.TransferSrcBit | ImageUsageFlags.InputAttachmentBit,
                 PreTransform = swapChainSupport.Capabilities.CurrentTransform,
                 CompositeAlpha = CompositeAlphaFlagsKHR.OpaqueBitKhr,
                 PresentMode = presentMode,
@@ -96,14 +98,22 @@ namespace RockEngine.Vulkan
             SetImageSharingMode(context, ref createInfo);
 
             var swapchainApi = new KhrSwapchain(VulkanContext.Vk.Context);
-            swapchainApi.CreateSwapchain(context.Device, in createInfo, in VulkanContext.CustomAllocator<VkSwapchain>(), out var swapChain)
+            swapchainApi.CreateSwapchain(context.Device, in createInfo, null, out var swapChain)
                 .VkAssertResult("Failed to create swapchain");
 
             uint countImages = 0;
             swapchainApi.GetSwapchainImages(context.Device, swapChain, &countImages, null);
             var images = new Image[countImages];
             swapchainApi.GetSwapchainImages(context.Device, swapChain, &countImages, images);
-            return new VkSwapchain(context, swapChain, swapchainApi, images.Select(s => new VkImage(context, s, null, ImageLayout.Undefined, Format.R32G32B32A32Sfloat, 1)).ToArray(), surfaceFormat.Format, extent, surface);
+            var ci = new ImageCreateInfo()
+            {
+                SType = StructureType.ImageCreateInfo,
+                Format = surfaceFormat.Format,
+                InitialLayout = ImageLayout.Undefined,
+                MipLevels = 1,
+            };
+            var vkImages = images.Select(s => new VkImage(context, s, null, ci)).ToArray();
+            return new VkSwapchain(context, swapChain, swapchainApi, vkImages, surfaceFormat.Format, extent, surface);
         }
 
         private static unsafe void SetImageSharingMode(VulkanContext context, ref SwapchainCreateInfoKHR createInfo)
@@ -223,9 +233,9 @@ namespace RockEngine.Vulkan
                 }
             }
         }
-        public unsafe Result AcquireNextImage(ref uint imageIndex)
+        public unsafe Result AcquireNextImage()
         {
-            var currentFrame = _frameData[_currentFrame];
+            var currentFrame = _frameData[_currentFrameIndex];
 
             // Optimized fence wait using queue operations instead of CPU stall
             _context.Device.GraphicsQueue.WaitIdle();
@@ -237,7 +247,7 @@ namespace RockEngine.Vulkan
                 ulong.MaxValue,
                 currentFrame.ImageAvailableSemaphore,
                 default,
-                ref imageIndex);
+                ref _currentImageIndex);
 
             if (result == Result.ErrorOutOfDateKhr || result == Result.SuboptimalKhr)
             {
@@ -248,9 +258,9 @@ namespace RockEngine.Vulkan
             return result.VkAssertResult("Failed to acquire swapchain image");
         }
 
-        public unsafe void SubmitCommandBuffers(CommandBuffer[] buffers, uint imageIndex)
+        public unsafe void SubmitCommandBuffers(CommandBuffer[] buffers)
         {
-            var currentFrame = _frameData[_currentFrame];
+            var currentFrame = _frameData[_currentFrameIndex];
             var waitSemaphores =  currentFrame.ImageAvailableSemaphore.VkObjectNative;
             var signalSemaphores =  currentFrame.RenderFinishedSemaphore.VkObjectNative;
             var stages =  PipelineStageFlags.ColorAttachmentOutputBit ;
@@ -272,15 +282,13 @@ namespace RockEngine.Vulkan
                 _context.Device.GraphicsQueue.Submit(submitInfo, currentFrame.InFlightFence);
             }
 
-            Present(imageIndex);
-            _currentFrame = (_currentFrame + 1) % _context.MaxFramesPerFlight;
         }
 
-        private unsafe void Present(uint imageIndex)
+        public unsafe void Present()
         {
-            var currentFrame = _frameData[_currentFrame];
+            var currentFrame = _frameData[_currentFrameIndex];
             var swapchains =  _vkObject;
-            var imageIndices =  imageIndex;
+            var imageIndices = _currentImageIndex;
             var waitSemaphores = currentFrame.RenderFinishedSemaphore.VkObjectNative;
 
             var presentInfo = new PresentInfoKHR
@@ -304,6 +312,8 @@ namespace RockEngine.Vulkan
             {
                 presentResult.VkAssertResult("Failed to present queue");
             }
+            _currentFrameIndex = (_currentFrameIndex + 1) % _context.MaxFramesPerFlight;
+
         }
 
 
@@ -357,21 +367,28 @@ namespace RockEngine.Vulkan
 
                 SetImageSharingMode(_context, ref createInfo);
 
-                _khrSwapchain.CreateSwapchain(_context.Device, in createInfo, in VulkanContext.CustomAllocator<VkSwapchain>(), out var swapChain)
+                _khrSwapchain.CreateSwapchain(_context.Device, in createInfo,null, out var swapChain)
                     .VkAssertResult("Failed to create swapchain");
 
                 uint countImages = 0;
                 _khrSwapchain.GetSwapchainImages(_context.Device, swapChain, ref countImages, null);
                 var images = new Image[countImages];
                 _khrSwapchain.GetSwapchainImages(_context.Device, swapChain, &countImages, images);
-                _khrSwapchain.DestroySwapchain(_context.Device, oldSwapchain, in VulkanContext.CustomAllocator<VkSwapchain>());
+                _khrSwapchain.DestroySwapchain(_context.Device, oldSwapchain,null);
                 _vkObject = swapChain;
-                _images = images.Select(s => new VkImage(_context, s, null, ImageLayout.Undefined, Format.R32G32B32A32Sfloat, 1)).ToArray();
+                var ci = new ImageCreateInfo()
+                {
+                    SType = StructureType.ImageCreateInfo,
+                    Format = Format.R32G32B32A32Sfloat,
+                    InitialLayout = ImageLayout.Undefined,
+                    MipLevels = 1,
+                };
+                _images = images.Select(s => new VkImage(_context, s, null, ci)).ToArray();
                 _extent = extent;
 
                 // Recreate image views and framebuffers
                 InitializeSwapchainResources();
-                _currentFrame = 0;
+                _currentFrameIndex = 0;
             }
         }
 
@@ -470,35 +487,39 @@ namespace RockEngine.Vulkan
                 SharingMode = SharingMode.Exclusive,
                 Samples = SampleCountFlags.Count1Bit,
                 InitialLayout = ImageLayout.Undefined
+                
             };
 
-            var depthImage = VkImage.Create(_context, in imageCi, MemoryPropertyFlags.DeviceLocalBit);
-            _depthImage = depthImage;
+            _depthImage = VkImage.Create(_context, in imageCi, MemoryPropertyFlags.DeviceLocalBit); ;
 
             commandBuffer.BeginSingleTimeCommand();
-            depthImage.TransitionImageLayout(commandBuffer, _depthFormat, ImageLayout.DepthStencilAttachmentOptimal);
+            _depthImage.TransitionImageLayout(commandBuffer, ImageLayout.DepthStencilAttachmentOptimal);
             commandBuffer.End();
 
             var nativeBuffer = commandBuffer.VkObjectNative;
             _context.Device.GraphicsQueue.Submit(new SubmitInfo(StructureType.SubmitInfo) { CommandBufferCount = 1, PCommandBuffers = &nativeBuffer }, fence);
             fence.Wait();
 
+            var aspectMask = _depthFormat.HasStencilComponent()
+                ? ImageAspectFlags.DepthBit | ImageAspectFlags.StencilBit
+                : ImageAspectFlags.DepthBit;
+
             var imageViewCi = new ImageViewCreateInfo
             {
                 SType = StructureType.ImageViewCreateInfo,
-                Image = depthImage,
+                Image = _depthImage,
                 Format = _depthFormat,
                 ViewType = ImageViewType.Type2D,
                 SubresourceRange = new ImageSubresourceRange
                 {
-                    AspectMask = ImageAspectFlags.DepthBit,
+                    AspectMask = aspectMask,
                     BaseMipLevel = 0,
                     LevelCount = 1,
                     BaseArrayLayer = 0,
                     LayerCount = 1
                 }
             };
-            _depthImageView = VkImageView.Create(_context, depthImage, in imageViewCi);
+            _depthImageView = VkImageView.Create(_context, _depthImage, in imageViewCi);
         }
 
         private Format FindDepthFormat()
@@ -562,7 +583,7 @@ namespace RockEngine.Vulkan
                 frameData.Dispose();
             }
 
-            _khrSwapchain.DestroySwapchain(_context.Device, _vkObject, in VulkanContext.CustomAllocator<VkSwapchain>());
+            _khrSwapchain.DestroySwapchain(_context.Device, _vkObject,null);
             _vkObject = default;
             _disposed = true;
         }

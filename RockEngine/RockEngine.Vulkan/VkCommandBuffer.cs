@@ -4,7 +4,7 @@ using System.Reflection.Metadata;
 
 namespace RockEngine.Vulkan
 {
-    public record VkCommandBuffer : VkObject<CommandBuffer>, IBegginable<CommandBufferBeginInfo>
+    public class VkCommandBuffer : VkObject<CommandBuffer>, IBegginable<CommandBufferBeginInfo>
     {
         private readonly VulkanContext _context;
         private readonly VkCommandPool _commandPool;
@@ -166,15 +166,15 @@ namespace RockEngine.Vulkan
             }
             
         }
-        public unsafe void ExecuteSecondary( VkCommandBuffer secondaryCommandBuffer)
+        public unsafe void ExecuteSecondary(VkCommandBuffer secondaryCommandBuffer)
         {
             var cmd = secondaryCommandBuffer.VkObjectNative;
             VulkanContext.Vk.CmdExecuteCommands(commandBuffer: _vkObject, commandBufferCount: 1, pCommandBuffers: in cmd);
         }
 
-        public void DrawIndirect(VkBuffer buffer, uint drawCount, uint v)
+        public void DrawIndirect(VkBuffer buffer, uint drawCount, uint offset, uint stride)
         {
-            throw new NotImplementedException();
+            VulkanContext.Vk.CmdDrawIndexedIndirect(this, buffer, offset, drawCount, stride);
         }
 
         public void SetViewportAndScissor(Extent2D extent)

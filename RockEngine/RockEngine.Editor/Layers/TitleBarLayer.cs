@@ -367,6 +367,8 @@ namespace RockEngine.Editor.Layers
         }
         public Task OnAttach()
         {
+            _window.WindowBorder = Silk.NET.Windowing.WindowBorder.Hidden;
+
             return Task.CompletedTask;
         }
 

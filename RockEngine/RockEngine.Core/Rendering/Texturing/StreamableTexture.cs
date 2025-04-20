@@ -6,12 +6,10 @@ namespace RockEngine.Core.Rendering.Texturing
 {
     public class StreamableTexture : Texture
     {
-        internal readonly Lock SyncRoot = new();
+        internal readonly Lock _syncRoot = new();
 
         public bool IsFullyLoaded => LoadedMipLevels == TotalMipLevels;
         private readonly uint _currentMaxMipLevel;
-
-        private readonly List<IDisposable> _pendingDisposals = new();
 
         public StreamableTexture(
             VulkanContext context,
@@ -26,7 +24,7 @@ namespace RockEngine.Core.Rendering.Texturing
 
         public unsafe void UpdateMipLevel(uint targetMip, IntPtr data, ulong size)
         {
-            lock (SyncRoot)
+            lock (_syncRoot)
             {
                 // Ensure mipLevel is within valid range
                 if (targetMip >= TotalMipLevels)
@@ -46,8 +44,7 @@ namespace RockEngine.Core.Rendering.Texturing
                 // Clamp loaded levels to never exceed total mips
                 LoadedMipLevels = Math.Min(targetMip + 1, TotalMipLevels);
 
-                _pendingDisposals.Add(oldView);
-                _pendingDisposals.Add(oldSampler);
+                _context.AddDisposal(oldView);
 
                 // Create view for loaded mips (base=0, levelCount=LoadedMipLevels)
                 _imageView = Image.CreateView(
@@ -62,15 +59,6 @@ namespace RockEngine.Core.Rendering.Texturing
             }
         }
 
-        public List<IDisposable> GetPendingDisposals()
-        {
-            lock (SyncRoot)
-            {
-                var copy = new List<IDisposable>(_pendingDisposals);
-                _pendingDisposals.Clear();
-                return copy;
-            }
-        }
 
         public ValueTask StreamNextMipAsync(TextureStreamer streamer, float priority)
         {
@@ -83,7 +71,7 @@ namespace RockEngine.Core.Rendering.Texturing
 
         public void EvictMip(uint mipLevel)
         {
-            lock (SyncRoot)
+            lock (_syncRoot)
             {
                 if (mipLevel >= LoadedMipLevels) return;
 

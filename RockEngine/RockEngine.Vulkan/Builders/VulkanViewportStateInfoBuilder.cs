@@ -25,8 +25,8 @@ namespace RockEngine.Vulkan.Builders
             {
                 SType = StructureType.PipelineViewportStateCreateInfo,
                 ScissorCount = (uint)_scissors.Count,
-                PScissors = (Rect2D*)CreateMemoryHandle(_scissors.ToArray()).Pointer,
-                PViewports = (Viewport*)CreateMemoryHandle(_viewports.ToArray()).Pointer,
+                PScissors = _scissors.Count > 0? (Rect2D*)CreateMemoryHandle(_scissors.ToArray()).Pointer :null,
+                PViewports = _viewports.Count> 0 ? (Viewport*)CreateMemoryHandle(_viewports.ToArray()).Pointer: null,
                 ViewportCount = (uint)_viewports.Count
             }]);
         }

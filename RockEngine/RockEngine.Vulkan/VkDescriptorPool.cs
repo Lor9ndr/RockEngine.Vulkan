@@ -2,7 +2,7 @@
 
 namespace RockEngine.Vulkan
 {
-    public record VkDescriptorPool : VkObject<DescriptorPool>
+    public class VkDescriptorPool : VkObject<DescriptorPool>
     {
         private readonly VulkanContext _context;
 
@@ -20,7 +20,7 @@ namespace RockEngine.Vulkan
             return new VkDescriptorPool(context, descriptorPool);
         }
 
-        public unsafe DescriptorSet AllocateDescriptorSet(DescriptorSetLayout setLayout)
+        public unsafe VkDescriptorSet AllocateDescriptorSet(DescriptorSetLayout setLayout)
         {
             var allocInfo = new DescriptorSetAllocateInfo
             {
@@ -31,21 +31,21 @@ namespace RockEngine.Vulkan
             };
             VulkanContext.Vk.AllocateDescriptorSets(_context.Device, in allocInfo, out var descriptorSet)
                 .VkAssertResult("Failed to allocate descriptor set");
-            return descriptorSet;
-        }
 
-        public unsafe DescriptorSet AllocateDescriptorSet(VkDescriptorSetLayout setLayout)
+            return new VkDescriptorSet(_context, this, in descriptorSet);
+        }
+        public unsafe Result AllocateDescriptorSet(DescriptorSetLayout setLayout, out VkDescriptorSet set)
         {
             var allocInfo = new DescriptorSetAllocateInfo
             {
                 SType = StructureType.DescriptorSetAllocateInfo,
                 DescriptorPool = this,
                 DescriptorSetCount = 1,
-                PSetLayouts = &setLayout.DescriptorSetLayout
+                PSetLayouts = &setLayout
             };
-            VulkanContext.Vk.AllocateDescriptorSets(_context.Device, in allocInfo, out var descriptorSet)
-                .VkAssertResult("Failed to allocate descriptor set");
-            return descriptorSet;
+            var result = VulkanContext.Vk.AllocateDescriptorSets(_context.Device, in allocInfo, out var descriptorSet);
+            set = new VkDescriptorSet(_context, this, in descriptorSet);
+            return result;
         }
 
         protected override unsafe void Dispose(bool disposing)

@@ -17,14 +17,18 @@ namespace RockEngine.Vulkan
         public ISurfaceHandler Surface { get; }
         public int MaxFramesPerFlight { get; internal set; }
         public SamplerCache SamplerCache { get; }
+        public SubmitContext SubmitContext { get; }
+
         private static VulkanContext? _renderingContext;
+
         public static VulkanContext GetCurrent() => _renderingContext ?? throw new InvalidOperationException("Rendering context was not created yet");
 
         public static ref AllocationCallbacks CustomAllocator<T>() => ref Vulkan.CustomAllocator.CreateCallbacks<T>();
 
         private static readonly string[] _validationLayers = ["VK_LAYER_KHRONOS_validation"];
         private static DebugUtilsMessengerCallbackFunctionEXT _debugCallback;
-        private readonly object _submissionLock = new object();
+        private readonly Stack<IDisposable> _pendingDisposals = new Stack<IDisposable>();
+        private readonly ThreadLocal<VkCommandPool> _threadCommandPools;
 
 
         public VulkanContext(IWindow window, string appName, int maxFramesPerFlight = 3)
@@ -40,6 +44,27 @@ namespace RockEngine.Vulkan
             MaxFramesPerFlight = maxFramesPerFlight;
             _renderingContext = this;
             SamplerCache = new SamplerCache(this);
+            SubmitContext = new SubmitContext(this);
+
+            _threadCommandPools = new ThreadLocal<VkCommandPool>(() => CreateCommandPool(CommandPoolCreateFlags.TransientBit));
+        }
+        public VkCommandPool GetThreadLocalCommandPool() => _threadCommandPools!.Value!;
+
+        public void AddDisposal(IDisposable disposable)
+        {
+            _pendingDisposals.Push(disposable);
+        }
+
+        public void DisposePendingDisposals()
+        {
+            while (_pendingDisposals.TryPop(out var disposable))
+            {
+                disposable.Dispose();
+            }
+        }
+        private VkCommandPool CreateCommandPool(CommandPoolCreateFlags createFlags)
+        {
+            return VkCommandPool.Create(this, createFlags, Device.QueueFamilyIndices.GraphicsFamily.Value);
         }
 
         private SDLSurfaceHandler CreateSurface(IWindow window)
@@ -162,10 +187,8 @@ namespace RockEngine.Vulkan
                     SType = StructureType.SubmitInfo,
                     CommandBufferCount = 1,
                     PCommandBuffers = &cmd
-                }
-                   ,
-                    fence
-                );
+                }, fence);
+
                 cmdBuffer.Dispose();
             }
         }

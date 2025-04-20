@@ -32,7 +32,7 @@ namespace RockEngine.Tests
             public bool UpdateCalled;
             public ManualResetEventSlim LoadedEvent = new();
 
-            public VulkanContext RenderingContext => _renderingContext;
+            public VulkanContext RenderingContext => _context;
             public IWindow Window => _window;
 
             public TestApplication() : base("TEST", 800, 600)

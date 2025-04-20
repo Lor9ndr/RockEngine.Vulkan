@@ -1,10 +1,7 @@
-﻿using RockEngine.Core.Rendering;
-using RockEngine.Core.Rendering.Contexts;
-using RockEngine.Vulkan;
+﻿using RockEngine.Vulkan;
 
 using Silk.NET.Vulkan;
 
-using System;
 using System.Runtime.CompilerServices;
 
 namespace RockEngine.Core

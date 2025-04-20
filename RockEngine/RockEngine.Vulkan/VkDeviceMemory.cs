@@ -2,7 +2,7 @@
 
 namespace RockEngine.Vulkan
 {
-    public record VkDeviceMemory : VkObject<DeviceMemory>
+    public class VkDeviceMemory : VkObject<DeviceMemory>
     {
         private readonly VulkanContext _context;
         private readonly DeviceMemory _memory;

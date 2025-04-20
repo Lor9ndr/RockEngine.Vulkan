@@ -10,7 +10,7 @@ using static RockEngine.Vulkan.ISurfaceHandler;
 
 namespace RockEngine.Vulkan
 {
-    internal record SDLSurfaceHandler : VkObject<SurfaceKHR>, ISurfaceHandler
+    internal class SDLSurfaceHandler : VkObject<SurfaceKHR>, ISurfaceHandler
     {
         private readonly IWindow _window;
         private readonly VulkanContext _context;

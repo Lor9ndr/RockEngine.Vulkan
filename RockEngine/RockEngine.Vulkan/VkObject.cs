@@ -3,12 +3,14 @@ using Silk.NET.Vulkan;
 
 namespace RockEngine.Vulkan
 {
-    public abstract record VkObject<T> : IDisposable where T : struct
+    public abstract class VkObject<T> : IDisposable where T : struct
     {
         protected T _vkObject;
         protected bool _disposed;
         public T VkObjectNative => _vkObject;
         protected Vk Vk => VulkanContext.Vk;
+
+        public bool IsDisposed { get => _disposed; protected set => _disposed = value; }
 
         protected VkObject(in T vkObject)
         {
@@ -30,6 +32,7 @@ namespace RockEngine.Vulkan
             // Do not change this code. Put cleanup code in 'Dispose(bool disposing)' method
             Dispose(disposing: true);
             _vkObject = default;
+            _disposed = true;
             GC.SuppressFinalize(this);
         }
         public static implicit operator T(VkObject<T> value) => value._vkObject;

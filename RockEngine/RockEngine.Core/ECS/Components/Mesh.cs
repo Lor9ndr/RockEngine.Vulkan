@@ -64,7 +64,7 @@ namespace RockEngine.Core.ECS.Components
                     (ulong)(Unsafe.SizeOf<uint>() * Indices.Length));
             }
 
-            batch.Submit(submitContext);
+            batch.Submit();
             await submitContext.FlushAsync();
         }
         public override ValueTask Update(Renderer renderer)

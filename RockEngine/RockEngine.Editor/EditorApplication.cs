@@ -15,9 +15,8 @@ namespace RockEngine.Editor
 
         private async Task Load()
         {
-            _window.WindowBorder = Silk.NET.Windowing.WindowBorder.Hidden;
-            await PushLayer(new TitleBarLayer(_window, _inputContext));
-            await PushLayer(new EditorLayer(_world, _renderingContext, _graphicsEngine, _renderer, _inputContext, _textureStreamer));
+           // await PushLayer(new TitleBarLayer(_window, _inputContext));
+            await PushLayer(new EditorLayer(_world, _context, _graphicsEngine, _renderer, _inputContext, _textureStreamer));
         }
     }
 }

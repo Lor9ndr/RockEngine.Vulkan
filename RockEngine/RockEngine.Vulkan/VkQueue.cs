@@ -5,7 +5,7 @@ using Semaphore = Silk.NET.Vulkan.Semaphore;
 
 namespace RockEngine.Vulkan
 {
-    public record VkQueue : VkObject<Queue>
+    public class VkQueue : VkObject<Queue>
     {
         internal readonly Lock _queueLock = new Lock();
         private readonly VulkanContext _context;

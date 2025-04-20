@@ -44,7 +44,7 @@ namespace RockEngine.Editor.Layers
             _renderer = renderer;
             _inputContext = inputContext;
             _textureStreamer = textureStreamer;
-            _imGuiController = new ImGuiController(context, graphicsEngine, _renderer.RenderPass, _inputContext, graphicsEngine.Swapchain.Extent.Width, graphicsEngine.Swapchain.Extent.Height);
+            _imGuiController = new ImGuiController(context, graphicsEngine, renderer.BindingManager, _inputContext, graphicsEngine.Swapchain.Extent.Width, graphicsEngine.Swapchain.Extent.Height, renderer.SwapchainTarget);
         }
 
         public async Task OnAttach()
@@ -69,7 +69,6 @@ namespace RockEngine.Editor.Layers
                 var mesh = entity.AddComponent<Mesh>();
                 mesh.SetMeshData(item.Vertices, item.Indices);
                 mesh.Material = new Material(_pipeline, item.Textures);
-                mesh.Material.GeometryPipeline = _pipeline;
             }
 
             for (int i = 0; i < 100; i++)
@@ -147,38 +146,24 @@ namespace RockEngine.Editor.Layers
             binding_desc.Stride = (uint)Unsafe.SizeOf<Vertex>();
             binding_desc.InputRate = VertexInputRate.Vertex;
 
-            var color_attachments = new[]
-             {
-                new PipelineColorBlendAttachmentState
+            var colorBlendAttachments = new PipelineColorBlendAttachmentState[3];
+            for (int i = 0; i < GBuffer.ColorAttachmentFormats.Length; i++)
+            {
+                colorBlendAttachments[i] = new PipelineColorBlendAttachmentState
                 {
-                    BlendEnable = false,
                     ColorWriteMask = ColorComponentFlags.RBit |
-                                      ColorComponentFlags.GBit |
-                                      ColorComponentFlags.BBit |
-                                      ColorComponentFlags.ABit
-                },
-                new PipelineColorBlendAttachmentState
-                {
-                    BlendEnable = false,
-                    ColorWriteMask = ColorComponentFlags.RBit |
-                                      ColorComponentFlags.GBit |
-                                      ColorComponentFlags.BBit |
-                                      ColorComponentFlags.ABit
-                },
-                new PipelineColorBlendAttachmentState
-                {
-                    BlendEnable = false,
-                    ColorWriteMask = ColorComponentFlags.RBit |
-                                      ColorComponentFlags.GBit |
-                                      ColorComponentFlags.BBit |
-                                      ColorComponentFlags.ABit
-                }
-            };
+                                    ColorComponentFlags.GBit |
+                                    ColorComponentFlags.BBit |
+                                    ColorComponentFlags.ABit,
+                    BlendEnable = false
+                };
+            }
 
-            using GraphicsPipelineBuilder pipelineBuilder = new GraphicsPipelineBuilder(_context, "Main")
+
+            using GraphicsPipelineBuilder pipelineBuilder = new GraphicsPipelineBuilder(_context, "Geometry")
                  .WithShaderModule(vkShaderModuleVert)
                  .WithShaderModule(vkShaderModuleFrag)
-                 .WithRasterizer(new VulkanRasterizerBuilder())
+                 .WithRasterizer(new VulkanRasterizerBuilder().CullFace(CullModeFlags.None))
                  .WithInputAssembly(new VulkanInputAssemblyBuilder().Configure())
                  .WithVertexInputState(new VulkanPipelineVertexInputStateBuilder()
                      .Add(Vertex.GetBindingDescription(), Vertex.GetAttributeDescriptions()))
@@ -191,15 +176,17 @@ namespace RockEngine.Editor.Layers
                      }))
                  .WithMultisampleState(new VulkanMultisampleStateInfoBuilder().Configure(false, SampleCountFlags.Count1Bit))
                  .WithColorBlendState(new VulkanColorBlendStateBuilder()
-                     .AddAttachment(color_attachments))
+                     .AddAttachment(colorBlendAttachments))
                  .AddRenderPass(_renderer.RenderPass.RenderPass)
                  .WithPipelineLayout(_pipelineLayout)
+                 .WithSubpass(0)
                  .WithDynamicState(new PipelineDynamicStateBuilder()
                     .AddState(DynamicState.Viewport)
                     .AddState(DynamicState.Scissor)
                     )
                  .AddDepthStencilState(new PipelineDepthStencilStateCreateInfo()
                  {
+                     SType = StructureType.PipelineDepthStencilStateCreateInfo,
                      DepthTestEnable = true,
                      DepthWriteEnable = true,
                      DepthCompareOp = CompareOp.Less,
@@ -221,6 +208,21 @@ namespace RockEngine.Editor.Layers
             DrawFps();
             DrawAllocationStats();
             DrawPerformanceMetrics();
+            if (ImGui.Begin("RENDER"))
+            {
+                var debugCam = _world.GetEntities().First(s=>s.GetComponent<DebugCamera>() is not null).GetComponent<DebugCamera>();
+                var renderTarget = debugCam.RenderTarget;
+                var texId = _imGuiController.GetTextureID(renderTarget.OutputTexture);
+
+                // Get proper size maintaining aspect ratio
+                var imageSize = new Vector2(renderTarget.OutputTexture.Image.Width, renderTarget.OutputTexture.Image.Height);
+                var availableSize = ImGui.GetContentRegionAvail();
+                var scale = Math.Min(availableSize.X / imageSize.X, availableSize.Y / imageSize.Y);
+                var displaySize = imageSize * scale;
+
+                ImGui.Image(texId, displaySize);
+                ImGui.End();
+            }
         }
         public void OnRender(VkCommandBuffer vkCommandBuffer)
         {
@@ -325,9 +327,9 @@ namespace RockEngine.Editor.Layers
                 // Display allocation counts
                 ImGui.Text($"Total Allocations: {totalAllocationCount}");
                 ImGui.Text($"Active Allocations: {currentActiveAllocations}");
+                ImGui.End();
             }
 
-            ImGui.End();
         }
 
 

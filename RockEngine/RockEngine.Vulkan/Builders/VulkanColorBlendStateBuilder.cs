@@ -38,5 +38,24 @@ namespace RockEngine.Vulkan.Builders
                 AttachmentCount = (uint)_attachments.Count,
             }]);
         }
+
+        public VulkanColorBlendStateBuilder AddDefaultAttachment()
+        {
+            AddAttachment((new PipelineColorBlendAttachmentState
+            {
+                BlendEnable = false,  // Default to no blending
+                SrcColorBlendFactor = BlendFactor.SrcAlpha,
+                DstColorBlendFactor = BlendFactor.OneMinusSrcAlpha,
+                ColorBlendOp = BlendOp.Add,
+                SrcAlphaBlendFactor = BlendFactor.One,
+                DstAlphaBlendFactor = BlendFactor.Zero,
+                AlphaBlendOp = BlendOp.Add,
+                ColorWriteMask = ColorComponentFlags.RBit |
+                                ColorComponentFlags.GBit |
+                                ColorComponentFlags.BBit |
+                                ColorComponentFlags.ABit
+            }));
+            return this;
+        }
     }
 }

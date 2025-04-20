@@ -2,22 +2,27 @@
 
 using Silk.NET.Vulkan;
 
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-
 namespace RockEngine.Core.Rendering.ResourceBindings
 {
-    public class InputAttachmentBinding : ResourceBinding
+    public class InputAttachmentBinding : ResourceBinding, IDisposable
     {
-        public VkImageView[] Attachments { get; }
+        private VkImageView[]? _attachments;
+
+        public VkImageView[]? Attachments => _attachments;
 
         public InputAttachmentBinding(uint setLocation, uint bindingLocation, params VkImageView[] attachments)
             : base(setLocation, bindingLocation)
         {
-            Attachments = attachments;
+            _attachments = attachments;
+            foreach (var attachment in Attachments)
+            {
+                attachment.WasUpdated += Attachment_WasUpdated;
+            }
+        }
+
+        private void Attachment_WasUpdated()
+        {
+            IsDirty = true;
         }
 
         public override unsafe void UpdateDescriptorSet(VulkanContext context)
@@ -47,6 +52,17 @@ namespace RockEngine.Core.Rendering.ResourceBindings
             }
 
             VulkanContext.Vk.UpdateDescriptorSets(context.Device, (uint)Attachments.Length, writes, 0, null);
+            IsDirty = false;
+        }
+
+        public void Dispose()
+        {
+            foreach (var item in Attachments)
+            {
+                item.WasUpdated -= Attachment_WasUpdated;
+            }
+            _attachments = null;
+            GC.SuppressFinalize(this);
         }
     }
 }

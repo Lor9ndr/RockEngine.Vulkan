@@ -20,8 +20,14 @@ namespace RockEngine.Vulkan
                 sampler = VkSampler.Create(_context, ci);
                 _samplers[key] = sampler;
             }
+            if (sampler.IsDisposed)
+            {
+                sampler = VkSampler.Create(_context, ci);
+                _samplers[key] = sampler;
+            }
             return sampler;
         }
+        
 
         private readonly record struct SamplerKey(SamplerCreateInfo CreateInfo);
 

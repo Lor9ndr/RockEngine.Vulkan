@@ -46,15 +46,15 @@ namespace RockEngine.Core.Rendering.Managers
             setsToBind[index++] = descriptorSet;
         }
 
-        private DescriptorSet GetOrCreateDescriptorSet(VkPipelineLayout pipelineLayout, uint setLocation, PerSetBindings perSetBindings)
+        private VkDescriptorSet GetOrCreateDescriptorSet(VkPipelineLayout pipelineLayout, uint setLocation, PerSetBindings perSetBindings)
         {
             // Проверяем, есть ли актуальный набор дескрипторов
-            var existingSet = perSetBindings.FirstOrDefault(b => b.DescriptorSet.Handle != default)?.DescriptorSet;
+            var existingSet = perSetBindings.FirstOrDefault(b => b.DescriptorSet != null)?.DescriptorSet;
             bool needsUpdate = perSetBindings.Any(b => b.IsDirty);
 
-            if (existingSet.HasValue && !needsUpdate)
+            if (existingSet is not null && !needsUpdate)
             {
-                return existingSet.Value;
+                return existingSet;
             }
 
             // Выделяем новый набор или обновляем существующий
@@ -86,18 +86,18 @@ namespace RockEngine.Core.Rendering.Managers
                 HandleUniformBufferBinding(uboBinding, pipelineLayout);
             }
 
-            if (binding.DescriptorSet.Handle == default)
+            if (binding.DescriptorSet is null)
             {
                 AllocateAndUpdateDescriptorSet(binding, pipelineLayout);
             }
 
-            descriptorSets[index++] = binding.DescriptorSet;
+            descriptorSets[index++] = binding.DescriptorSet!;
         }
 
         private static void HandleUniformBufferBinding(UniformBufferBinding uboBinding, VkPipelineLayout pipelineLayout)
         {
             // Check if the descriptor set is already cached for this pipeline layout
-            if (!uboBinding.Buffer.DescriptorSets.TryGetValue(pipelineLayout, out var cachedDescriptorSet) || cachedDescriptorSet.Handle == default)
+            if (!uboBinding.Buffer.DescriptorSets.TryGetValue(pipelineLayout, out var cachedDescriptorSet) || cachedDescriptorSet is not null)
             {
                 // If not, cache it
                 uboBinding.Buffer.DescriptorSets[pipelineLayout] = uboBinding.DescriptorSet;

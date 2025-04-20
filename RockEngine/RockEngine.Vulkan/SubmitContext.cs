@@ -1,15 +1,12 @@
 ﻿using RockEngine.Core.Rendering.Managers;
-using RockEngine.Vulkan;
 
 using Silk.NET.Vulkan;
 
 using System.Collections.Concurrent;
-using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using System.Threading;
 
-namespace RockEngine.Core.Rendering.Contexts
+namespace RockEngine.Vulkan
 {
     public sealed class SubmitContext : IDisposable
     {
@@ -54,7 +51,7 @@ namespace RockEngine.Core.Rendering.Contexts
                 return batch;
             }
 
-            var newBatch = new UploadBatch(_context, _stagingManager, pool);
+            var newBatch = new UploadBatch(_context, _stagingManager, pool, this);
             _activeBatches.Add(newBatch); // Track new batch
             return newBatch;
         }

@@ -1,6 +1,0 @@
-﻿<Directives xmlns="http://schemas.microsoft.com/netfx/2013/01/metadata">
-  <Application>
-    <Assembly Name="RockEngine.Core" Dynamic="Required All"/>
-    <Assembly Name="RockEngine.Vulkan" Dynamic="Required All"/>
-  </Application>
-</Directives>

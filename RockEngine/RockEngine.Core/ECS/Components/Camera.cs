@@ -1,5 +1,8 @@
 ﻿using RockEngine.Core.Helpers;
 using RockEngine.Core.Rendering;
+using RockEngine.Core.Rendering.RenderTargets;
+
+using Silk.NET.Vulkan;
 
 using System.Numerics;
 
@@ -99,6 +102,10 @@ namespace RockEngine.Core.ECS.Components
             }
         }
 
+
+        public CameraRenderTarget RenderTarget { get; set; }
+
+
         public Camera()
         {
             _fov = MathHelper.DegreesToRadians(90);
@@ -116,7 +123,8 @@ namespace RockEngine.Core.ECS.Components
         {
             _projectionMatrix = Matrix4x4.CreatePerspectiveFieldOfView(_fov, _aspectRatio, _nearClip, _farClip);
             // flipside the perspective because vulkan(or System.Numerics) idk
-            _projectionMatrix[1, 1] *= -1;
+            _projectionMatrix.M22 *= -1;
+
             UpdateViewProjectionMatrix();
         }
 
@@ -143,6 +151,7 @@ namespace RockEngine.Core.ECS.Components
 
         public override ValueTask OnStart(Renderer renderer)
         {
+            renderer.RegisterCamera(this);
             return default;
         }
 
@@ -150,7 +159,6 @@ namespace RockEngine.Core.ECS.Components
         public override ValueTask Update(Renderer renderer)
         {
             UpdateVectors();
-            renderer.CurrentCamera = this;
             return default;
         }
 

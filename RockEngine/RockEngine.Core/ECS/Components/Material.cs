@@ -15,7 +15,6 @@ namespace RockEngine.Core.ECS.Components
         public VkPipeline Pipeline;
         public Texture[] Textures;
 
-        public VkPipeline GeometryPipeline { get; set; }
         public BindingCollection Bindings { get; private set; }
 
         public DescriptorSet TexturesDescriptorSet;
@@ -26,13 +25,18 @@ namespace RockEngine.Core.ECS.Components
             Bindings = new BindingCollection();
 
             var setLayout = Pipeline.Layout.GetSetLayout(TEXTURE_SET_LOCATION);
-            while (setLayout.Bindings.Length >= textures.Count)
-            {
-                textures.Add(Texture.GetEmptyTexture(VulkanContext.GetCurrent()));
-            }
             Textures = textures.ToArray();
-            // Add texture bindings to the bindings list
-            Bindings.Add(new TextureBinding(TEXTURE_SET_LOCATION, 0, Textures.Take(setLayout.Bindings.Length).ToArray()));
+
+            if (setLayout != default)
+            {
+                while (setLayout.Bindings.Length > textures.Count)
+                {
+                    textures.Add(Texture.GetEmptyTexture(VulkanContext.GetCurrent()));
+                }
+                Textures = textures.ToArray();
+
+                Bindings.Add(new TextureBinding(TEXTURE_SET_LOCATION, 0, default, Textures.Take(setLayout.Bindings.Length).ToArray()));
+            }
         }
     }
 
@@ -103,12 +107,19 @@ namespace RockEngine.Core.ECS.Components
         {
             return _setBindings.TryGetValue(set, out bindings);
         }
+
+        internal void RemoveAll(Func<ResourceBinding, bool> value)
+        {
+            foreach (var set in _setBindings)
+            {
+                set.Value.RemoveAll(value);
+            }
+        }
     }
 
     public class PerSetBindings : IEnumerable<ResourceBinding>
     {
-        private readonly SortedList<uint, ResourceBinding> _bindings
-            = new SortedList<uint, ResourceBinding>();
+        private readonly SortedList<uint, ResourceBinding> _bindings = new SortedList<uint, ResourceBinding>();
 
         public uint Set { get; }
         public int Count => _bindings.Count;
@@ -129,6 +140,24 @@ namespace RockEngine.Core.ECS.Components
         public bool Remove(ResourceBinding binding)
         {
             return _bindings.Remove(binding.BindingLocation);
+        }
+        public unsafe void RemoveAll(Func<ResourceBinding, bool> value)
+        {
+            var locations = stackalloc uint[Count];
+            int i = 0;
+            foreach (var item in _bindings)
+            {
+                if (value.Invoke(item.Value))
+                {
+                    locations[i] = item.Key;
+                    i++;
+                }
+            }
+            while(i > 0)
+            {
+                _bindings.Remove(locations[i]);
+                i--;
+            }
         }
 
         public IEnumerator<ResourceBinding> GetEnumerator() => _bindings.Values.GetEnumerator();

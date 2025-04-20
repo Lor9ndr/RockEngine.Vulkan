@@ -8,7 +8,7 @@ using Buffer = Silk.NET.Vulkan.Buffer;
 
 namespace RockEngine.Vulkan
 {
-    public record VkBuffer : VkObject<Buffer>
+    public class VkBuffer : VkObject<Buffer>
     {
         private readonly VulkanContext _context;
         private readonly VkDeviceMemory _deviceMemory;
@@ -46,7 +46,7 @@ namespace RockEngine.Vulkan
                 SharingMode = SharingMode.Exclusive
             };
 
-            VulkanContext.Vk.CreateBuffer(context.Device, in bufferInfo, null, out var bufferHandle)
+            VulkanContext.Vk.CreateBuffer(context.Device, in bufferInfo, in VulkanContext.CustomAllocator<VkBuffer>(), out var bufferHandle)
                 .VkAssertResult("Failed to create buffer");
 
             VulkanContext.Vk.GetBufferMemoryRequirements(context.Device, bufferHandle, out var memRequirements);
@@ -140,6 +140,17 @@ namespace RockEngine.Vulkan
                     CommandBufferCount = 1,
                 };
             });
+        }
+        public unsafe void CopyTo(VkBuffer dstBuffer, UploadBatch batch, ulong srcOffset = 0, ulong dstOffset = 0)
+        {
+            var copyRegion = new BufferCopy
+            {
+                SrcOffset = srcOffset,
+                DstOffset = dstOffset,
+                Size = Size,
+            };
+            VulkanContext.Vk.CmdCopyBuffer(batch.CommandBuffer, this, dstBuffer, 1, in copyRegion);
+          
         }
         public unsafe void AddBufferMemoryBarrier(
             VkCommandBuffer commandBuffer,
@@ -350,7 +361,7 @@ namespace RockEngine.Vulkan
                 {
                     _deviceMemory.Unmap();
                 }
-                VulkanContext.Vk.DestroyBuffer(_context.Device, _vkObject, null);
+                VulkanContext.Vk.DestroyBuffer(_context.Device, _vkObject, in VulkanContext.CustomAllocator<VkBuffer>());
                 _deviceMemory.Dispose();
 
                 _disposed = true;

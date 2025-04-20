@@ -11,11 +11,10 @@ namespace RockEngine.Core.Rendering
     public class GBuffer
     {
         private readonly VulkanContext _context;
-        private VkSwapchain _swapchain;
         private InputAttachmentBinding _attachmentBinding;
-        private readonly BindingManager _bindingManager;
+        private readonly Format _depthFormat;
         private VkPipeline? _pipeline;
-        private readonly GraphicsEngine _graphicsEngine;
+        private Extent2D _size;
 
         public VkImageView[] ColorAttachments { get; private set; }
         public VkImageView DepthAttachment { get; private set; }
@@ -23,7 +22,7 @@ namespace RockEngine.Core.Rendering
         public Texture[] ColorTextures { get; private set; }
         public DescriptorSet[] LightingDescriptorSets { get; private set; }
 
-        private static readonly Format[] ColorAttachmentFormats =
+        public static readonly Format[] ColorAttachmentFormats =
         [
             Format.R16G16B16A16Sfloat,    // Position (RGBA16F) - 8 bytes
             Format.R8G8Unorm,               // Normal (2 bytes)
@@ -33,12 +32,11 @@ namespace RockEngine.Core.Rendering
         public Material Material { get; private set; }
         public VkSampler[] Samplers { get; private set; }
 
-        public GBuffer(VulkanContext context, VkSwapchain swapchain, GraphicsEngine graphicsEngine, BindingManager bindingManager)
+        public GBuffer(VulkanContext context, Extent2D size, Format depthFormat)
         {
             _context = context;
-            _swapchain = swapchain;
-            _graphicsEngine = graphicsEngine;
-            _bindingManager = bindingManager;
+            _size = size;
+            _depthFormat = depthFormat;
 
             Initialize();
         }
@@ -62,11 +60,8 @@ namespace RockEngine.Core.Rendering
             _attachmentBinding = new InputAttachmentBinding(
                 setLocation: 2,
                 bindingLocation: 0,
-                ColorAttachments[0],  // Position
-                ColorAttachments[1],  // Normal
-                ColorAttachments[2]   // Albedo
+                ColorAttachments  // Position + Normal + Albedo
             );
-            _bindingManager.AllocateAndUpdateDescriptorSet(_attachmentBinding, _pipeline.Layout);
             Material.Bindings.Add(_attachmentBinding);
         }
 
@@ -78,24 +73,14 @@ namespace RockEngine.Core.Rendering
                 ColorAttachments[i] = CreateColorAttachment(ColorAttachmentFormats[i]);
             }
             DepthAttachment = CreateDepthAttachment();
-            _context.SubmitSingleTimeCommand(cmd =>
-            {
-                foreach (var attachment in ColorAttachments)
-                {
-                    attachment.Image.TransitionImageLayout(
-                        cmd,
-                        Format.R16G16B16A16Sfloat,
-                        ImageLayout.ShaderReadOnlyOptimal);
-
-                }
-            });
+          
         }
         private VkImageView CreateColorAttachment(Format format)
         {
             var image = VkImage.Create(
                 _context,
-                _swapchain.Extent.Width,
-                _swapchain.Extent.Height,
+                _size.Width,
+                _size.Height,
                 format,
                 ImageTiling.Optimal,
                 ImageUsageFlags.ColorAttachmentBit |
@@ -109,12 +94,13 @@ namespace RockEngine.Core.Rendering
         private VkImageView CreateDepthAttachment()
         {
             var image = VkImage.Create(_context,
-                                            _swapchain.Extent.Width,
-                                            _swapchain.Extent.Height,
-                                            _swapchain.DepthFormat,
-                                            ImageTiling.Optimal,
-                                            ImageUsageFlags.DepthStencilAttachmentBit | ImageUsageFlags.InputAttachmentBit,
-                                            MemoryPropertyFlags.DeviceLocalBit);
+                _size.Width,
+                _size.Height,
+                _depthFormat,
+                ImageTiling.Optimal,
+                ImageUsageFlags.DepthStencilAttachmentBit | ImageUsageFlags.SampledBit,
+                MemoryPropertyFlags.DeviceLocalBit,
+                initialLayout: ImageLayout.Undefined);
 
             return image.CreateView(ImageAspectFlags.DepthBit);
         }
@@ -162,22 +148,13 @@ namespace RockEngine.Core.Rendering
                     _context,
                     ColorAttachments[i].Image,
                     ColorAttachments[i],
-                    Samplers[i], // Use appropriate sampler for each texture
+                    Samplers[i], 
                 null);
-            }
-            foreach (var texture in ColorTextures)
-            {
-                if (texture.Image.CurrentLayout != ImageLayout.ShaderReadOnlyOptimal)
-                {
-                    throw new InvalidOperationException(
-                        $"Texture layout {texture.Image.CurrentLayout} is invalid for descriptor set"
-                    );
-                }
             }
         }
 
 
-        public void Recreate(VkSwapchain swapchain)
+        public void Recreate(Extent2D size)
         {
             _context.Device.GraphicsQueue.WaitIdle();
 
@@ -185,9 +162,7 @@ namespace RockEngine.Core.Rendering
             foreach (var attachment in ColorAttachments) attachment?.Dispose();
             foreach (var texture in ColorTextures) texture?.Dispose();
             DepthAttachment?.Dispose();
-
-            // Update swapchain reference
-            _swapchain = swapchain;
+            _size = size;
 
             CreateAttachments();
             CreateTextures();

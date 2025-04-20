@@ -7,10 +7,11 @@ namespace RockEngine.Core.ECS
     {
         private static ulong _id = 0;
 
-        internal ulong ID;
+        public readonly ulong ID;
 
         private readonly List<IComponent> _components = [];
         public Transform Transform { get; private set; }
+        public RenderLayerType Layer { get; private set; } = RenderLayerType.Opaque;
 
         public event Action OnDestroy;
 

@@ -4,7 +4,7 @@ using System.Runtime.InteropServices;
 
 namespace RockEngine.Vulkan
 {
-    public record VkInstance : VkObject<Instance>
+    public class VkInstance : VkObject<Instance>
     {
         public DebugUtilsMessengerEXT? DebugMessenger { get; set; }
 

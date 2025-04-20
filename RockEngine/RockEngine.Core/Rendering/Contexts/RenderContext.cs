@@ -1,5 +1,4 @@
-﻿// RenderContext.cs
-using RockEngine.Core.ECS.Components;
+﻿using RockEngine.Core.ECS.Components;
 using RockEngine.Core.Rendering.Managers;
 using RockEngine.Core.Rendering.ResourceBindings;
 using RockEngine.Vulkan;
@@ -83,8 +82,8 @@ namespace RockEngine.Core.Rendering.Contexts
             _cmdBuffer.DrawIndirect(
                 indirectBuffer.Buffer,
                 drawCount,
-                (uint)Unsafe.SizeOf<DrawIndexedIndirectCommand>()
-            );
+                0,
+                (uint)Unsafe.SizeOf<DrawIndexedIndirectCommand>());
         }
 
         public void EndFrame()

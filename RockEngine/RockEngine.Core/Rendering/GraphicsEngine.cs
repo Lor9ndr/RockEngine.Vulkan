@@ -1,4 +1,5 @@
-﻿using RockEngine.Vulkan;
+﻿using RockEngine.Core.Rendering.Managers;
+using RockEngine.Vulkan;
 
 using Silk.NET.Vulkan;
 
@@ -10,7 +11,6 @@ namespace RockEngine.Core.Rendering
         private readonly VkCommandPool _commandBufferPool;
         private readonly VkSwapchain _swapchain;
         private readonly RenderPassManager _renderPassManager;
-        private uint _currentImageIndex;
 
         public VkSwapchain Swapchain => _swapchain;
 
@@ -18,7 +18,7 @@ namespace RockEngine.Core.Rendering
 
         public RenderPassManager RenderPassManager => _renderPassManager;
 
-        public uint CurrentImageIndex { get => _currentImageIndex; private set => _currentImageIndex = value; }
+        public uint CurrentImageIndex { get => _swapchain.CurrentImageIndex; }
 
         private readonly VkCommandBuffer[] _renderCommandBuffers;
         public GraphicsEngine(VulkanContext renderingContext)
@@ -48,7 +48,7 @@ namespace RockEngine.Core.Rendering
                 return null;
             }
 
-            var result = _swapchain.AcquireNextImage(ref _currentImageIndex)
+            var result = _swapchain.AcquireNextImage()
                .VkAssertResult("Failed to acquire swap chain image!", Result.SuboptimalKhr, Result.ErrorOutOfDateKhr);
 
             if (result == Result.ErrorOutOfDateKhr)
@@ -71,9 +71,10 @@ namespace RockEngine.Core.Rendering
             return commandBuffer;
         }
 
-        public void Submit(params CommandBuffer[] commandBuffers)
+        public void SubmitAndPresent(params CommandBuffer[] commandBuffers)
         {
-            _swapchain.SubmitCommandBuffers(commandBuffers, _currentImageIndex);
+            _swapchain.SubmitCommandBuffers(commandBuffers);
+            _swapchain.Present();
         }
 
         public void End(VkCommandBuffer commandBuffer)

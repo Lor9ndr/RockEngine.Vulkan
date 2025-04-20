@@ -1,11 +1,17 @@
 ﻿using ImGuiNET;
 
+using RockEngine.Core.Extensions.Builders;
+using RockEngine.Core.Rendering.Managers;
+using RockEngine.Core.Rendering.RenderTargets;
+using RockEngine.Core.Rendering.ResourceBindings;
 using RockEngine.Core.Rendering.Texturing;
 using RockEngine.Vulkan;
 using RockEngine.Vulkan.Builders;
 
 using Silk.NET.Input;
 using Silk.NET.Vulkan;
+
+using SkiaSharp;
 
 using System.Numerics;
 using System.Runtime.CompilerServices;
@@ -25,32 +31,41 @@ namespace RockEngine.Core.Rendering.ImGuiRendering
         private readonly VkBuffer?[] _vertexBuffers;
         private readonly VkBuffer?[] _indexBuffers;
         private bool _frameBegun;
-        private readonly EngineRenderPass _renderPass;
+        private VkRenderPass _renderPass;
+        private readonly BindingManager _bindingManager;
         private VkPipeline _pipeline;
         private readonly Queue<char> _pressedChars = new Queue<char>();
         private readonly ulong _bufferMemoryAlignment;
         private Texture _fontTexture;
-        private DescriptorSet _fontTextureDescriptorSet;
+        private VkDescriptorSet _fontTextureDescriptorSet;
+        private Dictionary<Texture, (GCHandle, TextureBinding)> _textures = new Dictionary<Texture, (GCHandle, TextureBinding)>();
+        private RenderTarget _uiRenderTarget;
+        private VkFrameBuffer[] _framebuffers;
 
-        public unsafe ImGuiController(VulkanContext vkContext, GraphicsEngine graphicsEngine, EngineRenderPass renderPass, IInputContext inputContext, uint width, uint height)
+        public unsafe ImGuiController(VulkanContext vkContext, GraphicsEngine graphicsEngine,  BindingManager bindingManager, IInputContext inputContext, uint width, uint height, RenderTarget renderTarget)
         {
             _vkContext = vkContext;
-            _renderPass = renderPass;
+            _bindingManager = bindingManager;
             _graphicsEngine = graphicsEngine;
             _input = inputContext;
+            _uiRenderTarget = renderTarget;
+            _renderPass = _uiRenderTarget.RenderPass;
             ImGui.CreateContext();
             var io = ImGui.GetIO();
             io.Fonts.AddFontDefault();
             _vertexBuffers = new VkBuffer[_vkContext.MaxFramesPerFlight];
             _indexBuffers = new VkBuffer[_vkContext.MaxFramesPerFlight];
             CreateDescriptorPool();
-            CreateFontResources();
-
             CreateDeviceObjects();
+            CreateFontResources();
             CreateDescriptorSet();
             ApplyDarkTheme();
             ImGui.GetIO().DisplaySize = new Vector2(width, height);
             _input.Keyboards[0].KeyChar += (s, c) => PressChar(c);
+
+
+            // Create dedicated UI render target
+
 
 
             io.ConfigFlags |= ImGuiConfigFlags.DockingEnable;
@@ -211,7 +226,7 @@ namespace RockEngine.Core.Rendering.ImGuiRendering
 
         private unsafe void RenderImDrawData(ImDrawDataPtr drawData, VkCommandBuffer commandBuffer, Extent2D swapChainExtent)
         {
-            // INJECT INTO RENDERER class somehow
+
 
             ref var vertexBuffer = ref _vertexBuffers[_graphicsEngine.CurrentImageIndex];
             ref var indexBuffer = ref _indexBuffers![_graphicsEngine.CurrentImageIndex];
@@ -232,11 +247,11 @@ namespace RockEngine.Core.Rendering.ImGuiRendering
 
                 for (int n = 0; n < drawData.CmdListsCount; n++)
                 {
-                    ImDrawList* cmd_list = drawData.CmdLists[n];
-                    Unsafe.CopyBlock(vtx_dst, cmd_list->VtxBuffer.Data.ToPointer(), (uint)cmd_list->VtxBuffer.Size * (uint)sizeof(ImDrawVert));
-                    Unsafe.CopyBlock(idx_dst, cmd_list->IdxBuffer.Data.ToPointer(), (uint)cmd_list->IdxBuffer.Size * sizeof(ushort));
-                    vtx_dst += cmd_list->VtxBuffer.Size;
-                    idx_dst += cmd_list->IdxBuffer.Size;
+                    var cmd_list = drawData.CmdLists[n];
+                    Unsafe.CopyBlock(vtx_dst, cmd_list.VtxBuffer.Data.ToPointer(), (uint)cmd_list.VtxBuffer.Size * (uint)sizeof(ImDrawVert));
+                    Unsafe.CopyBlock(idx_dst, cmd_list.IdxBuffer.Data.ToPointer(), (uint)cmd_list.IdxBuffer.Size * sizeof(ushort));
+                    vtx_dst += cmd_list.VtxBuffer.Size;
+                    idx_dst += cmd_list.IdxBuffer.Size;
                 }
                 vertexBuffer.Flush();
                 indexBuffer.Flush();
@@ -246,17 +261,6 @@ namespace RockEngine.Core.Rendering.ImGuiRendering
 
             // Setup desired Vulkan state
             VulkanContext.Vk.CmdBindPipeline(commandBuffer, PipelineBindPoint.Graphics, _pipeline);
-            DescriptorSet descriptorset = _fontTextureDescriptorSet;
-            uint setOffset = 0;
-            VulkanContext.Vk.CmdBindDescriptorSets(commandBuffer,
-                                                      PipelineBindPoint.Graphics,
-                                                      _pipelineLayout,
-                                                      0,
-                                                      1,
-                                                      in descriptorset,
-                                                      setOffset,
-                                                      in setOffset);
-
             // Bind Vertex And Index Buffer:
             if (drawData.TotalVtxCount > 0)
             {
@@ -286,6 +290,17 @@ namespace RockEngine.Core.Rendering.ImGuiRendering
             VulkanContext.Vk.CmdPushConstants(commandBuffer, _pipelineLayout, ShaderStageFlags.VertexBit, sizeof(float) * 0, sizeof(float) * 2, scale);
             VulkanContext.Vk.CmdPushConstants(commandBuffer, _pipelineLayout, ShaderStageFlags.VertexBit, sizeof(float) * 2, sizeof(float) * 2, translate);
 
+            var fontSet = _fontTextureDescriptorSet.VkObjectNative;
+            VulkanContext.Vk.CmdBindDescriptorSets(
+                commandBuffer,
+                PipelineBindPoint.Graphics,
+                _pipelineLayout,
+                0, // First set
+                1, // Descriptor set count
+                in fontSet, // Pointer to descriptor set
+                0,
+                null
+            );
             // Will project scissor/clipping rectangles into framebuffer space
             Vector2 clipOff = drawData.DisplayPos;         // (0,0) unless using multi-viewports
             Vector2 clipScale = drawData.FramebufferScale; // (1,1) unless using retina display which are often (2,2)
@@ -296,14 +311,33 @@ namespace RockEngine.Core.Rendering.ImGuiRendering
             int indexOffset = 0;
             for (int n = 0; n < drawData.CmdListsCount; n++)
             {
-                ImDrawList* cmd_list = drawData.CmdLists[n];
-                for (int cmd_i = 0; cmd_i < cmd_list->CmdBuffer.Size; cmd_i++)
+                var cmd_list = drawData.CmdLists[n];
+                for (int cmd_i = 0; cmd_i < cmd_list.CmdBuffer.Size; cmd_i++)
                 {
-                    ref ImDrawCmd pcmd = ref cmd_list->CmdBuffer.Ref<ImDrawCmd>(cmd_i);
-                    if (pcmd.ElemCount == 0)
+                    ImDrawCmdPtr pcmd = cmd_list.CmdBuffer[cmd_i];
+                    if (pcmd.ElemCount == 0) continue;
+
+                    // Get the descriptor set from the pinned handle
+                    VkDescriptorSet descriptor = default;
+                    var handle = GCHandle.FromIntPtr(pcmd.TextureId);
+                    descriptor = (VkDescriptorSet)handle.Target;
+                    if (descriptor is null)
                     {
                         continue;
                     }
+                    var descriptorHandle = descriptor.VkObjectNative;
+
+                    VulkanContext.Vk.CmdBindDescriptorSets(
+                        commandBuffer,
+                        PipelineBindPoint.Graphics,
+                        _pipelineLayout,
+                        0, // First set
+                        1, // Descriptor set count
+                        in descriptorHandle, // Pointer to descriptor set
+                        0,
+                        null
+                    );
+
 
                     // Project scissor/clipping rectangles into framebuffer space
                     Vector4 clipRect;
@@ -332,8 +366,8 @@ namespace RockEngine.Core.Rendering.ImGuiRendering
                         VulkanContext.Vk.CmdDrawIndexed(commandBuffer, pcmd.ElemCount, 1, pcmd.IdxOffset + (uint)indexOffset, (int)pcmd.VtxOffset + vertexOffset, 0);
                     }
                 }
-                indexOffset += cmd_list->IdxBuffer.Size;
-                vertexOffset += cmd_list->VtxBuffer.Size;
+                indexOffset += cmd_list.IdxBuffer.Size;
+                vertexOffset += cmd_list.VtxBuffer.Size;
             }
 
         }
@@ -358,7 +392,7 @@ namespace RockEngine.Core.Rendering.ImGuiRendering
         {
             var poolSizes = new[]
             {
-                new DescriptorPoolSize { Type = DescriptorType.CombinedImageSampler, DescriptorCount = 1 }
+                new DescriptorPoolSize { Type = DescriptorType.CombinedImageSampler, DescriptorCount = 1000 }
             };
 
             var poolInfo = new DescriptorPoolCreateInfo
@@ -366,7 +400,8 @@ namespace RockEngine.Core.Rendering.ImGuiRendering
                 SType = StructureType.DescriptorPoolCreateInfo,
                 PoolSizeCount = (uint)poolSizes.Length,
                 PPoolSizes = (DescriptorPoolSize*)Unsafe.AsPointer(ref poolSizes[0]),
-                MaxSets = 1
+                MaxSets = 100,
+                Flags = DescriptorPoolCreateFlags.FreeDescriptorSetBit
             };
 
             _descriptorPool = VkDescriptorPool.Create(_vkContext, in poolInfo);
@@ -406,10 +441,30 @@ namespace RockEngine.Core.Rendering.ImGuiRendering
             _fontTexture = Texture.Create(_vkContext, width, height, Format.R8G8B8A8Unorm, pixels);
 
             // Store our identifier
-            io.Fonts.SetTexID((nint)_fontTexture.Image.VkObjectNative.Handle);
+            io.Fonts.SetTexID(GetTextureID(_fontTexture));
         }
 
-
+        public unsafe nint GetTextureID(Texture texture)
+        {
+            if(_textures.TryGetValue(texture, out var value))
+            {
+                if (value.Item2.IsDirty)
+                {
+                    value.Item1.Free();
+                    _bindingManager.AllocateAndUpdateDescriptorSet(value.Item2, _pipelineLayout);
+                    var newHandle = GCHandle.Alloc(value.Item2.DescriptorSet);
+                    _textures[texture] = (newHandle, value.Item2);
+                    return GCHandle.ToIntPtr(newHandle);
+                }
+                return GCHandle.ToIntPtr(value.Item1);
+            }
+            var binding = new TextureBinding(0,0, ImageLayout.ShaderReadOnlyOptimal, texture);
+            _bindingManager.AllocateAndUpdateDescriptorSet(binding, _pipelineLayout);
+            var handle = GCHandle.Alloc(binding.DescriptorSet);
+            _textures[texture] = (handle, binding);
+            return GCHandle.ToIntPtr(handle);
+        }
+       
         private void CreateDeviceObjects()
         {
             // Create shaders
@@ -419,6 +474,18 @@ namespace RockEngine.Core.Rendering.ImGuiRendering
 
             SetPipeline(vertShaderModule, fragShaderModule);
 
+        }
+        private void CreateFramebuffers()
+        {
+            _framebuffers = new VkFrameBuffer[1]; // Single framebuffer for UI
+            var attachments = new[] { _uiRenderTarget.OutputTexture.ImageView };
+            _framebuffers[0] = VkFrameBuffer.Create(
+                _vkContext,
+                _renderPass,
+                attachments,
+                _uiRenderTarget.Size.Width,
+                _uiRenderTarget.Size.Height
+            );
         }
 
         private unsafe void SetPipeline(VkShaderModule vertShaderModule, VkShaderModule fragShaderModule)
@@ -447,26 +514,20 @@ namespace RockEngine.Core.Rendering.ImGuiRendering
                  .WithInputAssembly(new VulkanInputAssemblyBuilder().Configure())
                  .WithVertexInputState(new VulkanPipelineVertexInputStateBuilder()
                      .Add(binding_desc, [
-                         new VertexInputAttributeDescription()
-                        {
-                            Binding = binding_desc.Binding,
-                            Location = 0,
+                        new VertexInputAttributeDescription {
+                            Location = 0, Binding = 0,
                             Format = Format.R32G32Sfloat,
-                            Offset =  (uint)Marshal.OffsetOf<ImDrawVert>(nameof(ImDrawVert.pos))
+                            Offset = (uint)Marshal.OffsetOf<ImDrawVert>(nameof(ImDrawVert.pos))
                         },
-                        new VertexInputAttributeDescription()
-                        {
-                            Binding = binding_desc.Binding,
-                            Location = 1,
+                        new VertexInputAttributeDescription {
+                            Location = 1, Binding = 0,
                             Format = Format.R32G32Sfloat,
-                            Offset =  (uint)Marshal.OffsetOf<ImDrawVert>(nameof(ImDrawVert.uv))
+                            Offset = (uint)Marshal.OffsetOf<ImDrawVert>(nameof(ImDrawVert.uv))
                         },
-                         new VertexInputAttributeDescription()
-                        {
-                            Binding = binding_desc.Binding,
-                            Location = 2,
+                        new VertexInputAttributeDescription {
+                            Location = 2, Binding = 0,
                             Format = Format.R8G8B8A8Unorm,
-                            Offset =  (uint)Marshal.OffsetOf<ImDrawVert>(nameof(ImDrawVert.col))
+                            Offset = (uint)Marshal.OffsetOf<ImDrawVert>(nameof(ImDrawVert.col))
                         }
                          ]))
                  .WithViewportState(new VulkanViewportStateInfoBuilder()
@@ -475,8 +536,7 @@ namespace RockEngine.Core.Rendering.ImGuiRendering
                  .WithMultisampleState(new VulkanMultisampleStateInfoBuilder().Configure(false, SampleCountFlags.Count1Bit))
                  .WithColorBlendState(new VulkanColorBlendStateBuilder()
                      .AddAttachment(color_attachment))
-                 .AddRenderPass(_renderPass.RenderPass)
-                 .WithSubpass(2)
+                 .AddRenderPass(_renderPass)
                  .WithPipelineLayout(_pipelineLayout)
                  .WithDynamicState(new PipelineDynamicStateBuilder()
                     .AddState(DynamicState.Viewport)
@@ -546,8 +606,6 @@ namespace RockEngine.Core.Rendering.ImGuiRendering
 
             colors[(int)ImGuiCol.Tab] = new Vector4(0.10f, 0.09f, 0.12f, 1.00f);
             colors[(int)ImGuiCol.TabHovered] = new Vector4(0.56f, 0.56f, 0.58f, 1.00f);
-            colors[(int)ImGuiCol.TabDimmed] = new Vector4(0.28f, 0.28f, 0.28f, 1.00f);
-            colors[(int)ImGuiCol.TabDimmedSelectedOverline] = new Vector4(0.07f, 0.10f, 0.15f, 0.97f);
             colors[(int)ImGuiCol.DockingPreview] = new Vector4(0.26f, 0.59f, 0.98f, 0.70f);
             colors[(int)ImGuiCol.DockingEmptyBg] = new Vector4(0.20f, 0.20f, 0.20f, 1.00f);
             colors[(int)ImGuiCol.DragDropTarget] = new Vector4(1.00f, 1.00f, 0.00f, 0.90f);
@@ -568,5 +626,7 @@ namespace RockEngine.Core.Rendering.ImGuiRendering
         {
 
         }
+
+       
     }
 }

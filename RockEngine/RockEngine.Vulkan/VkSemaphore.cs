@@ -5,7 +5,7 @@ using Semaphore = Silk.NET.Vulkan.Semaphore;
 
 namespace RockEngine.Vulkan
 {
-    public record VkSemaphore : VkObject<Semaphore>
+    public class VkSemaphore : VkObject<Semaphore>
     {
         private readonly VulkanContext _context;
         public VkSemaphore(VulkanContext context, Semaphore semaphore)

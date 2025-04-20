@@ -16,7 +16,7 @@ namespace RockEngine.Core.Rendering
             public GlobalUbo(string name, uint bindingLocation)
                 : base(name, bindingLocation, (ulong)Marshal.SizeOf<GlobalUboData>(), Marshal.SizeOf<GlobalUboData>(), false) 
                 { 
-                _binding = new UniformBufferBinding(this, 0,0);
+                    _binding = new UniformBufferBinding(this, 0,0);
                 }
 
             public async Task UpdateAsync()

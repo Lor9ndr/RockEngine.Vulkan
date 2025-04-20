@@ -13,8 +13,12 @@ namespace RockEngine.Core.Rendering.ResourceBindings
     /// <param name="textures">textures</param>
     public class TextureBinding : ResourceBinding, IDisposable
     {
-        public TextureBinding(uint setLocation, uint bindingLocation, params Texture[] textures) : base(setLocation, bindingLocation)
+        private readonly ImageLayout _imageLayout;
+        public Texture[] Textures { get; private set; }
+
+        public TextureBinding(uint setLocation, uint bindingLocation, ImageLayout imageLayout = default, params Texture[] textures) : base(setLocation, bindingLocation)
         {
+            _imageLayout = imageLayout;
             Textures = textures;
             foreach (var texture in textures)
             {
@@ -27,7 +31,6 @@ namespace RockEngine.Core.Rendering.ResourceBindings
             IsDirty = true;
         }
 
-        public Texture[] Textures { get; }
 
         public override unsafe void UpdateDescriptorSet(VulkanContext renderingContext)
         {
@@ -50,7 +53,7 @@ namespace RockEngine.Core.Rendering.ResourceBindings
                 {
                     imageInfos[i] = new DescriptorImageInfo
                     {
-                        ImageLayout = item.Image.CurrentLayout,
+                        ImageLayout =  _imageLayout == default ? item.Image.CurrentLayout : _imageLayout,
                         ImageView = item.ImageView,
                         Sampler = item.Sampler,
                     };
@@ -78,6 +81,13 @@ namespace RockEngine.Core.Rendering.ResourceBindings
             {
                 texture.OnTextureUpdated -= MarkAsDirty;
             }
+            Textures = Array.Empty<Texture>();
+            GC.SuppressFinalize(this);
+        }
+        ~TextureBinding()
+        {
+            Dispose();
+
         }
     }
 }

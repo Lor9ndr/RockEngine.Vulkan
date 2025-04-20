@@ -5,7 +5,7 @@ using System.Collections.ObjectModel;
 
 namespace RockEngine.Vulkan
 {
-    public record VkPipelineLayout : VkObject<PipelineLayout>
+    public class VkPipelineLayout : VkObject<PipelineLayout>
     {
         public readonly PushConstantRange[] PushConstantRanges;
         public readonly ReadOnlyDictionary<uint, VkDescriptorSetLayout> DescriptorSetLayouts;
@@ -153,7 +153,15 @@ namespace RockEngine.Vulkan
         }
         public VkDescriptorSetLayout GetSetLayout(uint location)
         {
-            return DescriptorSetLayouts[location];
+            if(DescriptorSetLayouts.TryGetValue(location, out VkDescriptorSetLayout value))
+            {
+                return value;
+            }
+            else
+            {
+                return default;
+            }
+
         }
 
         protected override void Dispose(bool disposing)

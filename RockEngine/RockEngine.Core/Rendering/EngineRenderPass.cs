@@ -4,14 +4,15 @@ namespace RockEngine.Core.Rendering
 {
     public sealed class EngineRenderPass : IDisposable
     {
-        public RenderPassType Type { get; }
+        public string Name { get;set; }
         public VkRenderPass RenderPass { get; }
-        public EngineRenderPass(RenderPassType renderPassType, VkRenderPass renderPass)
+        public EngineRenderPass(string name, VkRenderPass renderPass)
         {
-            Type = renderPassType;
+            Name = name;
             RenderPass = renderPass;
         }
 
+        public static implicit operator VkRenderPass(EngineRenderPass engineRenderPass)=> engineRenderPass.RenderPass;
         public void Dispose() => RenderPass.Dispose();
     }
 }

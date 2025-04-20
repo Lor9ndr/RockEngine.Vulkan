@@ -6,6 +6,6 @@ namespace RockEngine.Core.Rendering.Commands
 {
     public record struct ImguiRenderCommand(Action<VkCommandBuffer, Extent2D> RenderCommand) : IRenderCommand
     {
-        public RenderPhase Phase => RenderPhase.UI;
+        public readonly RenderPhase Phase => RenderPhase.UI;
     }
 }

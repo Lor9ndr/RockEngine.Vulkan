@@ -16,6 +16,14 @@ namespace RockEngine.Vulkan.Builders
 
         public unsafe MemoryHandle Build()
         {
+            if (_dynamicStates.Count == 0)
+            {
+                return CreateMemoryHandle(new PipelineDynamicStateCreateInfo
+                {
+                    SType = StructureType.PipelineDynamicStateCreateInfo,
+                    
+                });
+            }
             fixed (DynamicState* pDynamicStates = _dynamicStates.ToArray())
             {
                 return CreateMemoryHandle(new PipelineDynamicStateCreateInfo
@@ -24,7 +32,7 @@ namespace RockEngine.Vulkan.Builders
                     PNext = null,
                     Flags = 0,
                     DynamicStateCount = (uint)_dynamicStates.Count,
-                    PDynamicStates = pDynamicStates
+                    PDynamicStates = _dynamicStates.Count > 0 ? pDynamicStates:null
                 });
             }
         }

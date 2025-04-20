@@ -20,7 +20,7 @@ namespace RockEngine.Core
         public uint BindingLocation { get; }
         public ulong DynamicOffset { get; set; }
         public int DataSize { get; init; }
-        public Dictionary<VkPipelineLayout, DescriptorSet> DescriptorSets { get; } = new Dictionary<VkPipelineLayout, DescriptorSet>();
+        public Dictionary<VkPipelineLayout, VkDescriptorSet> DescriptorSets { get; } = new Dictionary<VkPipelineLayout, VkDescriptorSet>();
 
         public UniformBuffer(VulkanContext context, string name, uint bindingLocation, ulong size, int dataSize, bool isDynamic = false)
         {

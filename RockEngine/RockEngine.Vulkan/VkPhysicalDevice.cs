@@ -2,7 +2,7 @@
 
 namespace RockEngine.Vulkan
 {
-    public record VkPhysicalDevice : VkObject<PhysicalDevice>
+    public class VkPhysicalDevice : VkObject<PhysicalDevice>
     {
         public PhysicalDeviceProperties Properties { get; }
         public PhysicalDeviceFeatures Features { get; }

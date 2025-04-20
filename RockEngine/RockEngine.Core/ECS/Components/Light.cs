@@ -45,7 +45,7 @@ namespace RockEngine.Core.ECS.Components
         public override ValueTask OnStart(Renderer renderer)
         {
             _buffer ??= new UniformBuffer(VulkanContext.GetCurrent(), "Lights", 0, Renderer.MAX_LIGHTS_SUPPORTED * LightData.DataSize, (int)LightData.DataSize, true);
-            renderer.RegisterLight(this);
+            renderer.LightManager.RegisterLight(this);
             return base.OnStart(renderer);
         }
 

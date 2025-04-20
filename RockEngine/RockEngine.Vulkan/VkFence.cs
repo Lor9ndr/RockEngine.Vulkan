@@ -3,7 +3,7 @@ using Silk.NET.Vulkan;
 
 namespace RockEngine.Vulkan
 {
-    public record VkFence : VkObject<Fence>
+    public class VkFence : VkObject<Fence>
     {
         private readonly VulkanContext _context;
 

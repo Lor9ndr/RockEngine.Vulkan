@@ -2,7 +2,7 @@
 using Silk.NET.Vulkan;
 namespace RockEngine.Vulkan
 {
-    public record VkRenderPass : VkObject<RenderPass>
+    public class VkRenderPass : VkObject<RenderPass>
     {
         private readonly VulkanContext _context;
 
