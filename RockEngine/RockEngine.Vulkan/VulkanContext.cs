@@ -179,8 +179,8 @@ namespace RockEngine.Vulkan
                 var cmdBuffer = cmdPool.AllocateCommandBuffer();
                 cmdBuffer.BeginSingleTimeCommand();
                 value.Invoke(cmdBuffer);
-                var cmd = cmdBuffer.VkObjectNative;
                 cmdBuffer.End();
+                var cmd = cmdBuffer.VkObjectNative;
                 // Direct call to unsafe implementation
                 Device.GraphicsQueue.Submit(new SubmitInfo
                 {

@@ -1,32 +1,80 @@
 ﻿using RockEngine.Core.Rendering;
-using RockEngine.Core.Rendering.ResourceBindings;
 
 using System.Numerics;
-using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
 
 namespace RockEngine.Core.ECS.Components
 {
     public class Transform : Component
     {
-        private static UniformBuffer? _buffer;
-        private static ulong _offsetCounter = 0; // Counter for offset allocation
-        private readonly ulong _offset; // Store the offset for this instance
+        private Vector3 _position = Vector3.Zero;
+        private Quaternion _rotation = Quaternion.Identity;
+        private Vector3 _scale = Vector3.One;
+        private Transform? _parent;
+        private Matrix4x4 _worldMatrix;
+        private bool _isDirty = true;
+        public event Action TransformChanged;
 
-        public Vector3 Position = new Vector3(0);
-        public Quaternion Rotation = new Quaternion(0, 0, 0, 1);
-        public Vector3 Scale = Vector3.One;
+        public Vector3 Position
+        {
+            get => _position;
+            set { _position = value; SetDirty(); }
+        }
 
-        private readonly int _dataSize = Marshal.SizeOf<Matrix4x4>();
-        private Matrix4x4 _matrix;
+        public Quaternion Rotation
+        {
+            get => _rotation;
+            set { _rotation = value; SetDirty(); }
+        }
+
+        public Vector3 Scale
+        {
+            get => _scale;
+            set { _scale = value; SetDirty(); }
+        }
+
+        public Transform? Parent
+        {
+            get => _parent;
+            set
+            {
+                SetParent(value);
+            }
+        }
+
+        public Matrix4x4 LocalMatrix => Matrix4x4.CreateScale(Scale)
+            * Matrix4x4.CreateFromQuaternion(Rotation)
+            * Matrix4x4.CreateTranslation(Position);
+
+        public Matrix4x4 WorldMatrix
+        {
+            get
+            {
+                if (_isDirty)
+                {
+                    _worldMatrix = Parent == null
+                        ? LocalMatrix
+                        : LocalMatrix * Parent.WorldMatrix;
+                    _isDirty = false;
+                }
+                return _worldMatrix;
+            }
+        }
+        public Vector3 WorldPosition => WorldMatrix.Translation;
+        public Quaternion WorldRotation => Parent?.WorldRotation * Rotation ?? Rotation;
+        public Vector3 WorldScale => Parent?.WorldScale * Scale ?? Scale;
+
 
         public Transform(Vector3 position, Quaternion rotation, Vector3 scale)
         {
-            Position = position;
-            Rotation = rotation;
-            Scale = scale;
-            _offset = _offsetCounter; // Assign the next available offset
-            _offsetCounter += (ulong)Unsafe.SizeOf<Matrix4x4>(); // Increment for the next instance
+            _position = position;
+            _rotation = rotation;
+            _scale = scale;
+        }
+
+        public override void SetEntity(Entity entity)
+        {
+            base.SetEntity(entity);
+            SetDirty();
         }
 
         public Transform() : this(Vector3.Zero, Quaternion.Identity, Vector3.One) { }
@@ -41,32 +89,41 @@ namespace RockEngine.Core.ECS.Components
 
         public override ValueTask OnStart(Renderer renderer)
         {
-            //var mesh = Entity.GetComponent<Mesh>();
-            // Initialize only once
-           /* if (mesh is not null && _buffer == null)
-            {
-                _buffer = new UniformBuffer("ModelData", 0, (ulong)(1024 * 1024 * _dataSize), _dataSize, true);
-            }
-            mesh?.Material.Bindings.Add(new UniformBufferBinding(_buffer!, 0, 1, _offset));*/
-
             return default;
         }
 
         public override ValueTask Update(Renderer renderer)
         {
-           /* var mesh = Entity.GetComponent<Mesh>();
-            if (_buffer is null || mesh is null)
-            {
-                return default;
-            }
-            // Use the calculated offset when updating
-            var newMatrix = GetModelMatrix();
-            if (newMatrix != _matrix)
-            {
-                _matrix = newMatrix;
-                return _buffer.UpdateAsync(_matrix, (ulong)_dataSize, _offset);
-            }*/
             return default;
         }
+
+        public void SetParent(Transform? parent)
+        {
+            if (_parent != null)
+            {
+                _parent.TransformChanged -= OnParentTransformChanged;
+            }
+            _parent = parent;
+            if (_parent != null)
+            {
+                _parent.TransformChanged += OnParentTransformChanged;
+            }
+            SetDirty();
+        }
+        private void SetDirty()
+        {
+            _isDirty = true;
+            TransformChanged?.Invoke();
+            foreach (var child in Entity.Children)
+            {
+                child.Transform.SetDirty();
+            }
+        }
+
+        private void OnParentTransformChanged()
+        {
+            SetDirty();
+        }
+     
     }
 }

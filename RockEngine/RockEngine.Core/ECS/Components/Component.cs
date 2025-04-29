@@ -10,7 +10,7 @@ namespace RockEngine.Core.ECS.Components
 
         public Entity Entity { get; private set; }
 
-        public void SetEntity(Entity entity)
+        public virtual void SetEntity(Entity entity)
         {
             Entity = entity;
         }

@@ -42,7 +42,7 @@ namespace RockEngine.Core
                 _pipelineManager = new PipelineManager(_context);
                 _renderer = new Renderer(_context, _graphicsEngine, _pipelineManager);
                 _world = new World();
-                _textureStreamer = new TextureStreamer(_context, _renderer);
+                _textureStreamer = new TextureStreamer();
                 await OnLoad?.Invoke();
 
                 await _world.Start(_renderer);

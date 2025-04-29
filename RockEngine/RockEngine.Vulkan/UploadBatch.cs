@@ -2,17 +2,17 @@
 
 using Silk.NET.Vulkan;
 
+using System.Runtime.CompilerServices;
+
 namespace RockEngine.Vulkan
 {
-    public sealed class UploadBatch : IDisposable
+    public sealed class UploadBatch 
     {
         private readonly VulkanContext _context;
         private readonly StagingManager _stagingManager;
         private readonly VkCommandPool _pool;
         private readonly SubmitContext _submitContext;
         private VkCommandBuffer _commandBuffer;
-        private bool _isDisposed;
-
         public VkCommandBuffer CommandBuffer => _commandBuffer;
 
         public UploadBatch(VulkanContext context, StagingManager stagingManager, VkCommandPool pool, SubmitContext submitContext)
@@ -35,17 +35,12 @@ namespace RockEngine.Vulkan
             _commandBuffer.Begin(new CommandBufferBeginInfo
             {
                 SType = StructureType.CommandBufferBeginInfo,
-                Flags = CommandBufferUsageFlags.OneTimeSubmitBit
+                Flags =  CommandBufferUsageFlags.SimultaneousUseBit
             });
         }
 
         public void Reset()
         {
-            if (_isDisposed)
-            {
-                throw new ObjectDisposedException("UploadBatch");
-            }
-
             // Явный сброс буфера команд
             _commandBuffer.Reset(CommandBufferResetFlags.None);
             BeginCommandBuffer();
@@ -76,30 +71,11 @@ namespace RockEngine.Vulkan
             );
         }
 
-        public void Submit()
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void Submit(IDisposable[]? dependencies = null)
         {
             _commandBuffer.End();
-            _submitContext.AddSubmission(_commandBuffer);
-        }
-
-        public void Dispose()
-        {
-            if (_isDisposed)
-                return;
-
-            // Не освобождаем буфер команд, только помечаем как доступный для повторного использования
-            _isDisposed = true;
-            GC.SuppressFinalize(this);
-        }
-
-        // Для безопасного освобождения ресурсов при уничтожении пула
-        internal void ForceDispose()
-        {
-            if (!_isDisposed)
-            {
-                _commandBuffer.Dispose();
-                _isDisposed = true;
-            }
+            _submitContext.AddSubmission(_commandBuffer, dependencies);
         }
     }
 }

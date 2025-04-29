@@ -39,7 +39,7 @@ namespace RockEngine.Core.Rendering.Texturing
             ulong size = 0;
             for (uint i = 0; i < tex.TotalMipLevels; i++)
             {
-                size += GetMipSize(tex.Image.Width, tex.Image.Height, i,
+                size += GetMipSize(tex.Image.Extent.Width, tex.Image.Extent.Height, i,
                     tex.Image.Format.GetBytesPerPixel());
             }
             return size;

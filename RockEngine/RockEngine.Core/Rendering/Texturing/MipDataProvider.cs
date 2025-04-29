@@ -36,8 +36,8 @@ namespace RockEngine.Core.Rendering.Texturing
 
         private static ulong CalculateMipSize(StreamableTexture texture, uint mipLevel)
         {
-            var width = Math.Max(texture.Image.Width >> (int)mipLevel, 1);
-            var height = Math.Max(texture.Image.Height >> (int)mipLevel, 1);
+            var width = Math.Max(texture.Image.Extent.Width >> (int)mipLevel, 1);
+            var height = Math.Max(texture.Image.Extent.Height >> (int)mipLevel, 1);
             return (ulong)(width * height * texture.Image.Format.GetBytesPerPixel());
         }
 

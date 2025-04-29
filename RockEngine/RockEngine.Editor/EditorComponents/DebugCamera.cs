@@ -44,7 +44,7 @@ namespace RockEngine.Editor.EditorComponents
 
             foreach (var keyboard in _inputContext.Keyboards)
             {
-                var position = Entity.Transform.Position;
+                var position = Entity.Transform.WorldPosition;
 
                 // Move forward
                 if (keyboard.IsKeyPressed(Key.W))

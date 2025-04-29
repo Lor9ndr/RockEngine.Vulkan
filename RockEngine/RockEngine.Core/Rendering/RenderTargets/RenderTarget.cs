@@ -13,8 +13,8 @@ namespace RockEngine.Core.Rendering.RenderTargets
         public VkFrameBuffer[] Framebuffers { get; protected set; }
         public VkRenderPass RenderPass { get; protected set; }
         public Texture OutputTexture { get; protected set; }
-        public Viewport Viewport { get; protected set; }
-        public Rect2D Scissor { get; protected set; }
+        public virtual Viewport Viewport { get; protected set; }
+        public virtual Rect2D Scissor { get; protected set; }
         public ClearValue[] ClearValues { get; protected set; }
         protected VulkanContext Context { get; }
 

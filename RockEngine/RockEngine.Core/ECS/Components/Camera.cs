@@ -115,7 +115,7 @@ namespace RockEngine.Core.ECS.Components
         }
         public void UpdateViewMatrix()
         {
-            _viewMatrix = Matrix4x4.CreateLookAt(Entity.Transform.Position, Entity.Transform.Position + Front, _up);
+            _viewMatrix = Matrix4x4.CreateLookAt(Entity.Transform.WorldPosition, Entity.Transform.WorldPosition + Front, _up);
             UpdateProjectionMatrix();
         }
 

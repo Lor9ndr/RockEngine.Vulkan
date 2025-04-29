@@ -112,7 +112,7 @@ namespace RockEngine.Vulkan
                 InitialLayout = ImageLayout.Undefined,
                 MipLevels = 1,
             };
-            var vkImages = images.Select(s => new VkImage(context, s, null, ci)).ToArray();
+            var vkImages = images.Select(s => new VkImage(context, s, null, ci, ImageAspectFlags.ColorBit)).ToArray();
             return new VkSwapchain(context, swapChain, swapchainApi, vkImages, surfaceFormat.Format, extent, surface);
         }
 
@@ -369,11 +369,10 @@ namespace RockEngine.Vulkan
 
                 _khrSwapchain.CreateSwapchain(_context.Device, in createInfo,null, out var swapChain)
                     .VkAssertResult("Failed to create swapchain");
-
-                uint countImages = 0;
-                _khrSwapchain.GetSwapchainImages(_context.Device, swapChain, ref countImages, null);
-                var images = new Image[countImages];
-                _khrSwapchain.GetSwapchainImages(_context.Device, swapChain, &countImages, images);
+                uint imagesCount = 0;
+                _khrSwapchain.GetSwapchainImages(_context.Device, swapChain, ref imagesCount, default);
+                var images = new Span<Image>(new Image[imageCount]);
+                _khrSwapchain.GetSwapchainImages(_context.Device, swapChain, &imagesCount, images);
                 _khrSwapchain.DestroySwapchain(_context.Device, oldSwapchain,null);
                 _vkObject = swapChain;
                 var ci = new ImageCreateInfo()
@@ -383,7 +382,12 @@ namespace RockEngine.Vulkan
                     InitialLayout = ImageLayout.Undefined,
                     MipLevels = 1,
                 };
-                _images = images.Select(s => new VkImage(_context, s, null, ci)).ToArray();
+                int i = 0;
+                foreach (var item in images)
+                {
+                    _images[i].InternalChangeVkObject(item);
+                    i++;
+                }
                 _extent = extent;
 
                 // Recreate image views and framebuffers
@@ -489,20 +493,20 @@ namespace RockEngine.Vulkan
                 InitialLayout = ImageLayout.Undefined
                 
             };
-
-            _depthImage = VkImage.Create(_context, in imageCi, MemoryPropertyFlags.DeviceLocalBit); ;
+            var aspectMask = _depthFormat.HasStencilComponent()
+           ? ImageAspectFlags.DepthBit | ImageAspectFlags.StencilBit
+           : ImageAspectFlags.DepthBit;
+            _depthImage = VkImage.Create(_context, in imageCi, MemoryPropertyFlags.DeviceLocalBit, aspectMask);
 
             commandBuffer.BeginSingleTimeCommand();
-            _depthImage.TransitionImageLayout(commandBuffer, ImageLayout.DepthStencilAttachmentOptimal);
+            _depthImage.TransitionImageLayout(commandBuffer, ImageLayout.DepthStencilAttachmentOptimal, PipelineStageFlags.TopOfPipeBit, PipelineStageFlags.EarlyFragmentTestsBit,0, 1);
             commandBuffer.End();
 
             var nativeBuffer = commandBuffer.VkObjectNative;
             _context.Device.GraphicsQueue.Submit(new SubmitInfo(StructureType.SubmitInfo) { CommandBufferCount = 1, PCommandBuffers = &nativeBuffer }, fence);
             fence.Wait();
 
-            var aspectMask = _depthFormat.HasStencilComponent()
-                ? ImageAspectFlags.DepthBit | ImageAspectFlags.StencilBit
-                : ImageAspectFlags.DepthBit;
+       
 
             var imageViewCi = new ImageViewCreateInfo
             {
@@ -519,7 +523,7 @@ namespace RockEngine.Vulkan
                     LayerCount = 1
                 }
             };
-            _depthImageView = VkImageView.Create(_context, _depthImage, in imageViewCi);
+            _depthImageView = _depthImage.CreateView(aspectMask);
         }
 
         private Format FindDepthFormat()

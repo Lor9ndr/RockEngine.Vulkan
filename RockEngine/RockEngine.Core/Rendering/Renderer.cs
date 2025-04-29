@@ -27,8 +27,9 @@ namespace RockEngine.Core.Rendering
         private readonly BindingManager _bindingManager;
         private readonly GraphicsEngine _graphicsEngine;
         private readonly PipelineManager _pipelineManager;
-        private VkPipeline _deferredLightingPipeline;
-        private VkPipeline _screenPipeline;
+        private readonly VkPipeline _deferredLightingPipeline;
+        private readonly VkPipeline _screenPipeline;
+        private readonly VkPipeline _skyboxPipeline;
 
         public SubmitContext SubmitContext => _context.SubmitContext;
         public SwapchainRenderTarget SwapchainTarget { get; }
@@ -46,18 +47,15 @@ namespace RockEngine.Core.Rendering
 
         public BindingManager BindingManager => _bindingManager;
 
-        public Renderer(
-                  VulkanContext context,
-                  GraphicsEngine graphicsEngine,
-                  PipelineManager pipelineManager)
+        public Renderer(VulkanContext context, GraphicsEngine graphicsEngine, PipelineManager pipelineManager)
         {
             var poolSizes = new[]
             {
-                new DescriptorPoolSize(DescriptorType.UniformBuffer, 5_000),
-                new DescriptorPoolSize(DescriptorType.CombinedImageSampler, 5_000),
-                new DescriptorPoolSize(DescriptorType.StorageBuffer, 5_000),
-                new DescriptorPoolSize(DescriptorType.InputAttachment, 300),
-                new DescriptorPoolSize(DescriptorType.UniformBufferDynamic, 2_000)
+                new DescriptorPoolSize(DescriptorType.UniformBuffer, 200),
+                new DescriptorPoolSize(DescriptorType.CombinedImageSampler, 200),
+                new DescriptorPoolSize(DescriptorType.StorageBuffer, 200),
+                new DescriptorPoolSize(DescriptorType.InputAttachment, 3),
+                new DescriptorPoolSize(DescriptorType.UniformBufferDynamic, 200)
             };
             _context = context;
             _graphicsEngine = graphicsEngine;
@@ -65,8 +63,9 @@ namespace RockEngine.Core.Rendering
             SwapchainTarget = new SwapchainRenderTarget(context, graphicsEngine.Swapchain);
 
             RenderPass = CreateRenderPass();
-            CreateLightingResources();
-            CreateScreenPipeline();
+            _deferredLightingPipeline = CreateLightingResources();
+            _screenPipeline = CreateScreenPipeline();
+            _skyboxPipeline = CreateSkyboxPipeline();
 
             // Инициализация всех менеджеров
             _lightManager = new LightManager(context, (uint)_context.MaxFramesPerFlight, MAX_LIGHTS_SUPPORTED);
@@ -85,12 +84,13 @@ namespace RockEngine.Core.Rendering
 
         }
 
-        public async Task Render(VkCommandBuffer primaryCmdBuffer)
+       
+        public Task Render(VkCommandBuffer primaryCmdBuffer)
         {
             using (PerformanceTracer.BeginSection("Frame Render"))
             {
                 // Execute main rendering pipeline
-                await _renderPipeline.Execute(primaryCmdBuffer, _cameraManager, this);
+                return _renderPipeline.Execute(primaryCmdBuffer, _cameraManager, this);
             }
         }
 
@@ -188,7 +188,24 @@ namespace RockEngine.Core.Rendering
         }
 
 
-        private unsafe void CreateLightingResources()
+        private unsafe VkPipeline CreateSkyboxPipeline()
+        {
+            var vertShader = VkShaderModule.Create(_context, "Shaders/Skybox.vert.spv", ShaderStageFlags.VertexBit);
+            var fragShader = VkShaderModule.Create(_context, "Shaders/Skybox.frag.spv", ShaderStageFlags.FragmentBit);
+            var colorBlendAttachments = new PipelineColorBlendAttachmentState[1];
+            colorBlendAttachments[0] = new PipelineColorBlendAttachmentState
+            {
+                ColorWriteMask = ColorComponentFlags.RBit | ColorComponentFlags.GBit |
+                                 ColorComponentFlags.BBit | ColorComponentFlags.ABit,
+                BlendEnable = false,
+            };
+            using var pipelineBuilder = GraphicsPipelineBuilder.CreateDefault(_context, "Skybox", [vertShader, fragShader]);
+            return _pipelineManager.Create(pipelineBuilder.WithColorBlendState(new VulkanColorBlendStateBuilder().AddAttachment(colorBlendAttachments))
+                                                    .AddRenderPass(RenderPass)
+                                                    .WithSubpass(1));
+        }
+
+        private VkPipeline CreateLightingResources()
         {
             var vertShader = VkShaderModule.Create(_context, "Shaders/deferred_lighting.vert.spv", ShaderStageFlags.VertexBit);
             var fragShader = VkShaderModule.Create(_context, "Shaders/deferred_lighting.frag.spv", ShaderStageFlags.FragmentBit);
@@ -233,9 +250,9 @@ namespace RockEngine.Core.Rendering
                     .AddState(DynamicState.Viewport)
                     .AddState(DynamicState.Scissor));
 
-            _deferredLightingPipeline = _pipelineManager.Create(pipelineBuilder);
+            return _pipelineManager.Create(pipelineBuilder);
         }
-        private unsafe void CreateScreenPipeline()
+        private VkPipeline  CreateScreenPipeline()
         {
             var vertShader = VkShaderModule.Create(_context, "Shaders/screen.vert.spv", ShaderStageFlags.VertexBit);
             var fragShader = VkShaderModule.Create(_context, "Shaders/screen.frag.spv", ShaderStageFlags.FragmentBit);
@@ -261,7 +278,7 @@ namespace RockEngine.Core.Rendering
                 .WithSubpass(0)
                 .WithPipelineLayout(pipelineLayout);
 
-            _screenPipeline = _pipelineManager.Create(pipelineBuilder);
+            return _pipelineManager.Create(pipelineBuilder);
         }
 
 
@@ -269,6 +286,10 @@ namespace RockEngine.Core.Rendering
         {
             var transformIndex = _transformManager.AddTransform(mesh.Entity.Transform.GetModelMatrix());
             _indirectCommandManager.AddMesh(mesh, transformIndex);
+        }
+
+        public void Draw(Skybox skybox)
+        {
         }
 
         public void AddCommand(IRenderCommand command)

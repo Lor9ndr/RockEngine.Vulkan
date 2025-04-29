@@ -53,7 +53,7 @@ namespace RockEngine.Core.ECS.Components
         {
             _lightData = new LightData
             {
-                PositionAndType = new Vector4(Entity.Transform.Position, (float)Type),
+                PositionAndType = new Vector4(Entity.Transform.WorldPosition, (float)Type),
                 DirectionAndRadius = new Vector4(Direction, Radius),
                 ColorAndIntensity = new Vector4(Color, Intensity),
                 Cutoffs = new Vector2(InnerCutoff, OuterCutoff)

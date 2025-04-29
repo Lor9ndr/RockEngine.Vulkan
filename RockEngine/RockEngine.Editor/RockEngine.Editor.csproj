@@ -14,6 +14,7 @@
     <GenerateDocumentationFile>True</GenerateDocumentationFile>
     <SignAssembly>True</SignAssembly>
     <ShadersOutputPath>bin\$(Configuration)\$(TargetFramework)\Shaders\</ShadersOutputPath>
+    <ResourcesOutputPath>bin\$(Configuration)\$(TargetFramework)\Resources\</ResourcesOutputPath>
     <Configurations>Debug;Release;Editor</Configurations>
   </PropertyGroup>
 
@@ -36,6 +37,12 @@
   <ItemGroup>
     <CompiledShader Include="..\RockEngine.Core\**\*.spv" />
   </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="Resources\**\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
   
   
   <ItemGroup>
@@ -43,14 +50,20 @@
     <EmbeddedResource Include="..\RockEngine.Core\**\*.frag" />
     <EmbeddedResource Include="..\RockEngine.Core\**\*.glsl" />
   </ItemGroup>
+  
+  
+  <ItemGroup>
+    <None Remove="Resources\skybox\front.jpg" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="System.Net.Http" Version="4.3.4" />
     <PackageReference Include="System.Text.RegularExpressions" Version="4.3.1" />
   </ItemGroup>
 
+ 
+
   <Target Name="CopyCompiledShaders" AfterTargets="Build">
     <Copy SourceFiles="@(CompiledShader)" DestinationFolder="$(ShadersOutputPath)" SkipUnchangedFiles="true" />
   </Target>
-
 </Project>

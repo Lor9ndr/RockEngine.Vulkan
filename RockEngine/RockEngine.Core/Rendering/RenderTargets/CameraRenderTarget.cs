@@ -14,6 +14,20 @@ namespace RockEngine.Core.Rendering.RenderTargets
         private readonly GraphicsEngine _engine;
 
         public GBuffer GBuffer => _gBuffer;
+        public override Viewport Viewport => new Viewport()
+        {
+            X = 0,
+            Y = 0,
+            Width = Size.Width,
+            Height = Size.Height,
+            MinDepth = 0.0f,
+            MaxDepth = 1.0f
+        };
+        public override Rect2D Scissor => new Rect2D()
+        {
+            Offset = new Offset2D { X = 0, Y = 0 },
+            Extent = Size
+        };
 
         public CameraRenderTarget(VulkanContext context, GraphicsEngine engine, Extent2D size, EngineRenderPass deferredRenderPass)
             : base(context, size, engine.Swapchain.Format, ImageUsageFlags.ColorAttachmentBit | ImageUsageFlags.SampledBit)
@@ -21,12 +35,7 @@ namespace RockEngine.Core.Rendering.RenderTargets
             _context = context;
             _engine = engine;
             _gBuffer = new GBuffer(context, size, engine.Swapchain.DepthFormat);
-
-            OutputTexture = new Texture.Builder(_context)
-                                    .SetSize(Size)
-                                    .SetFormat(Format)
-                                    .SetUsage(ImageUsageFlags.ColorAttachmentBit | ImageUsageFlags.SampledBit)
-                                    .Build();
+            CreateTexture();
             RenderPass = deferredRenderPass;
             ClearValues =
            [
@@ -41,25 +50,16 @@ namespace RockEngine.Core.Rendering.RenderTargets
                 // Output texture
                 new ClearValue { Color = new ClearColorValue(0.1f, 0.1f, 0.1f, 1.0f) }
            ];
-
-            // Configure viewport and scissor
-            Viewport = new Viewport
-            {
-                X = 0,
-                Y = 0,
-                Width = Size.Width,
-                Height = Size.Height,
-                MinDepth = 0.0f,
-                MaxDepth = 1.0f
-            };
-
-            Scissor = new Rect2D
-            {
-                Offset = new Offset2D { X = 0, Y = 0 },
-                Extent = Size
-            };
         }
 
+        private void CreateTexture()
+        {
+            OutputTexture = new Texture.Builder(_context)
+                                    .SetSize(Size)
+                                    .SetFormat(Format)
+                                    .SetUsage(ImageUsageFlags.ColorAttachmentBit | ImageUsageFlags.SampledBit)
+                                    .Build();
+        }
 
         public override void CreateFramebuffers()
         {
@@ -90,7 +90,6 @@ namespace RockEngine.Core.Rendering.RenderTargets
         public override void PrepareForRender(VkCommandBuffer cmd)
         {
             OutputTexture.Image.TransitionImageLayout(cmd, ImageLayout.ColorAttachmentOptimal);
-            
         }
 
         public override void TransitionToRead(VkCommandBuffer cmd)
@@ -98,6 +97,13 @@ namespace RockEngine.Core.Rendering.RenderTargets
             OutputTexture.Image.TransitionImageLayout(cmd, ImageLayout.ShaderReadOnlyOptimal);
         }
 
+        public override void Resize(Extent2D newSize)
+        {
+            base.Resize(newSize);
+            _gBuffer.Recreate(Size);
+            CreateTexture();
+            CreateFramebuffers();
+        }
         protected override void DisposeResources()
         {
             OutputTexture?.Dispose();

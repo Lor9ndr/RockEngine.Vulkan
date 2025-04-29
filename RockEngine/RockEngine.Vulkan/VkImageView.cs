@@ -33,6 +33,35 @@ namespace RockEngine.Vulkan
                .VkAssertResult("Failed to create image view!");
             return new VkImageView(context, image, imageView,in ci);
         }
+        public static VkImageView Create(
+            VulkanContext context,
+            VkImage image,
+            Format format,
+            ImageAspectFlags aspectFlags,
+            uint baseMipLevel = 0,
+            uint levelCount = 1,
+            uint baseArrayLayer = 0,
+            uint arrayLayers = 1)
+        {
+            var createInfo = new ImageViewCreateInfo
+            {
+                SType = StructureType.ImageViewCreateInfo,
+                Image = image,
+                ViewType = ImageViewType.Type2D, 
+                Format = format,
+                Components = new ComponentMapping(),
+                SubresourceRange = new ImageSubresourceRange
+                {
+                    AspectMask = aspectFlags,
+                    BaseMipLevel = baseMipLevel,
+                    LevelCount = levelCount,
+                    BaseArrayLayer = baseArrayLayer,
+                    LayerCount = arrayLayers
+                }
+            };
+
+            return Create(context, image, createInfo);
+        }
 
         private unsafe void Recreate(VkImage image)
         {

@@ -39,7 +39,7 @@ namespace RockEngine.Core.Rendering.Passes
 
             _globalUbo.GlobalData = new GlobalUbo.GlobalUboData()
             {
-                Position = camera.Entity.Transform.Position,
+                Position = camera.Entity.Transform.WorldPosition,
                 ViewProjection = camera.ViewProjectionMatrix
             };
             await _globalUbo.UpdateAsync();

@@ -17,8 +17,12 @@ namespace RockEngine.Vulkan
         private readonly VkFence _fence;
         private readonly ConcurrentBag<UploadBatch> _activeBatches = new();
 
+        private ConcurrentBag<IDisposable> _flushDisposables = new ();
+
         [ThreadStatic]
         private static List<CommandBuffer> _reusableSubmissionList;
+
+        public StagingManager StagingManager => _stagingManager;
 
         public SubmitContext(VulkanContext context)
         {
@@ -51,14 +55,21 @@ namespace RockEngine.Vulkan
                 return batch;
             }
 
-            var newBatch = new UploadBatch(_context, _stagingManager, pool, this);
+            var newBatch = new UploadBatch(_context, StagingManager, pool, this);
             _activeBatches.Add(newBatch); // Track new batch
             return newBatch;
         }
 
-        public void AddSubmission(CommandBuffer commandBuffer)
+        public void AddSubmission(CommandBuffer commandBuffer, IDisposable[]? dependencies = null)
         {
             _pendingSubmissions.Enqueue(commandBuffer);
+            if(dependencies != null)
+            {
+                foreach(var dependency in dependencies)
+                {
+                    _flushDisposables.Add(dependency);
+                }
+            }
         }
 
         public async Task FlushAsync()
@@ -104,9 +115,14 @@ namespace RockEngine.Vulkan
                     batchPool.Push(batch); // Return to pool
                 }
             }
+            foreach (var item in _flushDisposables)
+            {
+                item.Dispose();
+            }
+            _flushDisposables.Clear();
             _activeBatches.Clear(); // Clear for next frame
 
-            _stagingManager.Reset();
+            StagingManager.Reset();
             ReturnSubmissionList(submissions);
         }
 
@@ -137,13 +153,13 @@ namespace RockEngine.Vulkan
             {
                 while (batchPool.Count > 0)
                 {
-                    batchPool.Pop().Dispose();
+                   _ = batchPool.Pop();
                 }
                 pool.Dispose();
             }
 
             _perThreadResources.Dispose();
-            _stagingManager.Dispose();
+            StagingManager.Dispose();
             _fence.Dispose();
             GC.SuppressFinalize(this);
         }

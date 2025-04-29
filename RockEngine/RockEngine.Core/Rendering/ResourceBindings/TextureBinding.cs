@@ -53,7 +53,7 @@ namespace RockEngine.Core.Rendering.ResourceBindings
                 {
                     imageInfos[i] = new DescriptorImageInfo
                     {
-                        ImageLayout =  _imageLayout == default ? item.Image.CurrentLayout : _imageLayout,
+                        ImageLayout =  _imageLayout == default ? item.Image.GetMipLayout(0) : _imageLayout,
                         ImageView = item.ImageView,
                         Sampler = item.Sampler,
                     };

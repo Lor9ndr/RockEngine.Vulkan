@@ -1,6 +1,7 @@
 ﻿using Silk.NET.Vulkan;
 
 using System.Buffers;
+using System.Linq;
 using System.Text;
 
 namespace RockEngine.Vulkan.Builders
@@ -30,6 +31,36 @@ namespace RockEngine.Vulkan.Builders
             _name = name;
         }
 
+        public static GraphicsPipelineBuilder CreateDefault(VulkanContext context, string name,params VkShaderModule[] shaders)
+        {
+              
+            return new GraphicsPipelineBuilder(context, name)
+                .WithShaderModule(shaders)
+                .WithVertexInputState(new VulkanPipelineVertexInputStateBuilder())
+                .WithInputAssembly(new VulkanInputAssemblyBuilder().Configure())
+                .WithViewportState(new VulkanViewportStateInfoBuilder()
+                    .AddViewport(new Viewport(0, 0, 1280, 720, 0, 1))
+                    .AddScissors(new Rect2D(new Offset2D(), new Extent2D(1280, 720))))
+                .WithRasterizer(new VulkanRasterizerBuilder().CullFace(CullModeFlags.None))
+                .WithMultisampleState(new VulkanMultisampleStateInfoBuilder().Configure(false, SampleCountFlags.Count1Bit))
+                .WithPipelineLayout(VkPipelineLayout.Create(context, shaders))
+                 .AddDepthStencilState(new PipelineDepthStencilStateCreateInfo()
+                 {
+                     SType = StructureType.PipelineDepthStencilStateCreateInfo,
+                     DepthTestEnable = false,
+                     DepthWriteEnable = false,
+                     DepthCompareOp = CompareOp.Always,
+                     DepthBoundsTestEnable = false,
+                     MinDepthBounds = 0.0f,
+                     MaxDepthBounds = 1.0f,
+                     StencilTestEnable = false,
+                 })
+                .WithDynamicState(new PipelineDynamicStateBuilder()
+                    .AddState(DynamicState.Viewport)
+                    .AddState(DynamicState.Scissor));
+        }
+
+
         public GraphicsPipelineBuilder AddRenderPass(VkRenderPass renderPass)
         {
             _renderPass = renderPass;
@@ -39,6 +70,15 @@ namespace RockEngine.Vulkan.Builders
         public unsafe GraphicsPipelineBuilder WithShaderModule(VkShaderModule shaderModule)
         {
             _pipelineStageBuilder.AddStage(shaderModule.Stage, shaderModule, (byte*)_entryPoint.Pointer);
+            return this;
+        }
+
+        public unsafe GraphicsPipelineBuilder WithShaderModule(params VkShaderModule[] shaderModules)
+        {
+            foreach (var item in shaderModules)
+            {
+                _pipelineStageBuilder.AddStage(item.Stage, item, (byte*)_entryPoint.Pointer);
+            }
             return this;
         }
 

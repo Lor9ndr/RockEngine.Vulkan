@@ -9,7 +9,7 @@ namespace RockEngine.Core
     {
         private static readonly Dictionary<string, Queue<double>> _durations = new();
         private static readonly Dictionary<string, Stopwatch> _activeTimers = new();
-        private const int MAX_HISTORY = 500;
+        private const int MAX_HISTORY = 100;
 
         public static IDisposable BeginSection(string name)
         {

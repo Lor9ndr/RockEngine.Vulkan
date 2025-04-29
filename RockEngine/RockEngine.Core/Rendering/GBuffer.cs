@@ -86,7 +86,7 @@ namespace RockEngine.Core.Rendering
                 ImageUsageFlags.ColorAttachmentBit |
                 ImageUsageFlags.InputAttachmentBit |
                 ImageUsageFlags.SampledBit,
-                MemoryPropertyFlags.DeviceLocalBit);
+                MemoryPropertyFlags.DeviceLocalBit, aspectFlags: ImageAspectFlags.ColorBit);
 
             return image.CreateView(ImageAspectFlags.ColorBit);
         }
@@ -100,7 +100,8 @@ namespace RockEngine.Core.Rendering
                 ImageTiling.Optimal,
                 ImageUsageFlags.DepthStencilAttachmentBit | ImageUsageFlags.SampledBit,
                 MemoryPropertyFlags.DeviceLocalBit,
-                initialLayout: ImageLayout.Undefined);
+                initialLayout: ImageLayout.Undefined,
+                aspectFlags: ImageAspectFlags.DepthBit);
 
             return image.CreateView(ImageAspectFlags.DepthBit);
         }
@@ -168,7 +169,6 @@ namespace RockEngine.Core.Rendering
             CreateTextures();
             CreateLightingDescriptorSets(_pipeline);
         }
-
     }
 }
 

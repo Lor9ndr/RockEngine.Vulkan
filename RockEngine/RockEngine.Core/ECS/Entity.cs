@@ -11,6 +11,10 @@ namespace RockEngine.Core.ECS
 
         private readonly List<IComponent> _components = [];
         public Transform Transform { get; private set; }
+        public Entity Parent { get; private set; }
+        private readonly List<Entity> _children = new List<Entity>();
+        public IReadOnlyList<Entity> Children => _children.AsReadOnly();
+
         public RenderLayerType Layer { get; private set; } = RenderLayerType.Opaque;
 
         public event Action OnDestroy;
@@ -21,11 +25,11 @@ namespace RockEngine.Core.ECS
             Transform = AddComponent<Transform>();
         }
 
-        public T AddComponent<T>() where T : IComponent, new()
+        public T AddComponent<T>() where T : Component, new()
         {
             var component = new T();
-            _components.Add(component);
             component.SetEntity(this);
+            _components.Add(component);
             return component;
         }
 
@@ -41,6 +45,26 @@ namespace RockEngine.Core.ECS
         public T? GetComponent<T>() where T : IComponent
         {
             return _components.OfType<T>().FirstOrDefault();
+        }
+
+        public void AddChild(Entity child)
+        {
+            if (child.Parent == this) return;
+            if (child.Parent != null)
+            {
+                child.Parent.RemoveChild(child);
+            }
+            child.Parent = this;
+            _children.Add(child);
+            child.Transform.SetParent(this.Transform);
+        }
+
+        public bool RemoveChild(Entity child)
+        {
+            if (!_children.Remove(child)) return false;
+            child.Parent = null;
+            child.Transform.SetParent(null);
+            return true;
         }
 
         public async ValueTask Update(Renderer renderer)

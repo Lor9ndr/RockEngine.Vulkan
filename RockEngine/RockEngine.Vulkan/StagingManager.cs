@@ -17,7 +17,7 @@ namespace RockEngine.Core.Rendering.Managers
 
         public VkBuffer StagingBuffer => _stagingBuffer;
 
-        public StagingManager(VulkanContext context, ulong initialSize = 64 * 1024 * 1024)
+        public StagingManager(VulkanContext context, ulong initialSize = 128 * 1024 * 1024)
         {
             _context = context;
             _bufferSize = initialSize;

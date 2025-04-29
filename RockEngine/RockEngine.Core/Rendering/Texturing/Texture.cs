@@ -5,6 +5,8 @@ using Silk.NET.Vulkan;
 
 using SkiaSharp;
 
+using System.Runtime.InteropServices;
+
 namespace RockEngine.Core.Rendering.Texturing
 {
     public class Texture : IDisposable
@@ -24,8 +26,8 @@ namespace RockEngine.Core.Rendering.Texturing
         public uint LoadedMipLevels { get => _loadedMipLevels; protected set => _loadedMipLevels = value; }
         public uint TotalMipLevels => _image.MipLevels;
 
-        public uint Width => _image.Width;
-        public uint Height => _image.Height;
+        public uint Width => _image.Extent.Width;
+        public uint Height => _image.Extent.Height;
 
         public Guid ID { get; } = Guid.NewGuid();
         public string? SourcePath { get; }
@@ -63,7 +65,12 @@ namespace RockEngine.Core.Rendering.Texturing
             CopyImageData(context, skBitmap, image, mipLevels > 1);
 
             if (mipLevels > 1)
-                GenerateMipmaps(context, image, format, width, height);
+            {
+                context.SubmitSingleTimeCommand(cmd =>
+                {
+                    image.GenerateMipmaps(cmd);
+                });
+            }
 
             var sampler = CreateSampler(context, mipLevels);
             return new Texture(context, image, imageView, sampler, filePath);
@@ -92,7 +99,9 @@ namespace RockEngine.Core.Rendering.Texturing
          uint height,
          Format format,
          ImageUsageFlags usage = ImageUsageFlags.TransferDstBit | ImageUsageFlags.SampledBit,
-         uint mipLevels = 1)
+         uint mipLevels = 1,
+         uint arrayLayers = 1,
+         ImageCreateFlags flags = ImageCreateFlags.None)
         {
             // Validate compressed texture dimensions
             if (format.IsBlockCompressed())
@@ -112,15 +121,16 @@ namespace RockEngine.Core.Rendering.Texturing
                 Format = format,
                 Extent = new Extent3D(width, height, 1),
                 MipLevels = mipLevels,
-                ArrayLayers = 1,
+                ArrayLayers = arrayLayers,
                 Samples = SampleCountFlags.Count1Bit,
                 Tiling = ImageTiling.Optimal,
                 Usage = usage,
                 SharingMode = SharingMode.Exclusive,
-                InitialLayout = ImageLayout.Undefined
+                InitialLayout = ImageLayout.Undefined,
+                Flags = flags
             };
 
-            return VkImage.Create(context, imageInfo, MemoryPropertyFlags.DeviceLocalBit);
+            return VkImage.Create(context, imageInfo, MemoryPropertyFlags.DeviceLocalBit, ImageAspectFlags.ColorBit);
         }
 
         public static VkImageView CreateImageView(VulkanContext context, VkImage image, Format format)
@@ -193,42 +203,36 @@ namespace RockEngine.Core.Rendering.Texturing
                      MipLevels = mipLevels,
                      InitialLayout = ImageLayout.Undefined,
                  },
-                MemoryPropertyFlags.DeviceLocalBit);
+                MemoryPropertyFlags.DeviceLocalBit, ImageAspectFlags.ColorBit);
 
             // Копирование данных и генерация мипмапов
-            using var staging = await VkBuffer.CreateAndCopyToStagingBuffer<byte>(
-                context,
-                bitmap.GetPixelSpan().ToArray(),
-                (ulong)bitmap.ByteCount);
+            var batch = context.SubmitContext.CreateBatch();
+            var staging = await VkBuffer.CreateAndCopyToStagingBuffer<byte>(context,bitmap.GetPixelSpan().ToArray(),(ulong)bitmap.ByteCount);
 
-            unsafe
+            image.TransitionImageLayout(batch.CommandBuffer, ImageLayout.TransferDstOptimal);
+
+            var copy = new BufferImageCopy
             {
-                context.SubmitSingleTimeCommand(cmd =>
+                ImageSubresource = new ImageSubresourceLayers
                 {
-                    image.TransitionImageLayout(cmd,  ImageLayout.TransferDstOptimal);
+                    AspectMask = ImageAspectFlags.ColorBit,
+                    MipLevel = 0,
+                    BaseArrayLayer = 0,
+                    LayerCount = 1,
+                },
+                ImageExtent = new Extent3D(width, height, 1)
+            };
 
-                    var copy = new BufferImageCopy
-                    {
-                        ImageSubresource = new ImageSubresourceLayers
-                        {
-                            AspectMask = ImageAspectFlags.ColorBit,
-                            MipLevel = 0,
-                            BaseArrayLayer = 0,
-                            LayerCount = 1,
-                        },
-                        ImageExtent = new Extent3D(width, height, 1)
-                    };
+            VulkanContext.Vk.CmdCopyBufferToImage(batch.CommandBuffer, staging, image,
+                ImageLayout.TransferDstOptimal, 1, in copy);
 
-                    VulkanContext.Vk.CmdCopyBufferToImage(cmd, staging, image,
-                        ImageLayout.TransferDstOptimal, 1, &copy);
+            image.GenerateMipmaps(batch.CommandBuffer);
+            batch.Submit([staging]);
+            await context.SubmitContext.FlushAsync();
 
-                    image.GenerateMipmaps(cmd, format);
-                });
-
-                return new Texture(context, image,
-                    image.CreateView(ImageAspectFlags.ColorBit, mipLevels, 1),
-                    CreateSampler(context, mipLevels), texturePath);
-            }
+            return new Texture(context, image,
+                image.CreateView(ImageAspectFlags.ColorBit, 0, mipLevels),
+                CreateSampler(context, mipLevels), texturePath);
 
         }
 
@@ -236,168 +240,6 @@ namespace RockEngine.Core.Rendering.Texturing
         {
             return (uint)Math.Floor(Math.Log(Math.Max(width, height), 2)) + 1;
         }
-
-
-        private static unsafe void GenerateMipmaps(VulkanContext context, VkImage image, Format format, uint width, uint height)
-        {
-            var vk = VulkanContext.Vk;
-            var physicalDevice = context.Device.PhysicalDevice;
-            vk.GetPhysicalDeviceFormatProperties(physicalDevice, format, out var formatProperties);
-
-            if ((formatProperties.OptimalTilingFeatures & FormatFeatureFlags.SampledImageFilterLinearBit) == 0)
-                throw new NotSupportedException($"Texture format {format} doesn't support linear blitting!");
-
-            var mipLevels = image.MipLevels;
-            var cmdBuffer = BeginTemporaryCommandBuffer(context);
-
-            try
-            {
-                for (uint i = 1; i < mipLevels; i++)
-                {
-                    var blit = new ImageBlit
-                    {
-                        SrcSubresource = new ImageSubresourceLayers
-                        {
-                            AspectMask = ImageAspectFlags.ColorBit,
-                            MipLevel = i - 1,
-                            BaseArrayLayer = 0,
-                            LayerCount = 1
-                        },
-                        SrcOffsets = new ImageBlit.SrcOffsetsBuffer
-                        {
-                            Element0 = new Offset3D(0, 0, 0),
-                            Element1 = new Offset3D(
-                                (int)Math.Max(width >> (int)(i - 1), 1),
-                                (int)Math.Max(height >> (int)(i - 1), 1),
-                                1)
-                        },
-                        DstSubresource = new ImageSubresourceLayers
-                        {
-                            AspectMask = ImageAspectFlags.ColorBit,
-                            MipLevel = i,
-                            BaseArrayLayer = 0,
-                            LayerCount = 1
-                        },
-                        DstOffsets = new ImageBlit.DstOffsetsBuffer
-                        {
-                            Element0 = new Offset3D(0, 0, 0),
-                            Element1 = new Offset3D(
-                                (int)Math.Max(width >> (int)i, 1),
-                                (int)Math.Max(height >> (int)i, 1),
-                                1)
-                        }
-                    };
-
-                    // Prepare source mip level
-                    var srcBarrier = new ImageMemoryBarrier
-                    {
-                        SType = StructureType.ImageMemoryBarrier,
-                        Image = image,
-                        SubresourceRange = new ImageSubresourceRange
-                        {
-                            AspectMask = ImageAspectFlags.ColorBit,
-                            BaseMipLevel = i - 1,
-                            LevelCount = 1,
-                            BaseArrayLayer = 0,
-                            LayerCount = 1
-                        },
-                        OldLayout = ImageLayout.TransferDstOptimal,
-                        NewLayout = ImageLayout.TransferSrcOptimal,
-                        SrcAccessMask = AccessFlags.TransferWriteBit,
-                        DstAccessMask = AccessFlags.TransferReadBit
-                    };
-
-                    vk.CmdPipelineBarrier(cmdBuffer,
-                        PipelineStageFlags.TransferBit,
-                        PipelineStageFlags.TransferBit,
-                        0, 0, null, 0, null, 1, &srcBarrier);
-
-                    // Blit between mip levels
-                    vk.CmdBlitImage(cmdBuffer,
-                        image, ImageLayout.TransferSrcOptimal,
-                        image, ImageLayout.TransferDstOptimal,
-                        1, &blit, Filter.Linear);
-
-                    // Transition source mip to shader read
-                    var srcReadBarrier = new ImageMemoryBarrier
-                    {
-                        SType = StructureType.ImageMemoryBarrier,
-                        Image = image,
-                        SubresourceRange = new ImageSubresourceRange
-                        {
-                            AspectMask = ImageAspectFlags.ColorBit,
-                            BaseMipLevel = i - 1,
-                            LevelCount = 1,
-                            BaseArrayLayer = 0,
-                            LayerCount = 1
-                        },
-                        OldLayout = ImageLayout.TransferSrcOptimal,
-                        NewLayout = ImageLayout.ShaderReadOnlyOptimal,
-                        SrcAccessMask = AccessFlags.TransferReadBit,
-                        DstAccessMask = AccessFlags.ShaderReadBit
-                    };
-
-                    vk.CmdPipelineBarrier(cmdBuffer,
-                        PipelineStageFlags.TransferBit,
-                        PipelineStageFlags.FragmentShaderBit,
-                        0, 0, null, 0, null, 1, &srcReadBarrier);
-                }
-
-                // Final transition for last mip level
-                var finalBarrier = new ImageMemoryBarrier
-                {
-                    SType = StructureType.ImageMemoryBarrier,
-                    Image = image,
-                    SubresourceRange = new ImageSubresourceRange
-                    {
-                        AspectMask = ImageAspectFlags.ColorBit,
-                        BaseMipLevel = mipLevels - 1,
-                        LevelCount = 1,
-                        BaseArrayLayer = 0,
-                        LayerCount = 1
-                    },
-                    OldLayout = ImageLayout.TransferDstOptimal,
-                    NewLayout = ImageLayout.ShaderReadOnlyOptimal,
-                    SrcAccessMask = AccessFlags.TransferWriteBit,
-                    DstAccessMask = AccessFlags.ShaderReadBit
-                };
-
-                vk.CmdPipelineBarrier(cmdBuffer,
-                    PipelineStageFlags.TransferBit,
-                    PipelineStageFlags.FragmentShaderBit,
-                    0, 0, null, 0, null, 1, &finalBarrier);
-
-                image.SetCurrentLayout(ImageLayout.ShaderReadOnlyOptimal);
-            }
-            finally
-            {
-                EndTemporaryCommandBuffer(context, cmdBuffer);
-            }
-        }
-        private static VkCommandBuffer BeginTemporaryCommandBuffer(VulkanContext context)
-        {
-            var cmdPool = VkCommandPool.Create(context, CommandPoolCreateFlags.TransientBit, context.Device.QueueFamilyIndices.GraphicsFamily.Value);
-            var cmdBuffer = cmdPool.AllocateCommandBuffer();
-            cmdBuffer.BeginSingleTimeCommand();
-            return cmdBuffer;
-        }
-
-        private static unsafe void EndTemporaryCommandBuffer(VulkanContext context, VkCommandBuffer cmdBuffer)
-        {
-            cmdBuffer.End();
-            using var fence = VkFence.CreateNotSignaled(context);
-            var buffer = cmdBuffer.VkObjectNative;
-            var submitInfo = new SubmitInfo
-            {
-                SType = StructureType.SubmitInfo,
-                CommandBufferCount = 1,
-                PCommandBuffers = &buffer
-            };
-            context.Device.GraphicsQueue.Submit(submitInfo, fence);
-            fence.Wait();
-            cmdBuffer.Dispose();
-        }
-
 
         private static Format GetVulkanFormat(SKColorType colorType, VulkanContext context)
         {
@@ -551,10 +393,146 @@ namespace RockEngine.Core.Rendering.Texturing
                 MinLod = 0.0f,
                 MaxLod = 0.0f
             };
-            var sampler = VkSampler.Create(context, in samplerCreateInfo);
+           
+            var sampler = context.SamplerCache.GetSampler(samplerCreateInfo);
             skImage.Dispose();
             return new Texture(context, vkImage, imageView, sampler, null);
         }
+        public static async Task<Texture> CreateCubeMapAsync(VulkanContext context, string[] facePaths, CancellationToken cancellationToken = default)
+        {
+            if (facePaths.Length != 6)
+                throw new ArgumentException("Cube map requires exactly 6 face paths.");
+
+            // Load all face images
+            var faceBitmaps = new SKBitmap[6];
+            for (int i = 0; i < 6; i++)
+            {
+                var bytes = await File.ReadAllBytesAsync(facePaths[i], cancellationToken);
+                faceBitmaps[i] = SKBitmap.Decode(bytes);
+                if (faceBitmaps[i].Width != faceBitmaps[0].Width || faceBitmaps[i].Height != faceBitmaps[0].Height)
+                    throw new InvalidOperationException("Cube map faces must have uniform dimensions.");
+                if (faceBitmaps[i].ColorType != faceBitmaps[0].ColorType)
+                    throw new InvalidOperationException("Cube map faces must have the same color format.");
+            }
+
+            // Extract common properties
+            uint width = (uint)faceBitmaps[0].Width;
+            uint height = (uint)faceBitmaps[0].Height;
+            var format = GetVulkanFormat(faceBitmaps[0].ColorType, context);
+            uint mipLevels = CalculateMipLevels(width, height);
+
+            // Create cube-compatible image
+            var image = CreateVulkanImage(
+                context,
+                width,
+                height,
+                format,
+                ImageUsageFlags.TransferDstBit | ImageUsageFlags.TransferSrcBit | ImageUsageFlags.SampledBit,
+                mipLevels,
+                arrayLayers: 6,
+                flags: ImageCreateFlags.CreateCubeCompatibleBit);
+
+            var uploadBatch = context.SubmitContext.CreateBatch();
+
+            // 1. Transition image to transfer destination layout
+            image.TransitionImageLayout(uploadBatch.CommandBuffer, ImageLayout.TransferDstOptimal, levelCount:6);
+
+            // 2. Stage all face data and schedule copies
+            for (int i = 0; i < 6; i++)
+            {
+                byte[] pixelData = faceBitmaps[i].Bytes;
+                ulong faceSize = (ulong)(width * height * format.GetBytesPerPixel());
+
+                // Stage data using the staging manager
+                if (!context.SubmitContext.StagingManager.TryStage(pixelData, out ulong bufferOffset, out ulong stagedSize))
+                {
+                    throw new InvalidOperationException("Staging buffer overflow");
+                }
+
+                // Configure buffer-to-image copy
+                var copyRegion = new BufferImageCopy
+                {
+                    BufferOffset = bufferOffset,
+                    ImageSubresource = new ImageSubresourceLayers
+                    {
+                        AspectMask = ImageAspectFlags.ColorBit,
+                        MipLevel = 0,
+                        BaseArrayLayer = (uint)i,
+                        LayerCount = 1
+                    },
+                    ImageExtent = new Extent3D(width, height, 1)
+                };
+
+                // Record copy command
+                VulkanContext.Vk.CmdCopyBufferToImage(
+                    uploadBatch.CommandBuffer,
+                    context.SubmitContext.StagingManager.StagingBuffer,
+                    image,
+                    ImageLayout.TransferDstOptimal,
+                    1,
+                    in copyRegion);
+            }
+
+            // 3. Generate mipmaps
+            image.GenerateMipmaps(uploadBatch.CommandBuffer);
+
+/*            // 4. Transition to final layout
+            image.TransitionImageLayout(uploadBatch.CommandBuffer, ImageLayout.ShaderReadOnlyOptimal);*/
+
+            // Submit all commands as a single batch
+            uploadBatch.Submit();
+
+            // Create associated resources
+            var imageView = CreateCubeMapImageView(context, image, format);
+            var sampler = CreateCubeMapSampler(context, mipLevels);
+
+            return new Texture(context, image, imageView, sampler, null);
+        }
+        private static VkSampler CreateCubeMapSampler(VulkanContext context, uint mipLevels)
+        {
+            var samplerCreateInfo = new SamplerCreateInfo
+            {
+                SType = StructureType.SamplerCreateInfo,
+                MagFilter = Filter.Linear,
+                MinFilter = Filter.Linear,
+                AddressModeU = SamplerAddressMode.ClampToEdge,
+                AddressModeV = SamplerAddressMode.ClampToEdge,
+                AddressModeW = SamplerAddressMode.ClampToEdge,
+                AnisotropyEnable = Vk.True,
+                MaxAnisotropy = 16,
+                BorderColor = BorderColor.IntOpaqueBlack,
+                UnnormalizedCoordinates = Vk.False,
+                CompareEnable = Vk.False,
+                CompareOp = CompareOp.Always,
+                MipmapMode = SamplerMipmapMode.Linear,
+                MipLodBias = 0.0f,
+                MinLod = 0.0f,
+                MaxLod = mipLevels
+            };
+
+            return context.SamplerCache.GetSampler(in samplerCreateInfo);
+        }
+        private static VkImageView CreateCubeMapImageView(VulkanContext context, VkImage image, Format format)
+        {
+            var viewInfo = new ImageViewCreateInfo
+            {
+                SType = StructureType.ImageViewCreateInfo,
+                Image = image,
+                ViewType = ImageViewType.TypeCube,
+                Format = format,
+                SubresourceRange = new ImageSubresourceRange
+                {
+                    AspectMask = ImageAspectFlags.ColorBit,
+                    BaseMipLevel = 0,
+                    LevelCount = image.MipLevels,
+                    BaseArrayLayer = 0,
+                    LayerCount = 6
+                }
+            };
+
+            return VkImageView.Create(context, image, viewInfo);
+        }
+
 
 
         public void Dispose()
@@ -644,7 +622,7 @@ namespace RockEngine.Core.Rendering.Texturing
                 if (_generateMipmaps)
                 {
                     throw new NotImplementedException();
-                    //GenerateMipmaps(image);
+                    //GenerateMipmaps();
                 }
 
                 return new Texture(_context, image, imageView, sampler);
@@ -681,7 +659,7 @@ namespace RockEngine.Core.Rendering.Texturing
                     InitialLayout = ImageLayout.Undefined
                 };
 
-                return VkImage.Create(_context, imageInfo, MemoryPropertyFlags.DeviceLocalBit);
+                return VkImage.Create(_context, imageInfo, MemoryPropertyFlags.DeviceLocalBit, _aspectMask);
             }
 
             private VkImageView CreateImageView(VkImage image)
@@ -729,12 +707,9 @@ namespace RockEngine.Core.Rendering.Texturing
 
                 return _context.SamplerCache.GetSampler(samplerInfo);
             }
-
-           
-
         }
-      
     }
+
     public static class FormatExtensions
     {
         public static bool IsBlockCompressed(this Format format)

@@ -31,9 +31,13 @@ namespace RockEngine.Core.Rendering.Managers
                 camera.RenderTarget = new CameraRenderTarget(
                     _context,
                     _engine,
-                    _engine.Swapchain.Extent,
+                    new Silk.NET.Vulkan.Extent2D(1920, 1080),
                     _deferredRenderPass
                 );
+                _engine.Swapchain.OnSwapchainRecreate += (swapchain) =>
+                {
+                    camera.RenderTarget.Resize(swapchain.Extent);
+                };
                 camera.RenderTarget.CreateFramebuffers();
                 InitializeGBuffer(camera.RenderTarget.GBuffer, renderer);
             }

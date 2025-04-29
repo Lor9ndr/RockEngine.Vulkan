@@ -1,5 +1,4 @@
-﻿
-using Silk.NET.Vulkan;
+﻿using Silk.NET.Vulkan;
 
 namespace RockEngine.Vulkan
 {
@@ -35,6 +34,16 @@ namespace RockEngine.Vulkan
             _disposed = true;
             GC.SuppressFinalize(this);
         }
+
+        /// <summary>
+        /// Safely change vulkan object to new value without of disposing an <see cref="VkObject{T}"/>
+        /// </summary>
+        /// <param name="vkObject"></param>
+        internal void InternalChangeVkObject(in T vkObject)
+        {
+            _vkObject = vkObject;
+        }
+
         public static implicit operator T(VkObject<T> value) => value._vkObject;
 
     }

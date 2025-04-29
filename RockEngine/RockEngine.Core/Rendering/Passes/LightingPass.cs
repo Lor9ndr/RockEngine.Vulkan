@@ -1,12 +1,8 @@
 ﻿using RockEngine.Core.ECS.Components;
 using RockEngine.Core.Rendering.Managers;
-using RockEngine.Core.Rendering.ResourceBindings;
 using RockEngine.Vulkan;
 
-using Silk.NET.SDL;
 using Silk.NET.Vulkan;
-
-using System;
 
 namespace RockEngine.Core.Rendering.Passes
 {

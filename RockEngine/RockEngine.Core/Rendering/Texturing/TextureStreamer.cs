@@ -1,22 +1,16 @@
-﻿using RockEngine.Vulkan;
-
-using System.Runtime.InteropServices;
+﻿using System.Runtime.InteropServices;
 
 namespace RockEngine.Core.Rendering.Texturing
 {
     public class TextureStreamer : IDisposable
     {
-        private readonly VulkanContext _context;
-        private readonly Renderer _renderer;
         private PriorityQueue<StreamRequest, float> _queue = new();
         private readonly List<Worker> _workers = new();
         private readonly CancellationTokenSource _cts = new();
         private readonly MemoryBudgetTracker _memoryTracker;
 
-        public TextureStreamer(VulkanContext context, Renderer renderer, ulong vramBudgetMB = 2048, int workerCount = 4)
+        public TextureStreamer(ulong vramBudgetMB = 2048, int workerCount = 4)
         {
-            _context = context;
-            _renderer = renderer;
             _memoryTracker = new MemoryBudgetTracker(vramBudgetMB * 1024 * 1024);
 
             for (var i = 0; i < workerCount; i++)
@@ -116,6 +110,7 @@ namespace RockEngine.Core.Rendering.Texturing
                     request.TargetMip); // Load the specific target mip
 
                 request.Texture.UpdateMipLevel(request.TargetMip, data, size);
+
                 Marshal.FreeHGlobal(data);
 
                 _parent._memoryTracker.UpdateUsage(size);

@@ -12,7 +12,7 @@ namespace RockEngine.Vulkan
             _context = context;
         }
 
-        public VkSampler GetSampler(SamplerCreateInfo ci)
+        public VkSampler GetSampler(in SamplerCreateInfo ci)
         {
             var key = new SamplerKey(ci);
             if (!_samplers.TryGetValue(key, out var sampler))

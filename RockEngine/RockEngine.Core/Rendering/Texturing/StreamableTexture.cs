@@ -32,14 +32,16 @@ namespace RockEngine.Core.Rendering.Texturing
                         "Mip level exceeds total available mip levels");
 
                 var oldView = _imageView;
-                var oldSampler = _sampler;
 
-                _context.SubmitSingleTimeCommand(cmd =>
-                {
-                    Image.TransitionMipLayout(cmd, ImageLayout.TransferDstOptimal, targetMip);
-                    CopyDataToMip(cmd, data, size, targetMip);
-                    Image.TransitionMipLayout(cmd, ImageLayout.ShaderReadOnlyOptimal, targetMip);
-                });
+
+                var batch = _context.SubmitContext.CreateBatch();
+                var cmd = batch.CommandBuffer;
+                Image.TransitionImageLayout(cmd, ImageLayout.TransferDstOptimal, mipLevel: targetMip);
+                CopyDataToMip(cmd, data, size, targetMip);
+                Image.TransitionImageLayout(cmd, ImageLayout.ShaderReadOnlyOptimal, mipLevel: targetMip);
+
+                batch.Submit();
+
 
                 // Clamp loaded levels to never exceed total mips
                 LoadedMipLevels = Math.Min(targetMip + 1, TotalMipLevels);
@@ -49,7 +51,7 @@ namespace RockEngine.Core.Rendering.Texturing
                 // Create view for loaded mips (base=0, levelCount=LoadedMipLevels)
                 _imageView = Image.CreateView(
                     ImageAspectFlags.ColorBit,
-                    mipLevels: LoadedMipLevels,
+                    levelCount: LoadedMipLevels,
                     baseMipLevel: 0
                 );
 
@@ -76,11 +78,10 @@ namespace RockEngine.Core.Rendering.Texturing
                 if (mipLevel >= LoadedMipLevels) return;
 
                 // Transition mip to undefined layout
-                _context.SubmitSingleTimeCommand((cmd) =>
-                {
-                    Image.TransitionMipLayout(cmd, ImageLayout.Undefined, mipLevel);
-                    LoadedMipLevels = mipLevel;
-                });
+                var batch = _context.SubmitContext.CreateBatch();
+                Image.TransitionImageLayout(batch.CommandBuffer, ImageLayout.Undefined, mipLevel: mipLevel);
+                LoadedMipLevels = mipLevel;
+                batch.Submit();
             }
         }
 
@@ -102,8 +103,8 @@ namespace RockEngine.Core.Rendering.Texturing
                     LayerCount = 1
                 },
                 ImageExtent = new Extent3D(
-                    Math.Max(Image.Width >> (int)mipLevel, 1),
-                    Math.Max(Image.Height >> (int)mipLevel, 1),
+                    Math.Max(Image.Extent.Width >> (int)mipLevel, 1),
+                    Math.Max(Image.Extent.Height >> (int)mipLevel, 1),
                     1)
             };
 

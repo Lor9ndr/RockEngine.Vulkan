@@ -57,6 +57,10 @@ namespace RockEngine.Editor.Layers
             });
             using AssimpLoader assimpLoader = new AssimpLoader(_textureStreamer);
             var meshes = await assimpLoader.LoadMeshesAsync("F:\\RockEngine.Vulkan\\RockEngine\\RockEngine.Editor\\Resources\\Models\\SponzaAtrium\\scene.gltf", _context, pool.AllocateCommandBuffer());
+            var cubemap = await Texture.CreateCubeMapAsync(_context, ["Resources/skybox/back.jpg", "Resources/skybox/front.jpg", "Resources/skybox/left.jpg", "Resources/skybox/right.jpg", "Resources/skybox/top.jpg", "Resources/skybox/bottom.jpg"]);
+            var skybox = _world.CreateEntity();
+             skybox.AddComponent<Skybox>().Cubemap = cubemap;
+
             var cam = _world.CreateEntity();
             var debugCam = cam.AddComponent<DebugCamera>();
             debugCam.SetInputContext(_inputContext);
@@ -117,6 +121,8 @@ namespace RockEngine.Editor.Layers
                     _lightCenters.Add(transform.Position);
                     _lightSpeeds.Add(Random.Shared.NextSingle() * 1.5f + 0.5f);
                     _lightRadii.Add(Random.Shared.NextSingle() * 3 + 1);
+                    cam.AddChild(lightEntity);
+
                 }
                 /*else // 10% Directional lights
                 {
@@ -213,9 +219,8 @@ namespace RockEngine.Editor.Layers
                 var debugCam = _world.GetEntities().First(s=>s.GetComponent<DebugCamera>() is not null).GetComponent<DebugCamera>();
                 var renderTarget = debugCam.RenderTarget;
                 var texId = _imGuiController.GetTextureID(renderTarget.OutputTexture);
-
                 // Get proper size maintaining aspect ratio
-                var imageSize = new Vector2(renderTarget.OutputTexture.Image.Width, renderTarget.OutputTexture.Image.Height);
+                var imageSize = new Vector2(renderTarget.OutputTexture.Image.Extent.Width, renderTarget.OutputTexture.Image.Extent.Height);
                 var availableSize = ImGui.GetContentRegionAvail();
                 var scale = Math.Min(availableSize.X / imageSize.X, availableSize.Y / imageSize.Y);
                 var displaySize = imageSize * scale;
@@ -263,7 +268,7 @@ namespace RockEngine.Editor.Layers
                         {
                             if (camEntity != null)
                             {
-                                transform.Position = camEntity.Transform.Position;
+                                //transform.Position = camEntity.Transform.Position;
                                 light.Direction = camEntity.GetComponent<Camera>().Front;
                             }
                         }
