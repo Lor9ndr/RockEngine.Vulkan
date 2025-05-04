@@ -7,25 +7,28 @@ using Silk.NET.Vulkan;
 
 namespace RockEngine.Core.Rendering.PipelineRenderers
 {
-    public class DeferredRenderPipeline : IRenderPipeline
+    internal class DeferredRenderPipeline : IRenderPipeline
     {
         private readonly VulkanContext _context;
         private readonly GeometryPass _geometryPass;
         private readonly LightingPass _lightingPass;
+        private readonly PostLightPass _postLightPass;
         private readonly ScreenPass _screenPass;
         private readonly ImGuiPass _imGuiPass;
         private readonly List<VkCommandBuffer> _commandBuffers;
 
-        public DeferredRenderPipeline(
+        internal DeferredRenderPipeline(
             VulkanContext context,
             GeometryPass geometryPass,
             LightingPass lightingPass,
+            PostLightPass postLightPass,
             ScreenPass screenPass,
             ImGuiPass imGuiPass)
         {
             _context = context;
             _geometryPass = geometryPass;
             _lightingPass = lightingPass;
+            _postLightPass = postLightPass;
             _screenPass = screenPass;
             _imGuiPass = imGuiPass;
             _commandBuffers = new List<VkCommandBuffer>(10);
@@ -57,7 +60,7 @@ namespace RockEngine.Core.Rendering.PipelineRenderers
                         SType = StructureType.RenderPassBeginInfo,
                         RenderPass = camera.RenderTarget.RenderPass,
                         Framebuffer = camera.RenderTarget.Framebuffers[renderer.FrameIndex],
-                        RenderArea = new Rect2D { Extent = camera.RenderTarget.Size },
+                        RenderArea = camera.RenderTarget.Scissor,
                         ClearValueCount = (uint)camera.RenderTarget.ClearValues.Length,
                         PClearValues = pClearValue
                     };
@@ -66,9 +69,8 @@ namespace RockEngine.Core.Rendering.PipelineRenderers
                 }
             }
             
-            var buffers = secondaryPool.AllocateCommandBuffers(2, CommandBufferLevel.Secondary);
-            // Correct subpass indices
-            var subpassIndices = new[] { 0u, 1u };
+            var buffers = secondaryPool.AllocateCommandBuffers(3, CommandBufferLevel.Secondary);
+            var subpassIndices = new[] { 0u, 1u, 2u };
             unsafe
             {
                 for (int i = 0; i < buffers.Length; i++)
@@ -98,10 +100,15 @@ namespace RockEngine.Core.Rendering.PipelineRenderers
             cmd.ExecuteSecondary(buffers[0]);
 
             cmd.NextSubpass(SubpassContents.SecondaryCommandBuffers);
-
-            await _lightingPass.Execute(buffers[1], camera);
+            await _lightingPass.Execute(buffers[1], camera, renderer.FrameIndex);
             buffers[1].End();
             cmd.ExecuteSecondary(buffers[1]);
+
+            cmd.NextSubpass(SubpassContents.SecondaryCommandBuffers);
+            await _postLightPass.Execute(buffers[2], renderer.FrameIndex, camera);
+            buffers[2].End();
+            cmd.ExecuteSecondary(buffers[2]);
+
 
             cmd.EndRenderPass();
             camera.RenderTarget.TransitionToRead(cmd);

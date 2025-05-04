@@ -27,6 +27,10 @@ namespace RockEngine.Core.Rendering.Managers
 
             foreach (var (setLocation, perSetBindings) in material.Bindings)
             {
+                if(material.Pipeline.Layout.GetSetLayout(setLocation) == default)
+                {
+                    continue;
+                }
                 ProcessSet(material.Pipeline.Layout, setLocation, perSetBindings, setsToBind, ref index);
             }
 

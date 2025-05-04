@@ -9,12 +9,14 @@ using Silk.NET.Vulkan;
 
 namespace RockEngine.Core.Rendering.Passes
 {
-    public class ScreenPass : RenderPass
+    public class ScreenPass : Subpass
     {
         private readonly VkPipeline _screenPipeline;
         private readonly SwapchainRenderTarget _swapchainTarget;
         private Material _screenMaterial;
         protected Dictionary<Texture, TextureBinding> Bindings = new Dictionary<Texture, TextureBinding>();
+
+        protected override uint Order => 2;
 
         public ScreenPass(
             VulkanContext context,
@@ -25,11 +27,6 @@ namespace RockEngine.Core.Rendering.Passes
         {
             _screenPipeline = screenPipeline;
             _swapchainTarget = swapchainTarget;
-            InitializeMaterial();
-        }
-
-        private void InitializeMaterial()
-        {
             _screenMaterial = new Material(_screenPipeline);
         }
 

@@ -5,49 +5,45 @@ using RockEngine.Core.Rendering.RockEngine.Core.Rendering;
 using RockEngine.Vulkan;
 
 using Silk.NET.Vulkan;
-
 using System.Runtime.InteropServices;
 
 namespace RockEngine.Core.Rendering.Passes
 {
-    public class LightingPass : Subpass
+    internal class PostLightPass : Subpass
     {
-        private readonly LightManager _lightManager;
+        private readonly VulkanContext _context;
+        private readonly BindingManager _bindingManager;
         private readonly TransformManager _transformManager;
         private readonly IndirectCommandManager _indirectCommands;
-        private readonly VkPipeline _lightingPipeline;
         private readonly GlobalUbo _globalUbo;
         private readonly UniformBufferBinding _binding;
+        protected override uint Order => 2;
 
-        public LightingPass(
-            VulkanContext context,
+
+        public PostLightPass(VulkanContext context,
             BindingManager bindingManager,
-            LightManager lightManager,
             TransformManager transformManager,
             IndirectCommandManager indirectCommands,
-            GlobalUbo globalUbo,
-            VkPipeline lightingPipeline)
+            GlobalUbo globalUbo)
             : base(context, bindingManager)
         {
-            _lightManager = lightManager;
+            _context = context;
+            _bindingManager = bindingManager;
             _transformManager = transformManager;
             _indirectCommands = indirectCommands;
-            _lightingPipeline = lightingPipeline;
             _globalUbo = globalUbo;
             _binding = new UniformBufferBinding(_globalUbo, 0, 0);
         }
 
-        protected override uint Order => 1;
 
-        public override async Task Execute(VkCommandBuffer cmd, params object[] args)
+        public override Task Execute(VkCommandBuffer cmd, params object[] args)
         {
-            var camera = args[0] as Camera ?? throw new ArgumentNullException(nameof(Camera));
-            uint frameIndex = (uint)args[1];
-
+            uint frameIndex = (uint)args[0];
+            var camera = args[1] as Camera ?? throw new ArgumentNullException(nameof(Camera));
             cmd.SetViewport(camera.RenderTarget.Viewport);
             cmd.SetScissor(camera.RenderTarget.Scissor);
-            // 2. Draw skybox/transparent objects afterward
-            foreach (var drawGroup in _indirectCommands.GetDrawGroups(RenderLayerType.Transparent))
+
+            foreach (var drawGroup in _indirectCommands.GetDrawGroups(RenderLayerType.Solid))
             {
                 if (drawGroup.Pipeline.SubPass != Order)
                 {
@@ -85,15 +81,8 @@ namespace RockEngine.Core.Rendering.Passes
                     }
                 }
             }
-
-            // 1. Draw the lighting quad first
-            cmd.BindPipeline(_lightingPipeline, PipelineBindPoint.Graphics);
-            BindingManager.BindResourcesForMaterial(camera.RenderTarget.GBuffer.Material, cmd);
-            cmd.Draw(3, 1, 0, 0);
-
-         
+            return Task.CompletedTask;
         }
-
         private Silk.NET.Core.Bool32 GetMultiDrawIndirectFeature()
         {
             return Context.Device.PhysicalDevice.Features2.Features.MultiDrawIndirect;

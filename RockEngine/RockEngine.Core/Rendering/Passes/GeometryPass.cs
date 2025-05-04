@@ -10,12 +10,13 @@ using System.Runtime.InteropServices;
 
 namespace RockEngine.Core.Rendering.Passes
 {
-    public class GeometryPass : RenderPass
+    public class GeometryPass : Subpass
     {
         private readonly TransformManager _transformManager;
         private readonly IndirectCommandManager _indirectCommands;
         private readonly GlobalUbo _globalUbo;
         private readonly UniformBufferBinding _binding;
+        protected override uint Order => 0;
 
         public GeometryPass(
             VulkanContext context,
@@ -47,8 +48,12 @@ namespace RockEngine.Core.Rendering.Passes
             cmd.SetViewport(camera.RenderTarget.Viewport);
             cmd.SetScissor(camera.RenderTarget.Scissor);
 
-            foreach (var drawGroup in _indirectCommands.GetDrawGroups())
+            foreach (var drawGroup in _indirectCommands.GetDrawGroups(RenderLayerType.Opaque))
             {
+                if (drawGroup.Pipeline.SubPass != Order)
+                {
+                    continue;
+                }
                 cmd.BindPipeline(drawGroup.Pipeline, PipelineBindPoint.Graphics);
 
                 var matrixBinding = _transformManager.GetCurrentBinding(frameIndex);

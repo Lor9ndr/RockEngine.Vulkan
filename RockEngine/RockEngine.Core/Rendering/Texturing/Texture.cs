@@ -9,31 +9,70 @@ using System.Runtime.InteropServices;
 
 namespace RockEngine.Core.Rendering.Texturing
 {
-    public class Texture : IDisposable
+    /// <summary>
+    /// Represents a Vulkan texture resource, managing image, image view, and sampler lifecycle.
+    /// Handles 2D textures, cubemaps, and provides texture creation utilities.
+    /// </summary>
+    public partial class Texture : IDisposable
     {
+        #region Fields and Properties
+
+        // Vulkan context for resource management
         protected readonly VulkanContext _context;
+
+        // Vulkan image resources
         protected VkImage _image;
         protected VkImageView _imageView;
         protected VkSampler _sampler;
+
+        // Resource management flags
         private bool _disposed;
         private static Texture? _emptyTexture;
         private uint _loadedMipLevels;
 
+        /// <summary>Image view for texture sampling</summary>
         public VkImageView ImageView => _imageView;
+
+        /// <summary>Texture sampler for filtering and addressing</summary>
         public VkSampler Sampler => _sampler;
+
+        /// <summary>Vulkan image resource</summary>
         public VkImage Image => _image;
 
+        /// <summary>Number of loaded mipmap levels</summary>
         public uint LoadedMipLevels { get => _loadedMipLevels; protected set => _loadedMipLevels = value; }
+
+        /// <summary>Total available mipmap levels</summary>
         public uint TotalMipLevels => _image.MipLevels;
 
+        /// <summary>Texture width in pixels</summary>
         public uint Width => _image.Extent.Width;
+
+        /// <summary>Texture height in pixels</summary>
         public uint Height => _image.Extent.Height;
 
+        /// <summary>Unique identifier for the texture</summary>
         public Guid ID { get; } = Guid.NewGuid();
+
+        /// <summary>Original source file path (if loaded from disk)</summary>
         public string? SourcePath { get; }
 
+        /// <summary>Event triggered when texture data is updated</summary>
         public event Action<Texture>? OnTextureUpdated;
 
+        #endregion
+
+
+        #region Constructor and Core Methods
+
+        /// <summary>
+        /// Creates a texture from existing Vulkan resources
+        /// </summary>
+        /// <param name="context">Vulkan context</param>
+        /// <param name="image">Pre-created Vulkan image</param>
+        /// <param name="imageView">Image view for the texture</param>
+        /// <param name="sampler">Texture sampler</param>
+        /// <param name="sourcePath">Optional source file path</param>
         public Texture(VulkanContext context, VkImage image, VkImageView imageView, VkSampler sampler, string? sourcePath = null)
         {
             _context = context;
@@ -45,6 +84,13 @@ namespace RockEngine.Core.Rendering.Texturing
             Image.OnImageResized += (img) => NotifyTextureUpdated();
         }
 
+        /// <summary>
+        /// Factory method to create a texture from a file
+        /// </summary>
+        /// <param name="context">Vulkan context</param>
+        /// <param name="filePath">Path to texture file</param>
+        /// <param name="cancellationToken">Cancellation token</param>
+        /// <returns>New texture instance</returns>
         public static async Task<Texture> CreateAsync(VulkanContext context, string filePath, CancellationToken cancellationToken = default)
         {
             var bytes = await File.ReadAllBytesAsync(filePath, cancellationToken).ConfigureAwait(false);
@@ -66,10 +112,10 @@ namespace RockEngine.Core.Rendering.Texturing
 
             if (mipLevels > 1)
             {
-                context.SubmitSingleTimeCommand(cmd =>
-                {
-                    image.GenerateMipmaps(cmd);
-                });
+                var batch = context.SubmitContext.CreateBatch();
+                image.GenerateMipmaps(batch.CommandBuffer);
+                batch.Submit();
+                await context.SubmitContext.FlushAsync();
             }
 
             var sampler = CreateSampler(context, mipLevels);
@@ -81,7 +127,15 @@ namespace RockEngine.Core.Rendering.Texturing
             OnTextureUpdated?.Invoke(this);
         }
 
-
+        /// <summary>
+        /// Creates a texture from raw pixel data
+        /// </summary>
+        /// <param name="context">Vulkan context</param>
+        /// <param name="width">Texture width</param>
+        /// <param name="height">Texture height</param>
+        /// <param name="format">Pixel format</param>
+        /// <param name="data">Raw pixel data pointer</param>
+        /// <returns>New texture instance</returns>
         public static unsafe Texture Create(VulkanContext context, int width, int height, Format format, nint data)
         {
             var vkImage = CreateVulkanImage(context, (uint)width, (uint)height, format);
@@ -92,7 +146,21 @@ namespace RockEngine.Core.Rendering.Texturing
             var sampler = CreateSampler(context, vkImage.MipLevels);
             return new Texture(context, vkImage, imageView, sampler, null);
         }
+        #endregion
 
+        #region Vulkan Resource Creation
+        /// <summary>
+        /// Creates a Vulkan image with specified parameters
+        /// </summary>
+        /// <param name="context">Vulkan context</param>
+        /// <param name="width">Image width</param>
+        /// <param name="height">Image height</param>
+        /// <param name="format">Pixel format</param>
+        /// <param name="usage">Image usage flags</param>
+        /// <param name="mipLevels">Number of mip levels</param>
+        /// <param name="arrayLayers">Number of array layers</param>
+        /// <param name="flags">Image creation flags</param>
+        /// <returns>Created Vulkan image</returns>
         private static VkImage CreateVulkanImage(
          VulkanContext context,
          uint width,
@@ -132,7 +200,13 @@ namespace RockEngine.Core.Rendering.Texturing
 
             return VkImage.Create(context, imageInfo, MemoryPropertyFlags.DeviceLocalBit, ImageAspectFlags.ColorBit);
         }
-
+        /// <summary>
+        /// Creates an image view for a Vulkan image
+        /// </summary>
+        /// <param name="context">Vulkan context</param>
+        /// <param name="image">Source image</param>
+        /// <param name="format">Pixel format</param>
+        /// <returns>Created image view</returns>
         public static VkImageView CreateImageView(VulkanContext context, VkImage image, Format format)
         {
             var viewInfo = new ImageViewCreateInfo
@@ -153,7 +227,12 @@ namespace RockEngine.Core.Rendering.Texturing
 
             return VkImageView.Create(context, image, viewInfo);
         }
-
+        /// <summary>
+        /// Creates a texture sampler with default or specified parameters
+        /// </summary>
+        /// <param name="context">Vulkan context</param>
+        /// <param name="mipLevels">Number of mip levels</param>
+        /// <returns>Created sampler</returns>
         protected static VkSampler CreateSampler(VulkanContext context, uint mipLevels)
         {
             var samplerCreateInfo = new SamplerCreateInfo
@@ -178,6 +257,10 @@ namespace RockEngine.Core.Rendering.Texturing
 
             return context.SamplerCache.GetSampler(samplerCreateInfo);
         }
+
+        /// <summary>
+        /// Generates mipmaps for the texture using Vulkan commands
+        /// </summary>
         public static async Task<Texture> CreateBaseImageAsync(VulkanContext context, string texturePath)
         {
             using var bitmap = SKBitmap.Decode(texturePath);
@@ -236,11 +319,23 @@ namespace RockEngine.Core.Rendering.Texturing
 
         }
 
+        /// <summary>
+        /// Calculates the maximum number of mip levels for given dimensions
+        /// </summary>
+        /// <param name="width">Base width</param>
+        /// <param name="height">Base height</param>
+        /// <returns>Number of mip levels</returns>
         private static uint CalculateMipLevels(uint width, uint height)
         {
             return (uint)Math.Floor(Math.Log(Math.Max(width, height), 2)) + 1;
         }
 
+        /// <summary>
+        /// Maps SkiaSharp color type to Vulkan format
+        /// </summary>
+        /// <param name="colorType">SkiaSharp color type</param>
+        /// <param name="context">Vulkan context</param>
+        /// <returns>Best matching Vulkan format</returns>
         private static Format GetVulkanFormat(SKColorType colorType, VulkanContext context)
         {
             var features = context.Device.PhysicalDevice.GetPhysicalDeviceFeatures();
@@ -261,7 +356,13 @@ namespace RockEngine.Core.Rendering.Texturing
                 _ => throw new NotSupportedException($"Unsupported color type: {colorType}")
             };
         }
+        #endregion
 
+        #region Data Transfer
+
+        /// <summary>
+        /// Copies pixel data from SkiaSharp bitmap to Vulkan image
+        /// </summary>
 
         private static unsafe void CopyImageData(VulkanContext context, SKBitmap skBitmap, VkImage vkImage, bool keepTransferLayout = false)
         {
@@ -269,6 +370,9 @@ namespace RockEngine.Core.Rendering.Texturing
         }
 
 
+        /// <summary>
+        /// Copies raw pixel data to Vulkan image
+        /// </summary>
         private static unsafe void CopyImageDataFromPointer(
              VulkanContext context,
              VkImage vkImage,
@@ -340,14 +444,22 @@ namespace RockEngine.Core.Rendering.Texturing
 
             VulkanContext.Vk.CmdCopyBufferToImage(commandBuffer, stagingBuffer, image, ImageLayout.TransferDstOptimal, 1, &region);
         }
+        #endregion
 
+        #region Special Textures
 
+        /// <summary>
+        /// Gets or creates a default pink 1x1 texture
+        /// </summary>
 
         public static Texture GetEmptyTexture(VulkanContext context)
         {
             _emptyTexture ??= CreateEmptyTexture(context);
             return _emptyTexture;
         }
+        /// <summary>
+        /// Creates a default pink 1x1 texture
+        /// </summary>
 
         private static Texture CreateEmptyTexture(VulkanContext context)
         {
@@ -398,6 +510,22 @@ namespace RockEngine.Core.Rendering.Texturing
             skImage.Dispose();
             return new Texture(context, vkImage, imageView, sampler, null);
         }
+        #endregion
+
+        #region Cubemap Handling
+
+        /// <summary>
+        /// Creates a cubemap texture from six face images
+        /// </summary>
+        /// <param name="context">Vulkan context</param>
+        /// <param name="facePaths">
+        /// Array of 6 face paths in order:
+        /// [ +X, -X, +Y, -Y, +Z, -Z ]
+        /// </param>
+        /// <param name="cancellationToken">Cancellation token</param>
+        /// <returns>Created cubemap texture</returns>
+        /// <exception cref="ArgumentException">Invalid number of faces</exception>
+        /// <exception cref="InvalidOperationException">Face size/format mismatch</exception>
         public static async Task<Texture> CreateCubeMapAsync(VulkanContext context, string[] facePaths, CancellationToken cancellationToken = default)
         {
             if (facePaths.Length != 6)
@@ -434,22 +562,26 @@ namespace RockEngine.Core.Rendering.Texturing
 
             var uploadBatch = context.SubmitContext.CreateBatch();
 
-            // 1. Transition image to transfer destination layout
-            image.TransitionImageLayout(uploadBatch.CommandBuffer, ImageLayout.TransferDstOptimal, levelCount:6);
+            // 1. Transition entire image to TRANSFER_DST_OPTIMAL
+            image.TransitionImageLayout(
+                uploadBatch.CommandBuffer,
+                ImageLayout.TransferDstOptimal,
+                baseMipLevel: 0,
+                levelCount: 1,
+                baseArrayLayer: 0,
+                layerCount: 6);
 
-            // 2. Stage all face data and schedule copies
+            // 2. Copy data to each face's base mip level
             for (int i = 0; i < 6; i++)
             {
                 byte[] pixelData = faceBitmaps[i].Bytes;
                 ulong faceSize = (ulong)(width * height * format.GetBytesPerPixel());
 
-                // Stage data using the staging manager
                 if (!context.SubmitContext.StagingManager.TryStage(pixelData, out ulong bufferOffset, out ulong stagedSize))
                 {
                     throw new InvalidOperationException("Staging buffer overflow");
                 }
 
-                // Configure buffer-to-image copy
                 var copyRegion = new BufferImageCopy
                 {
                     BufferOffset = bufferOffset,
@@ -463,7 +595,6 @@ namespace RockEngine.Core.Rendering.Texturing
                     ImageExtent = new Extent3D(width, height, 1)
                 };
 
-                // Record copy command
                 VulkanContext.Vk.CmdCopyBufferToImage(
                     uploadBatch.CommandBuffer,
                     context.SubmitContext.StagingManager.StagingBuffer,
@@ -473,14 +604,30 @@ namespace RockEngine.Core.Rendering.Texturing
                     in copyRegion);
             }
 
-            // 3. Generate mipmaps
+            // 3. Transition base mip to TRANSFER_SRC_OPTIMAL for mipmap generation
+            image.TransitionImageLayout(
+                uploadBatch.CommandBuffer,
+                ImageLayout.TransferSrcOptimal,
+                baseMipLevel: 0,
+                levelCount: 1,
+                baseArrayLayer: 0,
+                layerCount: 6);
+
+            // 4. Generate mipmaps for each face
             image.GenerateMipmaps(uploadBatch.CommandBuffer);
 
-/*            // 4. Transition to final layout
-            image.TransitionImageLayout(uploadBatch.CommandBuffer, ImageLayout.ShaderReadOnlyOptimal);*/
+           /* // 5. Transition all mip levels to SHADER_READ_ONLY_OPTIMAL
+            image.TransitionImageLayout(
+                uploadBatch.CommandBuffer,
+                ImageLayout.ShaderReadOnlyOptimal,
+                baseMipLevel: 0,
+                levelCount: mipLevels,
+                baseArrayLayer: 0,
+                layerCount: 6);*/
 
-            // Submit all commands as a single batch
+            // Submit all commands
             uploadBatch.Submit();
+            await context.SubmitContext.FlushAsync();
 
             // Create associated resources
             var imageView = CreateCubeMapImageView(context, image, format);
@@ -488,6 +635,11 @@ namespace RockEngine.Core.Rendering.Texturing
 
             return new Texture(context, image, imageView, sampler, null);
         }
+
+
+        /// <summary>
+        /// Creates a cubemap-specific sampler
+        /// </summary>
         private static VkSampler CreateCubeMapSampler(VulkanContext context, uint mipLevels)
         {
             var samplerCreateInfo = new SamplerCreateInfo
@@ -512,6 +664,11 @@ namespace RockEngine.Core.Rendering.Texturing
 
             return context.SamplerCache.GetSampler(in samplerCreateInfo);
         }
+
+
+        /// <summary>
+        /// Creates a cubemap image view
+        /// </summary>
         private static VkImageView CreateCubeMapImageView(VulkanContext context, VkImage image, Format format)
         {
             var viewInfo = new ImageViewCreateInfo
@@ -530,11 +687,21 @@ namespace RockEngine.Core.Rendering.Texturing
                 }
             };
 
+            // Verify image is in correct layout
+            if (image.GetMipLayout(0, 0) != ImageLayout.ShaderReadOnlyOptimal)
+            {
+                throw new InvalidOperationException("Cubemap image must be in SHADER_READ_ONLY layout before view creation");
+            }
+
             return VkImageView.Create(context, image, viewInfo);
         }
+        #endregion
 
+        #region Disposal and Cleanup
 
-
+        /// <summary>
+        /// Releases Vulkan resources
+        /// </summary>
         public void Dispose()
         {
             if (!_disposed)
@@ -545,186 +712,6 @@ namespace RockEngine.Core.Rendering.Texturing
             }
         }
 
-        public class Builder
-        {
-            private readonly VulkanContext _context;
-            private Extent2D _size;
-            private Format _format = Format.R8G8B8A8Unorm;
-            private ImageUsageFlags _usage = ImageUsageFlags.SampledBit;
-            private ImageAspectFlags _aspectMask = ImageAspectFlags.ColorBit;
-            private SamplerCreateInfo? _samplerCreateInfo;
-            private uint _mipLevels = 1;
-            private bool _generateMipmaps;
-
-            public Builder(VulkanContext context)
-            {
-                _context = context ?? throw new ArgumentNullException(nameof(context));
-            }
-
-            public Builder SetSize(Extent2D size)
-            {
-                _size = size;
-                return this;
-            }
-
-            public Builder SetFormat(Format format)
-            {
-                _format = format;
-                return this;
-            }
-
-            public Builder SetUsage(ImageUsageFlags usage)
-            {
-                _usage = usage;
-                return this;
-            }
-
-            public Builder SetAspectMask(ImageAspectFlags aspectMask)
-            {
-                _aspectMask = aspectMask;
-                return this;
-            }
-
-            public Builder SetSamplerSettings(SamplerCreateInfo samplerInfo)
-            {
-                samplerInfo.SType = StructureType.SamplerCreateInfo;
-                _samplerCreateInfo = samplerInfo;
-                return this;
-            }
-
-            public Builder ForRenderTarget()
-            {
-                _usage |= ImageUsageFlags.ColorAttachmentBit | ImageUsageFlags.TransferSrcBit;
-                _aspectMask = ImageAspectFlags.ColorBit;
-                _mipLevels = 1; // Typically don't need mips for render targets
-                return this;
-            }
-
-            public Builder WithMipmaps(bool generate = true)
-            {
-                _generateMipmaps = generate;
-                if (generate)
-                {
-                    _mipLevels = CalculateMipLevels(_size.Width, _size.Height);
-                    _usage |= ImageUsageFlags.TransferSrcBit;
-                }
-                return this;
-            }
-
-            public Texture Build()
-            {
-                ValidateParameters();
-
-                var image = CreateVulkanImage();
-                var imageView = CreateImageView(image);
-                var sampler = CreateSampler();
-
-                if (_generateMipmaps)
-                {
-                    throw new NotImplementedException();
-                    //GenerateMipmaps();
-                }
-
-                return new Texture(_context, image, imageView, sampler);
-            }
-            private void ValidateParameters()
-            {
-                if (_size.Width == 0 || _size.Height == 0)
-                    throw new InvalidOperationException("Texture size must be specified");
-
-                if (_format.IsBlockCompressed())
-                {
-                    var blockSize = _format.GetBlockSize();
-                    if (_size.Width % blockSize.Width != 0 || _size.Height % blockSize.Height != 0)
-                    {
-                        throw new InvalidOperationException(
-                            $"Compressed texture dimensions must be multiples of {blockSize}");
-                    }
-                }
-            }
-            private VkImage CreateVulkanImage()
-            {
-                var imageInfo = new ImageCreateInfo
-                {
-                    SType = StructureType.ImageCreateInfo,
-                    ImageType = ImageType.Type2D,
-                    Format = _format,
-                    Extent = new Extent3D(_size.Width, _size.Height, 1),
-                    MipLevels = _mipLevels,
-                    ArrayLayers = 1,
-                    Samples = SampleCountFlags.Count1Bit,
-                    Tiling = ImageTiling.Optimal,
-                    Usage = _usage,
-                    SharingMode = SharingMode.Exclusive,
-                    InitialLayout = ImageLayout.Undefined
-                };
-
-                return VkImage.Create(_context, imageInfo, MemoryPropertyFlags.DeviceLocalBit, _aspectMask);
-            }
-
-            private VkImageView CreateImageView(VkImage image)
-            {
-                var viewInfo = new ImageViewCreateInfo
-                {
-                    SType = StructureType.ImageViewCreateInfo,
-                    Image = image,
-                    ViewType = ImageViewType.Type2D,
-                    Format = _format,
-                    SubresourceRange = new ImageSubresourceRange
-                    {
-                        AspectMask = _aspectMask,
-                        BaseMipLevel = 0,
-                        LevelCount = _mipLevels,
-                        BaseArrayLayer = 0,
-                        LayerCount = 1
-                    }
-                };
-
-                return VkImageView.Create(_context, image, viewInfo);
-            }
-
-            private VkSampler CreateSampler()
-            {
-                var samplerInfo = _samplerCreateInfo ?? new SamplerCreateInfo
-                {
-                    SType = StructureType.SamplerCreateInfo,
-                    MagFilter = Filter.Linear,
-                    MinFilter = Filter.Linear,
-                    AddressModeU = SamplerAddressMode.Repeat,
-                    AddressModeV = SamplerAddressMode.Repeat,
-                    AddressModeW = SamplerAddressMode.Repeat,
-                    AnisotropyEnable = Vk.True,
-                    MaxAnisotropy = 16,
-                    BorderColor = BorderColor.IntOpaqueBlack,
-                    UnnormalizedCoordinates = Vk.False,
-                    CompareEnable = Vk.False,
-                    CompareOp = CompareOp.Always,
-                    MipmapMode = SamplerMipmapMode.Linear,
-                    MipLodBias = 0.0f,
-                    MinLod = 0.0f,
-                    MaxLod = (float)_mipLevels
-                };
-
-                return _context.SamplerCache.GetSampler(samplerInfo);
-            }
-        }
+        #endregion
     }
-
-    public static class FormatExtensions
-    {
-        public static bool IsBlockCompressed(this Format format)
-        {
-            return format.ToString().StartsWith("BC");
-        }
-
-        public static (int Width, int Height) GetBlockSize(this Format format)
-        {
-            return format.ToString() switch
-            {
-                string s when s.StartsWith("BC") => (4, 4),
-                _ => (1, 1)
-            };
-        }
-    }
-
 }

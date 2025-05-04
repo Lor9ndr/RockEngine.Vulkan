@@ -1,33 +1,30 @@
 #version 450
-#extension GL_KHR_vulkan_glsl : enable
 
-layout(set = 0, binding = 0) uniform GlobalUbo {
-    mat4 view;
-    mat4 proj;
-    mat4 viewProj;
-    vec3 camPos;
-} ubo;
+// Input with explicit location
+layout(location = 0) in vec3 inPosition;
+layout(location = 1) in vec3 aNormal;
+layout(location = 2) in vec2 aTexCoord;
+layout(location = 3) in vec3 aTangent;
+layout(location = 4) in vec3 aBitangent;
 
-layout(location = 0) out vec3 fragTexCoord;
+// Uniform block
+layout(set = 0, binding = 0) uniform GlobalData {
+    mat4 viewProjection;
+    vec3 position;
+} globalData;
+
+layout(set = 1, binding = 0) readonly buffer ModelData {
+    mat4 models[];
+};
+
+// Output with explicit location
+layout(location = 0) out vec3 fragPos;
+
+// Required for Vulkan
+out gl_PerVertex { vec4 gl_Position; };
 
 void main() {
-    // Full-screen triangle positions
-    vec2 positions[3] = vec2[](
-        vec2(-1.0, -1.0),
-        vec2(3.0, -1.0),
-        vec2(-1.0, 3.0)
-    );
-    
-    // Get position in NDC space
-    vec4 pos = vec4(positions[gl_VertexIndex], 0.0, 1.0);
-    
-    // Remove translation from view matrix
-    mat4 viewRotation = mat4(mat3(ubo.view));
-    mat4 invViewProj = inverse(ubo.proj * viewRotation);
-    
-    // Calculate world position
-    vec4 worldPos = invViewProj * pos;
-    fragTexCoord = normalize(worldPos.xyz / worldPos.w);
-    
-    gl_Position = pos;
+    fragPos = inPosition;                // Pass position to fragment shader
+    gl_Position = globalData.viewProjection * vec4(inPosition * 1000000, 1.0);
+    gl_Position = gl_Position.xyww; // Ensure depth is 1.0 after perspective divide
 }

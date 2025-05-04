@@ -36,6 +36,11 @@ namespace RockEngine.Core
 
         public void StageCommands(UploadBatch batch, DrawIndexedIndirectCommand[] commands, ulong offset = 0)
         {
+            StageCommands(batch, commands.AsSpan(), offset);
+        }
+
+        public void StageCommands(UploadBatch batch, Span<DrawIndexedIndirectCommand> commands, ulong offset = 0)
+        {
             if (offset + (ulong)commands.Length > _capacity)
                 throw new ArgumentOutOfRangeException(nameof(commands), "Exceeds buffer capacity");
 

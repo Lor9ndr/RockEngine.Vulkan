@@ -11,6 +11,7 @@ namespace RockEngine.Core.Rendering
         Opaque,
         Transparent,
         UI,
-        Editor
+        Editor,
+        Solid
     }
 }

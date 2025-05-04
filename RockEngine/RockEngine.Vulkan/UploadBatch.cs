@@ -52,6 +52,15 @@ namespace RockEngine.Vulkan
             ulong dstOffset,
             ulong size) where T : unmanaged
         {
+            StageToBuffer(data.AsSpan(), destination, dstOffset, size);
+        }
+
+        public unsafe void StageToBuffer<T>(
+           Span<T> data,
+           VkBuffer destination,
+           ulong dstOffset,
+           ulong size) where T : unmanaged
+        {
             if (!_stagingManager.TryStage(data, out var srcOffset, out var stagedSize))
             {
                 throw new InvalidOperationException("Staging buffer overflow");

@@ -88,15 +88,9 @@ namespace RockEngine.Core
                     if (!loadedTextures.TryGetValue(texturePath, out var texture))
                     {
                         // Create streamable texture with base mip
-                        var baseImage = await Texture.CreateBaseImageAsync(context, Directory.GetParent(filePath) + "\\" + texturePath);
-                        texture = new StreamableTexture(
-                            context,
-                            baseImage.Image,
-                            baseImage.ImageView,
-                            baseImage.Sampler, Directory.GetParent(filePath) + "\\" + texturePath);
+                        texture = await Texture.CreateAsync(context, Directory.GetParent(filePath) + "\\" + texturePath);
+                       
 
-                        // Schedule mip streaming
-                        await ((StreamableTexture)texture).StreamNextMipAsync(_textureStreamer, 1.0f);
                         loadedTextures[texturePath] = texture;
                     }
                     textures.Add(texture);

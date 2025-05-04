@@ -5,12 +5,6 @@ using Silk.NET.Vulkan;
 
 namespace RockEngine.Core.Rendering.ResourceBindings
 {
-    /// <summary>
-    /// 
-    /// </summary>
-    /// <param name="setLocation">Descripto Set location</param>
-    /// <param name="bindingLocation">Starting index</param>
-    /// <param name="textures">textures</param>
     public class TextureBinding : ResourceBinding, IDisposable
     {
         private readonly ImageLayout _imageLayout;

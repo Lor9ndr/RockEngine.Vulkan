@@ -12,21 +12,23 @@ namespace RockEngine.Vulkan
         public string Name => _name;
         public VkPipelineLayout Layout => _pipelineLayout;
         public VkRenderPass RenderPass => _renderPass;
+        public uint SubPass { get; private set; }
 
-        public VkPipeline(VulkanContext context, string name, Pipeline pipeline, VkPipelineLayout pipelineLayout, VkRenderPass renderPass)
+        public VkPipeline(VulkanContext context, string name, Pipeline pipeline, VkPipelineLayout pipelineLayout, VkRenderPass renderPass, uint subpass)
             : base(pipeline)
         {
             _context = context;
             _pipelineLayout = pipelineLayout;
             _renderPass = renderPass;
             _name = name;
+            SubPass = subpass;
         }
 
         public static unsafe VkPipeline Create(VulkanContext context, string name, ref GraphicsPipelineCreateInfo ci, VkRenderPass renderPass, VkPipelineLayout layout)
         {
             VulkanContext.Vk.CreateGraphicsPipelines(context.Device, pipelineCache: default, 1, in ci, in VulkanContext.CustomAllocator<VkPipeline>(), out Pipeline pipeline)
                   .VkAssertResult("Failed to create pipeline");
-            return new VkPipeline(context, name, pipeline, layout, renderPass);
+            return new VkPipeline(context, name, pipeline, layout, renderPass, ci.Subpass);
         }
 
         protected override void Dispose(bool disposing)

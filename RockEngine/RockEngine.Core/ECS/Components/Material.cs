@@ -17,7 +17,6 @@ namespace RockEngine.Core.ECS.Components
 
         public BindingCollection Bindings { get; private set; }
 
-        public DescriptorSet TexturesDescriptorSet;
         public Material(VkPipeline pipeline, params List<Texture> textures)
         {
             Pipeline = pipeline;

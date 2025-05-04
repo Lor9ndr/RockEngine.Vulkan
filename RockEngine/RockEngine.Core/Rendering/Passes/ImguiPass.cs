@@ -6,7 +6,7 @@ using System.Collections.Concurrent;
 
 namespace RockEngine.Core.Rendering.Passes
 {
-    public class ImGuiPass : RenderPass
+    public class ImGuiPass : Subpass
     {
         private readonly VkSwapchain _swapchain;
         private readonly ConcurrentQueue<IRenderCommand> _commands;
@@ -21,6 +21,8 @@ namespace RockEngine.Core.Rendering.Passes
             _swapchain = swapchain;
             _commands = commands;
         }
+
+        protected override uint Order => 2;
 
         public override async Task Execute(VkCommandBuffer cmd, params object[] args)
         {

@@ -3,12 +3,13 @@ using RockEngine.Vulkan;
 
 namespace RockEngine.Core.Rendering.Passes
 {
-    public abstract class RenderPass : IDisposable
+    public abstract class Subpass : IDisposable
     {
         protected readonly VulkanContext Context;
         protected readonly BindingManager BindingManager;
+        protected abstract uint Order { get; }
 
-        protected RenderPass(VulkanContext context, BindingManager bindingManager)
+        protected Subpass(VulkanContext context, BindingManager bindingManager)
         {
             Context = context;
             BindingManager = bindingManager;

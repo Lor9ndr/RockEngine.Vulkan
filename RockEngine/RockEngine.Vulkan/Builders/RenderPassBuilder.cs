@@ -209,6 +209,11 @@ public class RenderPassBuilder : DisposableBuilder
             _dependency.DstSubpass = subpass;
             return this;
         }
+        public DependencyConfigurer ToExtenral()
+        {
+            _dependency.DstSubpass = Vk.SubpassExternal;
+            return this;
+        }
 
         public DependencyConfigurer WithStages(PipelineStageFlags src, PipelineStageFlags dst)
         {

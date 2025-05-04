@@ -7,12 +7,12 @@ namespace RockEngine.Core.Rendering.Commands
     {
         public Mesh Mesh { get; }
         public uint TransformIndex { get; set; }
-
-        public RenderPhase Phase => RenderPhase.Geometry;
+        public RenderLayerType RenderLayerType { get; set; }
 
         public MeshRenderCommand(Mesh mesh)
         {
             Mesh = mesh;
+            RenderLayerType = mesh.Entity.Layer;
         }
     }
 }

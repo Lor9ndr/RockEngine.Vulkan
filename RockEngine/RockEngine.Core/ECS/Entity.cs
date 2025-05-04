@@ -90,5 +90,10 @@ namespace RockEngine.Core.ECS
                 item.Destroy();
             }
         }
+
+        internal void ChangeLayer(RenderLayerType layer)
+        {
+            Layer = layer;
+        }
     }
 }

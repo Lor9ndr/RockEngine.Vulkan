@@ -58,6 +58,36 @@ namespace RockEngine.Core.Rendering.Managers
                 return true;
             }
         }
+        public unsafe bool TryStage<T>(Span<T> data, out ulong offset, out ulong size) where T : unmanaged
+        {
+            size = (ulong)(Unsafe.SizeOf<T>() * data.Length);
+            offset = 0;
+
+            lock (_bufferLock)
+            {
+                // Align offset
+                var alignedOffset = (_bufferOffset + _alignment - 1) & ~(_alignment - 1);
+
+                if (alignedOffset + size > _bufferSize)
+                    return false;
+
+                void* mappedPtr = null;
+                _stagingBuffer.Map(ref mappedPtr, size, alignedOffset);
+
+                fixed (T* dataPtr = data)
+                {
+                    System.Buffer.MemoryCopy(
+                        dataPtr,
+                        (byte*)mappedPtr + alignedOffset,
+                        _bufferSize - alignedOffset,
+                        size);
+                }
+
+                offset = alignedOffset;
+                _bufferOffset = alignedOffset + size;
+                return true;
+            }
+        }
 
         public void Reset()
         {

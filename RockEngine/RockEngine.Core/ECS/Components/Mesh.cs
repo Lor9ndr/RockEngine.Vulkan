@@ -66,11 +66,7 @@ namespace RockEngine.Core.ECS.Components
 
             batch.Submit();
             await submitContext.FlushAsync();
-        }
-        public override ValueTask Update(Renderer renderer)
-        {
             renderer.Draw(this);
-            return default;
         }
 
         public void Dispose()

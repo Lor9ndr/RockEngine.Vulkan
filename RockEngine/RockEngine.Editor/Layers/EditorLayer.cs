@@ -56,10 +56,18 @@ namespace RockEngine.Editor.Layers
                 Flags = CommandPoolCreateFlags.TransientBit | CommandPoolCreateFlags.ResetCommandBufferBit
             });
             using AssimpLoader assimpLoader = new AssimpLoader(_textureStreamer);
-            var meshes = await assimpLoader.LoadMeshesAsync("F:\\RockEngine.Vulkan\\RockEngine\\RockEngine.Editor\\Resources\\Models\\SponzaAtrium\\scene.gltf", _context, pool.AllocateCommandBuffer());
-            var cubemap = await Texture.CreateCubeMapAsync(_context, ["Resources/skybox/back.jpg", "Resources/skybox/front.jpg", "Resources/skybox/left.jpg", "Resources/skybox/right.jpg", "Resources/skybox/top.jpg", "Resources/skybox/bottom.jpg"]);
+            var meshes = await assimpLoader.LoadMeshesAsync("Resources\\Models\\SponzaAtrium\\scene.gltf", _context, pool.AllocateCommandBuffer());
+            var cubemap = await Texture.CreateCubeMapAsync(_context, [
+            "Resources/skybox/right.jpg",    // +X
+            "Resources/skybox/left.jpg",     // -X
+            "Resources/skybox/top.jpg",      // +Y (Vulkan's Y points down)
+            "Resources/skybox/bottom.jpg",   // -Y
+            "Resources/skybox/front.jpg",    // +Z
+            "Resources/skybox/back.jpg"      // -Z
+        ]);
             var skybox = _world.CreateEntity();
              skybox.AddComponent<Skybox>().Cubemap = cubemap;
+            skybox.Transform.Scale = new Vector3(100,100,100);
 
             var cam = _world.CreateEntity();
             var debugCam = cam.AddComponent<DebugCamera>();

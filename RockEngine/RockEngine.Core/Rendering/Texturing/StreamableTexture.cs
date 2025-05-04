@@ -36,17 +36,15 @@ namespace RockEngine.Core.Rendering.Texturing
 
                 var batch = _context.SubmitContext.CreateBatch();
                 var cmd = batch.CommandBuffer;
-                Image.TransitionImageLayout(cmd, ImageLayout.TransferDstOptimal, mipLevel: targetMip);
+                Image.TransitionImageLayout(cmd, ImageLayout.TransferDstOptimal, baseMipLevel: targetMip);
                 CopyDataToMip(cmd, data, size, targetMip);
-                Image.TransitionImageLayout(cmd, ImageLayout.ShaderReadOnlyOptimal, mipLevel: targetMip);
+                Image.TransitionImageLayout(cmd, ImageLayout.ShaderReadOnlyOptimal, baseMipLevel: targetMip);
 
-                batch.Submit();
+                batch.Submit([oldView]);
 
 
                 // Clamp loaded levels to never exceed total mips
                 LoadedMipLevels = Math.Min(targetMip + 1, TotalMipLevels);
-
-                _context.AddDisposal(oldView);
 
                 // Create view for loaded mips (base=0, levelCount=LoadedMipLevels)
                 _imageView = Image.CreateView(
@@ -79,9 +77,10 @@ namespace RockEngine.Core.Rendering.Texturing
 
                 // Transition mip to undefined layout
                 var batch = _context.SubmitContext.CreateBatch();
-                Image.TransitionImageLayout(batch.CommandBuffer, ImageLayout.Undefined, mipLevel: mipLevel);
+                Image.TransitionImageLayout(batch.CommandBuffer, ImageLayout.Undefined, baseMipLevel: mipLevel);
                 LoadedMipLevels = mipLevel;
                 batch.Submit();
+
             }
         }
 

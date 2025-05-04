@@ -98,7 +98,7 @@ namespace RockEngine.Core.Rendering
                 _size.Height,
                 _depthFormat,
                 ImageTiling.Optimal,
-                ImageUsageFlags.DepthStencilAttachmentBit | ImageUsageFlags.SampledBit,
+                ImageUsageFlags.DepthStencilAttachmentBit | ImageUsageFlags.SampledBit | ImageUsageFlags.InputAttachmentBit,
                 MemoryPropertyFlags.DeviceLocalBit,
                 initialLayout: ImageLayout.Undefined,
                 aspectFlags: ImageAspectFlags.DepthBit);

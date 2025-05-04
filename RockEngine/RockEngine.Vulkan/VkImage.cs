@@ -159,7 +159,6 @@ namespace RockEngine.Vulkan
               uint baseArrayLayer = 0,
               uint layerCount = 1)
         {
-            // Get current layout (assume uniformity for simplicity)
             ImageLayout oldLayout = GetMipLayout(baseMipLevel, baseArrayLayer);
 
             var barrier = new ImageMemoryBarrier
@@ -194,15 +193,19 @@ namespace RockEngine.Vulkan
 
             // Update tracked layouts for all affected layers/mips
             for (uint mip = baseMipLevel; mip < baseMipLevel + levelCount; mip++)
+            {
                 for (uint layer = baseArrayLayer; layer < baseArrayLayer + layerCount; layer++)
+                {
                     SetMipLayout(mip, newLayout, layer);
+                }
+            }
         }
-        public void TransitionImageLayout(VkCommandBuffer commandBuffer, ImageLayout newLayout, uint mipLevel = 0, uint levelCount = 1)
+        public void TransitionImageLayout(VkCommandBuffer commandBuffer, ImageLayout newLayout, uint baseMipLevel = 0, uint levelCount = 1, uint baseArrayLayer = 0,uint layerCount = 1)
         {
-            ImageLayout oldLayout = GetMipLayout(mipLevel);
+            ImageLayout oldLayout = GetMipLayout(baseMipLevel, baseArrayLayer);
             (var OldStage, var NewStage) = GetPipelineStages(oldLayout, newLayout);
 
-            TransitionImageLayout(commandBuffer, newLayout, OldStage, NewStage, mipLevel, levelCount);
+            TransitionImageLayout(commandBuffer, newLayout, OldStage, NewStage, baseMipLevel, levelCount, baseArrayLayer, layerCount);
         }
 
 
@@ -235,7 +238,11 @@ namespace RockEngine.Vulkan
                 }
 
                 // Transition final mip level to ShaderReadOnlyOptimal
-                TransitionMipLevel(commandBuffer, MipLevels - 1, ImageLayout.ShaderReadOnlyOptimal, layer);
+                TransitionMipLevel(
+                       commandBuffer,
+                       mipLevel: MipLevels - 1,
+                       newLayout: ImageLayout.ShaderReadOnlyOptimal,
+                       layer: layer);
             }
         }
 

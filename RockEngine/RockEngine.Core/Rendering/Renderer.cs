@@ -71,13 +71,14 @@ namespace RockEngine.Core.Rendering
             _lightManager = new LightManager(context, (uint)_context.MaxFramesPerFlight, MAX_LIGHTS_SUPPORTED);
             _transformManager = new TransformManager(context, (uint)_context.MaxFramesPerFlight);
             _cameraManager = new CameraManager(context, graphicsEngine, RenderPass);
-            _indirectCommandManager = new IndirectCommandManager(context, TransformManager.Capacity);
+            _indirectCommandManager = new IndirectCommandManager(context, TransformManager.INITIAL_CAPACITY);
             _bindingManager = new BindingManager(context, new DescriptorPoolManager(context, poolSizes, 5_000), graphicsEngine);
 
 
             _renderPipeline = new DeferredRenderPipeline( _context,
                 new GeometryPass(_context,_bindingManager, _transformManager, _indirectCommandManager, GlobalUbo),
-                new LightingPass(_context,_bindingManager, _lightManager, _deferredLightingPipeline),
+                new LightingPass(_context,_bindingManager, _lightManager, _transformManager, _indirectCommandManager,GlobalUbo, _deferredLightingPipeline),
+                new PostLightPass(_context, _bindingManager, _transformManager, _indirectCommandManager, GlobalUbo),
                 new ScreenPass(_context,_bindingManager, _screenPipeline, SwapchainTarget),
                 new ImGuiPass(_context,_bindingManager, _graphicsEngine.Swapchain, _indirectCommandManager.OtherCommands)
             );
@@ -98,8 +99,8 @@ namespace RockEngine.Core.Rendering
         {
             // Update all frame data first
             await _lightManager.Update(_cameraManager.ActiveCameras);
-            await _transformManager.Update(FrameIndex);
-            await _indirectCommandManager.Update();
+            _transformManager.Update(FrameIndex);
+            _indirectCommandManager.Update();
             await _renderPipeline.Update();
         }
 
@@ -134,7 +135,7 @@ namespace RockEngine.Core.Rendering
                         load: AttachmentLoadOp.Clear,
                         store: AttachmentStoreOp.DontCare,
                         initialLayout: ImageLayout.Undefined,
-                        finalLayout: ImageLayout.DepthStencilAttachmentOptimal)
+                        finalLayout: ImageLayout.DepthStencilReadOnlyOptimal)
                     .Add()
                 // Swapchain Color Attachment (4)
                 .ConfigureAttachment(_graphicsEngine.Swapchain.Format)
@@ -158,8 +159,15 @@ namespace RockEngine.Core.Rendering
                 .AddInputAttachment(0, ImageLayout.ShaderReadOnlyOptimal)
                 .AddInputAttachment(1, ImageLayout.ShaderReadOnlyOptimal)
                 .AddInputAttachment(2, ImageLayout.ShaderReadOnlyOptimal)
+                .AddInputAttachment(3, ImageLayout.DepthStencilReadOnlyOptimal) 
                 .AddColorAttachment(4, ImageLayout.ColorAttachmentOptimal)
                 .EndSubpass();
+
+            // Subpass 2: Skybox pass/post light pass
+            mainPassBuilder.BeginSubpass()
+                  .AddColorAttachment(4, ImageLayout.ColorAttachmentOptimal)
+                  .SetDepthAttachment(3, ImageLayout.DepthStencilReadOnlyOptimal)
+                  .EndSubpass();
 
             // Dependencies
             mainPassBuilder.AddDependency()
@@ -184,25 +192,56 @@ namespace RockEngine.Core.Rendering
                     AccessFlags.ShaderReadBit)
                 .Add();
 
+            mainPassBuilder.AddDependency()
+           .FromSubpass(1)
+           .ToSubpass(2)
+           .WithStages(
+               PipelineStageFlags.ColorAttachmentOutputBit,
+               PipelineStageFlags.ColorAttachmentOutputBit |
+               PipelineStageFlags.EarlyFragmentTestsBit)
+           .WithAccess(
+               AccessFlags.ColorAttachmentWriteBit,
+               AccessFlags.ColorAttachmentWriteBit |
+               AccessFlags.DepthStencilAttachmentReadBit)
+           .Add();
+
+
             return mainPassBuilder.Build(_graphicsEngine.RenderPassManager, "DeferredRenderPass");
         }
-
 
         private unsafe VkPipeline CreateSkyboxPipeline()
         {
             var vertShader = VkShaderModule.Create(_context, "Shaders/Skybox.vert.spv", ShaderStageFlags.VertexBit);
             var fragShader = VkShaderModule.Create(_context, "Shaders/Skybox.frag.spv", ShaderStageFlags.FragmentBit);
-            var colorBlendAttachments = new PipelineColorBlendAttachmentState[1];
-            colorBlendAttachments[0] = new PipelineColorBlendAttachmentState
-            {
-                ColorWriteMask = ColorComponentFlags.RBit | ColorComponentFlags.GBit |
-                                 ColorComponentFlags.BBit | ColorComponentFlags.ABit,
-                BlendEnable = false,
-            };
+            var colorBlendAttachments = new PipelineColorBlendAttachmentState[1]
+              {
+                    new PipelineColorBlendAttachmentState
+                    {
+                        ColorWriteMask = ColorComponentFlags.RBit |
+                                        ColorComponentFlags.GBit |
+                                        ColorComponentFlags.BBit |
+                                        ColorComponentFlags.ABit,
+                        BlendEnable = false
+                    }
+              };
             using var pipelineBuilder = GraphicsPipelineBuilder.CreateDefault(_context, "Skybox", [vertShader, fragShader]);
-            return _pipelineManager.Create(pipelineBuilder.WithColorBlendState(new VulkanColorBlendStateBuilder().AddAttachment(colorBlendAttachments))
-                                                    .AddRenderPass(RenderPass)
-                                                    .WithSubpass(1));
+            pipelineBuilder.WithColorBlendState(new VulkanColorBlendStateBuilder()
+                    .AddAttachment(colorBlendAttachments))
+                .WithVertexInputState(new VulkanPipelineVertexInputStateBuilder()
+                     .Add(Vertex.GetBindingDescription(), Vertex.GetAttributeDescriptions()))
+                .AddRenderPass(RenderPass)
+                .WithSubpass(2)
+                .AddDepthStencilState(new PipelineDepthStencilStateCreateInfo
+                {
+                    SType = StructureType.PipelineDepthStencilStateCreateInfo,
+                    DepthTestEnable = true,
+                    DepthWriteEnable = false,
+                    DepthCompareOp = CompareOp.LessOrEqual,
+                    DepthBoundsTestEnable = false,
+                    StencilTestEnable = false,
+                });
+
+            return _pipelineManager.Create(pipelineBuilder);
         }
 
         private VkPipeline CreateLightingResources()
@@ -286,11 +325,13 @@ namespace RockEngine.Core.Rendering
         {
             var transformIndex = _transformManager.AddTransform(mesh.Entity.Transform.GetModelMatrix());
             _indirectCommandManager.AddMesh(mesh, transformIndex);
+            mesh.Entity.Transform.TransformChanged += () =>
+            {
+                _transformManager.UpdateTransform(transformIndex,mesh.Entity.Transform.GetModelMatrix());
+            };
         }
 
-        public void Draw(Skybox skybox)
-        {
-        }
+     
 
         public void AddCommand(IRenderCommand command)
         {
