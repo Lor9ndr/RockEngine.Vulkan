@@ -47,6 +47,7 @@ namespace RockEngine.Vulkan
             Wait();
             return default;
         }
+        public override void LabelObject(string name) => _context.DebugUtils.SetDebugUtilsObjectName(_vkObject, ObjectType.Fence, name);
 
         protected override void Dispose(bool disposing)
         {

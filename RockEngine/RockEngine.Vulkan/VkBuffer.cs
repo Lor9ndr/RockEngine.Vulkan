@@ -348,6 +348,7 @@ namespace RockEngine.Vulkan
         {
             VulkanContext.Vk.CmdBindIndexBuffer(commandBuffer, _vkObject, indexOffset, type);
         }
+        public override void LabelObject(string name) => _context.DebugUtils.SetDebugUtilsObjectName(_vkObject, ObjectType.Buffer, name);
 
         protected override unsafe void Dispose(bool disposing)
         {

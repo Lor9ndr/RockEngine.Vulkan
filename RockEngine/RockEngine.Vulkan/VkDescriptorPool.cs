@@ -47,6 +47,7 @@ namespace RockEngine.Vulkan
             set = new VkDescriptorSet(_context, this, in descriptorSet);
             return result;
         }
+        public override void LabelObject(string name) => _context.DebugUtils.SetDebugUtilsObjectName(_vkObject, ObjectType.DescriptorPool, name);
 
         protected override unsafe void Dispose(bool disposing)
         {

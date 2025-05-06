@@ -163,6 +163,8 @@ namespace RockEngine.Vulkan
             }
 
         }
+        public override void LabelObject(string name) => _context.DebugUtils.SetDebugUtilsObjectName(_vkObject, ObjectType.PipelineLayout, name);
+
 
         protected override void Dispose(bool disposing)
         {

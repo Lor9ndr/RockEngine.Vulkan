@@ -120,5 +120,7 @@ namespace RockEngine.Vulkan
             VulkanContext.Vk.DestroyImageView(_context.Device, _vkObject, in VulkanContext.CustomAllocator<VkImageView>());
             _disposed = true;
         }
+
+        public override void LabelObject(string name) => _context.DebugUtils.SetDebugUtilsObjectName(_vkObject, ObjectType.ImageView, name);
     }
 }

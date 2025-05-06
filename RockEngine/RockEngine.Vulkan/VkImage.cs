@@ -455,5 +455,7 @@ namespace RockEngine.Vulkan
                 _ => throw new NotSupportedException($"Unsupported layout transition: {oldLayout} -> {newLayout}")
             };
         }
+        public override void LabelObject(string name) { }
+
     }
 }

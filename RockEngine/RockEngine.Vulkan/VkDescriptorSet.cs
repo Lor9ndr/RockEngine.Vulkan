@@ -13,6 +13,7 @@ namespace RockEngine.Vulkan
             _context = context;
             _pool = pool;
         }
+        public override void LabelObject(string name) => _context.DebugUtils.SetDebugUtilsObjectName(_vkObject, ObjectType.DescriptorSet, name);
 
         protected override void Dispose(bool disposing)
         {

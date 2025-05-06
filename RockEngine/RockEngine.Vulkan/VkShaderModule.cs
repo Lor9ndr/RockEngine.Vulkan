@@ -306,6 +306,9 @@ namespace RockEngine.Vulkan
             return ShaderVariableType.Custom;
             throw new NotSupportedException($"Unsupported shader variable type with traits: {traits}");
         }
+
+        public override void LabelObject(string name) => _context.DebugUtils.SetDebugUtilsObjectName(_vkObject, ObjectType.ShaderModule, name);
+
         protected override unsafe void Dispose(bool disposing)
         {
             if (!_disposed)

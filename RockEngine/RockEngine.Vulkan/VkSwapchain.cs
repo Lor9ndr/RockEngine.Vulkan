@@ -149,10 +149,11 @@ namespace RockEngine.Vulkan
 
         private static PresentModeKHR ChoosePresentMode(PresentModeKHR[] modes)
         {
-            // Prefer mailbox mode for triple buffering
-            return modes.Contains(PresentModeKHR.MailboxKhr)
-                ? PresentModeKHR.MailboxKhr
-                : PresentModeKHR.FifoKhr;
+            if (modes.Contains(PresentModeKHR.MailboxKhr))
+                return PresentModeKHR.MailboxKhr;
+            if (modes.Contains(PresentModeKHR.ImmediateKhr))
+                return PresentModeKHR.ImmediateKhr;
+            return PresentModeKHR.FifoKhr;
         }
 
         private static SurfaceFormatKHR ChooseSwapSurfaceFormat(SurfaceFormatKHR[] availableFormats)
@@ -238,8 +239,8 @@ namespace RockEngine.Vulkan
             var currentFrame = _frameData[_currentFrameIndex];
 
             // Optimized fence wait using queue operations instead of CPU stall
-            _context.Device.GraphicsQueue.WaitIdle();
-            VulkanContext.Vk.ResetFences(_context.Device, 1, currentFrame.InFlightFence);
+            currentFrame.InFlightFence.Wait();
+            currentFrame.InFlightFence.Reset();
 
             var result = _khrSwapchain.AcquireNextImage(
                 _context.Device,
@@ -326,8 +327,8 @@ namespace RockEngine.Vulkan
             }
 
             // Wait for the device to finish any ongoing operations
-            _context.Device.GraphicsQueue.WaitIdle();
-            _context.Device.PresentQueue.WaitIdle();
+           /* _context.Device.GraphicsQueue.WaitIdle();
+            _context.Device.PresentQueue.WaitIdle();*/
 
             // Dispose of old framebuffers and image views
             DisposeImageViews();
@@ -375,13 +376,6 @@ namespace RockEngine.Vulkan
                 _khrSwapchain.GetSwapchainImages(_context.Device, swapChain, &imagesCount, images);
                 _khrSwapchain.DestroySwapchain(_context.Device, oldSwapchain,null);
                 _vkObject = swapChain;
-                var ci = new ImageCreateInfo()
-                {
-                    SType = StructureType.ImageCreateInfo,
-                    Format = Format.R32G32B32A32Sfloat,
-                    InitialLayout = ImageLayout.Undefined,
-                    MipLevels = 1,
-                };
                 int i = 0;
                 foreach (var item in images)
                 {
@@ -526,14 +520,17 @@ namespace RockEngine.Vulkan
             _depthImageView = _depthImage.CreateView(aspectMask);
         }
 
-        private Format FindDepthFormat()
-            => FindSupportedFormat([Format.D32Sfloat, Format.D32SfloatS8Uint, Format.D24UnormS8Uint], ImageTiling.Optimal, FormatFeatureFlags.DepthStencilAttachmentBit);
+        private Format FindDepthFormat() => FindSupportedFormat(
+         [Format.D24UnormS8Uint, Format.D32Sfloat, Format.D32SfloatS8Uint], // Prefer D24S8 first
+         ImageTiling.Optimal,
+         FormatFeatureFlags.DepthStencilAttachmentBit
+     );
 
         private Format FindSupportedFormat(Format[] candidates, ImageTiling tiling, FormatFeatureFlags features)
         {
             foreach (var format in candidates)
             {
-                var properties = VulkanContext.Vk.GetPhysicalDeviceFormatProperties(_context.Device.PhysicalDevice, format);
+                var properties = _context.Device.PhysicalDevice.GetFormatProperties(format);
 
                 switch (tiling)
                 {
@@ -572,6 +569,7 @@ namespace RockEngine.Vulkan
                 InFlightFence.Dispose();
             }
         }
+        public override void LabelObject(string name) => _context.DebugUtils.SetDebugUtilsObjectName(_vkObject, ObjectType.SwapchainKhr, name);
 
         protected override unsafe void Dispose(bool disposing)
         {

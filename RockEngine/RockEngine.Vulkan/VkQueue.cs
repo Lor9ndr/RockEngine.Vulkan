@@ -98,6 +98,7 @@ namespace RockEngine.Vulkan
         {
             VulkanContext.Vk.QueueWaitIdle(this);
         }
+        public override void LabelObject(string name) => _context.DebugUtils.SetDebugUtilsObjectName(_vkObject, ObjectType.Queue, name);
 
         protected override void Dispose(bool disposing)
         {

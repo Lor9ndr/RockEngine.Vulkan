@@ -55,6 +55,7 @@ namespace RockEngine.Vulkan
             var props = GetFormatProperties(format);
             return props.OptimalTilingFeatures;
         }
+        public override void LabelObject(string name) { }
 
         protected override void Dispose(bool disposing)
         {

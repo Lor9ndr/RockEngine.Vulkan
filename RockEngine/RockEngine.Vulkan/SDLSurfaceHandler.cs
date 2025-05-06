@@ -76,6 +76,7 @@ namespace RockEngine.Vulkan
                 _disposed = true;
             }
         }
+        public override void LabelObject(string name) => _context.DebugUtils.SetDebugUtilsObjectName(_vkObject, ObjectType.SurfaceKhr, name);
 
 
         // Override finalizer only if 'Dispose(bool disposing)' has code to free unmanaged resources

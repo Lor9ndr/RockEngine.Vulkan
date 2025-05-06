@@ -1,5 +1,4 @@
 ﻿using RockEngine.Core.ECS.Components;
-using RockEngine.Core.Rendering.Managers;
 using RockEngine.Core.Rendering.ResourceBindings;
 using RockEngine.Core.Rendering.Texturing;
 using RockEngine.Vulkan;
@@ -18,9 +17,7 @@ namespace RockEngine.Core.Rendering
 
         public VkImageView[] ColorAttachments { get; private set; }
         public VkImageView DepthAttachment { get; private set; }
-        public VkSampler Sampler { get; private set; }
         public Texture[] ColorTextures { get; private set; }
-        public DescriptorSet[] LightingDescriptorSets { get; private set; }
 
         public static readonly Format[] ColorAttachmentFormats =
         [
@@ -37,17 +34,18 @@ namespace RockEngine.Core.Rendering
             _context = context;
             _size = size;
             _depthFormat = depthFormat;
+            
+            // Create separate samplers for different texture types
+            var positionSampler = CreateSampler(Filter.Nearest);  // Position benefits from nearest
+            var normalSampler = CreateSampler(Filter.Nearest);     
+            var albedoSampler = CreateSampler(Filter.Linear);     // Albedo with sRGB handling
 
-            Initialize();
-        }
-
-        private void Initialize()
-        {
+            Samplers = new[] { positionSampler, normalSampler, albedoSampler };
             CreateAttachments();
-            CreateSamplers();
             CreateTextures();
-
+           
         }
+
         public void CreateLightingDescriptorSets(VkPipeline pipeline)
         {
             if (_pipeline != pipeline)
@@ -68,12 +66,16 @@ namespace RockEngine.Core.Rendering
         private void CreateAttachments()
         {
             ColorAttachments = new VkImageView[3];
+            string[] debugNames = ["GPosition", "GNormal", "GAlbedo"];
             for (int i = 0; i < ColorAttachments.Length; i++)
             {
                 ColorAttachments[i] = CreateColorAttachment(ColorAttachmentFormats[i]);
+                _context.DebugUtils.SetDebugUtilsObjectName(ColorAttachments[i].VkObjectNative, ObjectType.ImageView, debugNames[i] + "View");
+                _context.DebugUtils.SetDebugUtilsObjectName(ColorAttachments[i].Image.VkObjectNative, ObjectType.Image, debugNames[i]);
             }
             DepthAttachment = CreateDepthAttachment();
-          
+
+
         }
         private VkImageView CreateColorAttachment(Format format)
         {
@@ -105,15 +107,7 @@ namespace RockEngine.Core.Rendering
 
             return image.CreateView(ImageAspectFlags.DepthBit);
         }
-        private void CreateSamplers()
-        {
-            // Create separate samplers for different texture types
-            var positionSampler = CreateSampler(Filter.Nearest);  // Position benefits from nearest
-            var normalSampler = CreateSampler(Filter.Linear);     // Normals need smooth interpolation
-            var albedoSampler = CreateSampler(Filter.Linear);     // Albedo with sRGB handling
-
-            Samplers = new[] { positionSampler, normalSampler, albedoSampler };
-        }
+       
 
         private VkSampler CreateSampler(Filter filter)
         {
@@ -138,7 +132,7 @@ namespace RockEngine.Core.Rendering
                 samplerInfo.MaxAnisotropy = _context.Device.PhysicalDevice.Properties.Limits.MaxSamplerAnisotropy;
             }
 
-            return VkSampler.Create(_context, samplerInfo);
+            return _context.SamplerCache.GetSampler(samplerInfo);
         }
         private void CreateTextures()
         {
@@ -149,7 +143,7 @@ namespace RockEngine.Core.Rendering
                     _context,
                     ColorAttachments[i].Image,
                     ColorAttachments[i],
-                    Samplers[i], 
+                    Samplers[i],
                 null);
             }
         }

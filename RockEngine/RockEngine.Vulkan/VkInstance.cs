@@ -42,6 +42,8 @@ namespace RockEngine.Vulkan
                 _disposed = true;
             }
         }
+        public override void LabelObject(string name) => VulkanContext.GetCurrent().DebugUtils.SetDebugUtilsObjectName(_vkObject, ObjectType.Buffer, name);
+
         private unsafe delegate void DestroyDebugUtilsDelegate(Instance instance, DebugUtilsMessengerEXT messenger, AllocationCallbacks* pAllocator);
     }
 }

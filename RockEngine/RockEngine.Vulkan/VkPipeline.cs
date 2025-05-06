@@ -30,6 +30,7 @@ namespace RockEngine.Vulkan
                   .VkAssertResult("Failed to create pipeline");
             return new VkPipeline(context, name, pipeline, layout, renderPass, ci.Subpass);
         }
+        public override void LabelObject(string name) => _context.DebugUtils.SetDebugUtilsObjectName(_vkObject, ObjectType.Pipeline, name);
 
         protected override void Dispose(bool disposing)
         {

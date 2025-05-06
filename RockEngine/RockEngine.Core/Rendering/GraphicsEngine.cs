@@ -65,7 +65,7 @@ namespace RockEngine.Core.Rendering
                 Flags = CommandBufferUsageFlags.None,
                 PInheritanceInfo = default
             };
-            commandBuffer.Reset(CommandBufferResetFlags.None);
+            commandBuffer.Reset(CommandBufferResetFlags.ReleaseResourcesBit);
             commandBuffer.Begin(in beginInfo);
 
             return commandBuffer;

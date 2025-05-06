@@ -121,6 +121,7 @@ namespace RockEngine.Vulkan
         {
             VulkanContext.Vk.ResetCommandPool(_context.Device, _vkObject, flags);
         }
+        public override void LabelObject(string name) => _context.DebugUtils.SetDebugUtilsObjectName(_vkObject, ObjectType.CommandPool, name);
 
         protected override unsafe void Dispose(bool disposing)
         {

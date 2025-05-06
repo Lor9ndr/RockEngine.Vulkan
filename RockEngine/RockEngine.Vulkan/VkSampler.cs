@@ -23,5 +23,7 @@ namespace RockEngine.Vulkan
         {
             VulkanContext.Vk.DestroySampler(_context.Device, _vkObject, in VulkanContext.CustomAllocator<VkSampler>());
         }
+        public override void LabelObject(string name) => _context.DebugUtils.SetDebugUtilsObjectName(_vkObject, ObjectType.Sampler, name);
+
     }
 }

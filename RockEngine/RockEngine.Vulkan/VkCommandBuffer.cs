@@ -127,6 +127,11 @@ namespace RockEngine.Vulkan
             VulkanContext.Vk.ResetCommandBuffer(this, flags)
                 .VkAssertResult("Failed to reset commandBuffer");
         }
+        public override void LabelObject(string name) => _context.DebugUtils.SetDebugUtilsObjectName(_vkObject, ObjectType.CommandBuffer, name);
+        public DebugLabelScope NameAction(string name, float[] color)
+        {
+            return _context.DebugUtils.CmdDebugLabelScope(this.VkObjectNative, name, color);
+        }
 
 
         /// <summary>

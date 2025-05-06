@@ -84,17 +84,24 @@ namespace RockEngine.Core.Rendering.RenderTargets
                     Size.Width,
                     Size.Height
                 );
+                Framebuffers[i].LabelObject($"Cam framebuffer ({i})");
             }
         }
 
         public override void PrepareForRender(VkCommandBuffer cmd)
         {
-            OutputTexture.Image.TransitionImageLayout(cmd, ImageLayout.ColorAttachmentOptimal);
+            using (cmd.NameAction("Transition camera output to ColorAttachmentOptimal", [1, 1, 1, 1]))
+            {
+                OutputTexture.Image.TransitionImageLayout(cmd, ImageLayout.ColorAttachmentOptimal);
+            }
         }
 
         public override void TransitionToRead(VkCommandBuffer cmd)
         {
-            OutputTexture.Image.TransitionImageLayout(cmd, ImageLayout.ShaderReadOnlyOptimal);
+            using (cmd.NameAction("Transition camera output to ShaderReadOnlyOptimal", [1, 1, 1, 1]))
+            {
+                OutputTexture.Image.TransitionImageLayout(cmd, ImageLayout.ShaderReadOnlyOptimal);
+            }
         }
 
         public override void Resize(Extent2D newSize)

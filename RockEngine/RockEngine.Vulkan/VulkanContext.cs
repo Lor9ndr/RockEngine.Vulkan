@@ -19,6 +19,8 @@ namespace RockEngine.Vulkan
         public SamplerCache SamplerCache { get; }
         public SubmitContext SubmitContext { get; }
 
+        public DebugUtilsFunctions DebugUtils => _debugUtilsFunctions;
+
         private static VulkanContext? _renderingContext;
 
         public static VulkanContext GetCurrent() => _renderingContext ?? throw new InvalidOperationException("Rendering context was not created yet");
@@ -29,7 +31,7 @@ namespace RockEngine.Vulkan
         private static DebugUtilsMessengerCallbackFunctionEXT _debugCallback;
         private readonly Stack<IDisposable> _pendingDisposals = new Stack<IDisposable>();
         private readonly ThreadLocal<VkCommandPool> _threadCommandPools;
-
+        private readonly DebugUtilsFunctions _debugUtilsFunctions;
 
         public VulkanContext(IWindow window, string appName, int maxFramesPerFlight = 3)
         {
@@ -41,6 +43,7 @@ namespace RockEngine.Vulkan
             Instance = CreateInstance(window, appName);
             Surface = CreateSurface(window);
             Device = CreateDevice(Surface, Instance, this);
+            _debugUtilsFunctions = new DebugUtilsFunctions(Vk, Device);
             MaxFramesPerFlight = maxFramesPerFlight;
             _renderingContext = this;
             SamplerCache = new SamplerCache(this);
@@ -199,10 +202,7 @@ namespace RockEngine.Vulkan
             cmdBuffer.BeginSingleTimeCommand();
             value.Invoke(cmdBuffer);
             SubmitCommandBuffer(cmdBuffer);
-
-
         }
-
 
         private unsafe void SubmitCommandBuffer(VkCommandBuffer cmd)
         {

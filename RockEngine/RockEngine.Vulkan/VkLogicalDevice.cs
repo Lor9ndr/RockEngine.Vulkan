@@ -222,5 +222,7 @@ namespace RockEngine.Vulkan
             }
             return requiredExtensions.Count == 0;
         }
+        public override void LabelObject(string name) => VulkanContext.GetCurrent().DebugUtils.SetDebugUtilsObjectName(_vkObject, ObjectType.Buffer, name);
+
     }
 }

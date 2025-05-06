@@ -55,6 +55,8 @@ namespace RockEngine.Vulkan
             }
             throw new InvalidOperationException("Failed to find suitable memory type.");
         }
+        public override void LabelObject(string name) => _context.DebugUtils.SetDebugUtilsObjectName(_vkObject, ObjectType.DeviceMemory, name);
+
 
         /// <summary>
         /// Maps memory and set <see cref="MappedData"/> to its mapped value

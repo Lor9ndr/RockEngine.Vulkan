@@ -63,5 +63,7 @@ namespace RockEngine.Vulkan
 
             return new VkRenderPass(context, renderPass);
         }
+        public override void LabelObject(string name) => _context.DebugUtils.SetDebugUtilsObjectName(_vkObject, ObjectType.RenderPass, name);
+
     }
 }

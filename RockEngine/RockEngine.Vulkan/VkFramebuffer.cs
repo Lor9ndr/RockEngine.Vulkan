@@ -104,6 +104,7 @@ namespace RockEngine.Vulkan
                 _disposed = true;
             }
         }
+        public override void LabelObject(string name) => _context.DebugUtils.SetDebugUtilsObjectName(_vkObject, ObjectType.Framebuffer, name);
 
         private void DisposeInternal()
         {
