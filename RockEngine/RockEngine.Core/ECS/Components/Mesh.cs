@@ -11,12 +11,14 @@ namespace RockEngine.Core.ECS.Components
     {
         public Vertex[] Vertices;
         public uint[]? Indices;
-        public Material Material;
+        private Material _material;
 
         public VkBuffer VertexBuffer;
         public VkBuffer? IndexBuffer;
 
         public bool HasIndices => Indices?.Length > 0;
+
+        public Material Material { get => _material; set => _material = value; }
 
         public Mesh()
         {
@@ -63,9 +65,10 @@ namespace RockEngine.Core.ECS.Components
                     0,
                     (ulong)(Unsafe.SizeOf<uint>() * Indices.Length));
             }
+            var semaphore = VkSemaphore.Create(context);
 
             batch.Submit();
-            await submitContext.FlushAsync();
+           // renderer.SubmitContext.AddWaitSemaphore(semaphore, PipelineStageFlags.VertexInputBit);
             renderer.Draw(this);
         }
 

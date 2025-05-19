@@ -8,14 +8,16 @@ layout(location = 3) in mat3 vTBN;
 layout(location = 0) out vec3 gPosition;
 layout(location = 1) out vec3 gNormal;
 layout(location = 2) out vec4 gAlbedo;
+layout(location = 3) out vec4 gMRA;
 
 layout(set = 2, binding = 0) uniform sampler2D uAlbedo;
 layout(set = 2, binding = 1) uniform sampler2D uNormalMap;
+layout(set = 2, binding = 2) uniform sampler2D uMRA;
 
 vec2 octEncode(vec3 n) {
-   n /= (abs(n.x) + abs(n.y) + abs(n.z));
+    n /= (abs(n.x) + abs(n.y) + abs(n.z));
     n.xy = n.z >= 0.0 ? n.xy : (1.0 - abs(n.yx)) * sign(n.xy);
-    return n.xy * 0.5 + 0.5;
+    return n.xy * 0.5 + 0.5 + 0.5/32768.0; // Add small offset
 }
 
 void main() {
@@ -27,5 +29,7 @@ void main() {
     vec3 worldNormal = normalize(vTBN * tangentNormal);
     gNormal.xy = octEncode(worldNormal); // Store compressed normal
     gAlbedo = texture(uAlbedo, vTexCoord);
+    gMRA = texture(uMRA, vTexCoord);
+    //gEmissive = texture(uEmissive, vTexCoord);
 }
 

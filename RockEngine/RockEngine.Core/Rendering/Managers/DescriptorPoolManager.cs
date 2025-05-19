@@ -63,7 +63,7 @@ namespace RockEngine.Core.Rendering.Managers
                 if (currentExhausted.Contains(pool))
                     continue;
 
-                var result = pool.AllocateDescriptorSet(layout.DescriptorSetLayout, out var descriptorSet)
+                var result = pool.AllocateDescriptorSet(layout, out var descriptorSet)
                     .VkAssertResult("Failed to allocate descriptor set", Result.ErrorOutOfPoolMemory);
 
                 if (result == Result.Success)
@@ -74,7 +74,7 @@ namespace RockEngine.Core.Rendering.Managers
 
             // All pools exhausted, create new one
             var newPool = CreateNewPool(currentPools);
-            newPool.AllocateDescriptorSet(layout.DescriptorSetLayout, out var newDescriptorSet)
+            newPool.AllocateDescriptorSet(layout, out var newDescriptorSet)
                 .VkAssertResult("Failed to allocate descriptor set from new pool");
 
             return newDescriptorSet;

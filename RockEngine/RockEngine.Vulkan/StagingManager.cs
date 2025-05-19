@@ -10,14 +10,14 @@ namespace RockEngine.Core.Rendering.Managers
     {
         private readonly VulkanContext _context;
         private readonly VkBuffer _stagingBuffer;
-        private readonly object _bufferLock = new();
+        private readonly Lock _bufferLock = new();
         private ulong _bufferOffset;
         private readonly ulong _bufferSize;
         private readonly ulong _alignment;
 
         public VkBuffer StagingBuffer => _stagingBuffer;
 
-        public StagingManager(VulkanContext context, ulong initialSize = 128 * 1024 * 1024)
+        public StagingManager(VulkanContext context, ulong initialSize = 512 * 1024 * 1024)
         {
             _context = context;
             _bufferSize = initialSize;

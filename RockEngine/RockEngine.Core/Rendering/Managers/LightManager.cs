@@ -1,4 +1,5 @@
 ﻿using RockEngine.Core.ECS.Components;
+using RockEngine.Core.Rendering.Buffers;
 using RockEngine.Core.Rendering.ResourceBindings;
 using RockEngine.Vulkan;
 
@@ -87,6 +88,11 @@ namespace RockEngine.Core.Rendering.Managers
         internal StorageBuffer<LightData> GetCurrentLightBuffer()
         {
             return _lightBuffers[_currentFrameIndex];
+        }
+
+            internal StorageBufferBinding<LightData> GetCurrentLightBufferBinding()
+        {
+            return _lightBindings[_currentFrameIndex];
         }
     }
 

@@ -48,14 +48,12 @@ namespace RockEngine.Core.Rendering.RenderTargets
             {
                 fb?.Dispose();
             }
-            RenderPass?.Dispose();
 
             // Update dimensions
             Size = _swapchain.Extent;
             Format = _swapchain.Format;
 
             // Recreate resources
-            RenderPass = CreateRenderPass();
             CreateFramebuffers();
             UpdateViewportAndScissor();
         }

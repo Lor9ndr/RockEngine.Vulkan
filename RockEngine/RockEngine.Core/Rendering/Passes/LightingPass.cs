@@ -1,12 +1,12 @@
-﻿using RockEngine.Core.ECS.Components;
+﻿using RockEngine.Core.ECS;
+using RockEngine.Core.ECS.Components;
 using RockEngine.Core.Rendering.Managers;
 using RockEngine.Core.Rendering.ResourceBindings;
 using RockEngine.Core.Rendering.RockEngine.Core.Rendering;
+using RockEngine.Core.Rendering.Texturing;
 using RockEngine.Vulkan;
 
 using Silk.NET.Vulkan;
-
-using System.Runtime.InteropServices;
 
 namespace RockEngine.Core.Rendering.Passes
 {
@@ -16,8 +16,10 @@ namespace RockEngine.Core.Rendering.Passes
         private readonly TransformManager _transformManager;
         private readonly IndirectCommandManager _indirectCommands;
         private readonly VkPipeline _lightingPipeline;
+        private readonly World _world;
         private readonly GlobalUbo _globalUbo;
         private readonly UniformBufferBinding _binding;
+        private TextureBinding _IblBinding;
 
         public LightingPass(
             VulkanContext context,
@@ -26,72 +28,50 @@ namespace RockEngine.Core.Rendering.Passes
             TransformManager transformManager,
             IndirectCommandManager indirectCommands,
             GlobalUbo globalUbo,
-            VkPipeline lightingPipeline)
+            VkPipeline lightingPipeline,
+            World world)
             : base(context, bindingManager)
         {
             _lightManager = lightManager;
             _transformManager = transformManager;
             _indirectCommands = indirectCommands;
             _lightingPipeline = lightingPipeline;
+            _world = world;
             _globalUbo = globalUbo;
             _binding = new UniformBufferBinding(_globalUbo, 0, 0);
+
+           
         }
 
         protected override uint Order => 1;
 
-        public override async Task Execute(VkCommandBuffer cmd, params object[] args)
+        public override Task Execute(VkCommandBuffer cmd, params object[] args)
         {
             var camera = args[0] as Camera ?? throw new ArgumentNullException(nameof(Camera));
             uint frameIndex = (uint)args[1];
 
             cmd.SetViewport(camera.RenderTarget.Viewport);
             cmd.SetScissor(camera.RenderTarget.Scissor);
-            // 2. Draw skybox/transparent objects afterward
-            foreach (var drawGroup in _indirectCommands.GetDrawGroups(RenderLayerType.Transparent))
+            camera.RenderTarget.GBuffer.Material.Bind(_lightManager.GetCurrentLightBufferBinding());
+
+            if(_IblBinding != null)
             {
-                if (drawGroup.Pipeline.SubPass != Order)
-                {
-                    continue;
-                }
-                cmd.BindPipeline(drawGroup.Pipeline, PipelineBindPoint.Graphics);
-
-                var matrixBinding = _transformManager.GetCurrentBinding(frameIndex);
-                drawGroup.Mesh.Material.Bindings.Add(matrixBinding);
-
-                drawGroup.Mesh.Material.Bindings.Add(_binding);
-                BindingManager.BindResourcesForMaterial(drawGroup.Mesh.Material, cmd);
-
-                drawGroup.Mesh.VertexBuffer.BindVertexBuffer(cmd);
-                drawGroup.Mesh.IndexBuffer.BindIndexBuffer(cmd, 0, IndexType.Uint32);
-                if (GetMultiDrawIndirectFeature())
-                {
-                    VulkanContext.Vk.CmdDrawIndexedIndirect(
-                        cmd,
-                        _indirectCommands.IndirectBuffer.Buffer,
-                        drawGroup.ByteOffset,
-                        drawGroup.Count,
-                        (uint)Marshal.SizeOf<DrawIndexedIndirectCommand>());
-                }
-                else
-                {
-                    for (uint i = 0; i < drawGroup.Count; i++)
-                    {
-                        VulkanContext.Vk.CmdDrawIndexedIndirect(
-                            cmd,
-                            _indirectCommands.IndirectBuffer.Buffer,
-                            drawGroup.ByteOffset + (ulong)(i * Marshal.SizeOf<DrawIndexedIndirectCommand>()),
-                            1,
-                            (uint)Marshal.SizeOf<DrawIndexedIndirectCommand>());
-                    }
-                }
+                camera.RenderTarget.GBuffer.Material.Bind(_IblBinding);
             }
 
-            // 1. Draw the lighting quad first
             cmd.BindPipeline(_lightingPipeline, PipelineBindPoint.Graphics);
+            
+            camera.RenderTarget.GBuffer.Material.CmdPushConstants(cmd);
+
             BindingManager.BindResourcesForMaterial(camera.RenderTarget.GBuffer.Material, cmd);
             cmd.Draw(3, 1, 0, 0);
+            return Task.CompletedTask;
+        }
 
-         
+        internal void SetIBLTextures(Texture irradiance, Texture prefilter, Texture brdfLUT)
+        {
+            
+            _IblBinding =  new TextureBinding(3, 0, default,irradiance, prefilter, brdfLUT);
         }
 
         private Silk.NET.Core.Bool32 GetMultiDrawIndirectFeature()

@@ -1,4 +1,5 @@
-﻿using RockEngine.Core.Rendering.ResourceBindings;
+﻿using RockEngine.Core.Rendering.Buffers;
+using RockEngine.Core.Rendering.ResourceBindings;
 
 using System.Numerics;
 using System.Runtime.InteropServices;
@@ -9,7 +10,7 @@ namespace RockEngine.Core.Rendering
     {
         public sealed class GlobalUbo : UniformBuffer
         {
-            private UniformBufferBinding _binding;
+            private readonly UniformBufferBinding _binding;
 
             public GlobalUboData GlobalData { get; set; }
 

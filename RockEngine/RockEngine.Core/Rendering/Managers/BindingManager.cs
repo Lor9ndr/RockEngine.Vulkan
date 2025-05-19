@@ -1,13 +1,16 @@
 ﻿
 using RockEngine.Core.ECS.Components;
+using RockEngine.Core.Internal;
 using RockEngine.Core.Rendering.ResourceBindings;
 using RockEngine.Vulkan;
 
 using Silk.NET.Vulkan;
 
+using System.Runtime.InteropServices;
+
 namespace RockEngine.Core.Rendering.Managers
 {
-    public class BindingManager
+    public partial class BindingManager
     {
         private readonly VulkanContext _context;
         private readonly DescriptorPoolManager _descriptorPoolManager;
@@ -20,28 +23,69 @@ namespace RockEngine.Core.Rendering.Managers
             _graphicsEngine = graphicsEngine;
         }
 
-        public void BindResourcesForMaterial(Material material, VkCommandBuffer commandBuffer)
+        public void BindResourcesForMaterial(
+             Material material,
+             VkCommandBuffer commandBuffer,
+             bool isCompute = false,
+             Span<uint> skipSets = default)
         {
             var setsToBind = new DescriptorSet[material.Bindings.Count];
             int index = 0;
 
-            foreach (var (setLocation, perSetBindings) in material.Bindings)
+            foreach(var(setLocation, perSetBindings) in material.Bindings)
             {
-                if(material.Pipeline.Layout.GetSetLayout(setLocation) == default)
+                if (skipSets.Contains(setLocation) || material.Pipeline.Layout.GetSetLayout(setLocation) == default)
                 {
                     continue;
                 }
                 ProcessSet(material.Pipeline.Layout, setLocation, perSetBindings, setsToBind, ref index);
             }
-
+            if (index == 0)
+            {
+                return;
+            }
             BindDescriptorSetsToCommandBuffer(
                 commandBuffer,
                 material.Pipeline.Layout,
                 setsToBind,
-                material.Bindings.DynamicOffsets,
-                material.Bindings.MinSetLocation
+                CollectionsMarshal.AsSpan(material.Bindings.DynamicOffsets),
+                material.Bindings.MinSetLocation,
+                isCompute
             );
         }
+        public void BindResource(
+          ResourceBinding binding,
+          VkCommandBuffer commandBuffer,
+          VkPipelineLayout pipelineLayout,
+          bool isCompute = false)
+        {
+            // 1. Проверка существования сета в pipeline layout
+            var setLocation = binding.SetLocation;
+            var setLayout = pipelineLayout.GetSetLayout(setLocation);
+            if (setLayout == default)
+            {
+                throw new InvalidOperationException(
+                    $"Set {setLocation} not found in pipeline layout");
+            }
+
+            // 2. Создаем временную коллекцию и собираем смещения
+            var perSetBindings = new PerSetBindings(setLocation);
+            var dynamicOffsets = new List<uint>();
+
+            perSetBindings.Add(binding);
+            if (binding is UniformBufferBinding uboBinding && uboBinding.Buffer.IsDynamic)
+            {
+                dynamicOffsets.Add((uint)uboBinding.Offset);
+            }
+
+            // 3. Получаем или создаем дескрипторный набор
+            var descriptorSet = GetOrCreateDescriptorSet(pipelineLayout, setLocation, perSetBindings);
+
+            // 4. Биндим с учетом динамических смещений
+            BindDescriptorSetsToCommandBuffer(commandBuffer, pipelineLayout, [descriptorSet], CollectionsMarshal.AsSpan(dynamicOffsets), perSetBindings.Set, isCompute);
+          
+        }
+
         private void ProcessSet(VkPipelineLayout pipelineLayout, uint setLocation, PerSetBindings perSetBindings, DescriptorSet[] setsToBind, ref int index)
         {
             // Get or allocate descriptor set
@@ -54,7 +98,7 @@ namespace RockEngine.Core.Rendering.Managers
         {
             // Проверяем, есть ли актуальный набор дескрипторов
             var existingSet = perSetBindings.FirstOrDefault(b => b.DescriptorSet != null)?.DescriptorSet;
-            bool needsUpdate = perSetBindings.Any(b => b.IsDirty);
+            bool needsUpdate = perSetBindings.NeedToUpdate;
 
             if (existingSet is not null && !needsUpdate)
             {
@@ -74,8 +118,21 @@ namespace RockEngine.Core.Rendering.Managers
                     binding.IsDirty = false;
                 }
             }
-
             return descriptorSet;
+        }
+
+        private BindingFingerprint CreateFingerprint(uint setLocation, PerSetBindings bindings)
+        {
+            var hash = new HashCode();
+            foreach (var binding in bindings.OrderBy(b => b.BindingLocation))
+            {
+                hash.Add(binding.GetResourceHash());
+                if (binding is UniformBufferBinding ubo && ubo.Buffer.IsDynamic)
+                {
+                    hash.Add(ubo.Offset);
+                }
+            }
+            return new BindingFingerprint(setLocation, hash.ToHashCode());
         }
 
 
@@ -97,6 +154,8 @@ namespace RockEngine.Core.Rendering.Managers
 
             descriptorSets[index++] = binding.DescriptorSet!;
         }
+
+
 
         private static void HandleUniformBufferBinding(UniformBufferBinding uboBinding, VkPipelineLayout pipelineLayout)
         {
@@ -124,21 +183,22 @@ namespace RockEngine.Core.Rendering.Managers
         private unsafe void BindDescriptorSetsToCommandBuffer(
                 VkCommandBuffer commandBuffer,
                 VkPipelineLayout pipelineLayout,
-                DescriptorSet[] descriptorSets,
-                IReadOnlyList<uint> dynamicOffsets,
-                uint minSetIndex)
+                Span<DescriptorSet> descriptorSets,
+                Span<uint> dynamicOffsets,
+                uint minSetIndex,
+                bool isCompute)
         {
             fixed (DescriptorSet* descriptorSetsPtr = descriptorSets)
-            fixed (uint* dynamicOffsetsPtr = dynamicOffsets.ToArray())
+            fixed (uint* dynamicOffsetsPtr = dynamicOffsets)
             {
                 VulkanContext.Vk.CmdBindDescriptorSets(
                     commandBuffer,
-                    PipelineBindPoint.Graphics,
+                    isCompute ? PipelineBindPoint.Compute : PipelineBindPoint.Graphics,
                     pipelineLayout,
                     minSetIndex,
                     (uint)descriptorSets.Length,
                     descriptorSetsPtr,
-                    (uint)dynamicOffsets.Count,
+                    (uint)dynamicOffsets.Length,
                     dynamicOffsetsPtr);
             }
         }

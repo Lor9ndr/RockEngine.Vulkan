@@ -42,7 +42,7 @@ namespace RockEngine.Vulkan
         public void Reset()
         {
             // Явный сброс буфера команд
-            _commandBuffer.Reset(CommandBufferResetFlags.None);
+            _commandBuffer.Reset(CommandBufferResetFlags.ReleaseResourcesBit);
             BeginCommandBuffer();
         }
 
@@ -81,10 +81,18 @@ namespace RockEngine.Vulkan
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Submit(IDisposable[]? dependencies = null)
+        public void Submit(IDisposable[]? dependencies = null, VkSemaphore[] signalSemaphores = null)
         {
             _commandBuffer.End();
             _submitContext.AddSubmission(_commandBuffer, dependencies);
+            // Add semaphores to submit context
+            if (signalSemaphores != null)
+            {
+                foreach (var sem in signalSemaphores)
+                {
+                    _submitContext.AddSignalSemaphore(sem);
+                }
+            }
         }
     }
 }

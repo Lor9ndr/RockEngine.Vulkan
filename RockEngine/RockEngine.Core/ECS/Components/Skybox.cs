@@ -13,7 +13,8 @@ namespace RockEngine.Core.ECS.Components
         {
             _mesh = new Mesh();
             Material = new Material(renderer.PipelineManager.GetPipelineByName("Skybox"), Cubemap);
-            Entity.ChangeLayer(RenderLayerType.Solid);
+
+            Entity.Layer = RenderLayerType.Solid;
             _mesh.SetEntity(this.Entity);
             Vertex[] vertices =
             [

@@ -34,14 +34,16 @@ namespace RockEngine.Vulkan
 
             return new VkDescriptorSet(_context, this, in descriptorSet);
         }
-        public unsafe Result AllocateDescriptorSet(DescriptorSetLayout setLayout, out VkDescriptorSet set)
+        public unsafe Result AllocateDescriptorSet(VkDescriptorSetLayout setLayout, out VkDescriptorSet set)
         {
+            var setLayoutNative = stackalloc DescriptorSetLayout[] { setLayout.DescriptorSetLayout};
+            
             var allocInfo = new DescriptorSetAllocateInfo
             {
                 SType = StructureType.DescriptorSetAllocateInfo,
                 DescriptorPool = this,
                 DescriptorSetCount = 1,
-                PSetLayouts = &setLayout
+                PSetLayouts = setLayoutNative
             };
             var result = VulkanContext.Vk.AllocateDescriptorSets(_context.Device, in allocInfo, out var descriptorSet);
             set = new VkDescriptorSet(_context, this, in descriptorSet);

@@ -32,7 +32,9 @@ void main() {
     vNormal = mat3(transpose(inverse(model))) * aNormal;
     vTexCoord = aTexCoord;
     vec3 T = normalize(mat3(model) * aTangent);
-    vec3 B = normalize(mat3(model) * aBitangent);
     vec3 N = normalize(mat3(model) * aNormal);
-    vTBN = mat3(T, B, N);
+    T = normalize(T - dot(T, N) * N); // Gram-Schmidt orthogonalize
+    vec3 B = cross(N, T);
+    mat3 TBN = mat3(T, B, N);
+    vTBN = TBN;
 }

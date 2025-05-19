@@ -1,10 +1,12 @@
-﻿using RockEngine.Vulkan;
+﻿using Assimp;
+
+using RockEngine.Vulkan;
 
 using Silk.NET.Vulkan;
 
 namespace RockEngine.Core.Rendering.Texturing
 {
-public partial class Texture
+    public partial class Texture
     {
         public class Builder
         {
@@ -16,6 +18,11 @@ public partial class Texture
             private SamplerCreateInfo? _samplerCreateInfo;
             private uint _mipLevels = 1;
             private bool _generateMipmaps;
+            private bool _isCubeMap;
+            private uint _arrayLayers = 1;
+            private SharingMode _sharingMode = SharingMode.Exclusive;
+            private uint[] _queueFamilyIndices = Array.Empty<uint>();
+            private bool _waitCompute;
 
             public Builder(VulkanContext context)
             {
@@ -45,6 +52,11 @@ public partial class Texture
                 _aspectMask = aspectMask;
                 return this;
             }
+            public Builder WaitCompute()
+            {
+                _waitCompute = true;
+                return this;
+            }
 
             public Builder SetSamplerSettings(SamplerCreateInfo samplerInfo)
             {
@@ -52,12 +64,25 @@ public partial class Texture
                 _samplerCreateInfo = samplerInfo;
                 return this;
             }
-
-            public Builder ForRenderTarget()
+            public Builder SetSharingMode(SharingMode sharingMode)
             {
-                _usage |= ImageUsageFlags.ColorAttachmentBit | ImageUsageFlags.TransferSrcBit;
-                _aspectMask = ImageAspectFlags.ColorBit;
-                _mipLevels = 1; // Typically don't need mips for render targets
+                _sharingMode = sharingMode;
+                return this;
+            }
+
+            public Builder SetQueueFamilyIndices(uint[] queueFamilyIndices)
+            {
+                _queueFamilyIndices = queueFamilyIndices;
+                return this;
+            }
+
+            public Builder SetCubemap(bool isCubeMap)
+            {
+                _isCubeMap = isCubeMap;
+                if (_isCubeMap)
+                {
+                    _arrayLayers = 6;
+                }
                 return this;
             }
 
@@ -71,6 +96,7 @@ public partial class Texture
                 }
                 return this;
             }
+         
 
             public Texture Build()
             {
@@ -79,12 +105,21 @@ public partial class Texture
                 var image = CreateVulkanImage();
                 var imageView = CreateImageView(image);
                 var sampler = CreateSampler();
-
+                if (_waitCompute)
+                {
+                    var semaphore = VkSemaphore.Create(_context);
+                    _context.SubmitComputeContext.AddWaitSemaphore(semaphore, PipelineStageFlags.ComputeShaderBit);
+                    _context.SubmitContext.AddSignalSemaphore(semaphore);
+                }
                 if (_generateMipmaps)
                 {
-                    throw new NotImplementedException();
-                    //GenerateMipmaps();
+                    var batch = _context.SubmitContext.CreateBatch();
+                    image.GenerateMipmaps(batch.CommandBuffer);
+                    batch.Submit();
+                    _context.SubmitContext.Flush();
+
                 }
+                
 
                 return new Texture(_context, image, imageView, sampler);
             }
@@ -105,43 +140,38 @@ public partial class Texture
             }
             private VkImage CreateVulkanImage()
             {
-                var imageInfo = new ImageCreateInfo
+                unsafe
                 {
-                    SType = StructureType.ImageCreateInfo,
-                    ImageType = ImageType.Type2D,
-                    Format = _format,
-                    Extent = new Extent3D(_size.Width, _size.Height, 1),
-                    MipLevels = _mipLevels,
-                    ArrayLayers = 1,
-                    Samples = SampleCountFlags.Count1Bit,
-                    Tiling = ImageTiling.Optimal,
-                    Usage = _usage,
-                    SharingMode = SharingMode.Exclusive,
-                    InitialLayout = ImageLayout.Undefined
-                };
+                    fixed(uint* pQueueFamilyIndices = _queueFamilyIndices)
+                    {
+                        var imageInfo = new ImageCreateInfo
+                        {
+                            SType = StructureType.ImageCreateInfo,
+                            ImageType = ImageType.Type2D,
+                            Format = _format,
+                            Extent = new Extent3D(_size.Width, _size.Height, 1),
+                            MipLevels = _mipLevels,
+                            ArrayLayers = _arrayLayers,
+                            Samples = SampleCountFlags.Count1Bit,
+                            Tiling = ImageTiling.Optimal,
+                            Usage = _usage,
+                            SharingMode = _sharingMode,
+                            QueueFamilyIndexCount = (uint)_queueFamilyIndices.Length,
+                            PQueueFamilyIndices = pQueueFamilyIndices,
+                            InitialLayout = ImageLayout.Undefined,
+                            Flags = _isCubeMap ? ImageCreateFlags.CreateCubeCompatibleBit : ImageCreateFlags.None
+                        };
 
-                return VkImage.Create(_context, imageInfo, MemoryPropertyFlags.DeviceLocalBit, _aspectMask);
+                        return VkImage.Create(_context, imageInfo, MemoryPropertyFlags.DeviceLocalBit, _aspectMask);
+                    }
+                }
+               
             }
 
             private VkImageView CreateImageView(VkImage image)
             {
-                var viewInfo = new ImageViewCreateInfo
-                {
-                    SType = StructureType.ImageViewCreateInfo,
-                    Image = image,
-                    ViewType = ImageViewType.Type2D,
-                    Format = _format,
-                    SubresourceRange = new ImageSubresourceRange
-                    {
-                        AspectMask = _aspectMask,
-                        BaseMipLevel = 0,
-                        LevelCount = _mipLevels,
-                        BaseArrayLayer = 0,
-                        LayerCount = 1
-                    }
-                };
+                return image.GetOrCreateView(_aspectMask, 0, _mipLevels, 0, _arrayLayers);
 
-                return VkImageView.Create(_context, image, viewInfo);
             }
 
             private VkSampler CreateSampler()

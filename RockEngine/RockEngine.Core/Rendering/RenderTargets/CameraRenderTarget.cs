@@ -30,7 +30,7 @@ namespace RockEngine.Core.Rendering.RenderTargets
         };
 
         public CameraRenderTarget(VulkanContext context, GraphicsEngine engine, Extent2D size, EngineRenderPass deferredRenderPass)
-            : base(context, size, engine.Swapchain.Format, ImageUsageFlags.ColorAttachmentBit | ImageUsageFlags.SampledBit)
+            : base(context, size, engine.Swapchain.Format, ImageUsageFlags.ColorAttachmentBit | ImageUsageFlags.TransientAttachmentBit | ImageUsageFlags.SampledBit)
         {
             _context = context;
             _engine = engine;
@@ -43,6 +43,8 @@ namespace RockEngine.Core.Rendering.RenderTargets
                 new ClearValue { Color = new ClearColorValue(0.0f, 0.0f, 0.0f, 1.0f) },
                 new ClearValue { Color = new ClearColorValue(0.0f, 0.0f, 0.0f, 1.0f) },
                 new ClearValue { Color = new ClearColorValue(0.0f, 0.0f, 0.0f, 1.0f) },
+                new ClearValue { Color = new ClearColorValue(0.0f, 0.0f, 0.0f, 1.0f) },
+                //new ClearValue { Color = new ClearColorValue(0.0f, 0.0f, 0.0f, 1.0f) },
         
                 // Depth attachment
                 new ClearValue { DepthStencil = new ClearDepthStencilValue(1.0f, 0) },
@@ -59,16 +61,14 @@ namespace RockEngine.Core.Rendering.RenderTargets
                                     .SetFormat(Format)
                                     .SetUsage(ImageUsageFlags.ColorAttachmentBit | ImageUsageFlags.SampledBit)
                                     .Build();
+            OutputTexture.Image.LabelObject("Camera render target");
         }
 
         public override void CreateFramebuffers()
         {
-            if (Framebuffers != null)
+            foreach (var fb in Framebuffers)
             {
-                foreach (var fb in Framebuffers)
-                {
-                    fb?.Dispose();
-                }
+                fb?.Dispose();
             }
 
             Framebuffers = new VkFrameBuffer[_context.MaxFramesPerFlight];

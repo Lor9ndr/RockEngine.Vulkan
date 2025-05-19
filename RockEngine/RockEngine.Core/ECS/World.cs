@@ -5,6 +5,22 @@ namespace RockEngine.Core.ECS
     public class World : IDisposable
     {
         private readonly List<Entity> _entities = new List<Entity>();
+        private static World _singleton;
+        internal static World GetCurrent()
+        {
+            return _singleton;
+        }
+        public World()
+        {
+            if (_singleton == null)
+            {
+                _singleton = this;
+            }
+            else
+            {
+                throw new InvalidOperationException("Only one world can exists");
+            }
+        }
 
         public Entity CreateEntity()
         {
@@ -46,5 +62,6 @@ namespace RockEngine.Core.ECS
                 item.Destroy();
             }
         }
+
     }
 }

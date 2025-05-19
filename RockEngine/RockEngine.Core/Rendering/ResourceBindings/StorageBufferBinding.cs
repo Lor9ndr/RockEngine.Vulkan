@@ -1,4 +1,5 @@
-﻿using RockEngine.Vulkan;
+﻿using RockEngine.Core.Rendering.Buffers;
+using RockEngine.Vulkan;
 
 using Silk.NET.Vulkan;
 
@@ -8,6 +9,9 @@ namespace RockEngine.Core.Rendering.ResourceBindings
     {
         public StorageBuffer<T> Buffer { get; }
         public ulong Offset { get; }
+
+        protected override DescriptorType DescriptorType => DescriptorType.StorageBuffer;
+
         public StorageBufferBinding(StorageBuffer<T> buffer, uint bindingLocation, uint setLocation, ulong offset = 0)
             : base(setLocation, bindingLocation)
         {
@@ -37,6 +41,13 @@ namespace RockEngine.Core.Rendering.ResourceBindings
 
             VulkanContext.Vk.UpdateDescriptorSets(renderingContext.Device, 1, in writeDescriptorSet, 0, null);
             IsDirty = false;
+        }
+        public override int GetResourceHash()
+        {
+            HashCode hash = new HashCode();
+            hash.Add(base.GetResourceHash());
+            hash.Add(Buffer.GetHashCode());
+            return hash.ToHashCode();
         }
     }
 }

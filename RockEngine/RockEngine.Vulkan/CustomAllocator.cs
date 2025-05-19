@@ -45,7 +45,7 @@ namespace RockEngine.Vulkan
             Interlocked.Increment(ref _totalAllocationCount);
             UpdatePeakMemoryUsage();
 
-            Console.WriteLine($"{typeof(T)} [ALLOC] Size: {size} bytes, Alignment: {alignment}, Scope: {allocationScope}, Address: 0x{(nint)ptr:X}");
+           //Console.WriteLine($"{typeof(T)} [ALLOC] Size: {size} bytes, Alignment: {alignment}, Scope: {allocationScope}, Address: 0x{(nint)ptr:X}");
             return ptr;
         }
 

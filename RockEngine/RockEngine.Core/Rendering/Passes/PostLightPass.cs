@@ -42,20 +42,26 @@ namespace RockEngine.Core.Rendering.Passes
             var camera = args[1] as Camera ?? throw new ArgumentNullException(nameof(Camera));
             cmd.SetViewport(camera.RenderTarget.Viewport);
             cmd.SetScissor(camera.RenderTarget.Scissor);
-
+            var pipeline = default(VkPipeline);
             foreach (var drawGroup in _indirectCommands.GetDrawGroups(RenderLayerType.Solid))
             {
                 if (drawGroup.Pipeline.SubPass != Order)
                 {
                     continue;
                 }
-                cmd.BindPipeline(drawGroup.Pipeline, PipelineBindPoint.Graphics);
+                if(drawGroup.Pipeline != pipeline)
+                {
+                    cmd.BindPipeline(drawGroup.Pipeline, PipelineBindPoint.Graphics);
+                    pipeline = drawGroup.Pipeline;
+                    var matrixBinding = _transformManager.GetCurrentBinding(frameIndex);
 
-                var matrixBinding = _transformManager.GetCurrentBinding(frameIndex);
-                drawGroup.Mesh.Material.Bindings.Add(matrixBinding);
+                    BindingManager.BindResource(_binding, cmd, drawGroup.Pipeline.Layout);
+                    BindingManager.BindResource(matrixBinding, cmd, drawGroup.Pipeline.Layout);
+                }
 
-                drawGroup.Mesh.Material.Bindings.Add(_binding);
                 BindingManager.BindResourcesForMaterial(drawGroup.Mesh.Material, cmd);
+
+                drawGroup.Mesh.Material.CmdPushConstants(cmd);
 
                 drawGroup.Mesh.VertexBuffer.BindVertexBuffer(cmd);
                 drawGroup.Mesh.IndexBuffer.BindIndexBuffer(cmd, 0, IndexType.Uint32);

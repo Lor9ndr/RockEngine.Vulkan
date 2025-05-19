@@ -1,29 +1,46 @@
-﻿using RockEngine.Core.Rendering.ResourceBindings;
+﻿using RockEngine.Core.Internal;
+using RockEngine.Core.Rendering.ResourceBindings;
 using RockEngine.Core.Rendering.Texturing;
 using RockEngine.Vulkan;
 
 using Silk.NET.Vulkan;
 
-using System.Collections;
+using System.Runtime.CompilerServices;
 
 namespace RockEngine.Core.ECS.Components
 {
     public class Material
     {
-        public const int TEXTURE_SET_LOCATION = 2;
-
         public VkPipeline Pipeline;
         public Texture[] Textures;
+        private readonly int _textureSetLocation = -1;
 
-        public BindingCollection Bindings { get; private set; }
+        internal BindingCollection Bindings { get; private set; } = new BindingCollection();
+        public Dictionary<string, ShaderReflectionData.PushConstantInfo> PushConstants { get;private set;}
 
         public Material(VkPipeline pipeline, params List<Texture> textures)
         {
             Pipeline = pipeline;
+            PushConstants = Pipeline.Layout.PushConstantRanges.ToDictionary(s => s.Name);
 
-            Bindings = new BindingCollection();
+            Console.WriteLine( pipeline.Name);
+            foreach (var set in pipeline.Layout.DescriptorSetLayouts)
+            {
+                Console.WriteLine($"Set {set.Key} bindings: {string.Join(",", set.Value.Bindings.Select(b => $"{b.Binding}:{b.DescriptorType}"))}");
+            }
 
-            var setLayout = Pipeline.Layout.GetSetLayout(TEXTURE_SET_LOCATION);
+            foreach (var set in Pipeline.Layout.DescriptorSetLayouts)
+            {
+                if (set.Value.Bindings.Any(b => b.DescriptorType == DescriptorType.CombinedImageSampler))
+                {
+                    _textureSetLocation = (int)set.Key;
+                    break;
+                }
+            }
+
+            if (_textureSetLocation == -1) return;
+
+            var setLayout = Pipeline.Layout.GetSetLayout((uint)_textureSetLocation);
             Textures = textures.ToArray();
 
             if (setLayout != default)
@@ -34,132 +51,72 @@ namespace RockEngine.Core.ECS.Components
                 }
                 Textures = textures.ToArray();
 
-                Bindings.Add(new TextureBinding(TEXTURE_SET_LOCATION, 0, default, Textures.Take(setLayout.Bindings.Length).ToArray()));
-            }
-        }
-    }
-
-
-    public class BindingCollection : IEnumerable<(uint Set, PerSetBindings)>
-    {
-        private readonly SortedDictionary<uint, PerSetBindings> _setBindings
-            = new SortedDictionary<uint, PerSetBindings>();
-        private readonly List<uint> _dynamicOffsets = new List<uint>();
-
-        public uint MinSetLocation => _setBindings.Keys.FirstOrDefault();
-        public uint MaxSetLocation => _setBindings.Keys.LastOrDefault();
-        public int CountAllBindings => _setBindings.Sum(kvp => kvp.Value.Count);
-        public int Count => _setBindings.Count;
-        public IReadOnlyList<uint> DynamicOffsets => _dynamicOffsets;
-
-        public void Add(ResourceBinding binding)
-        {
-            if (!_setBindings.TryGetValue(binding.SetLocation, out var setBindings))
-            {
-                setBindings = new PerSetBindings(binding.SetLocation);
-                _setBindings[binding.SetLocation] = setBindings;
-            }
-
-            setBindings.Add(binding);
-
-            if (binding is UniformBufferBinding ubo && ubo.Buffer.IsDynamic)
-            {
-                _dynamicOffsets.Add((uint)ubo.Offset);
+                Bind(new TextureBinding((uint)_textureSetLocation, 0, default, Textures.Take(setLayout.Bindings.Length).ToArray()));
             }
         }
 
-        public bool Remove(ResourceBinding binding)
+        public void Bind(ResourceBinding binding)
         {
-            if (binding is null)
+            Bindings.Add(binding);
+        }
+        public void Bind(Texture binding, int bindingLocation)
+        {
+            Bindings.Add(new TextureBinding((uint)_textureSetLocation, (uint)bindingLocation, ImageLayout.ShaderReadOnlyOptimal, binding));
+        }
+
+        public bool Unbind(ResourceBinding binding)
+        {
+            return Bindings.Remove(binding);
+        }
+        public void PushConstant<T>(string name, T value) where T : unmanaged
+        {
+            if (!PushConstants.TryGetValue(name, out var constant))
             {
-                return false;
+                throw new ArgumentException($"Push constant '{name}' not found.");
             }
-            if (!_setBindings.TryGetValue(binding.SetLocation, out var setBindings))
-                return false;
 
-            var removed = setBindings.Remove(binding);
-
-            if (removed && binding is UniformBufferBinding ubo && ubo.Buffer.IsDynamic)
+            // Validate size
+            uint expectedSize = constant.Size;
+            uint actualSize = (uint)Unsafe.SizeOf<T>();
+           /* if (actualSize != expectedSize)
             {
-                _dynamicOffsets.Remove((uint)ubo.Offset);
-            }
+                throw new ArgumentException(
+                    $"Size mismatch for push constant '{name}'. Expected: {expectedSize}, Actual: {actualSize}");
+            }*/
 
-            if (setBindings.Count == 0)
+            // Serialize the struct into a byte array
+            constant.Value = new byte[expectedSize];
+            unsafe
             {
-                _setBindings.Remove(binding.SetLocation);
-            }
-
-            return removed;
-        }
-
-        public IEnumerator<(uint Set, PerSetBindings)> GetEnumerator()
-        {
-            foreach (var kvp in _setBindings)
-            {
-                yield return (kvp.Key, kvp.Value);
-            }
-        }
-
-        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
-
-        public bool TryGetBindings(uint set, out PerSetBindings bindings)
-        {
-            return _setBindings.TryGetValue(set, out bindings);
-        }
-
-        internal void RemoveAll(Func<ResourceBinding, bool> value)
-        {
-            foreach (var set in _setBindings)
-            {
-                set.Value.RemoveAll(value);
-            }
-        }
-    }
-
-    public class PerSetBindings : IEnumerable<ResourceBinding>
-    {
-        private readonly SortedList<uint, ResourceBinding> _bindings = new SortedList<uint, ResourceBinding>();
-
-        public uint Set { get; }
-        public int Count => _bindings.Count;
-
-        public PerSetBindings(uint set)
-        {
-            Set = set;
-        }
-
-        public void Add(ResourceBinding binding)
-        {
-            if (binding.SetLocation != Set)
-                throw new ArgumentException($"Binding set {binding.SetLocation} doesn't match collection set {Set}");
-
-            _bindings[binding.BindingLocation] = binding;
-        }
-
-        public bool Remove(ResourceBinding binding)
-        {
-            return _bindings.Remove(binding.BindingLocation);
-        }
-        public unsafe void RemoveAll(Func<ResourceBinding, bool> value)
-        {
-            var locations = stackalloc uint[Count];
-            int i = 0;
-            foreach (var item in _bindings)
-            {
-                if (value.Invoke(item.Value))
+                fixed (byte* dataPtr = constant.Value)
                 {
-                    locations[i] = item.Key;
-                    i++;
+                    *(T*)dataPtr = value; // Directly write the struct into the byte array
                 }
             }
-            while(i > 0)
-            {
-                _bindings.Remove(locations[i]);
-                i--;
-            }
+
+            PushConstants[name] = constant; // Update the stored data
         }
 
-        public IEnumerator<ResourceBinding> GetEnumerator() => _bindings.Values.GetEnumerator();
-        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+        internal unsafe void CmdPushConstants(VkCommandBuffer cmd)
+        {
+            foreach (var constant in PushConstants.Values)
+            {
+                if (constant.Value == null || constant.Value.Length != constant.Size)
+                {
+                    continue; // Skip unset or invalid constants (or throw)
+                }
+
+                fixed (byte* dataPtr = constant.Value)
+                {
+                    cmd.PushConstants(
+                        Pipeline.Layout,
+                        constant.StageFlags,
+                        constant.Offset,
+                        constant.Size,
+                        dataPtr
+                    );
+                }
+            }
+        }
     }
 }

@@ -133,11 +133,6 @@ namespace RockEngine.Vulkan
             return _context.DebugUtils.CmdDebugLabelScope(this.VkObjectNative, name, color);
         }
 
-
-        /// <summary>
-        /// Have no effect, 
-        /// </summary>
-        /// <param name="disposing"></param>
         protected override void Dispose(bool disposing)
         {
             if (_disposed)
@@ -154,9 +149,9 @@ namespace RockEngine.Vulkan
             _vkObject = default;
         }
 
-        public void BindDescriptorSet(PipelineBindPoint pipelineBindPoint, VkPipelineLayout deferredPipelineLayout, uint firstSet, ReadOnlySpan<DescriptorSet> lightingDescriptorSet, ReadOnlySpan<uint> dynamicOffsets = default)
+        public void BindDescriptorSet(PipelineBindPoint pipelineBindPoint, VkPipelineLayout deferredPipelineLayout, uint firstSet, ReadOnlySpan<DescriptorSet> descriptorSets, ReadOnlySpan<uint> dynamicOffsets = default)
         {
-            VulkanContext.Vk.CmdBindDescriptorSets(this, pipelineBindPoint, deferredPipelineLayout, firstSet, lightingDescriptorSet, dynamicOffsets);
+            VulkanContext.Vk.CmdBindDescriptorSets(this, pipelineBindPoint, deferredPipelineLayout, firstSet, descriptorSets, dynamicOffsets);
         }
 
         public unsafe void ExecuteSecondary(CommandBuffer[] secondaryCommandBuffer)
@@ -188,6 +183,14 @@ namespace RockEngine.Vulkan
             var viewPort = new Viewport(0,0,extent.Width,extent.Height,0,1);
             VulkanContext.Vk.CmdSetScissor(this, 0,1, in rect2d);
             VulkanContext.Vk.CmdSetViewport(this, 0,1, in viewPort);
+        }
+
+        public void PushConstants<T>(PipelineLayout layout, ShaderStageFlags stageFlags, uint offset, uint size, ref T value) where T : unmanaged => VulkanContext.Vk.CmdPushConstants(this, layout, stageFlags, offset, size, ref value);
+        public unsafe void PushConstants(PipelineLayout layout, ShaderStageFlags stageFlags, uint offset, uint size, void* value) => VulkanContext.Vk.CmdPushConstants(this, layout, stageFlags, offset, size, value);
+
+        public void WriteTimestamp(PipelineStageFlags stage, VkQueryPool pool, uint query)
+        {
+            VulkanContext.Vk.CmdWriteTimestamp(this, stage, pool, query);
         }
     }
 }

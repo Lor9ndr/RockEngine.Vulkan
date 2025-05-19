@@ -6,15 +6,17 @@ namespace RockEngine.Core.Rendering.ResourceBindings
 {
     public class InputAttachmentBinding : ResourceBinding, IDisposable
     {
-        private VkImageView[]? _attachments;
+        private VkImageView[] _attachments;
 
-        public VkImageView[]? Attachments => _attachments;
+        public VkImageView[] Attachments => _attachments;
+
+        protected override DescriptorType DescriptorType =>  DescriptorType.InputAttachment;
 
         public InputAttachmentBinding(uint setLocation, uint bindingLocation, params VkImageView[] attachments)
             : base(setLocation, bindingLocation)
         {
             _attachments = attachments;
-            foreach (var attachment in Attachments)
+            foreach (var attachment in _attachments)
             {
                 attachment.WasUpdated += Attachment_WasUpdated;
             }
@@ -46,13 +48,23 @@ namespace RockEngine.Core.Rendering.ResourceBindings
                     DstBinding = BindingLocation + (uint)i,
                     DstArrayElement = 0,
                     DescriptorCount = 1,
-                    DescriptorType = DescriptorType.InputAttachment,
+                    DescriptorType = DescriptorType,
                     PImageInfo = &imageInfos[i]
                 };
             }
 
             VulkanContext.Vk.UpdateDescriptorSets(context.Device, (uint)Attachments.Length, writes, 0, null);
             IsDirty = false;
+        }
+        public override int GetResourceHash()
+        {
+            HashCode hash = new HashCode();
+            hash.Add(base.GetResourceHash());
+            foreach (var attachments in _attachments)
+            {
+                hash.Add(attachments.GetHashCode());
+            }
+            return hash.ToHashCode();
         }
 
         public void Dispose()
@@ -61,7 +73,7 @@ namespace RockEngine.Core.Rendering.ResourceBindings
             {
                 item.WasUpdated -= Attachment_WasUpdated;
             }
-            _attachments = null;
+            _attachments = [];
             GC.SuppressFinalize(this);
         }
     }

@@ -8,6 +8,8 @@ using Silk.NET.Input;
 using Silk.NET.Maths;
 using Silk.NET.Windowing;
 
+using System.Diagnostics;
+
 namespace RockEngine.Core
 {
     public abstract class Application : IDisposable
@@ -19,7 +21,6 @@ namespace RockEngine.Core
         protected IInputContext _inputContext;
         protected Renderer _renderer;
         protected World _world;
-        protected event Func<Task> OnLoad;
         protected TextureStreamer _textureStreamer;
 
         private PipelineManager _pipelineManager;
@@ -36,19 +37,28 @@ namespace RockEngine.Core
             CancellationTokenSource = new CancellationTokenSource();
             _window.Load += async () =>
             {
+                Stopwatch loadWatch = Stopwatch.StartNew();
+                _world = new World();
                 _context = new VulkanContext(_window, _window.Title, 10);
+                PerformanceTracer.Initialize(_context);
                 _graphicsEngine = new GraphicsEngine(_context);
                 _inputContext = _window.CreateInput();
                 _pipelineManager = new PipelineManager(_context);
                 _renderer = new Renderer(_context, _graphicsEngine, _pipelineManager);
-                _world = new World();
+                await _renderer.InitializeAsync();
                 _textureStreamer = new TextureStreamer();
-                await OnLoad?.Invoke();
+                await Load().ConfigureAwait(false);
 
                 await _world.Start(_renderer);
-                _window.Render += async(s) => await Render(s);
+                _window.Render += async (s) => await Render(s);
                 _window.Update += async (s) => await Update(s);
+                loadWatch.Stop();
+                Console.WriteLine($"Loaded in: {loadWatch.ElapsedMilliseconds} ms");
             };
+        }
+        protected virtual Task Load()
+        {
+            return Task.CompletedTask;
         }
 
         public Task Run()
@@ -65,14 +75,10 @@ namespace RockEngine.Core
                 .ConfigureAwait(false);
 
             await _renderer.UpdateFrameData();
-            await _context.SubmitContext.FlushAsync();
-
-
         }
 
         protected virtual async Task Render(double time)
         {
-            _context.DisposePendingDisposals();
             using (PerformanceTracer.BeginSection("Whole Render"))
             {
                 if (_layerStack.Count == 0)
@@ -84,6 +90,7 @@ namespace RockEngine.Core
                 {
                     return;
                 }
+
                 using (PerformanceTracer.BeginSection("_layerStack.RenderImGui"))
                 {
                     _layerStack.RenderImGui(vkCommandBuffer);
@@ -93,13 +100,13 @@ namespace RockEngine.Core
                     _layerStack.Render(vkCommandBuffer);
                 }
                 await _renderer.Render(vkCommandBuffer);
+
                 using (PerformanceTracer.BeginSection("_graphicsEngine.end & Submit"))
                 {
                     _graphicsEngine.End(vkCommandBuffer);
-                    _graphicsEngine.SubmitAndPresent([vkCommandBuffer.VkObjectNative]);
+                    await _graphicsEngine.SubmitAndPresent(vkCommandBuffer.VkObjectNative);
                 }
             }
-
         }
 
         public Task PushLayer(ILayer layer)

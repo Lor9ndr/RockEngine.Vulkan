@@ -16,6 +16,7 @@ namespace RockEngine.Vulkan
         private readonly Vk _api;
         private readonly VkQueue _presentQueue;
         private readonly VkQueue _graphicsQueue;
+        private readonly VkQueue _computeQueue;
         private readonly VkPhysicalDevice _physicalDevice;
         private readonly QueueFamilyIndices _queueFamilyIndices;
 
@@ -24,18 +25,27 @@ namespace RockEngine.Vulkan
         public VkQueue GraphicsQueue => _graphicsQueue;
 
         public VkPhysicalDevice PhysicalDevice => _physicalDevice;
+        public VkQueue ComputeQueue => _computeQueue;
 
         public QueueFamilyIndices QueueFamilyIndices => _queueFamilyIndices;
 
 
-        private VkLogicalDevice(Vk api, Device device, VkQueue graphicsQueue, VkQueue presentQueue, QueueFamilyIndices indices, VkPhysicalDevice physicalDevice)
+        private VkLogicalDevice(Vk api, Device device, VkQueue graphicsQueue, VkQueue presentQueue, VkQueue computeQueue, QueueFamilyIndices indices, VkPhysicalDevice physicalDevice)
             : base(device)
         {
             _api = api;
             _graphicsQueue = graphicsQueue;
             _presentQueue = presentQueue;
+            _computeQueue = computeQueue;
             _queueFamilyIndices = indices;
             _physicalDevice = physicalDevice;
+           
+        }
+        internal void NameQueues()
+        {
+            _computeQueue.LabelObject("Compute Queue");
+            _presentQueue.LabelObject("Present Queue");
+            _graphicsQueue.LabelObject("Graphics Queue");
         }
 
 
@@ -73,8 +83,8 @@ namespace RockEngine.Vulkan
             }
 
             // Create queue create info
-            HashSet<uint> uniqueQueueFamilies = new HashSet<uint> { indices.GraphicsFamily!.Value, indices.PresentFamily!.Value };
-            DeviceQueueCreateInfo[] queueCreateInfos = new DeviceQueueCreateInfo[uniqueQueueFamilies.Count];
+            HashSet<uint> uniqueQueueFamilies = new HashSet<uint> { indices.GraphicsFamily!.Value, indices.PresentFamily!.Value, indices.ComputeFamily!.Value };
+            var queueCreateInfos = stackalloc DeviceQueueCreateInfo[uniqueQueueFamilies.Count];
             float queuePriority = 1.0f;
 
             for (int i = 0; i < uniqueQueueFamilies.Count; i++)
@@ -89,32 +99,40 @@ namespace RockEngine.Vulkan
                 queueCreateInfos[i] = queueCreateInfo;
             }
 
+            var features2 = new PhysicalDeviceFeatures2();
+            var vulkan11Features = new PhysicalDeviceVulkan11Features();
+            var vulkan12Features = new PhysicalDeviceVulkan12Features();
 
-            var vulkan11Features = new PhysicalDeviceVulkan11Features
+            // Configure features
+            features2.Features = new PhysicalDeviceFeatures
             {
-                SType = StructureType.PhysicalDeviceVulkan11Features,
-                ShaderDrawParameters = true
-            };
-            PhysicalDeviceFeatures2 deviceFeatures2 = new PhysicalDeviceFeatures2()
-            {
-                 Features = new PhysicalDeviceFeatures()
-                 {
-                     SamplerAnisotropy = true,
-                     DepthClamp = true,
-                     MultiDrawIndirect = true,
-                 }, 
+                SamplerAnisotropy = true,
+                DepthClamp = true,
+                MultiDrawIndirect = true
             };
 
-            using var pqueueCreateInfo = queueCreateInfos.AsMemory().Pin();
-            // Create device create info
+            vulkan11Features.SType = StructureType.PhysicalDeviceVulkan11Features;
+            vulkan11Features.ShaderDrawParameters = true;
+
+            vulkan12Features.SType = StructureType.PhysicalDeviceVulkan12Features;
+            vulkan12Features.HostQueryReset = true;
+
+            // Build feature chain using managed chaining
+            using var chain = Chain.Create(
+                features2,
+                vulkan11Features,
+                vulkan12Features
+            );
+
+            // Create device info with proper feature chain
             var deviceCreateInfo = new DeviceCreateInfo
             {
                 SType = StructureType.DeviceCreateInfo,
-                QueueCreateInfoCount = (uint)queueCreateInfos.Length,
-                PQueueCreateInfos = (DeviceQueueCreateInfo*)pqueueCreateInfo.Pointer,
-                PEnabledFeatures = &deviceFeatures2.Features,
-                PNext = &vulkan11Features
-
+                QueueCreateInfoCount = (uint)uniqueQueueFamilies.Count,
+                PQueueCreateInfos = queueCreateInfos,
+                PNext = chain.HeadPtr,
+                EnabledExtensionCount = (uint)extensions.Length,
+                PpEnabledExtensionNames = (byte**)SilkMarshal.StringArrayToPtr(extensions)
             };
 
             // Set extensions
@@ -133,6 +151,7 @@ namespace RockEngine.Vulkan
             // Retrieve queue handles
             api.GetDeviceQueue(logicalDevice, indices.GraphicsFamily.Value, 0, out Queue graphicsQueue);
             api.GetDeviceQueue(logicalDevice, indices.PresentFamily.Value, 0, out Queue presentQueue);
+            api.GetDeviceQueue(logicalDevice, indices.ComputeFamily.Value, 0, out Queue computeQueue);
 
 
             // Free unmanaged memory
@@ -142,7 +161,7 @@ namespace RockEngine.Vulkan
             }
             SilkMarshal.Free((nint)deviceCreateInfo.PQueueCreateInfos);
 
-            return new VkLogicalDevice(api, logicalDevice, new VkQueue(context, in graphicsQueue), new VkQueue(context, in presentQueue), indices, physicalDevice);
+            return new VkLogicalDevice(api, logicalDevice, new VkQueue(context, in graphicsQueue,indices.GraphicsFamily.Value), new VkQueue(context, in presentQueue, indices.PresentFamily.Value), new VkQueue(context, in computeQueue, indices.ComputeFamily.Value), indices, physicalDevice);
         }
 
         private static unsafe QueueFamilyIndices FindQueueFamilies(Vk api, PhysicalDevice device, ISurfaceHandler surface)
@@ -172,7 +191,10 @@ namespace RockEngine.Vulkan
 
                 if (queueFamilies[i].QueueFlags.HasFlag(QueueFlags.ComputeBit))
                 {
-                    indices.ComputeFamily = i;
+                    /*if (indices.ComputeFamily == null && i != indices.GraphicsFamily)
+                    {*/
+                        indices.ComputeFamily = i;
+                    //}
                 }
 
                 if (queueFamilies[i].QueueFlags.HasFlag(QueueFlags.TransferBit) &&
@@ -187,6 +209,7 @@ namespace RockEngine.Vulkan
                     break;
                 }
             }
+            indices.ComputeFamily ??= indices.GraphicsFamily;
 
             return indices;
         }

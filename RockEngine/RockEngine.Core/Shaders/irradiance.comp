@@ -1,0 +1,82 @@
+#version 450
+#extension GL_KHR_vulkan_glsl:enable
+#extension GL_EXT_nonuniform_qualifier : enable
+
+layout(set = 0, binding = 0) uniform samplerCube inputEnvMap;
+layout(set = 0, binding = 1, rgba16f) writeonly uniform imageCube outputIrradiance;
+layout(local_size_x = 32, local_size_y = 32, local_size_z = 1) in;
+
+layout(push_constant) uniform PushConstants {
+    ivec2 outputSize;
+    float deltaPhi;
+    float deltaTheta;
+} pc;
+
+const float PI = 3.14159265359;
+const uint SAMPLE_COUNT = 1024u;
+
+vec3 calculateCubeDirection(ivec3 coord) {
+    if (coord.x >= pc.outputSize.x || coord.y >= pc.outputSize.y) {
+        return vec3(0);
+    }
+    
+    vec2 uv = (vec2(coord.xy) + 0.5) / vec2(pc.outputSize);
+    uv = uv * 2.0 - 1.0;
+
+    switch(coord.z) {
+        case 0: return normalize(vec3(1.0, -uv.y, -uv.x));  // +X (flip Y)
+        case 1: return normalize(vec3(-1.0, -uv.y, uv.x));   // -X (flip Y)
+        case 2: return normalize(vec3(uv.x, 1.0, -uv.y));    // +Y (unchanged)
+        case 3: return normalize(vec3(uv.x, -1.0, uv.y));    // -Y (unchanged)
+        case 4: return normalize(vec3(uv.x, -uv.y, 1.0));    // +Z (flip Y)
+        case 5: return normalize(vec3(-uv.x, -uv.y, -1.0));  // -Z (flip Y)
+    }
+    return vec3(0);
+}
+
+float radicalInverseVdC(uint bits) {
+    bits = (bits << 16u) | (bits >> 16u);
+    bits = ((bits & 0x55555555u) << 1u) | ((bits & 0xAAAAAAAAu) >> 1u);
+    bits = ((bits & 0x33333333u) << 2u) | ((bits & 0xCCCCCCCCu) >> 2u);
+    bits = ((bits & 0x0F0F0F0Fu) << 4u) | ((bits & 0xF0F0F0F0u) >> 4u);
+    bits = ((bits & 0x00FF00FFu) << 8u) | ((bits & 0xFF00FF00u) >> 8u);
+    return float(bits) * 2.3283064365386963e-10;
+}
+
+vec2 hammersley(uint i, uint N) {
+    return vec2(float(i)/float(N), radicalInverseVdC(i));
+}
+
+void main() {
+    ivec3 coord = ivec3(gl_GlobalInvocationID);
+    vec3 N = calculateCubeDirection(coord);
+    
+    // Calculate tangent space basis vectors
+    vec3 up = abs(N.z) < 0.999 ? vec3(0.0, 0.0, 1.0) : vec3(1.0, 0.0, 0.0);
+    vec3 tangent = normalize(cross(up, N));
+    vec3 bitangent = cross(N, tangent);
+    
+    vec3 irradiance = vec3(0.0);
+    
+    for(uint i = 0u; i < SAMPLE_COUNT; ++i) {
+        vec2 Xi = hammersley(i, SAMPLE_COUNT);
+        
+        // Cosine-weighted hemisphere sampling
+        float phi = 2.0 * PI * Xi.x;
+        float theta = 0.5 * acos(1.0 - 2.0 * Xi.y);
+        
+        vec3 L = vec3(
+            sin(theta) * cos(phi),
+            sin(theta) * sin(phi),
+            cos(theta)
+        );
+        
+        // Transform to world space using tangent basis
+        vec3 sampleDir = L.x * tangent + L.y * bitangent + L.z * N;
+        
+        irradiance += textureLod(inputEnvMap, sampleDir, 0.0).rgb * cos(theta);
+    }
+    
+    irradiance = PI * irradiance / float(SAMPLE_COUNT);
+    imageStore(outputIrradiance, coord, vec4(irradiance, 1.0));
+}

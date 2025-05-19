@@ -26,7 +26,7 @@ namespace RockEngine.Core
             _textureStreamer = streamer;
         }
 
-        public async ValueTask<List<MeshData>> LoadMeshesAsync(string filePath, VulkanContext context, VkCommandBuffer? commandBuffer = null)
+        public async Task<List<MeshData>> LoadMeshesAsync(string filePath, VulkanContext context)
         {
             var pathExtension = Path.GetExtension(filePath);
             if (!_assimpContext.IsImportFormatSupported(pathExtension))
@@ -82,46 +82,33 @@ namespace RockEngine.Core
 
                 List<Texture> textures = new List<Texture>();
                 var material = scene.Materials[mesh.MaterialIndex];
-                if (material.HasTextureDiffuse)
-                {
-                    var texturePath = material.TextureDiffuse.FilePath;
-                    if (!loadedTextures.TryGetValue(texturePath, out var texture))
-                    {
-                        // Create streamable texture with base mip
-                        texture = await Texture.CreateAsync(context, Directory.GetParent(filePath) + "\\" + texturePath);
-                       
-
-                        loadedTextures[texturePath] = texture;
-                    }
-                    textures.Add(texture);
-                }
-                if (material.HasTextureNormal)
-                {
-                    var texturePath = material.TextureNormal.FilePath;
-                    if (!loadedTextures.TryGetValue(texturePath, out var texture))
-                    {
-                        texture = await Texture.CreateAsync(context, Directory.GetParent(filePath) + "\\" + texturePath);
-                        loadedTextures[texturePath] = texture;
-                    }
-                    textures.Add(texture);
-                }
-
-
-                if (material.HasTextureDisplacement)
-                {
-                    var texturePath = material.TextureSpecular.FilePath;
-                    if (!loadedTextures.TryGetValue(texturePath, out var texture))
-                    {
-                        texture = await Texture.CreateAsync(context, Directory.GetParent(filePath) + "\\" + texturePath);
-                        loadedTextures[texturePath] = texture;
-                    }
-                    textures.Add(texture);
-                }
+                await LoadTextureAsync(context,material.TextureDiffuse, filePath, textures);
+                await LoadTextureAsync(context,material.TextureNormal, filePath, textures);
+                await LoadTextureAsync(context,material.TextureHeight, filePath, textures);
+                await LoadTextureAsync(context,material.TextureSpecular, filePath, textures);
+                await LoadTextureAsync(context,material.TextureAmbient, filePath, textures);
+                await LoadTextureAsync(context,material.TextureEmissive, filePath, textures);
+               
 
                 MeshData meshData = new MeshData(mesh.Name, vertices, mesh.GetUnsignedIndices(), textures);
                 meshes.Add(meshData);
             }
-            return await ValueTask.FromResult(meshes);
+            return meshes;
+        }
+
+        private async Task LoadTextureAsync(VulkanContext context, TextureSlot slot, string modelDir, List<Texture> textures)
+        {
+            if (slot.TextureType != TextureType.None)
+            {
+                var texturePath = slot.FilePath;
+                if (!loadedTextures.TryGetValue(texturePath, out var texture))
+                {
+                    texture = await Texture.CreateAsync(context,
+                        Directory.GetParent(modelDir) + "\\" + texturePath);
+                    loadedTextures[texturePath] = texture;
+                }
+                textures.Add(texture);
+            }
         }
 
         public void Dispose()

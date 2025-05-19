@@ -10,6 +10,8 @@ namespace RockEngine.Core.Rendering.ResourceBindings
         private readonly ImageLayout _imageLayout;
         public Texture[] Textures { get; private set; }
 
+        protected override DescriptorType DescriptorType => DescriptorType.CombinedImageSampler;
+
         public TextureBinding(uint setLocation, uint bindingLocation, ImageLayout imageLayout = default, params Texture[] textures) : base(setLocation, bindingLocation)
         {
             _imageLayout = imageLayout;
@@ -51,6 +53,10 @@ namespace RockEngine.Core.Rendering.ResourceBindings
                         ImageView = item.ImageView,
                         Sampler = item.Sampler,
                     };
+                    if (imageInfos[i].ImageLayout != ImageLayout.ShaderReadOnlyOptimal && imageInfos[i].ImageLayout != ImageLayout.General)
+                    {
+                        throw new InvalidOperationException("Invalid layout");
+                    }
 
                 }
                 writeDescriptorSets[i] = new WriteDescriptorSet
@@ -59,7 +65,7 @@ namespace RockEngine.Core.Rendering.ResourceBindings
                     DstSet = DescriptorSet,
                     DstBinding = (uint)(BindingLocation + i),
                     DstArrayElement = 0,
-                    DescriptorType = DescriptorType.CombinedImageSampler,
+                    DescriptorType = DescriptorType,
                     DescriptorCount = 1,
                     PImageInfo = &imageInfos[i]
                 };
@@ -67,6 +73,16 @@ namespace RockEngine.Core.Rendering.ResourceBindings
 
             VulkanContext.Vk.UpdateDescriptorSets(renderingContext.Device, (uint)Textures.Length, writeDescriptorSets, 0, null);
             IsDirty = false;
+        }
+        public override int GetResourceHash()
+        {
+            HashCode hash = new HashCode();
+            hash.Add(base.GetResourceHash());
+            foreach (var textures in Textures)
+            {
+                hash.Add(textures.GetHashCode());
+            }
+            return hash.ToHashCode();
         }
 
         public void Dispose()

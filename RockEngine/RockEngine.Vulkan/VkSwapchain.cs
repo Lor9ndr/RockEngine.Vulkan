@@ -15,7 +15,7 @@ namespace RockEngine.Vulkan
         private readonly ISurfaceHandler _surface;
         private readonly VkImageView[] _swapChainImageViews;
 
-        private readonly FrameData[] _frameData;
+        private readonly SwapchainFrameData[] _frameData;
         private int _currentFrameIndex = 0;
         private readonly VkSwapchain? _oldSwapchain;
         private VkImage _depthImage;
@@ -45,10 +45,10 @@ namespace RockEngine.Vulkan
             context.MaxFramesPerFlight = images.Length;
 
             _swapChainImageViews = new VkImageView[images.Length];
-            _frameData = new FrameData[context.MaxFramesPerFlight];
+            _frameData = new SwapchainFrameData[context.MaxFramesPerFlight];
             for (int i = 0; i < context.MaxFramesPerFlight; i++)
             {
-                _frameData[i] = new FrameData(context);
+                _frameData[i] = new SwapchainFrameData(context);
             }
 
             _context = context;
@@ -77,7 +77,6 @@ namespace RockEngine.Vulkan
             var extent = ChooseSwapExtent(swapChainSupport.Capabilities, (uint)surface.Size.X, (uint)surface.Size.Y);
 
             uint imageCount = CalculateImageCount(swapChainSupport.Capabilities);
-
             var createInfo = new SwapchainCreateInfoKHR
             {
                 SType = StructureType.SwapchainCreateInfoKhr,
@@ -87,7 +86,7 @@ namespace RockEngine.Vulkan
                 ImageColorSpace = surfaceFormat.ColorSpace,
                 ImageExtent = extent,
                 ImageArrayLayers = 1,
-                ImageUsage = ImageUsageFlags.ColorAttachmentBit | ImageUsageFlags.TransferSrcBit | ImageUsageFlags.InputAttachmentBit,
+                ImageUsage = ImageUsageFlags.ColorAttachmentBit | ImageUsageFlags.TransferSrcBit,
                 PreTransform = swapChainSupport.Capabilities.CurrentTransform,
                 CompositeAlpha = CompositeAlphaFlagsKHR.OpaqueBitKhr,
                 PresentMode = presentMode,
@@ -95,7 +94,24 @@ namespace RockEngine.Vulkan
                 OldSwapchain = default
             };
 
-            SetImageSharingMode(context, ref createInfo);
+            // Get queue family indices
+            var indices = context.Device.QueueFamilyIndices;
+            uint graphicsFamily = indices.GraphicsFamily!.Value;
+            uint presentFamily = indices.PresentFamily!.Value;
+
+            var queueFamilyIndices = stackalloc uint[] { context.Device.QueueFamilyIndices.GraphicsFamily.Value, context.Device.QueueFamilyIndices.PresentFamily.Value };
+            if (context.Device.QueueFamilyIndices.GraphicsFamily != context.Device.QueueFamilyIndices.PresentFamily)
+            {
+                createInfo.ImageSharingMode = SharingMode.Concurrent;
+                createInfo.QueueFamilyIndexCount = 2;
+                createInfo.PQueueFamilyIndices = queueFamilyIndices;
+            }
+            else
+            {
+                createInfo.ImageSharingMode = SharingMode.Exclusive;
+            }
+
+          
 
             var swapchainApi = new KhrSwapchain(VulkanContext.Vk.Context);
             swapchainApi.CreateSwapchain(context.Device, in createInfo, null, out var swapChain)
@@ -236,7 +252,7 @@ namespace RockEngine.Vulkan
         }
         public unsafe Result AcquireNextImage()
         {
-            var currentFrame = _frameData[_currentFrameIndex];
+            var currentFrame = GetFrameData();
 
             // Optimized fence wait using queue operations instead of CPU stall
             currentFrame.InFlightFence.Wait();
@@ -259,12 +275,12 @@ namespace RockEngine.Vulkan
             return result.VkAssertResult("Failed to acquire swapchain image");
         }
 
-        public unsafe void SubmitCommandBuffers(CommandBuffer[] buffers)
+       /* public unsafe void SubmitCommandBuffers(CommandBuffer[] buffers)
         {
-            var currentFrame = _frameData[_currentFrameIndex];
+            var currentFrame = ;
             var waitSemaphores =  currentFrame.ImageAvailableSemaphore.VkObjectNative;
             var signalSemaphores =  currentFrame.RenderFinishedSemaphore.VkObjectNative;
-            var stages =  PipelineStageFlags.ColorAttachmentOutputBit ;
+            var stages =  PipelineStageFlags.ColorAttachmentOutputBit;
 
             fixed (CommandBuffer* pBuffers = buffers)
             {
@@ -282,7 +298,10 @@ namespace RockEngine.Vulkan
 
                 _context.Device.GraphicsQueue.Submit(submitInfo, currentFrame.InFlightFence);
             }
-
+        }*/
+        public SwapchainFrameData GetFrameData()
+        {
+            return _frameData[_currentFrameIndex];
         }
 
         public unsafe void Present()
@@ -365,8 +384,18 @@ namespace RockEngine.Vulkan
                     Clipped = true,
                     OldSwapchain = _vkObject
                 };
+                var queueFamilyIndices = stackalloc uint[] { _context.Device.QueueFamilyIndices.GraphicsFamily.Value, _context.Device.QueueFamilyIndices.PresentFamily.Value };
 
-                SetImageSharingMode(_context, ref createInfo);
+                if (_context.Device.QueueFamilyIndices.GraphicsFamily != _context.Device.QueueFamilyIndices.PresentFamily)
+                {
+                    createInfo.ImageSharingMode = SharingMode.Concurrent;
+                    createInfo.QueueFamilyIndexCount = 2;
+                    createInfo.PQueueFamilyIndices = queueFamilyIndices;
+                }
+                else
+                {
+                    createInfo.ImageSharingMode = SharingMode.Exclusive;
+                }
 
                 _khrSwapchain.CreateSwapchain(_context.Device, in createInfo,null, out var swapChain)
                     .VkAssertResult("Failed to create swapchain");
@@ -517,7 +546,7 @@ namespace RockEngine.Vulkan
                     LayerCount = 1
                 }
             };
-            _depthImageView = _depthImage.CreateView(aspectMask);
+            _depthImageView = _depthImage.GetOrCreateView(aspectMask);
         }
 
         private Format FindDepthFormat() => FindSupportedFormat(
@@ -543,23 +572,17 @@ namespace RockEngine.Vulkan
             throw new InvalidOperationException("Failed to find supported format.");
         }
 
-        private class FrameData
+        public class SwapchainFrameData :IDisposable
         {
             public VkSemaphore ImageAvailableSemaphore { get; }
             public VkSemaphore RenderFinishedSemaphore { get; }
             public VkFence InFlightFence { get; }
 
-            public FrameData(VulkanContext context)
+            public SwapchainFrameData(VulkanContext context)
             {
                 ImageAvailableSemaphore = VkSemaphore.Create(context);
                 RenderFinishedSemaphore = VkSemaphore.Create(context);
-
-                var fenceInfo = new FenceCreateInfo
-                {
-                    Flags = FenceCreateFlags.SignaledBit,
-                    SType = StructureType.FenceCreateInfo
-                };
-                InFlightFence = VkFence.Create(context, in fenceInfo);
+                InFlightFence = VkFence.CreateSignaled(context);
             }
 
             public void Dispose()

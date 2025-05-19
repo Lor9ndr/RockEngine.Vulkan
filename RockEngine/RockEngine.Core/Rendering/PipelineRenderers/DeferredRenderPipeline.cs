@@ -17,6 +17,8 @@ namespace RockEngine.Core.Rendering.PipelineRenderers
         private readonly ImGuiPass _imGuiPass;
         private readonly List<VkCommandBuffer> _commandBuffers;
 
+        public LightingPass LightingPass => _lightingPass;
+
         internal DeferredRenderPipeline(
             VulkanContext context,
             GeometryPass geometryPass,
@@ -37,7 +39,6 @@ namespace RockEngine.Core.Rendering.PipelineRenderers
         public async Task Execute(VkCommandBuffer cmd, CameraManager cameraManager, Renderer renderer)
         {
             var secondaryPool = _context.GetThreadLocalCommandPool();
-
             foreach (var camera in cameraManager.ActiveCameras)
             {
                 await ExecuteCameraPass(cmd, camera, renderer, secondaryPool);
@@ -46,12 +47,14 @@ namespace RockEngine.Core.Rendering.PipelineRenderers
             {
                 await ExecuteFinalPass(cmd, renderer, secondaryPool);
             }
+
         }
 
         private async Task ExecuteCameraPass(VkCommandBuffer cmd, Camera camera, Renderer renderer, VkCommandPool secondaryPool)
         {
-            using (_context.DebugUtils.CmdDebugLabelScope(cmd.VkObjectNative, "Camera Render Pass", new[] { 0.2f, 0.8f, 0.2f, 1.0f }))
-            {
+            //using (cmd.NameAction("Camera Render Pass", [0.2f, 0.8f, 0.2f, 1.0f]))
+            //{
+
                 camera.RenderTarget.PrepareForRender(cmd);
                 unsafe
                 {
@@ -94,23 +97,21 @@ namespace RockEngine.Core.Rendering.PipelineRenderers
                     }
                 }
 
-                using (_context.DebugUtils.CmdDebugLabelScope(cmd.VkObjectNative, "Geometry Pass", [0.8f, 0.2f, 0.2f, 1.0f]))
+                using (cmd.NameAction("Geometry Pass", [0.8f, 0.2f, 0.2f, 1.0f]))
                 {
                     await _geometryPass.Execute(buffers[0], renderer.FrameIndex, camera);
                     buffers[0].End();
 
                     cmd.ExecuteSecondary(buffers[0]);
                 }
-
-                using (_context.DebugUtils.CmdDebugLabelScope(cmd.VkObjectNative, "Lighting Pass", [0.2f, 0.2f, 0.8f, 1.0f]))
+                using (cmd.NameAction("Lighting Pass", [0.2f, 0.2f, 0.8f, 1.0f]))
                 {
                     cmd.NextSubpass(SubpassContents.SecondaryCommandBuffers);
-                    await _lightingPass.Execute(buffers[1], camera, renderer.FrameIndex);
+                    await LightingPass.Execute(buffers[1], camera, renderer.FrameIndex);
                     buffers[1].End();
                     cmd.ExecuteSecondary(buffers[1]);
                 }
-
-                using (_context.DebugUtils.CmdDebugLabelScope(cmd.VkObjectNative, "Post light Pass", [0.4f, 0.4f, 0.4f, 1.0f]))
+                using (cmd.NameAction("Post light Pass", [0.4f, 0.4f, 0.4f, 1.0f]))
                 {
                     cmd.NextSubpass(SubpassContents.SecondaryCommandBuffers);
                     await _postLightPass.Execute(buffers[2], renderer.FrameIndex, camera);
@@ -122,13 +123,13 @@ namespace RockEngine.Core.Rendering.PipelineRenderers
                 camera.RenderTarget.TransitionToRead(cmd);
                 _screenPass.SetInputTexture(camera.RenderTarget.OutputTexture);
                 _commandBuffers.AddRange(buffers);
-            }
+            //}
         }
 
         private async Task ExecuteFinalPass(VkCommandBuffer cmd, Renderer renderer, VkCommandPool secondaryPool)
         {
             renderer.SwapchainTarget.PrepareForRender(cmd);
-            using (_context.DebugUtils.CmdDebugLabelScope(cmd.VkObjectNative, "Screen composition", [0.7f, 0.7f, 0.7f, 1.0f]))
+            using (cmd.NameAction("Screen composition", [0.7f, 0.7f, 0.7f, 1.0f]))
             {
                 unsafe
                 {
@@ -154,14 +155,14 @@ namespace RockEngine.Core.Rendering.PipelineRenderers
                 {
                     var inheritanceInfo = stackalloc CommandBufferInheritanceInfo[]
                     {
-                    new CommandBufferInheritanceInfo()
-                    {
-                        SType = StructureType.CommandBufferInheritanceInfo,
-                        RenderPass = renderer.SwapchainTarget.RenderPass,
-                        Subpass = 0,
-                        Framebuffer = renderer.SwapchainTarget.Framebuffers[renderer.FrameIndex]
-                    }
-                };
+                            new CommandBufferInheritanceInfo()
+                            {
+                                SType = StructureType.CommandBufferInheritanceInfo,
+                                RenderPass = renderer.SwapchainTarget.RenderPass,
+                                Subpass = 0,
+                                Framebuffer = renderer.SwapchainTarget.Framebuffers[renderer.FrameIndex]
+                            }
+                        };
 
                     screenCmd.Begin(new CommandBufferBeginInfo
                     {
@@ -170,11 +171,11 @@ namespace RockEngine.Core.Rendering.PipelineRenderers
                         PInheritanceInfo = inheritanceInfo
                     });
                 }
-                using (_context.DebugUtils.CmdDebugLabelScope(screenCmd.VkObjectNative, "Screen part", [0.7f, 0.7f, 0.7f, 1.0f]))
+                using (screenCmd.NameAction("Screen part", [0.7f, 0.7f, 0.7f, 1.0f]))
                 {
                     await _screenPass.Execute(screenCmd, renderer);
                 }
-                using (_context.DebugUtils.CmdDebugLabelScope(screenCmd.VkObjectNative, "imgui part", [0.7f, 0.7f, 0.7f, 1.0f]))
+                using (screenCmd.NameAction("imgui part", [0.7f, 0.7f, 0.7f, 1.0f]))
                 {
                     await _imGuiPass.Execute(screenCmd, renderer);
                 }
@@ -189,7 +190,7 @@ namespace RockEngine.Core.Rendering.PipelineRenderers
         public void Dispose()
         {
             _geometryPass.Dispose();
-            _lightingPass.Dispose();
+            LightingPass.Dispose();
             _screenPass.Dispose();
             _imGuiPass.Dispose();
         }

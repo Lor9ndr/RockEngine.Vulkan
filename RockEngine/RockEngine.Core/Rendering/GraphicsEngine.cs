@@ -18,7 +18,7 @@ namespace RockEngine.Core.Rendering
 
         public RenderPassManager RenderPassManager => _renderPassManager;
 
-        public uint CurrentImageIndex { get => _swapchain.CurrentImageIndex; }
+        public uint CurrentImageIndex => _swapchain.CurrentImageIndex;
 
         private readonly VkCommandBuffer[] _renderCommandBuffers;
         public GraphicsEngine(VulkanContext renderingContext)
@@ -71,9 +71,16 @@ namespace RockEngine.Core.Rendering
             return commandBuffer;
         }
 
-        public void SubmitAndPresent(params CommandBuffer[] commandBuffers)
+        public async Task SubmitAndPresent(CommandBuffer commandBuffer)
         {
-            _swapchain.SubmitCommandBuffers(commandBuffers);
+            _renderingContext.SubmitContext.AddSubmission(commandBuffer);
+
+            var data = _swapchain.GetFrameData();
+            
+            _renderingContext.SubmitContext.AddSignalSemaphore(data.RenderFinishedSemaphore);
+            _renderingContext.SubmitContext.AddWaitSemaphore(data.ImageAvailableSemaphore, PipelineStageFlags.ColorAttachmentOutputBit);
+
+            await _renderingContext.SubmitContext.FlushAsync(data.InFlightFence);
             _swapchain.Present();
         }
 

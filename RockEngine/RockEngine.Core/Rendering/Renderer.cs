@@ -1,4 +1,5 @@
-﻿using RockEngine.Core.ECS.Components;
+﻿using RockEngine.Core.ECS;
+using RockEngine.Core.ECS.Components;
 using RockEngine.Core.Extensions.Builders;
 using RockEngine.Core.Rendering.Commands;
 using RockEngine.Core.Rendering.Managers;
@@ -6,6 +7,7 @@ using RockEngine.Core.Rendering.Passes;
 using RockEngine.Core.Rendering.PipelineRenderers;
 using RockEngine.Core.Rendering.RenderTargets;
 using RockEngine.Core.Rendering.RockEngine.Core.Rendering;
+using RockEngine.Core.Rendering.Texturing;
 using RockEngine.Vulkan;
 using RockEngine.Vulkan.Builders;
 
@@ -20,6 +22,7 @@ namespace RockEngine.Core.Rendering
         public EngineRenderPass RenderPass { get; }
 
         private readonly IRenderPipeline _renderPipeline;
+        private readonly IBLManager _iblManager;
         private readonly LightManager _lightManager;
         private readonly TransformManager _transformManager;
         private readonly CameraManager _cameraManager;
@@ -30,6 +33,7 @@ namespace RockEngine.Core.Rendering
         private readonly VkPipeline _deferredLightingPipeline;
         private readonly VkPipeline _screenPipeline;
         private readonly VkPipeline _skyboxPipeline;
+
 
         public SubmitContext SubmitContext => _context.SubmitContext;
         public SwapchainRenderTarget SwapchainTarget { get; }
@@ -51,11 +55,12 @@ namespace RockEngine.Core.Rendering
         {
             var poolSizes = new[]
             {
-                new DescriptorPoolSize(DescriptorType.UniformBuffer, 200),
-                new DescriptorPoolSize(DescriptorType.CombinedImageSampler, 200),
-                new DescriptorPoolSize(DescriptorType.StorageBuffer, 200),
+                new DescriptorPoolSize(DescriptorType.UniformBuffer, 1000),
+                new DescriptorPoolSize(DescriptorType.CombinedImageSampler, 1000),
+                new DescriptorPoolSize(DescriptorType.StorageBuffer, 1000),
                 new DescriptorPoolSize(DescriptorType.InputAttachment, 3),
-                new DescriptorPoolSize(DescriptorType.UniformBufferDynamic, 200)
+                new DescriptorPoolSize(DescriptorType.UniformBufferDynamic, 1000),
+                new DescriptorPoolSize(DescriptorType.StorageImage, 1000)
             };
             _context = context;
             _graphicsEngine = graphicsEngine;
@@ -77,12 +82,46 @@ namespace RockEngine.Core.Rendering
 
             _renderPipeline = new DeferredRenderPipeline( _context,
                 new GeometryPass(_context,_bindingManager, _transformManager, _indirectCommandManager, GlobalUbo),
-                new LightingPass(_context,_bindingManager, _lightManager, _transformManager, _indirectCommandManager,GlobalUbo, _deferredLightingPipeline),
+                new LightingPass(_context,_bindingManager, _lightManager, _transformManager, _indirectCommandManager,GlobalUbo, _deferredLightingPipeline, World.GetCurrent()),
                 new PostLightPass(_context, _bindingManager, _transformManager, _indirectCommandManager, GlobalUbo),
                 new ScreenPass(_context,_bindingManager, _screenPipeline, SwapchainTarget),
                 new ImGuiPass(_context,_bindingManager, _graphicsEngine.Swapchain, _indirectCommandManager.OtherCommands)
             );
 
+            _iblManager = new IBLManager(
+           context,
+           new ComputeShaderManager(context, _bindingManager, _pipelineManager),
+           _bindingManager
+            );
+
+
+
+        }
+
+        internal async Task InitializeAsync()
+        {
+            await _iblManager.InitializeAsync();
+
+            // Generate IBL textures after loading environment map
+            var envMap = await Texture.CreateCubeMapAsync(_context, [
+            "Resources/skybox/right.jpg",    // +X
+            "Resources/skybox/left.jpg",     // -X
+            "Resources/skybox/top.jpg",      // +Y (Vulkan's Y points down)
+            "Resources/skybox/bottom.jpg",   // -Y
+            "Resources/skybox/front.jpg",    // +Z
+            "Resources/skybox/back.jpg"      // -Z
+            ]);
+            envMap.Image.LabelObject("EnviromentMap");
+            var irradiance = await _iblManager.GenerateIrradianceMap(envMap, 128);
+            irradiance.Image.LabelObject("Irradiance");
+            var prefilter = await _iblManager.GeneratePrefilterMap(envMap, 512);
+            prefilter.Image.LabelObject("Prefilter");
+            var brdfLUT = await _iblManager.GenerateBRDFLUT(512);
+            brdfLUT.Image.LabelObject("BRDFLut");
+
+            // Store references in lighting pass
+            var lightingPass = ((DeferredRenderPipeline)_renderPipeline).LightingPass;
+            lightingPass.SetIBLTextures(irradiance, prefilter, brdfLUT);
         }
 
        
@@ -102,35 +141,28 @@ namespace RockEngine.Core.Rendering
             _transformManager.Update(FrameIndex);
             _indirectCommandManager.Update();
             await _renderPipeline.Update();
+            PerformanceTracer.ProcessQueries(_context, (int)FrameIndex);
         }
 
         private EngineRenderPass CreateRenderPass()
         {
-            var mainPassBuilder = new RenderPassBuilder(_context)
+            var mainPassBuilder = new RenderPassBuilder(_context);
+            for (int i = 0; i < GBuffer.ColorAttachmentFormats.Length; i++)
+            {
                 // GBuffer Color Attachments (0-2)
-                .ConfigureAttachment(GBuffer.ColorAttachmentFormats[0])
-                    .WithColorOperations(
-                        load: AttachmentLoadOp.Clear,
-                        store: AttachmentStoreOp.Store,
-                        initialLayout: ImageLayout.Undefined,
-                        finalLayout: ImageLayout.ShaderReadOnlyOptimal)
-                    .Add()
-                .ConfigureAttachment(GBuffer.ColorAttachmentFormats[1])
-                    .WithColorOperations(
-                        load: AttachmentLoadOp.Clear,
-                        store: AttachmentStoreOp.Store,
-                        initialLayout: ImageLayout.Undefined,
-                        finalLayout: ImageLayout.ShaderReadOnlyOptimal)
-                    .Add()
-                .ConfigureAttachment(GBuffer.ColorAttachmentFormats[2])
-                    .WithColorOperations(
-                        load: AttachmentLoadOp.Clear,
-                        store: AttachmentStoreOp.Store,
-                        initialLayout: ImageLayout.Undefined,
-                        finalLayout: ImageLayout.ShaderReadOnlyOptimal)
-                    .Add()
-                // Depth Attachment (3)
-                .ConfigureAttachment(_graphicsEngine.Swapchain.DepthFormat)
+                mainPassBuilder
+                .ConfigureAttachment(GBuffer.ColorAttachmentFormats[i])
+                  .WithColorOperations(
+                      load: AttachmentLoadOp.Clear,
+                      store: AttachmentStoreOp.Store,
+                      initialLayout: ImageLayout.Undefined,
+                      finalLayout: ImageLayout.ShaderReadOnlyOptimal)
+                  .Add();
+            }
+
+            // Depth Attachment (3)
+            mainPassBuilder
+            .ConfigureAttachment(_graphicsEngine.Swapchain.DepthFormat)
                     .WithDepthOperations(
                         load: AttachmentLoadOp.Clear,
                         store: AttachmentStoreOp.DontCare,
@@ -147,26 +179,35 @@ namespace RockEngine.Core.Rendering
                     .Add();
 
             // Subpass 0: Geometry Pass
-            mainPassBuilder.BeginSubpass()
-                .AddColorAttachment(0, ImageLayout.ColorAttachmentOptimal)
-                .AddColorAttachment(1, ImageLayout.ColorAttachmentOptimal)
-                .AddColorAttachment(2, ImageLayout.ColorAttachmentOptimal)
-                .SetDepthAttachment(3, ImageLayout.DepthStencilAttachmentOptimal)
+
+            var subPassGeometryBuilder =  mainPassBuilder.BeginSubpass();
+            int lastI = 0;
+            for (int i = 0; i < GBuffer.ColorAttachmentFormats.Length; i++)
+            {
+                subPassGeometryBuilder.AddColorAttachment(i, ImageLayout.ColorAttachmentOptimal);
+                lastI = i;
+            }
+            subPassGeometryBuilder.SetDepthAttachment(++lastI, ImageLayout.DepthStencilAttachmentOptimal)
                 .EndSubpass();
 
             // Subpass 1: Lighting Pass
-            mainPassBuilder.BeginSubpass()
-                .AddInputAttachment(0, ImageLayout.ShaderReadOnlyOptimal)
-                .AddInputAttachment(1, ImageLayout.ShaderReadOnlyOptimal)
-                .AddInputAttachment(2, ImageLayout.ShaderReadOnlyOptimal)
-                .AddInputAttachment(3, ImageLayout.DepthStencilReadOnlyOptimal) 
-                .AddColorAttachment(4, ImageLayout.ColorAttachmentOptimal)
+            var subPassLightingBuilder = mainPassBuilder.BeginSubpass();
+            lastI = 0;
+            for (int i = 0; i < GBuffer.ColorAttachmentFormats.Length; i++)
+            {
+                subPassLightingBuilder.AddInputAttachment(i, ImageLayout.ShaderReadOnlyOptimal);
+                lastI = i;
+            }
+            subPassLightingBuilder
+                .AddInputAttachment(++lastI, ImageLayout.DepthStencilReadOnlyOptimal) 
+                .AddColorAttachment(++lastI, ImageLayout.ColorAttachmentOptimal)
+
                 .EndSubpass();
 
             // Subpass 2: Skybox pass/post light pass
             mainPassBuilder.BeginSubpass()
-                  .AddColorAttachment(4, ImageLayout.ColorAttachmentOptimal)
-                  .SetDepthAttachment(3, ImageLayout.DepthStencilReadOnlyOptimal)
+                 .AddColorAttachment(GBuffer.ColorAttachmentFormats.Length + 1, ImageLayout.ColorAttachmentOptimal)
+                  .SetDepthAttachment(GBuffer.ColorAttachmentFormats.Length , ImageLayout.DepthStencilReadOnlyOptimal)
                   .EndSubpass();
 
             // Dependencies

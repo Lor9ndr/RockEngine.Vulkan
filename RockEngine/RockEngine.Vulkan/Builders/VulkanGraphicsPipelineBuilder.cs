@@ -167,7 +167,6 @@ namespace RockEngine.Vulkan.Builders
             _depthStencilState.SType = StructureType.PipelineDepthStencilStateCreateInfo;
 
             var pDepthState = CreateMemoryHandle(_depthStencilState);
-
             GraphicsPipelineCreateInfo ci = new GraphicsPipelineCreateInfo()
             {
                 SType = StructureType.GraphicsPipelineCreateInfo,
@@ -185,7 +184,6 @@ namespace RockEngine.Vulkan.Builders
                 RenderPass = _renderPass,
                 Subpass = _subpass,
             };
-
             return VkPipeline.Create(_context, _name, ref ci, _renderPass, _pipelineLayout);
         }
 

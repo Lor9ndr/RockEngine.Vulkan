@@ -3,8 +3,11 @@ using RockEngine.Vulkan;
 
 using Silk.NET.Vulkan;
 
-using SkiaSharp;
+using SixLabors.ImageSharp.PixelFormats;
+using SixLabors.ImageSharp;
 
+using SkiaSharp;
+using Silk.NET.Maths;
 using System.Runtime.InteropServices;
 
 namespace RockEngine.Core.Rendering.Texturing
@@ -48,16 +51,24 @@ namespace RockEngine.Core.Rendering.Texturing
         /// <summary>Texture width in pixels</summary>
         public uint Width => _image.Extent.Width;
 
-        /// <summary>Texture height in pixels</summary>
+        /// <summary>
+        /// Texture height in pixels
+        /// </summary>
         public uint Height => _image.Extent.Height;
 
-        /// <summary>Unique identifier for the texture</summary>
+        /// <summary>
+        /// Unique identifier for the texture
+        /// </summary>
         public Guid ID { get; } = Guid.NewGuid();
 
-        /// <summary>Original source file path (if loaded from disk)</summary>
+        /// <summary>
+        /// Original source file path (if loaded from disk)
+        /// </summary>
         public string? SourcePath { get; }
 
-        /// <summary>Event triggered when texture data is updated</summary>
+        /// <summary>
+        /// Event triggered when texture data is updated
+        /// </summary>
         public event Action<Texture>? OnTextureUpdated;
 
         #endregion
@@ -93,33 +104,59 @@ namespace RockEngine.Core.Rendering.Texturing
         /// <returns>New texture instance</returns>
         public static async Task<Texture> CreateAsync(VulkanContext context, string filePath, CancellationToken cancellationToken = default)
         {
-            var bytes = await File.ReadAllBytesAsync(filePath, cancellationToken).ConfigureAwait(false);
-            using var skBitmap = SKBitmap.Decode(bytes);
+            var bytes = await File.ReadAllBytesAsync(filePath, cancellationToken);
+            var extension = Path.GetExtension(filePath);
+            SKBitmap skBitmap;
 
-            var width = (uint)skBitmap.Width;
-            var height = (uint)skBitmap.Height;
-            var format = GetVulkanFormat(skBitmap.Info.ColorType, context);
-            uint mipLevels = CalculateMipLevels(width, height);
-
-            var image = CreateVulkanImage(context, width, height, format,
-                ImageUsageFlags.TransferSrcBit | ImageUsageFlags.TransferDstBit | ImageUsageFlags.SampledBit,
-                mipLevels);
-
-            var imageView = CreateImageView(context, image, format);
-
-            // Copy initial data and leave in TRANSFER_DST_OPTIMAL if generating mipmaps
-            CopyImageData(context, skBitmap, image, mipLevels > 1);
-
-            if (mipLevels > 1)
+            if (extension == ".tga")
             {
-                var batch = context.SubmitContext.CreateBatch();
-                image.GenerateMipmaps(batch.CommandBuffer);
-                batch.Submit();
-                await context.SubmitContext.FlushAsync();
+                using Image<Rgba32> imageSharpImage = SixLabors.ImageSharp.Image.Load<Rgba32>(bytes);
+                skBitmap = new SKBitmap(imageSharpImage.Width, imageSharpImage.Height);
+
+                imageSharpImage.ProcessPixelRows(accessor =>
+                {
+                    for (int y = 0; y < accessor.Height; y++)
+                    {
+                        Span<Rgba32> row = accessor.GetRowSpan(y);
+                        Span<byte> srcBytes = MemoryMarshal.AsBytes(row);
+                        Span<byte> dstBytes = skBitmap.GetPixelSpan().Slice(y * skBitmap.RowBytes, srcBytes.Length);
+                        srcBytes.CopyTo(dstBytes);
+                    }
+                });
+            }
+            else
+            {
+                skBitmap = SKBitmap.Decode(bytes);
             }
 
-            var sampler = CreateSampler(context, mipLevels);
-            return new Texture(context, image, imageView, sampler, filePath);
+            using (skBitmap)
+            {
+                var width = (uint)skBitmap.Width;
+                var height = (uint)skBitmap.Height;
+                var format = GetVulkanFormat(skBitmap.Info.ColorType, context);
+                uint mipLevels = CalculateMipLevels(width, height);
+
+                var image = CreateVulkanImage(context, width, height, format,
+                    ImageUsageFlags.TransferSrcBit | ImageUsageFlags.TransferDstBit | ImageUsageFlags.SampledBit,
+                    mipLevels);
+
+                var imageView = image.GetOrCreateView(ImageAspectFlags.ColorBit);
+
+                CopyImageData(context, skBitmap, image, mipLevels > 1);
+
+                if (mipLevels > 1)
+                {
+                    var batch = context.SubmitContext.CreateBatch();
+                    image.GenerateMipmaps(batch.CommandBuffer);
+                    batch.Submit();
+                    //await context.SubmitContext.FlushAsync();
+                }
+
+                image.LabelObject(Path.GetFileName(filePath));
+
+                var sampler = CreateSampler(context, mipLevels);
+                return new Texture(context, image, imageView, sampler, filePath);
+            }
         }
 
         protected void NotifyTextureUpdated()
@@ -139,12 +176,42 @@ namespace RockEngine.Core.Rendering.Texturing
         public static unsafe Texture Create(VulkanContext context, int width, int height, Format format, nint data)
         {
             var vkImage = CreateVulkanImage(context, (uint)width, (uint)height, format);
-            var imageView = CreateImageView(context, vkImage, format);
+            var imageView = vkImage.GetOrCreateView(ImageAspectFlags.ColorBit);
 
             CopyImageDataFromPointer(context, vkImage, data.ToPointer(), (uint)width, (uint)height, format);
 
             var sampler = CreateSampler(context, vkImage.MipLevels);
             return new Texture(context, vkImage, imageView, sampler, null);
+        }
+
+        /// <summary>
+        /// Prepares the texture for use in a compute shader by transitioning it to the General layout.
+        /// </summary>
+        /// <param name="commandBuffer">The command buffer to record the transition commands.</param>
+        public void PrepareForComputeShader(VkCommandBuffer commandBuffer)
+        {
+            _image.TransitionImageLayout(
+                commandBuffer,
+                ImageLayout.General,
+                baseMipLevel: 0,
+                levelCount: LoadedMipLevels,
+                baseArrayLayer: 0,
+                layerCount: _image.ArrayLayers);
+        }
+
+        /// <summary>
+        /// Prepares the texture for use in a fragment shader by transitioning it to ShaderReadOnlyOptimal layout.
+        /// </summary>
+        /// <param name="commandBuffer">The command buffer to record the transition commands.</param>
+        public void PrepareForFragmentShader(VkCommandBuffer commandBuffer)
+        {
+            _image.TransitionImageLayout(
+                commandBuffer,
+                ImageLayout.ShaderReadOnlyOptimal,
+                baseMipLevel: 0,
+                levelCount: LoadedMipLevels,
+                baseArrayLayer: 0,
+                layerCount: _image.ArrayLayers);
         }
         #endregion
 
@@ -200,33 +267,7 @@ namespace RockEngine.Core.Rendering.Texturing
 
             return VkImage.Create(context, imageInfo, MemoryPropertyFlags.DeviceLocalBit, ImageAspectFlags.ColorBit);
         }
-        /// <summary>
-        /// Creates an image view for a Vulkan image
-        /// </summary>
-        /// <param name="context">Vulkan context</param>
-        /// <param name="image">Source image</param>
-        /// <param name="format">Pixel format</param>
-        /// <returns>Created image view</returns>
-        public static VkImageView CreateImageView(VulkanContext context, VkImage image, Format format)
-        {
-            var viewInfo = new ImageViewCreateInfo
-            {
-                SType = StructureType.ImageViewCreateInfo,
-                Image = image,
-                ViewType = ImageViewType.Type2D,
-                Format = format,
-                SubresourceRange = new ImageSubresourceRange
-                {
-                    AspectMask = ImageAspectFlags.ColorBit,
-                    BaseMipLevel = 0,
-                    LevelCount = image.MipLevels,
-                    BaseArrayLayer = 0,
-                    LayerCount = 1
-                }
-            };
-
-            return VkImageView.Create(context, image, viewInfo);
-        }
+        
         /// <summary>
         /// Creates a texture sampler with default or specified parameters
         /// </summary>
@@ -311,10 +352,10 @@ namespace RockEngine.Core.Rendering.Texturing
 
             image.GenerateMipmaps(batch.CommandBuffer);
             batch.Submit([staging]);
-            await context.SubmitContext.FlushAsync();
+            //await context.SubmitContext.FlushAsync();
 
             return new Texture(context, image,
-                image.CreateView(ImageAspectFlags.ColorBit, 0, mipLevels),
+                image.GetOrCreateView(ImageAspectFlags.ColorBit, 0, mipLevels),
                 CreateSampler(context, mipLevels), texturePath);
 
         }
@@ -454,18 +495,18 @@ namespace RockEngine.Core.Rendering.Texturing
 
         public static Texture GetEmptyTexture(VulkanContext context)
         {
-            _emptyTexture ??= CreateEmptyTexture(context);
+            _emptyTexture ??= CreateColorTexture(context, new(0,0,0,1));
             return _emptyTexture;
         }
         /// <summary>
         /// Creates a default pink 1x1 texture
         /// </summary>
 
-        private static Texture CreateEmptyTexture(VulkanContext context)
+        public static Texture CreateColorTexture(VulkanContext context, Vector4D<byte> colors)
         {
             // Create a 1x1 pink texture
-            using var surface = SKSurface.Create(new SKImageInfo(1, 1, SKColorType.Rgba8888));
-            surface.Canvas.Clear(SKColors.Pink);
+            using var surface = SKSurface.Create(new SKImageInfo(1, 1, SKColorType.Srgba8888));
+            surface.Canvas.Clear(new SKColor(colors.X,colors.Y,colors.Z, colors.W));
             using var image = surface.Snapshot();
             using var bitmap = SKBitmap.FromImage(image);
             return LoadFromSKImage(context, bitmap);
@@ -477,7 +518,7 @@ namespace RockEngine.Core.Rendering.Texturing
             var height = (uint)skImage.Height;
             var format = GetVulkanFormat(skImage.Info.ColorType, context);
             var vkImage = CreateVulkanImage(context, width, height, format);
-            var imageView = CreateImageView(context, vkImage, format);
+            var imageView = vkImage.GetOrCreateView(ImageAspectFlags.ColorBit);
 
             unsafe
             {
@@ -577,7 +618,7 @@ namespace RockEngine.Core.Rendering.Texturing
                 byte[] pixelData = faceBitmaps[i].Bytes;
                 ulong faceSize = (ulong)(width * height * format.GetBytesPerPixel());
 
-                if (!context.SubmitContext.StagingManager.TryStage(pixelData, out ulong bufferOffset, out ulong stagedSize))
+                if (!context.SubmitContext.StagingManager.TryStage(pixelData.AsSpan(), out ulong bufferOffset, out ulong stagedSize))
                 {
                     throw new InvalidOperationException("Staging buffer overflow");
                 }
@@ -627,7 +668,7 @@ namespace RockEngine.Core.Rendering.Texturing
 
             // Submit all commands
             uploadBatch.Submit();
-            await context.SubmitContext.FlushAsync();
+            //await context.SubmitContext.FlushAsync();
 
             // Create associated resources
             var imageView = CreateCubeMapImageView(context, image, format);
@@ -635,6 +676,7 @@ namespace RockEngine.Core.Rendering.Texturing
 
             return new Texture(context, image, imageView, sampler, null);
         }
+       
 
 
         /// <summary>

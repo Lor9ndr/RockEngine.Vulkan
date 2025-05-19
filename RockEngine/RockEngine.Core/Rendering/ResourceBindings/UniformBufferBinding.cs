@@ -1,4 +1,5 @@
-﻿using RockEngine.Vulkan;
+﻿using RockEngine.Core.Rendering.Buffers;
+using RockEngine.Vulkan;
 
 using Silk.NET.Vulkan;
 
@@ -6,16 +7,17 @@ namespace RockEngine.Core.Rendering.ResourceBindings
 {
     public class UniformBufferBinding : ResourceBinding
     {
-        private readonly bool _updateWholeData;
 
         public UniformBuffer Buffer { get; }
         public ulong Offset { get; }
-        public UniformBufferBinding(UniformBuffer buffer, uint bindingLocation, uint setLocation, ulong offset = 0, bool updateWholeData = false)
+
+        protected override DescriptorType DescriptorType => Buffer.IsDynamic ? DescriptorType.UniformBufferDynamic : DescriptorType.UniformBuffer;
+
+        public UniformBufferBinding(UniformBuffer buffer, uint bindingLocation, uint setLocation, ulong offset = 0)
             : base(setLocation, bindingLocation)
         {
             Buffer = buffer;
             Offset = offset;
-            _updateWholeData = updateWholeData;
         }
 
         public override unsafe void UpdateDescriptorSet(VulkanContext renderingContext)
@@ -24,7 +26,7 @@ namespace RockEngine.Core.Rendering.ResourceBindings
             {
                 Buffer = Buffer.Buffer,
                 Offset = 0,
-                Range = _updateWholeData ? Buffer.Buffer.Size : (ulong)Buffer.DataSize,
+                Range =  Buffer.Buffer.Size,
             };
 
             var writeDescriptorSet = new WriteDescriptorSet
@@ -33,13 +35,20 @@ namespace RockEngine.Core.Rendering.ResourceBindings
                 DstSet = DescriptorSet,
                 DstBinding = BindingLocation,
                 DstArrayElement = 0,
-                DescriptorType = Buffer.IsDynamic ? DescriptorType.UniformBufferDynamic : DescriptorType.UniformBuffer,
+                DescriptorType = DescriptorType,
                 DescriptorCount = 1,
                 PBufferInfo = &bufferInfo
             };
 
             VulkanContext.Vk.UpdateDescriptorSets(renderingContext.Device, 1, in writeDescriptorSet, 0, null);
             IsDirty = false;
+        }
+        public override int GetResourceHash()
+        {
+            HashCode hash = new HashCode();
+            hash.Add(base.GetResourceHash());
+            hash.Add(Buffer.GetHashCode());
+            return hash.ToHashCode();
         }
     }
 }

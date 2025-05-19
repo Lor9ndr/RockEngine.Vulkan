@@ -15,7 +15,7 @@ namespace RockEngine.Core.Rendering.Passes
         private readonly TransformManager _transformManager;
         private readonly IndirectCommandManager _indirectCommands;
         private readonly GlobalUbo _globalUbo;
-        private readonly UniformBufferBinding _binding;
+        private readonly UniformBufferBinding _globalBinding;
         protected override uint Order => 0;
 
         public GeometryPass(
@@ -29,7 +29,7 @@ namespace RockEngine.Core.Rendering.Passes
             _transformManager = transformManager;
             _indirectCommands = indirectCommands;
             _globalUbo = globalUbo;
-            _binding = new UniformBufferBinding(_globalUbo, 0,0);
+            _globalBinding = new UniformBufferBinding(_globalUbo, 0,0);
         }
 
         public override async Task Execute(VkCommandBuffer cmd, params object[] args)
@@ -47,20 +47,24 @@ namespace RockEngine.Core.Rendering.Passes
 
             cmd.SetViewport(camera.RenderTarget.Viewport);
             cmd.SetScissor(camera.RenderTarget.Scissor);
-
+            var pipeline = default(VkPipeline);
             foreach (var drawGroup in _indirectCommands.GetDrawGroups(RenderLayerType.Opaque))
             {
                 if (drawGroup.Pipeline.SubPass != Order)
                 {
                     continue;
                 }
-                cmd.BindPipeline(drawGroup.Pipeline, PipelineBindPoint.Graphics);
-
                 var matrixBinding = _transformManager.GetCurrentBinding(frameIndex);
-                drawGroup.Mesh.Material.Bindings.Add(matrixBinding);
+                if (pipeline != drawGroup.Pipeline)
+                {
+                    cmd.BindPipeline(drawGroup.Pipeline);
+                    pipeline = drawGroup.Pipeline;
 
-                drawGroup.Mesh.Material.Bindings.Add(_binding);
-                BindingManager.BindResourcesForMaterial(drawGroup.Mesh.Material, cmd);
+                    BindingManager.BindResource(_globalBinding, cmd, drawGroup.Pipeline.Layout);
+                    BindingManager.BindResource(matrixBinding, cmd, drawGroup.Pipeline.Layout);
+                }
+
+                BindingManager.BindResourcesForMaterial(drawGroup.Mesh.Material, cmd, false,[matrixBinding.SetLocation, _globalBinding.SetLocation]);
 
                 drawGroup.Mesh.VertexBuffer.BindVertexBuffer(cmd);
                 drawGroup.Mesh.IndexBuffer.BindIndexBuffer(cmd, 0, IndexType.Uint32);

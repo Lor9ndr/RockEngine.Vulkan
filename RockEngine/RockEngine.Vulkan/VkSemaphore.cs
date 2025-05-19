@@ -1,6 +1,8 @@
 ﻿
 using Silk.NET.Vulkan;
 
+using System.Threading;
+
 using Semaphore = Silk.NET.Vulkan.Semaphore;
 
 namespace RockEngine.Vulkan
@@ -23,9 +25,9 @@ namespace RockEngine.Vulkan
 
             VulkanContext.Vk.CreateSemaphore(context.Device, in semaphoreCreateInfo, in VulkanContext.CustomAllocator<VkSemaphore>(), out Semaphore semaphore)
                 .VkAssertResult("Failed to create semaphore.");
-
             return new VkSemaphore(context, semaphore);
         }
+       
 
         protected override void Dispose(bool disposing)
         {

@@ -14,10 +14,7 @@ namespace RockEngine.Core.Rendering.Managers
 
         public IReadOnlyList<Camera> ActiveCameras => _activeCameras;
 
-        public CameraManager(
-            VulkanContext context,
-            GraphicsEngine engine,
-            EngineRenderPass deferredRenderPass)
+        public CameraManager(VulkanContext context, GraphicsEngine engine, EngineRenderPass deferredRenderPass)
         {
             _context = context;
             _engine = engine;

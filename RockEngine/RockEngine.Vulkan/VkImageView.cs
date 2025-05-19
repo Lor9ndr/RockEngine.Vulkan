@@ -11,7 +11,10 @@ namespace RockEngine.Vulkan
 
         public Format Format => _createInfo.Format;
         public ImageAspectFlags AspectFlags => _createInfo.SubresourceRange.AspectMask;
-        public uint MipLevels => _createInfo.SubresourceRange.BaseMipLevel;
+        public uint BaseMipLevel => _createInfo.SubresourceRange.BaseMipLevel;
+        public uint BaseArrayLayer => _createInfo.SubresourceRange.BaseArrayLayer;
+        public uint LevelCount => _createInfo.SubresourceRange.LevelCount;
+        public uint LayerCount => _createInfo.SubresourceRange.LayerCount;
 
         public VkImage Image => _image;
 
@@ -38,16 +41,19 @@ namespace RockEngine.Vulkan
             VkImage image,
             Format format,
             ImageAspectFlags aspectFlags,
+            ImageViewType type = ImageViewType.Type2D,
             uint baseMipLevel = 0,
             uint levelCount = 1,
             uint baseArrayLayer = 0,
             uint arrayLayers = 1)
         {
+          
+
             var createInfo = new ImageViewCreateInfo
             {
                 SType = StructureType.ImageViewCreateInfo,
                 Image = image,
-                ViewType = ImageViewType.Type2D, 
+                ViewType = type, 
                 Format = format,
                 Components = new ComponentMapping(),
                 SubresourceRange = new ImageSubresourceRange
@@ -80,36 +86,6 @@ namespace RockEngine.Vulkan
             WasUpdated?.Invoke();
         }
 
-        public static VkImageView Create(
-            VulkanContext context,
-            VkImage image,
-            Format format,
-            ImageAspectFlags aspectFlags,
-            ImageViewType viewType = ImageViewType.Type2D,
-            uint mipLevels = 1,
-            uint arrayLayers = 1,
-            uint baseMipLevel = 0)
-        {
-            var createInfo = new ImageViewCreateInfo
-            {
-                SType = StructureType.ImageViewCreateInfo,
-                Image = image.VkObjectNative,
-                ViewType = viewType,
-                Format = format,
-                Components = new ComponentMapping(),
-                SubresourceRange = new ImageSubresourceRange
-                {
-                    AspectMask = aspectFlags,
-                    BaseMipLevel = baseMipLevel,
-                    LevelCount = mipLevels,
-                    BaseArrayLayer = 0,
-                    LayerCount = arrayLayers
-                }
-            };
-
-            return Create(context, image, createInfo);
-        }
-
 
         protected override unsafe void Dispose(bool disposing)
         {
@@ -117,6 +93,8 @@ namespace RockEngine.Vulkan
             {
                 return;
             }
+            _image.RemoveViewFromCache(this);
+
             VulkanContext.Vk.DestroyImageView(_context.Device, _vkObject, in VulkanContext.CustomAllocator<VkImageView>());
             _disposed = true;
         }

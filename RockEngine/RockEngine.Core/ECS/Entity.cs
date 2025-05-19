@@ -7,6 +7,8 @@ namespace RockEngine.Core.ECS
     {
         private static ulong _id = 0;
 
+        public string Name { get;set;}
+
         public readonly ulong ID;
 
         private readonly List<IComponent> _components = [];
@@ -15,7 +17,7 @@ namespace RockEngine.Core.ECS
         private readonly List<Entity> _children = new List<Entity>();
         public IReadOnlyList<Entity> Children => _children.AsReadOnly();
 
-        public RenderLayerType Layer { get; private set; } = RenderLayerType.Opaque;
+        public RenderLayerType Layer { get; set; } = RenderLayerType.Opaque;
 
         public event Action OnDestroy;
 
@@ -23,6 +25,7 @@ namespace RockEngine.Core.ECS
         {
             ID = _id++;
             Transform = AddComponent<Transform>();
+            Name = $"Entity_{ID}";
         }
 
         public T AddComponent<T>() where T : Component, new()
@@ -46,6 +49,7 @@ namespace RockEngine.Core.ECS
         {
             return _components.OfType<T>().FirstOrDefault();
         }
+        public IEnumerable<IComponent> Components => _components;
 
         public void AddChild(Entity child)
         {
@@ -89,11 +93,6 @@ namespace RockEngine.Core.ECS
             {
                 item.Destroy();
             }
-        }
-
-        internal void ChangeLayer(RenderLayerType layer)
-        {
-            Layer = layer;
         }
     }
 }

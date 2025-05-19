@@ -7,12 +7,12 @@ namespace RockEngine.Vulkan
 {
     public class VkPipelineLayout : VkObject<PipelineLayout>
     {
-        public readonly PushConstantRange[] PushConstantRanges;
+        public readonly ShaderReflectionData.PushConstantInfo[] PushConstantRanges;
         public readonly ReadOnlyDictionary<uint, VkDescriptorSetLayout> DescriptorSetLayouts;
 
         private readonly VulkanContext _context;
 
-        private VkPipelineLayout(VulkanContext context, PipelineLayout layout, PushConstantRange[] pushConstantRanges, Dictionary<uint, VkDescriptorSetLayout> descriptorSetLayouts)
+        private VkPipelineLayout(VulkanContext context, PipelineLayout layout, ShaderReflectionData.PushConstantInfo[] pushConstantRanges, Dictionary<uint, VkDescriptorSetLayout> descriptorSetLayouts)
             : base(layout)
         {
             PushConstantRanges = pushConstantRanges;
@@ -21,7 +21,6 @@ namespace RockEngine.Vulkan
 
         }
 
-
         public static unsafe VkPipelineLayout Create(VulkanContext context, params VkShaderModule[] shaders)
         {
             // Merge descriptor set layouts across all shaders
@@ -29,7 +28,7 @@ namespace RockEngine.Vulkan
 
             // Collect push constants from all shaders
             var pushConstantRanges = shaders
-                .SelectMany(s => s.ConstantRanges)
+                .SelectMany(s => s.ReflectedData.PushConstants)
                 .ToArray();
 
             // Get native layouts in order
@@ -39,7 +38,7 @@ namespace RockEngine.Vulkan
                 .ToArray();
 
             fixed (DescriptorSetLayout* setLayoutsPtr = descriptorSetLayouts)
-            fixed (PushConstantRange* pushConstantsPtr = pushConstantRanges)
+            fixed (PushConstantRange* pushConstantsPtr = pushConstantRanges.Select(s=>s.ToPushConstantRangeVulkan()).ToArray())
             {
                 var layoutInfo = new PipelineLayoutCreateInfo
                 {
@@ -67,7 +66,7 @@ namespace RockEngine.Vulkan
             // Merge bindings across all shaders by set number
             foreach (var shader in shaders)
             {
-                foreach (var setLayout in shader.DescriptorSetLayouts)
+                foreach (var setLayout in shader.ReflectedData.DescriptorSets)
                 {
                     if (!mergedSets.TryGetValue(setLayout.Set, out var bindings))
                     {
@@ -114,14 +113,13 @@ namespace RockEngine.Vulkan
                 Console.WriteLine($"  Set {setNumber} has {bindings.Count} bindings");
                 foreach (var binding in bindings)
                 {
-                    Console.WriteLine($"    Binding {binding.Binding}: {binding.DescriptorType} ({binding.StageFlags})");
+                    Console.WriteLine($"    Binding {binding.Binding}: {binding.DescriptorType} ({binding.StageFlags} { binding.Name})");
                 }
             }
 #endif
 
             return result;
         }
-
         private static unsafe VkDescriptorSetLayout CreateDescriptorSetLayout(
             VulkanContext context, uint setNumber, DescriptorSetLayoutBindingReflected[] bindings)
         {
@@ -143,8 +141,9 @@ namespace RockEngine.Vulkan
                     PBindings = bindingsPtr
                 };
 
+                // Correct the allocator type here
                 VulkanContext.Vk.CreateDescriptorSetLayout(context.Device, in layoutInfo,
-                    in VulkanContext.CustomAllocator<VkPipelineLayout>(),
+                    in VulkanContext.CustomAllocator<VkDescriptorSetLayout>(), 
                     out var descriptorSetLayout)
                     .VkAssertResult("Failed to create descriptor set layout");
 
@@ -183,7 +182,7 @@ namespace RockEngine.Vulkan
                     {
                         foreach (var item in DescriptorSetLayouts)
                         {
-                            VulkanContext.Vk.DestroyDescriptorSetLayout(_context.Device, item.Value.DescriptorSetLayout, in VulkanContext.CustomAllocator<DescriptorSetLayout>());
+                            VulkanContext.Vk.DestroyDescriptorSetLayout(_context.Device, item.Value.DescriptorSetLayout, in VulkanContext.CustomAllocator<VkDescriptorSetLayout>());
                         }
 
                         VulkanContext.Vk.DestroyPipelineLayout(_context.Device, _vkObject, in VulkanContext.CustomAllocator<VkPipelineLayout>());

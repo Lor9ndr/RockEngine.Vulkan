@@ -44,7 +44,16 @@ namespace RockEngine.Vulkan
         public ShaderStageFlags ShaderStage { get; set; }
         public uint Set { get; internal set; }
     }
-
+    public struct PushConstantReflected
+    {
+        public string Name { get; set; }
+        public ShaderStageFlags StageFlags { get; set; }
+        public uint Offset { get; set; }
+        public uint Size { get; set; }
+        // Stores the serialized struct bytes
+        public byte[] Value;
+        public PushConstantRange ToPushConstantRangeVulkan() => new PushConstantRange() { Offset = Offset, Size = Size, StageFlags = StageFlags };
+    }
     public enum ShaderVariableType
     {
         Float,

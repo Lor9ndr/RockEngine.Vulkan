@@ -2,7 +2,7 @@
 
 namespace RockEngine.Vulkan
 {
-    public struct DebugLabelScope : IDisposable
+    public readonly struct DebugLabelScope : IDisposable
     {
         private readonly DebugUtilsFunctions _debugUtils;
         private readonly CommandBuffer _commandBuffer;

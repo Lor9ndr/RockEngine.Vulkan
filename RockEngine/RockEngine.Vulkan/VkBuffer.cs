@@ -1,7 +1,6 @@
 ﻿
 using Silk.NET.Vulkan;
 
-using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
 using Buffer = Silk.NET.Vulkan.Buffer;
@@ -27,7 +26,6 @@ namespace RockEngine.Vulkan
             {
                 _deviceMemory.Map();
             }
-
         }
 
         public static unsafe VkBuffer Create(VulkanContext context, ulong size, BufferUsageFlags usage, MemoryPropertyFlags properties)
@@ -119,28 +117,6 @@ namespace RockEngine.Vulkan
         }
 
 
-        public unsafe void CopyTo(VkBuffer dstBuffer, VkCommandPool commandPool, ulong srcOffset = 0, ulong dstOffset = 0)
-        {
-            _context.SubmitSingleTimeCommand(commandPool, (cmd) =>
-            {
-                var copyRegion = new BufferCopy
-                {
-                    SrcOffset = srcOffset,
-                    DstOffset = dstOffset,
-                    Size = Size,
-                };
-
-                VulkanContext.Vk.CmdCopyBuffer(cmd, this, dstBuffer, 1, in copyRegion);
-
-                var cmdNative = cmd.VkObjectNative;
-                var submitInfo = new SubmitInfo()
-                {
-                    SType = StructureType.SubmitInfo,
-                    PCommandBuffers = &cmdNative,
-                    CommandBufferCount = 1,
-                };
-            });
-        }
         public unsafe void CopyTo(VkBuffer dstBuffer, UploadBatch batch, ulong srcOffset = 0, ulong dstOffset = 0)
         {
             var copyRegion = new BufferCopy

@@ -20,10 +20,11 @@ namespace RockEngine.Core.Rendering
         public Texture[] ColorTextures { get; private set; }
 
         public static readonly Format[] ColorAttachmentFormats =
-        [
-            Format.R16G16B16A16Sfloat,    // Position (RGBA16F) - 8 bytes
-            Format.R8G8Unorm,               // Normal (2 bytes)
-            Format.R8G8B8A8Srgb           // Albedo + Specular (SRGB) - 4 bytes
+        [ 
+            Format.R16G16B16A16Sfloat,   // Position (View Space)
+            Format.A2R10G10B10UnormPack32,     // Normal (Octahedral encoded) + Depth
+            Format.R8G8B8A8Srgb,         // Albedo + Specular
+            Format.R8G8Unorm             // Metallic (R), Roughness (G)
         ];
 
         public Material Material { get; private set; }
@@ -37,10 +38,10 @@ namespace RockEngine.Core.Rendering
             
             // Create separate samplers for different texture types
             var positionSampler = CreateSampler(Filter.Nearest);  // Position benefits from nearest
-            var normalSampler = CreateSampler(Filter.Nearest);     
+            var normalSampler = CreateSampler(Filter.Nearest);
             var albedoSampler = CreateSampler(Filter.Linear);     // Albedo with sRGB handling
 
-            Samplers = new[] { positionSampler, normalSampler, albedoSampler };
+            Samplers = new[] { positionSampler, normalSampler, albedoSampler, albedoSampler /*, albedoSampler*/ };
             CreateAttachments();
             CreateTextures();
            
@@ -51,22 +52,22 @@ namespace RockEngine.Core.Rendering
             if (_pipeline != pipeline)
             {
                 _pipeline = pipeline;
-                Material = new Material(_pipeline, ColorTextures!.ToList());
+                Material = new Material(_pipeline, ColorTextures.ToList());
             }
 
-            Material.Bindings.Remove(_attachmentBinding);
+            Material.Unbind(_attachmentBinding);
             _attachmentBinding = new InputAttachmentBinding(
                 setLocation: 2,
                 bindingLocation: 0,
                 ColorAttachments  // Position + Normal + Albedo
             );
-            Material.Bindings.Add(_attachmentBinding);
+            Material.Bind(_attachmentBinding);
         }
 
         private void CreateAttachments()
         {
-            ColorAttachments = new VkImageView[3];
-            string[] debugNames = ["GPosition", "GNormal", "GAlbedo"];
+            ColorAttachments = new VkImageView[ColorAttachmentFormats.Length];
+            string[] debugNames = ["GPosition", "GNormal", "GAlbedo", "GMRA", "GEmissive"];
             for (int i = 0; i < ColorAttachments.Length; i++)
             {
                 ColorAttachments[i] = CreateColorAttachment(ColorAttachmentFormats[i]);
@@ -86,11 +87,11 @@ namespace RockEngine.Core.Rendering
                 format,
                 ImageTiling.Optimal,
                 ImageUsageFlags.ColorAttachmentBit |
-                ImageUsageFlags.InputAttachmentBit |
-                ImageUsageFlags.SampledBit,
+                    ImageUsageFlags.TransientAttachmentBit |
+                    ImageUsageFlags.InputAttachmentBit ,
                 MemoryPropertyFlags.DeviceLocalBit, aspectFlags: ImageAspectFlags.ColorBit);
 
-            return image.CreateView(ImageAspectFlags.ColorBit);
+            return image.GetOrCreateView(ImageAspectFlags.ColorBit);
         }
 
         private VkImageView CreateDepthAttachment()
@@ -100,12 +101,12 @@ namespace RockEngine.Core.Rendering
                 _size.Height,
                 _depthFormat,
                 ImageTiling.Optimal,
-                ImageUsageFlags.DepthStencilAttachmentBit | ImageUsageFlags.SampledBit | ImageUsageFlags.InputAttachmentBit,
+                ImageUsageFlags.DepthStencilAttachmentBit| ImageUsageFlags.InputAttachmentBit,
                 MemoryPropertyFlags.DeviceLocalBit,
                 initialLayout: ImageLayout.Undefined,
                 aspectFlags: ImageAspectFlags.DepthBit);
 
-            return image.CreateView(ImageAspectFlags.DepthBit);
+            return image.GetOrCreateView(ImageAspectFlags.DepthBit);
         }
        
 

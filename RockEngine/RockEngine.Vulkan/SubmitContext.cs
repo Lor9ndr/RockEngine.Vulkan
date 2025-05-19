@@ -5,6 +5,9 @@ using Silk.NET.Vulkan;
 using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Threading;
+
+using Semaphore = Silk.NET.Vulkan.Semaphore;
 
 namespace RockEngine.Vulkan
 {
@@ -13,22 +16,30 @@ namespace RockEngine.Vulkan
         private readonly VulkanContext _context;
         private readonly StagingManager _stagingManager;
         private readonly ThreadLocal<(VkCommandPool Pool, Stack<UploadBatch> BatchPool)> _perThreadResources;
+        private readonly VkQueue _targetQueue;
         private readonly ConcurrentQueue<CommandBuffer> _pendingSubmissions = new();
         private readonly VkFence _fence;
         private readonly ConcurrentBag<UploadBatch> _activeBatches = new();
 
-        private ConcurrentBag<IDisposable> _flushDisposables = new ();
+        private readonly ConcurrentBag<IDisposable> _flushDisposables = new();
+        private readonly Lock _semaphoreLock = new Lock();
+        private readonly List<VkSemaphore> _waitSemaphores = new();
+        private readonly List<PipelineStageFlags> _waitStages = new();
+        private readonly List<VkSemaphore> _signalSemaphores = new();
 
         [ThreadStatic]
         private static List<CommandBuffer> _reusableSubmissionList;
 
+        private readonly SemaphoreSlim _semaphore = new SemaphoreSlim(1, 1);
+
         public StagingManager StagingManager => _stagingManager;
 
-        public SubmitContext(VulkanContext context)
+        public SubmitContext(VulkanContext context, VkQueue targetQueue)
         {
             _context = context;
             _stagingManager = new StagingManager(context);
             _fence = VkFence.CreateNotSignaled(context);
+            _targetQueue = targetQueue;
 
             _perThreadResources = new ThreadLocal<(VkCommandPool, Stack<UploadBatch>)>(
             () => {
@@ -36,13 +47,13 @@ namespace RockEngine.Vulkan
                     context,
                     CommandPoolCreateFlags.TransientBit |
                     CommandPoolCreateFlags.ResetCommandBufferBit,
-                    context.Device.QueueFamilyIndices.GraphicsFamily.Value
-                );
+                    _targetQueue.FamilyIndex);
                 return (pool, new Stack<UploadBatch>(4));
             },
             trackAllValues: true
             );
         }
+
 
         public UploadBatch CreateBatch()
         {
@@ -63,102 +74,104 @@ namespace RockEngine.Vulkan
         public void AddSubmission(CommandBuffer commandBuffer, IDisposable[]? dependencies = null)
         {
             _pendingSubmissions.Enqueue(commandBuffer);
-            if(dependencies != null)
+            if (dependencies != null)
             {
-                foreach(var dependency in dependencies)
+                foreach (var dependency in dependencies)
                 {
                     _flushDisposables.Add(dependency);
                 }
             }
         }
 
-        public async Task FlushAsync()
+        public async Task FlushAsync(VkFence fence)
         {
             if (_pendingSubmissions.IsEmpty) return;
 
-            // Reuse thread-static list to avoid allocations
-            var submissions = GetSubmissionList();
-
-            while (_pendingSubmissions.TryDequeue(out var cmd))
+            await _semaphore.WaitAsync().ConfigureAwait(false);
+            try
             {
-                submissions.Add(cmd);
-            }
-
-            _fence.Reset();
-
-            // Use span to avoid array allocation
-            var commands = CollectionsMarshal.AsSpan(submissions);
-            unsafe
-            {
-                fixed (CommandBuffer* pCommands = commands)
+               /* var usedBuffers = _stagingManager.GetUsedBuffers();
+                foreach (var buffer in usedBuffers)
                 {
-                    var submitInfo = new SubmitInfo
-                    {
-                        SType = StructureType.SubmitInfo,
-                        CommandBufferCount = (uint)commands.Length,
-                        PCommandBuffers = pCommands
-                    };
-
-                    _context.Device.GraphicsQueue.Submit(submitInfo, _fence);
+                    _flushDisposables.Add(buffer);
                 }
-            }
+                _stagingManager.ClearUsedBuffers();*/
 
-            await _fence.WaitAsync();
-
-            // Return batches to pool and reset resources
-            foreach (var (pool, batchPool) in _perThreadResources.Values)
-            {
-                pool.Reset();
-                foreach (var batch in _activeBatches)
+                var submissions = GetSubmissionList();
+                while (_pendingSubmissions.TryDequeue(out var cmd))
                 {
-                    batch.Reset(); // Reset command buffer
-                    batchPool.Push(batch); // Return to pool
+                    submissions.Add(cmd);
                 }
-            }
-            foreach (var item in _flushDisposables)
-            {
-                item.Dispose();
-            }
-            _flushDisposables.Clear();
-            _activeBatches.Clear(); // Clear for next frame
 
-            StagingManager.Reset();
-            ReturnSubmissionList(submissions);
+                fence.Reset();
+
+                // Convert to arrays to handle empty cases properly
+                var signalSemaphores = _signalSemaphores.Select(s => s.VkObjectNative).ToArray();
+                var waitSemaphores = _waitSemaphores.Select(s => s.VkObjectNative).ToArray();
+
+                _targetQueue.Submit(
+                    CollectionsMarshal.AsSpan(submissions),
+                    signalSemaphores,
+                    waitSemaphores,
+                    _waitStages.ToArray(),
+                    fence
+                );
+
+                Reset();
+                ReturnSubmissionList(submissions);
+            }
+            finally
+            {
+                _semaphore.Release();
+            }
+
+
         }
+
 
         public void Flush()
         {
             if (_pendingSubmissions.IsEmpty) return;
-
-            // Reuse thread-static list to avoid allocations
-            var submissions = GetSubmissionList();
-
-            while (_pendingSubmissions.TryDequeue(out var cmd))
+            _semaphore.Wait();
+            try
             {
-                submissions.Add(cmd);
-            }
-
-            _fence.Reset();
-
-            // Use span to avoid array allocation
-            var commands = CollectionsMarshal.AsSpan(submissions);
-            unsafe
-            {
-                fixed (CommandBuffer* pCommands = commands)
+             /*   var usedBuffers = _stagingManager.GetUsedBuffers();
+                foreach (var buffer in usedBuffers)
                 {
-                    var submitInfo = new SubmitInfo
-                    {
-                        SType = StructureType.SubmitInfo,
-                        CommandBufferCount = (uint)commands.Length,
-                        PCommandBuffers = pCommands
-                    };
+                    _flushDisposables.Add(buffer);
+                }*/
+                // Reuse thread-static list to avoid allocations
+                var submissions = GetSubmissionList();
 
-                    _context.Device.GraphicsQueue.Submit(submitInfo, _fence);
+                while (_pendingSubmissions.TryDequeue(out var cmd))
+                {
+                    submissions.Add(cmd);
                 }
+
+                _fence.Reset();
+
+                // Use span to avoid array allocation
+                var commands = CollectionsMarshal.AsSpan(submissions);
+                var signalSemaphores = CollectionsMarshal.AsSpan(_signalSemaphores.Select(s => s.VkObjectNative).ToList());
+                var waitSemaphores = CollectionsMarshal.AsSpan(_waitSemaphores.Select(s => s.VkObjectNative).ToList());
+
+
+                _targetQueue.Submit(commands, signalSemaphores, waitSemaphores, _waitStages.ToArray(), _fence);
+
+                _fence.Wait();
+
+                Reset();
+
+                ReturnSubmissionList(submissions);
             }
+            finally
+            {
+                _semaphore.Release();
+            }
+        }
 
-            _fence.Wait();
-
+        private void Reset()
+        {
             // Return batches to pool and reset resources
             foreach (var (pool, batchPool) in _perThreadResources.Values)
             {
@@ -169,15 +182,34 @@ namespace RockEngine.Vulkan
                     batchPool.Push(batch); // Return to pool
                 }
             }
+            _signalSemaphores.Clear();
+            _waitSemaphores.Clear();
+            _waitStages.Clear();
             foreach (var item in _flushDisposables)
             {
                 item.Dispose();
             }
             _flushDisposables.Clear();
             _activeBatches.Clear(); // Clear for next frame
-
             StagingManager.Reset();
-            ReturnSubmissionList(submissions);
+
+        }
+
+        public void AddWaitSemaphore(VkSemaphore semaphore, PipelineStageFlags stage)
+        {
+            using (_semaphoreLock.EnterScope())
+            {
+                _waitSemaphores.Add(semaphore);
+                _waitStages.Add(stage);
+            }
+        }
+
+        public void AddSignalSemaphore(VkSemaphore semaphore)
+        {
+            lock (_semaphoreLock)
+            {
+                _signalSemaphores.Add(semaphore);
+            }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -198,7 +230,10 @@ namespace RockEngine.Vulkan
         private static void ReturnSubmissionList(List<CommandBuffer> list)
         {
             // Optional: trim if list grew too large
-            if (list.Capacity > 128) list.Capacity = 128;
+            if (list.Capacity > 128 && list.Count < 128)
+            {
+                list.Capacity = 128;
+            }
         }
 
         public void Dispose()
@@ -207,7 +242,7 @@ namespace RockEngine.Vulkan
             {
                 while (batchPool.Count > 0)
                 {
-                   _ = batchPool.Pop();
+                    _ = batchPool.Pop();
                 }
                 pool.Dispose();
             }

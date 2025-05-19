@@ -47,7 +47,7 @@ namespace RockEngine.Core.Rendering.Texturing
                 LoadedMipLevels = Math.Min(targetMip + 1, TotalMipLevels);
 
                 // Create view for loaded mips (base=0, levelCount=LoadedMipLevels)
-                _imageView = Image.CreateView(
+                _imageView = Image.GetOrCreateView(
                     ImageAspectFlags.ColorBit,
                     levelCount: LoadedMipLevels,
                     baseMipLevel: 0

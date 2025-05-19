@@ -18,6 +18,7 @@ namespace RockEngine.Vulkan
         public int MaxFramesPerFlight { get; internal set; }
         public SamplerCache SamplerCache { get; }
         public SubmitContext SubmitContext { get; }
+        public SubmitContext SubmitComputeContext { get; }
 
         public DebugUtilsFunctions DebugUtils => _debugUtilsFunctions;
 
@@ -44,27 +45,19 @@ namespace RockEngine.Vulkan
             Surface = CreateSurface(window);
             Device = CreateDevice(Surface, Instance, this);
             _debugUtilsFunctions = new DebugUtilsFunctions(Vk, Device);
+            
+            Device.NameQueues();
+
             MaxFramesPerFlight = maxFramesPerFlight;
             _renderingContext = this;
             SamplerCache = new SamplerCache(this);
-            SubmitContext = new SubmitContext(this);
+            SubmitContext = new SubmitContext(this, Device.GraphicsQueue);
+            SubmitComputeContext = new SubmitContext(this, Device.ComputeQueue);
 
             _threadCommandPools = new ThreadLocal<VkCommandPool>(() => CreateCommandPool(CommandPoolCreateFlags.TransientBit));
         }
         public VkCommandPool GetThreadLocalCommandPool() => _threadCommandPools!.Value!;
 
-        public void AddDisposal(IDisposable disposable)
-        {
-            _pendingDisposals.Push(disposable);
-        }
-
-        public void DisposePendingDisposals()
-        {
-            while (_pendingDisposals.TryPop(out var disposable))
-            {
-                disposable.Dispose();
-            }
-        }
         private VkCommandPool CreateCommandPool(CommandPoolCreateFlags createFlags)
         {
             return VkCommandPool.Create(this, createFlags, Device.QueueFamilyIndices.GraphicsFamily.Value);
@@ -151,7 +144,7 @@ namespace RockEngine.Vulkan
                 throw new Exception(message: $"Vulkan Error: {message}");
             }
 
-            return new Bool32(true);
+            return new Bool32(false);
         }
 
 
@@ -166,59 +159,6 @@ namespace RockEngine.Vulkan
             Surface.Dispose();
             Device.Dispose();
             Instance.Dispose();
-        }
-
-        public unsafe void SubmitSingleTimeCommand(Action<VkCommandBuffer> value)
-        {
-            lock (_renderingContext.Device.GraphicsQueue._queueLock)
-            {
-                VkFence fence = VkFence.CreateNotSignaled(_renderingContext);
-                var cmdPool = VkCommandPool.Create(
-                    this,
-                    CommandPoolCreateFlags.TransientBit,
-                    Device.QueueFamilyIndices.GraphicsFamily.Value
-                );
-
-                var cmdBuffer = cmdPool.AllocateCommandBuffer();
-                cmdBuffer.BeginSingleTimeCommand();
-                value.Invoke(cmdBuffer);
-                cmdBuffer.End();
-                var cmd = cmdBuffer.VkObjectNative;
-                // Direct call to unsafe implementation
-                Device.GraphicsQueue.Submit(new SubmitInfo
-                {
-                    SType = StructureType.SubmitInfo,
-                    CommandBufferCount = 1,
-                    PCommandBuffers = &cmd
-                }, fence);
-
-                cmdBuffer.Dispose();
-            }
-        }
-
-        public void SubmitSingleTimeCommand(VkCommandPool commandPool, Action<VkCommandBuffer> value)
-        {
-            var cmdBuffer = commandPool.AllocateCommandBuffer();
-            cmdBuffer.BeginSingleTimeCommand();
-            value.Invoke(cmdBuffer);
-            SubmitCommandBuffer(cmdBuffer);
-        }
-
-        private unsafe void SubmitCommandBuffer(VkCommandBuffer cmd)
-        {
-            cmd.End();
-
-            using var fence = VkFence.CreateNotSignaled(this);
-            var commandBufferNative = cmd.VkObjectNative;
-            var submitInfo = new SubmitInfo
-            {
-                SType = StructureType.SubmitInfo,
-                CommandBufferCount = 1,
-                PCommandBuffers = &commandBufferNative
-            };
-
-            Device.GraphicsQueue.Submit(submitInfo, fence);
-            fence.Wait();
         }
     }
 }

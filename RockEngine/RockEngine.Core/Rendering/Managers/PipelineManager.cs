@@ -22,6 +22,13 @@ namespace RockEngine.Core.Rendering.Managers
             _pipelines[pipeline.Name] = pipeline;
             return pipeline;
         }
+        public VkPipeline Create(ComputePipelineBuilder builder)
+        {
+            var pipeline = builder.Build();
+            CheckPipeline(pipeline);
+            _pipelines[pipeline.Name] = pipeline;
+            return pipeline;
+        }
 
         public VkPipeline Create(string name, ref GraphicsPipelineCreateInfo info, VkRenderPass renderPass, VkPipelineLayout layout)
         {

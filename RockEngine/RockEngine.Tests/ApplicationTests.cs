@@ -37,13 +37,14 @@ namespace RockEngine.Tests
 
             public TestApplication() : base("TEST", 800, 600)
             {
-                OnLoad += CompleteLoad;
             }
-
-            private async Task CompleteLoad()
+            protected override Task Load()
             {
                 LoadedEvent.Set();
+                return Task.CompletedTask;
             }
+
+           
 
             public void InvokeUpdate(double deltaTime) => Update(deltaTime).GetAwaiter().GetResult();
             public void InvokeRender(double time) => Render(time);
