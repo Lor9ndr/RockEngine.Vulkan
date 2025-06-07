@@ -84,12 +84,15 @@ namespace RockEngine.Core.Rendering.Managers
         /// <summary>
         /// Updates GPU buffers only if changes exist for current frame
         /// </summary>
-        public void Update(uint currentFrameIndex)
+        public Task UpdateAsync(uint currentFrameIndex)
         {
             int frameVersion = _frameVersions[currentFrameIndex];
 
             // Skip update if no changes since last frame update
-            if (_globalVersion == frameVersion) return;
+            if (_globalVersion == frameVersion)
+            {
+                return Task.CompletedTask;
+            }
 
             var buffer = _transformBuffers[currentFrameIndex];
             var batch = _context.SubmitContext.CreateBatch();
@@ -100,6 +103,8 @@ namespace RockEngine.Core.Rendering.Managers
 
             // Update frame version tracking
             _frameVersions[currentFrameIndex] = _globalVersion;
+            return Task.CompletedTask;
+
         }
 
         /// <summary>

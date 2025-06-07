@@ -15,7 +15,6 @@ namespace RockEngine.Core.Rendering.PipelineRenderers
         private readonly PostLightPass _postLightPass;
         private readonly ScreenPass _screenPass;
         private readonly ImGuiPass _imGuiPass;
-        private readonly List<VkCommandBuffer> _commandBuffers;
 
         public LightingPass LightingPass => _lightingPass;
 
@@ -33,24 +32,22 @@ namespace RockEngine.Core.Rendering.PipelineRenderers
             _postLightPass = postLightPass;
             _screenPass = screenPass;
             _imGuiPass = imGuiPass;
-            _commandBuffers = new List<VkCommandBuffer>(10);
         }
 
         public async Task Execute(VkCommandBuffer cmd, CameraManager cameraManager, Renderer renderer)
         {
-            var secondaryPool = _context.GetThreadLocalCommandPool();
             foreach (var camera in cameraManager.ActiveCameras)
             {
-                await ExecuteCameraPass(cmd, camera, renderer, secondaryPool);
+                await ExecuteCameraPass(cmd, camera, renderer);
             }
-            if (cameraManager.ActiveCameras.Count > 0)
-            {
-                await ExecuteFinalPass(cmd, renderer, secondaryPool);
-            }
+          /*  if (cameraManager.ActiveCameras.Count > 0)
+            {*/
+                await ExecuteFinalPass(cmd, renderer);
+            //}
 
         }
 
-        private async Task ExecuteCameraPass(VkCommandBuffer cmd, Camera camera, Renderer renderer, VkCommandPool secondaryPool)
+        private async Task ExecuteCameraPass(VkCommandBuffer cmd, Camera camera, Renderer renderer)
         {
             //using (cmd.NameAction("Camera Render Pass", [0.2f, 0.8f, 0.2f, 1.0f]))
             //{
@@ -74,7 +71,7 @@ namespace RockEngine.Core.Rendering.PipelineRenderers
                     }
                 }
 
-                var buffers = secondaryPool.AllocateCommandBuffers(3, CommandBufferLevel.Secondary);
+                var buffers = cmd.CommandPool.AllocateCommandBuffers(3, CommandBufferLevel.Secondary);
                 var subpassIndices = new[] { 0u, 1u, 2u };
                 unsafe
                 {
@@ -94,6 +91,7 @@ namespace RockEngine.Core.Rendering.PipelineRenderers
                             Flags = CommandBufferUsageFlags.RenderPassContinueBit,
                             PInheritanceInfo = &inheritanceInfo
                         });
+                    buffers[i].LabelObject($"ExecuteCameraPass [{i}] cmd");
                     }
                 }
 
@@ -122,11 +120,14 @@ namespace RockEngine.Core.Rendering.PipelineRenderers
                 cmd.EndRenderPass();
                 camera.RenderTarget.TransitionToRead(cmd);
                 _screenPass.SetInputTexture(camera.RenderTarget.OutputTexture);
-                _commandBuffers.AddRange(buffers);
+            foreach (var item in buffers)
+            {
+                _context.SubmitContext.AddDependency(item);
+            }
             //}
         }
 
-        private async Task ExecuteFinalPass(VkCommandBuffer cmd, Renderer renderer, VkCommandPool secondaryPool)
+        private async Task ExecuteFinalPass(VkCommandBuffer cmd, Renderer renderer)
         {
             renderer.SwapchainTarget.PrepareForRender(cmd);
             using (cmd.NameAction("Screen composition", [0.7f, 0.7f, 0.7f, 1.0f]))
@@ -150,7 +151,7 @@ namespace RockEngine.Core.Rendering.PipelineRenderers
                 }
 
                 // Subpass 0: Screen composition
-                var screenCmd = secondaryPool.AllocateCommandBuffer(CommandBufferLevel.Secondary);
+                var screenCmd = cmd.CommandPool.AllocateCommandBuffer(CommandBufferLevel.Secondary);
                 unsafe
                 {
                     var inheritanceInfo = stackalloc CommandBufferInheritanceInfo[]
@@ -183,7 +184,7 @@ namespace RockEngine.Core.Rendering.PipelineRenderers
                 cmd.ExecuteSecondary(screenCmd);
 
                 cmd.EndRenderPass();
-                _commandBuffers.Add(screenCmd);
+                _context.SubmitContext.AddDependency(screenCmd);
             }
         }
 
@@ -197,11 +198,11 @@ namespace RockEngine.Core.Rendering.PipelineRenderers
 
         public Task Update()
         {
-            foreach (var item in _commandBuffers)
+            /*foreach (var item in _commandBuffers)
             {
                 item.Dispose();
             }
-            _commandBuffers.Clear();
+            _commandBuffers.Clear();*/
             return Task.CompletedTask;
         }
     }

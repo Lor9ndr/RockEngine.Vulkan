@@ -8,7 +8,7 @@ using System.Diagnostics;
 
 namespace RockEngine.Core
 {
-    public static class PerformanceTracer
+    public  class PerformanceTracer
     {
         private const uint QUERIES_PER_FRAME = 100;
         private const int MAX_HISTORY = 100;

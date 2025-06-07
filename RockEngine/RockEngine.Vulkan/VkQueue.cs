@@ -7,7 +7,7 @@ namespace RockEngine.Vulkan
 {
     public class VkQueue : VkObject<Queue>
     {
-        internal readonly Lock _queueLock = new Lock();
+        internal readonly Mutex _queueLock = new Mutex();
         private readonly VulkanContext _context;
         public uint FamilyIndex { get; private set; }
 
@@ -71,39 +71,34 @@ namespace RockEngine.Vulkan
         }
         public unsafe void Submit(VkCommandBuffer commandBuffer, VkFence? fence = null)
         {
-            lock (_queueLock)
+            var nativeCmd = commandBuffer.VkObjectNative;
+            var submitInfo = new SubmitInfo
             {
-                var nativeCmd = commandBuffer.VkObjectNative;
+                SType = StructureType.SubmitInfo,
+                CommandBufferCount = 1,
+                PCommandBuffers = &nativeCmd
+            };
+            SubmitUnsafe(in submitInfo, fence);
+        }
+        public unsafe void Submit(VkFence? fence, params CommandBuffer[] commandBuffers)
+        {
+            fixed (CommandBuffer* nativeCmd = commandBuffers.ToArray())
+            {
                 var submitInfo = new SubmitInfo
                 {
                     SType = StructureType.SubmitInfo,
                     CommandBufferCount = 1,
-                    PCommandBuffers = &nativeCmd
+                    PCommandBuffers = nativeCmd
                 };
                 SubmitUnsafe(in submitInfo, fence);
             }
-        }
-        public unsafe void Submit(VkFence? fence, params CommandBuffer[] commandBuffers)
-        {
-            lock (_queueLock)
-            {
-                fixed (CommandBuffer* nativeCmd = commandBuffers.ToArray())
-                {
-                    var submitInfo = new SubmitInfo
-                    {
-                        SType = StructureType.SubmitInfo,
-                        CommandBufferCount = 1,
-                        PCommandBuffers = nativeCmd
-                    };
-                    SubmitUnsafe(in submitInfo, fence);
-                }
-               
-            }
+
         }
 
         internal void SubmitUnsafe(in SubmitInfo submitInfo, VkFence? fence)
         {
-            lock (_queueLock)
+            _queueLock.WaitOne();
+            try
             {
                 fence ??= VkFence.CreateNotSignaled(_context);
 
@@ -114,6 +109,10 @@ namespace RockEngine.Vulkan
                     fence.VkObjectNative
                 ).VkAssertResult("Failed to submit to queue");
                 fence.Wait();
+            }
+            finally
+            {
+                _queueLock.ReleaseMutex();
             }
         }
 

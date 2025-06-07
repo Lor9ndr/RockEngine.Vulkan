@@ -39,7 +39,7 @@ namespace RockEngine.Core.Rendering.Buffers
                 throw new ArgumentOutOfRangeException(nameof(data), "Exceeds buffer capacity");
 
             batch.StageToBuffer(
-                data,
+                data.AsSpan(),
                 _deviceBuffer,
                 startIndex * _stride,
                 (ulong)(Unsafe.SizeOf<T>() * data.Length)

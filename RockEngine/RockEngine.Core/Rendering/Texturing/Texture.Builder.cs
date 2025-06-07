@@ -1,6 +1,4 @@
-﻿using Assimp;
-
-using RockEngine.Vulkan;
+﻿using RockEngine.Vulkan;
 
 using Silk.NET.Vulkan;
 
@@ -115,11 +113,10 @@ namespace RockEngine.Core.Rendering.Texturing
                 {
                     var batch = _context.SubmitContext.CreateBatch();
                     image.GenerateMipmaps(batch.CommandBuffer);
+                    batch.CommandBuffer.LabelObject("GenerateMipmap cmd");
                     batch.Submit();
                     _context.SubmitContext.Flush();
-
                 }
-                
 
                 return new Texture(_context, image, imageView, sampler);
             }

@@ -1,13 +1,11 @@
-﻿using Silk.NET.Vulkan;
-
-namespace RockEngine.Vulkan
+﻿namespace RockEngine.Vulkan
 {
     public readonly struct DebugLabelScope : IDisposable
     {
         private readonly DebugUtilsFunctions _debugUtils;
-        private readonly CommandBuffer _commandBuffer;
+        private readonly VkCommandBuffer _commandBuffer;
 
-        public DebugLabelScope(DebugUtilsFunctions debugUtils, CommandBuffer commandBuffer, string labelName, float[] color)
+        public DebugLabelScope(DebugUtilsFunctions debugUtils, VkCommandBuffer commandBuffer, string labelName, float[] color)
         {
             _debugUtils = debugUtils;
             _commandBuffer = commandBuffer;
@@ -19,6 +17,7 @@ namespace RockEngine.Vulkan
                     throw new ArgumentException("Color array must contain at least 4 elements", nameof(color));
                 }
                 _debugUtils.CmdBeginDebugUtilsLabel(_commandBuffer, labelName, color);
+
             }
         }
 

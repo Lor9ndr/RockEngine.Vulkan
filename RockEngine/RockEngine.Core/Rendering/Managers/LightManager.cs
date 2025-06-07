@@ -41,23 +41,27 @@ namespace RockEngine.Core.Rendering.Managers
         public void RegisterLight(Light light) => _activeLights.Add(light);
         public void UnregisterLight(Light light) => _activeLights.Remove(light);
 
-        public Task Update(IEnumerable<Camera> cameras)
+        public Task UpdateAsync(IEnumerable<Camera> cameras)
         {
             var frameBuffer = _lightBuffers[_currentFrameIndex];
+            if (_activeLights.Count == 0)
+            {
+                return Task.CompletedTask;
+            }
             var lightData = new LightData[_activeLights.Count];
-
             for (int i = 0; i < _activeLights.Count; i++)
             {
                 lightData[i] = _activeLights[i].GetLightData();
             }
 
             var batch = _context.SubmitContext.CreateBatch();
+            batch.CommandBuffer.LabelObject("Lightmanager cmd");
             frameBuffer.StageData(batch, lightData);
 
             // Update light count UBO
             var lightCountData = new[] { _activeLights.Count };
             batch.StageToBuffer(
-                lightCountData,
+                lightCountData.AsSpan(),
                 _countLightUbo.Buffer,
                 0,
                 (ulong)(sizeof(int) * lightCountData.Length)

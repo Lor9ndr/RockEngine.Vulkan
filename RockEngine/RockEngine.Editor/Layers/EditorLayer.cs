@@ -6,7 +6,6 @@ using RockEngine.Core.ECS.Components;
 using RockEngine.Core.Rendering;
 using RockEngine.Core.Rendering.Commands;
 using RockEngine.Core.Rendering.ImGuiRendering;
-using RockEngine.Core.Rendering.Managers;
 using RockEngine.Core.Rendering.Texturing;
 using RockEngine.Editor.EditorComponents;
 using RockEngine.Editor.UIAttributes;
@@ -20,6 +19,8 @@ using System.Numerics;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 
+using ZLinq;
+
 namespace RockEngine.Editor.Layers
 {
     public class EditorLayer : ILayer
@@ -29,6 +30,7 @@ namespace RockEngine.Editor.Layers
         private readonly GraphicsEngine _graphicsEngine;
         private readonly Renderer _renderer;
         private readonly IInputContext _inputContext;
+        private readonly AssimpLoader _assimpLoader;
         private readonly TextureStreamer _textureStreamer;
         private readonly ImGuiController _imGuiController;
         private VkPipelineLayout _pipelineLayout;
@@ -41,14 +43,14 @@ namespace RockEngine.Editor.Layers
         private readonly List<float> _lightRadii = new List<float>();
         private Entity _selectedEntity;
 
-        public EditorLayer(World world, VulkanContext context, GraphicsEngine graphicsEngine, Renderer renderer, IInputContext inputContext, TextureStreamer textureStreamer)
+        public EditorLayer(World world, VulkanContext context, GraphicsEngine graphicsEngine, Renderer renderer, IInputContext inputContext, AssimpLoader assimpLoader)
         {
             _world = world;
             _context = context;
             _graphicsEngine = graphicsEngine;
             _renderer = renderer;
             _inputContext = inputContext;
-            _textureStreamer = textureStreamer;
+            _assimpLoader = assimpLoader;
             _imGuiController = new ImGuiController(context, graphicsEngine, renderer.BindingManager, _inputContext, graphicsEngine.Swapchain.Extent.Width, graphicsEngine.Swapchain.Extent.Height, renderer.SwapchainTarget);
         }
 
@@ -56,14 +58,9 @@ namespace RockEngine.Editor.Layers
         {
             await CretePipeline();
             await CreateSolidPipeline();
-            using var pool = VkCommandPool.Create(_context, new CommandPoolCreateInfo
-            {
-                SType = StructureType.CommandPoolCreateInfo,
-                Flags = CommandPoolCreateFlags.TransientBit | CommandPoolCreateFlags.ResetCommandBufferBit
-            });
-            using AssimpLoader assimpLoader = new AssimpLoader(_textureStreamer);
-            var revoulierTask = assimpLoader.LoadMeshesAsync("Resources\\Models\\Revoulier\\Cerberus_LP.FBX", _context);
-            var sponza = await assimpLoader.LoadMeshesAsync("Resources\\Models\\SponzaAtrium\\scene.gltf", _context);
+
+            var revoulierTask = _assimpLoader.LoadMeshesAsync("Resources\\Models\\Revoulier\\Cerberus_LP.FBX", _context);
+            var sponza = await _assimpLoader.LoadMeshesAsync("Resources\\Models\\SponzaAtrium\\scene.gltf", _context);
             var cubemap = await Texture.CreateCubeMapAsync(_context, [
                 "Resources/skybox/right.jpg",    // +X
                 "Resources/skybox/left.jpg",     // -X
@@ -152,7 +149,7 @@ namespace RockEngine.Editor.Layers
                     _lightCenters.Add(transform.Position);
                     _lightSpeeds.Add(Random.Shared.NextSingle() * 1.5f + 0.5f);
                     _lightRadii.Add(Random.Shared.NextSingle() * 3 + 1);
-                    cam.AddChild(lightEntity);
+                    //cam.AddChild(lightEntity);
 
                 }
                /* else // 10% Directional lights
@@ -297,31 +294,63 @@ namespace RockEngine.Editor.Layers
             DrawFps();
             DrawAllocationStats();
             DrawPerformanceMetrics();
+            
             if (ImGui.Begin("RENDER"))
             {
-                var debugCam = _world.GetEntities().First(s=>s.GetComponent<DebugCamera>() is not null).GetComponent<DebugCamera>();
-                var renderTarget = debugCam.RenderTarget;
-                var texId = _imGuiController.GetTextureID(renderTarget.OutputTexture);
-                // Get proper size maintaining aspect ratio
-                var imageSize = new Vector2(renderTarget.OutputTexture.Image.Extent.Width, renderTarget.OutputTexture.Image.Extent.Height);
-                var availableSize = ImGui.GetContentRegionAvail();
-                var scale = Math.Min(availableSize.X / imageSize.X, availableSize.Y / imageSize.Y);
-                var displaySize = imageSize * scale;
 
-                ImGui.Image(texId, displaySize);
+                var debugCam = _world.GetEntities()
+                    .AsValueEnumerable()
+                    .FirstOrDefault(s=>s.GetComponent<DebugCamera>() is not null)?
+                    .GetComponent<DebugCamera>();
+                if (debugCam != null)
+                {
+                    var windowHovered = ImGui.IsWindowHovered();
+                    if (windowHovered)
+                    {
+                        _inputContext.Mice[0].Cursor.StandardCursor = StandardCursor.Hand;
+                    }
+                    else
+                    {
+                        _inputContext.Mice[0].Cursor.StandardCursor = StandardCursor.Arrow;
+                    }
+
+                    if (ImGui.IsMouseDragging(ImGuiMouseButton.Left))
+                    {
+                        debugCam.CanMove = windowHovered;
+                    }
+                    else
+                    {
+                        debugCam.CanMove = false;
+                    }
+
+
+                    var renderTarget = debugCam.RenderTarget;
+                    if(renderTarget != null)
+                    {
+                        var texId = _imGuiController.GetTextureID(renderTarget.OutputTexture);
+                        // Get proper size maintaining aspect ratio
+                        var imageSize = new Vector2(renderTarget.OutputTexture.Image.Extent.Width, renderTarget.OutputTexture.Image.Extent.Height);
+                        var availableSize = ImGui.GetContentRegionAvail();
+                        var scale = Math.Min(availableSize.X / imageSize.X, availableSize.Y / imageSize.Y);
+                        var displaySize = imageSize * scale;
+
+                        ImGui.Image(texId, displaySize);
+                    }
+                }
+               
                 ImGui.End();
             }
 
-            var cameras = _world.GetEntities().Where(s=>s.GetComponent<Camera>() is not null);
+            var cameras = _world.GetEntities().AsValueEnumerable().Where(s=>s.GetComponent<Camera>() is not null);
             foreach (var camEntity in cameras)
             {
                 var cam = camEntity.GetComponent<Camera>();
-                if (ImGui.Begin("Camera"))
+                if (cam != null && ImGui.Begin("Camera"))
                 {
                     ImGui.DragFloat("IblParams.exposure", ref _iblParams.exposure, 0.1f,0.1f, 4.0f);
                     ImGui.DragFloat("IblParams.envIntensity", ref _iblParams.envIntensity, 0.0f, 0.1f, 2.0f);
                     ImGui.DragFloat("IblParams.aoStrength", ref _iblParams.aoStrength, 0.0f, 0.1f, 2.0f);
-                    cam.RenderTarget.GBuffer.Material.PushConstant("iblParams",_iblParams);
+                    cam.RenderTarget?.GBuffer.Material.PushConstant("iblParams", _iblParams);
                     ImGui.End();
                 }
             }
@@ -339,8 +368,15 @@ namespace RockEngine.Editor.Layers
         {
             _imGuiController.Update();
             float time = (float)Time.TotalTime;
-            var lightEntities = _world.GetEntities().Where(s => s.GetComponent<Light>() != null).ToArray();
-            var camEntity = _world.GetEntities().FirstOrDefault(s => s.GetComponent<Camera>() != null);
+            var lightEntities = _world.GetEntities()
+                .AsValueEnumerable()
+                .Where(s => s.GetComponent<Light>() != null).
+                ToArray();
+
+            var camEntity = _world.GetEntities()
+                .AsValueEnumerable()
+                .FirstOrDefault(s => s.GetComponent<Camera>() != null);
+
 
             for (int i = 0; i < lightEntities.Length; i++)
             {

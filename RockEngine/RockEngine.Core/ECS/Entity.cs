@@ -33,6 +33,8 @@ namespace RockEngine.Core.ECS
             var component = new T();
             component.SetEntity(this);
             _components.Add(component);
+
+            World.GetCurrent()?.EnqueueForStart(component);
             return component;
         }
 
@@ -79,7 +81,7 @@ namespace RockEngine.Core.ECS
             }
         }
 
-        public async ValueTask OnStart(Renderer renderer)
+        public async Task OnStart(Renderer renderer)
         {
             foreach (var item in _components)
             {

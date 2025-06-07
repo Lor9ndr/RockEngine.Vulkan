@@ -47,6 +47,5 @@ namespace RockEngine.Vulkan
         public abstract void LabelObject(string name);
 
         public static implicit operator T(VkObject<T> value) => value._vkObject;
-
     }
 }

@@ -7,13 +7,13 @@ namespace RockEngine.Vulkan
         private readonly VulkanContext _context;
         private readonly DeviceMemory _memory;
         private readonly ulong _size;
-        private readonly MemoryPropertyFlags properties;
+        private readonly MemoryPropertyFlags _properties;
 
         public ulong Size => _size;
         public bool IsMapped => _mappedData.HasValue;
 
         public nint? MappedData => _mappedData;
-        public MemoryPropertyFlags Properties => properties;
+        public MemoryPropertyFlags Properties => _properties;
 
         private nint? _mappedData;
 
@@ -23,7 +23,7 @@ namespace RockEngine.Vulkan
             _context = context;
             _memory = memory;
             _size = size;
-            this.properties = properties;
+            _properties = properties;
         }
 
 
@@ -79,7 +79,6 @@ namespace RockEngine.Vulkan
             _mappedData = new nint(mappedMemory);
 
         }
-
 
         public void Unmap()
         {

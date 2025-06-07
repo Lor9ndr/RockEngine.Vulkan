@@ -1,10 +1,13 @@
-﻿namespace RockEngine.Core
+﻿using RockEngine.Core.Assets.AssetData;
+
+using SkiaSharp;
+
+namespace RockEngine.Core
 {
     public static class DefaultMeshes
     {
-        public static readonly MeshData Cube = new MeshData()
-        {
-            Vertices = 
+        public static readonly MeshData Cube = new MeshData("Cube",
+
             [
                  // Front face (Z+)
                new Vertex(-1.0f, -1.0f,  1.0f,0,0,0,0,0), // 0
@@ -18,7 +21,7 @@
                new Vertex(  1.0f,  1.0f, -1.0f,0,0,0,0,0), // 6
                new Vertex( -1.0f,  1.0f, -1.0f,0,0,0,0,0), // 7
             ],
-            Indices = [
+            [
                 // Front face
                 0, 1, 2, 2, 3, 0,
     
@@ -36,8 +39,7 @@
     
                 // Bottom face
                 4, 5, 1, 1, 0, 4
-            ],
-             Name = "Cube"
-        };
+            ]
+            );
     }
 }

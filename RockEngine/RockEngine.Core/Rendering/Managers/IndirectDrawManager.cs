@@ -71,9 +71,10 @@ namespace RockEngine.Core.Rendering.Managers
         /// <summary>
         /// Обновляет команды отрисовки. Должен вызываться перед рендерингом.
         /// </summary>
-        public void Update()
+        public Task UpdateAsync()
         {
-            if (!_isDirty) return;
+            if (!_isDirty) 
+                return Task.CompletedTask;
 
             // 1. Сортируем команды для оптимальной группировки
             _commands.Sort(MeshRenderCommandComparer.Default);
@@ -122,12 +123,14 @@ namespace RockEngine.Core.Rendering.Managers
 
             // 5. Отправляем команды в GPU
             var batch = _context.SubmitContext.CreateBatch();
+            batch.CommandBuffer.LabelObject("IndirectDrawManager cmd");
             _indirectBuffer.StageCommands(batch, CollectionsMarshal.AsSpan(indirectCommands));
             batch.Submit();
 
             // 6. Сбрасываем состояние
             _commands.Clear();
             _isDirty = false;
+            return Task.CompletedTask;
         }
 
         /// <summary>
@@ -148,7 +151,7 @@ namespace RockEngine.Core.Rendering.Managers
             // Создаем команду инстансированного рендеринга
             indirectCommands.Add(new DrawIndexedIndirectCommand
             {
-                IndexCount = (uint)mesh.Indices.Length,
+                IndexCount = mesh.IndicesCount,
                 InstanceCount = (uint)groupSpan.Length,
                 FirstIndex = 0,
                 VertexOffset = 0,

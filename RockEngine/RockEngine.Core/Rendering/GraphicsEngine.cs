@@ -14,34 +14,21 @@ namespace RockEngine.Core.Rendering
 
         public VkSwapchain Swapchain => _swapchain;
 
-        public VkCommandPool CommandBufferPool => _commandBufferPool;
-
         public RenderPassManager RenderPassManager => _renderPassManager;
 
         public uint CurrentImageIndex => _swapchain.CurrentImageIndex;
 
-        private readonly VkCommandBuffer[] _renderCommandBuffers;
+
         public GraphicsEngine(VulkanContext renderingContext)
         {
             _renderingContext = renderingContext;
-            var commandPoolCreateInfo = new CommandPoolCreateInfo()
-            {
-                SType = StructureType.CommandPoolCreateInfo,
-                Flags = CommandPoolCreateFlags.ResetCommandBufferBit,
-                QueueFamilyIndex = _renderingContext.Device.QueueFamilyIndices.GraphicsFamily.Value
-            };
-            _commandBufferPool = VkCommandPool.Create(_renderingContext, in commandPoolCreateInfo);
-            _renderCommandBuffers = _commandBufferPool.AllocateCommandBuffers((uint)_renderingContext.MaxFramesPerFlight);
+            
             _swapchain = VkSwapchain.Create(_renderingContext, _renderingContext.Surface);
             _renderPassManager = new RenderPassManager(_renderingContext);
         }
 
-        private VkCommandBuffer GetCurrentCommandBuffer()
-        {
-            return _renderCommandBuffers[_swapchain.CurrentFrameIndex];
-        }
 
-        public VkCommandBuffer? Begin()
+        public UploadBatch? Begin()
         {
             if (_swapchain.Surface.Size.X == 0 || _swapchain.Surface.Size.Y == 0)
             {
@@ -56,38 +43,25 @@ namespace RockEngine.Core.Rendering
                 RecreateSwapchain();
                 return null;
             }
-
-            var commandBuffer = GetCurrentCommandBuffer();
-
-            var beginInfo = new CommandBufferBeginInfo
-            {
-                SType = StructureType.CommandBufferBeginInfo,
-                Flags = CommandBufferUsageFlags.None,
-                PInheritanceInfo = default
-            };
-            commandBuffer.Reset(CommandBufferResetFlags.ReleaseResourcesBit);
-            commandBuffer.Begin(in beginInfo);
-
-            return commandBuffer;
+            var batch = _renderingContext.SubmitContext.CreateBatch();
+            batch.CommandBuffer.LabelObject("GraphicsEngine cmd");
+            return batch;
+            
         }
 
-        public async Task SubmitAndPresent(CommandBuffer commandBuffer)
+        public void SubmitAndPresent(UploadBatch batch)
         {
-            _renderingContext.SubmitContext.AddSubmission(commandBuffer);
-
             var data = _swapchain.GetFrameData();
-            
             _renderingContext.SubmitContext.AddSignalSemaphore(data.RenderFinishedSemaphore);
+            batch.Submit();
+
             _renderingContext.SubmitContext.AddWaitSemaphore(data.ImageAvailableSemaphore, PipelineStageFlags.ColorAttachmentOutputBit);
 
-            await _renderingContext.SubmitContext.FlushAsync(data.InFlightFence);
-            _swapchain.Present();
+             var operation = _renderingContext.SubmitContext.FlushAsync(data.InFlightFence);
+            _swapchain.Present(operation);
         }
 
-        public void End(VkCommandBuffer commandBuffer)
-        {
-            commandBuffer.End();
-        }
+      
 
         private void RecreateSwapchain()
         {

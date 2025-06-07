@@ -28,7 +28,7 @@ namespace RockEngine.Core.Rendering.Managers
                 camera.RenderTarget = new CameraRenderTarget(
                     _context,
                     _engine,
-                    new Silk.NET.Vulkan.Extent2D(1920, 1080),
+                    _engine.Swapchain.Extent,
                     _deferredRenderPass
                 );
                 _engine.Swapchain.OnSwapchainRecreate += (swapchain) =>

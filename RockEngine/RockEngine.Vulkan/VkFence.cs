@@ -42,10 +42,29 @@ namespace RockEngine.Vulkan
             Vk.WaitForFences(_context.Device, 1, in _vkObject, true, ulong.MaxValue)
                 .VkAssertResult("Failed to wait fence");
         }
-        public ValueTask WaitAsync()
+        public async Task WaitAsync(CancellationToken cancellationToken = default)
         {
-            Wait();
-            return default;
+            while (true)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var status = GetFenceStatus();
+                switch (status)
+                {
+                    case Result.Success:
+                        return;
+                    case Result.NotReady:
+                        await Task.Delay(1, cancellationToken).ConfigureAwait(false);
+                        break;
+                    default:
+                        throw new VulkanException(status, "Fence wait failed");
+                }
+            }
+        }
+
+        public Result GetFenceStatus()
+        {
+            return Vk.GetFenceStatus(_context.Device, this);
         }
         public override void LabelObject(string name) => _context.DebugUtils.SetDebugUtilsObjectName(_vkObject, ObjectType.Fence, name);
 
@@ -60,7 +79,7 @@ namespace RockEngine.Vulkan
 
                 unsafe
                 {
-                    var fenceStatus = Vk.GetFenceStatus(_context.Device, this);
+                    //_ = Vk.GetFenceStatus(_context.Device, this);
                     // Awesome feature, by requesting fence status we avoid that error :)
                     //System.Exception: "Vulkan Error: Validation Error: [ VUID-vkDestroyFence-fence-01120 ]
                     //Object 0: handle = 0x9389c50000000061, type = VK_OBJECT_TYPE_FENCE; | MessageID = 0x5d296248 |
@@ -73,7 +92,5 @@ namespace RockEngine.Vulkan
                 _disposed = true;
             }
         }
-
-       
     }
 }

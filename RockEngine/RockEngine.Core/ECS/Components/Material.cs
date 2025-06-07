@@ -1,4 +1,6 @@
-﻿using RockEngine.Core.Internal;
+﻿using NLog;
+
+using RockEngine.Core.Internal;
 using RockEngine.Core.Rendering.ResourceBindings;
 using RockEngine.Core.Rendering.Texturing;
 using RockEngine.Vulkan;
@@ -18,16 +20,22 @@ namespace RockEngine.Core.ECS.Components
         internal BindingCollection Bindings { get; private set; } = new BindingCollection();
         public Dictionary<string, ShaderReflectionData.PushConstantInfo> PushConstants { get;private set;}
 
+        public bool IsComplete => Pipeline != null &&
+         Pipeline.Layout.DescriptorSetLayouts.All(setLayout =>
+             setLayout.Value.Bindings.All(bindingInfo =>
+                 Bindings.Any(b => b.Set == setLayout.Key)));
+
+
         public Material(VkPipeline pipeline, params List<Texture> textures)
         {
             Pipeline = pipeline;
             PushConstants = Pipeline.Layout.PushConstantRanges.ToDictionary(s => s.Name);
 
-            Console.WriteLine( pipeline.Name);
+           /* Console.WriteLine( pipeline.Name);
             foreach (var set in pipeline.Layout.DescriptorSetLayouts)
             {
                 Console.WriteLine($"Set {set.Key} bindings: {string.Join(",", set.Value.Bindings.Select(b => $"{b.Binding}:{b.DescriptorType}"))}");
-            }
+            }*/
 
             foreach (var set in Pipeline.Layout.DescriptorSetLayouts)
             {
@@ -54,6 +62,7 @@ namespace RockEngine.Core.ECS.Components
                 Bind(new TextureBinding((uint)_textureSetLocation, 0, default, Textures.Take(setLayout.Bindings.Length).ToArray()));
             }
         }
+
 
         public void Bind(ResourceBinding binding)
         {

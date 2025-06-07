@@ -31,46 +31,43 @@ namespace RockEngine.Vulkan
         private static readonly string[] _validationLayers = ["VK_LAYER_KHRONOS_validation"];
         private static DebugUtilsMessengerCallbackFunctionEXT _debugCallback;
         private readonly Stack<IDisposable> _pendingDisposals = new Stack<IDisposable>();
-        private readonly ThreadLocal<VkCommandPool> _threadCommandPools;
         private readonly DebugUtilsFunctions _debugUtilsFunctions;
+        private readonly AppSettings _settings;
 
-        public VulkanContext(IWindow window, string appName, int maxFramesPerFlight = 3)
+        public VulkanContext(IWindow window, AppSettings settings)
         {
+            _settings = settings;
             if (_renderingContext is not null)
             {
                 // Have to think about supporting multiple windows with different contexts
                 throw new NotSupportedException("For now it is unsupported to have multiple contexts");
             }
-            Instance = CreateInstance(window, appName);
+            Instance = CreateInstance(window, _settings);
             Surface = CreateSurface(window);
             Device = CreateDevice(Surface, Instance, this);
             _debugUtilsFunctions = new DebugUtilsFunctions(Vk, Device);
             
             Device.NameQueues();
 
-            MaxFramesPerFlight = maxFramesPerFlight;
+            MaxFramesPerFlight = _settings.MaxFramesPerFlight;
             _renderingContext = this;
             SamplerCache = new SamplerCache(this);
             SubmitContext = new SubmitContext(this, Device.GraphicsQueue);
             SubmitComputeContext = new SubmitContext(this, Device.ComputeQueue);
 
-            _threadCommandPools = new ThreadLocal<VkCommandPool>(() => CreateCommandPool(CommandPoolCreateFlags.TransientBit));
+            _settings = settings;
         }
-        public VkCommandPool GetThreadLocalCommandPool() => _threadCommandPools!.Value!;
 
-        private VkCommandPool CreateCommandPool(CommandPoolCreateFlags createFlags)
-        {
-            return VkCommandPool.Create(this, createFlags, Device.QueueFamilyIndices.GraphicsFamily.Value);
-        }
+      
 
         private SDLSurfaceHandler CreateSurface(IWindow window)
         {
             return SDLSurfaceHandler.CreateSurface(window, this);
         }
 
-        private static unsafe VkInstance CreateInstance(IWindow surface, string appName)
+        private static unsafe VkInstance CreateInstance(IWindow surface, AppSettings appSettings)
         {
-            var appname = (byte*)Marshal.StringToHGlobalAnsi(appName);
+            var appname = (byte*)Marshal.StringToHGlobalAnsi(appSettings.Name);
             var appInfo = new ApplicationInfo()
             {
                 ApiVersion = Vk.Version13,
@@ -99,12 +96,17 @@ namespace RockEngine.Vulkan
             ci.PpEnabledExtensionNames = extensions;
             ci.EnabledExtensionCount = countExtensions;
 
-            var instance = new VkInstanceBuilder()
-                .UseValidationLayers(_validationLayers)
-                .UseDebugUtilsMessenger(DebugUtilsMessageSeverityFlagsEXT.WarningBitExt | DebugUtilsMessageSeverityFlagsEXT.ErrorBitExt | DebugUtilsMessageSeverityFlagsEXT.VerboseBitExt | DebugUtilsMessageSeverityFlagsEXT.InfoBitExt,
+            var instanceBuilder = new VkInstanceBuilder();
+                
+            if (appSettings.EnableValidationLayers)
+            {
+                instanceBuilder.UseValidationLayers(_validationLayers)
+                    .UseDebugUtilsMessenger(DebugUtilsMessageSeverityFlagsEXT.WarningBitExt | DebugUtilsMessageSeverityFlagsEXT.ErrorBitExt | DebugUtilsMessageSeverityFlagsEXT.VerboseBitExt | DebugUtilsMessageSeverityFlagsEXT.InfoBitExt,
                                         DebugUtilsMessageTypeFlagsEXT.GeneralBitExt | DebugUtilsMessageTypeFlagsEXT.PerformanceBitExt | DebugUtilsMessageTypeFlagsEXT.ValidationBitExt,
-                                        dbcallback, (void*)nint.Zero)
-                .Build(ref ci);
+                                        dbcallback, (void*)nint.Zero);
+            }
+
+            var instance = instanceBuilder.Build(ref ci);
 
             Marshal.FreeHGlobal((nint)appname);
             return instance;

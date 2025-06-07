@@ -1,6 +1,6 @@
 ﻿using RockEngine.Editor;
 
-EditorApplication editor = new EditorApplication(1280, 720);
+EditorApplication editor = new EditorApplication();
 await editor.Run();
 
 

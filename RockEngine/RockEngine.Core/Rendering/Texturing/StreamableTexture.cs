@@ -39,8 +39,8 @@ namespace RockEngine.Core.Rendering.Texturing
                 Image.TransitionImageLayout(cmd, ImageLayout.TransferDstOptimal, baseMipLevel: targetMip);
                 CopyDataToMip(cmd, data, size, targetMip);
                 Image.TransitionImageLayout(cmd, ImageLayout.ShaderReadOnlyOptimal, baseMipLevel: targetMip);
-
-                batch.Submit([oldView]);
+                batch.AddDependency(oldView);
+                batch.Submit();
 
 
                 // Clamp loaded levels to never exceed total mips

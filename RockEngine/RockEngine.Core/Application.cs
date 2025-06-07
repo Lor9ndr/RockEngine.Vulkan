@@ -1,12 +1,14 @@
-﻿using RockEngine.Core.ECS;
+﻿using RockEngine.Core.DI;
+using RockEngine.Core.ECS;
 using RockEngine.Core.Rendering;
 using RockEngine.Core.Rendering.Managers;
-using RockEngine.Core.Rendering.Texturing;
 using RockEngine.Vulkan;
 
 using Silk.NET.Input;
-using Silk.NET.Maths;
 using Silk.NET.Windowing;
+
+using SimpleInjector;
+using SimpleInjector.Lifestyles;
 
 using System.Diagnostics;
 
@@ -21,59 +23,93 @@ namespace RockEngine.Core
         protected IInputContext _inputContext;
         protected Renderer _renderer;
         protected World _world;
-        protected TextureStreamer _textureStreamer;
+        protected PipelineManager _pipelineManager;
+        protected AssimpLoader _assimpLoader;
+        protected readonly AppSettings _appSettings;
 
-        private PipelineManager _pipelineManager;
+        private readonly Container _container;
+        private Scope _applicationScope;
 
         public CancellationTokenSource CancellationTokenSource { get; set; }
         protected CancellationToken CancellationToken => CancellationTokenSource.Token;
 
-        public Application(string appName, int width, int height)
+        public Application()
         {
-            _window = Window.Create(WindowOptions.DefaultVulkan);
-            _window.Title = appName;
-            _window.Size = new Vector2D<int>(width, height);
-            _layerStack = new LayerStack();
+            // Initialize DI container if not already initialized
+            if (!IoC.Container.IsLocked)
+            {
+                IoC.Initialize();
+            }
+            _appSettings = IoC.Container.GetInstance<AppSettings>();
+        }
+
+        public async Task Run()
+        {
+            _applicationScope = AsyncScopedLifestyle.BeginScope(IoC.Container);
             CancellationTokenSource = new CancellationTokenSource();
-            _window.Load += async () =>
+            // Configure window
+            _window = IoC.Container.GetInstance<IWindow>();
+            _window.Title = _appSettings.Name;
+            _window.Size = _appSettings.LoadSize;
+
+            // Resolve other dependencies
+            _world = IoC.Container.GetInstance<World>();
+            _assimpLoader = IoC.Container.GetInstance<AssimpLoader>();
+
+            _window.Load += async() => await OnWindowLoad();
+
+            await Task.Factory.StartNew(
+                _window.Run,
+                CancellationToken,
+                TaskCreationOptions.LongRunning,
+                TaskScheduler.Default
+            );
+        }
+
+        private async Task OnWindowLoad()
+        {
+            try
             {
                 Stopwatch loadWatch = Stopwatch.StartNew();
-                _world = new World();
-                _context = new VulkanContext(_window, _window.Title, 10);
+                _inputContext = IoC.Container.GetInstance<IInputContext>();
+
+                // Resolve window-dependent components
+                _context = IoC.Container.GetInstance<VulkanContext>();
+                _graphicsEngine = IoC.Container.GetInstance<GraphicsEngine>();
+                _pipelineManager = IoC.Container.GetInstance<PipelineManager>();
+                _renderer = IoC.Container.GetInstance<Renderer>();
+
+
                 PerformanceTracer.Initialize(_context);
-                _graphicsEngine = new GraphicsEngine(_context);
-                _inputContext = _window.CreateInput();
-                _pipelineManager = new PipelineManager(_context);
-                _renderer = new Renderer(_context, _graphicsEngine, _pipelineManager);
-                await _renderer.InitializeAsync();
-                _textureStreamer = new TextureStreamer();
+
+                Console.WriteLine($"Core systems initialized in: {loadWatch.ElapsedMilliseconds} ms");
+                await _renderer.InitializeAsync().ConfigureAwait(false);
+                await _world.Start(_renderer).ConfigureAwait(false);
+                _layerStack = IoC.Container.GetInstance<LayerStack>();
                 await Load().ConfigureAwait(false);
 
-                await _world.Start(_renderer);
                 _window.Render += async (s) => await Render(s);
                 _window.Update += async (s) => await Update(s);
+
                 loadWatch.Stop();
-                Console.WriteLine($"Loaded in: {loadWatch.ElapsedMilliseconds} ms");
-            };
-        }
-        protected virtual Task Load()
-        {
-            return Task.CompletedTask;
+                Console.WriteLine($"Application loaded in: {loadWatch.ElapsedMilliseconds} ms");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Initialization failed: {ex}");
+                throw;
+            }
         }
 
-        public Task Run()
-        {
-            return Task.Factory.StartNew(_window.Run, CancellationToken, TaskCreationOptions.LongRunning, TaskScheduler.Default);
-        }
+
+        protected virtual Task Load() => Task.CompletedTask;
+
 
         protected virtual async Task Update(double deltaTime)
         {
-
             Time.Update(_window.Time, deltaTime);
             _layerStack.Update();
-            await _world.Update(_renderer)
-                .ConfigureAwait(false);
-
+            await _world.Update(_renderer);
             await _renderer.UpdateFrameData();
         }
 
@@ -81,54 +117,49 @@ namespace RockEngine.Core
         {
             using (PerformanceTracer.BeginSection("Whole Render"))
             {
-                if (_layerStack.Count == 0)
-                {
-                    return;
-                }
+                if (_layerStack.Count == 0) return;
+
                 var vkCommandBuffer = _graphicsEngine.Begin();
-                if (vkCommandBuffer is null)
-                {
-                    return;
-                }
+                if (vkCommandBuffer is null) return;
+
 
                 using (PerformanceTracer.BeginSection("_layerStack.RenderImGui"))
-                {
-                    _layerStack.RenderImGui(vkCommandBuffer);
-                }
+                    _layerStack.RenderImGui(vkCommandBuffer.CommandBuffer);
+
                 using (PerformanceTracer.BeginSection("_layerStack.Render"))
-                {
-                    _layerStack.Render(vkCommandBuffer);
-                }
-                await _renderer.Render(vkCommandBuffer);
+                    _layerStack.Render(vkCommandBuffer.CommandBuffer);
+
+                await _renderer.Render(vkCommandBuffer.CommandBuffer);
 
                 using (PerformanceTracer.BeginSection("_graphicsEngine.end & Submit"))
                 {
-                    _graphicsEngine.End(vkCommandBuffer);
-                    await _graphicsEngine.SubmitAndPresent(vkCommandBuffer.VkObjectNative);
+                    _graphicsEngine.SubmitAndPresent(vkCommandBuffer);
                 }
             }
         }
 
-        public Task PushLayer(ILayer layer)
-        {
-            return _layerStack.PushLayer(layer);
-        }
-
-        public void PopLayer(ILayer layer)
-        {
-            _layerStack.PopLayer(layer);
-        }
+        public Task PushLayer(ILayer layer) => _layerStack.PushLayer(layer);
+        public void PopLayer(ILayer layer) => _layerStack.PopLayer(layer);
 
         public virtual void Dispose()
         {
-            CancellationTokenSource.Cancel();
-            _renderer.Dispose();
-            _graphicsEngine.Dispose();
+            CancellationTokenSource?.Cancel();
+            _context.Device.GraphicsQueue.WaitIdle();
+            _context.Device.ComputeQueue.WaitIdle();
 
-            _context.Dispose();
-            _window.Close();
-            _window.Dispose();
+            _renderer?.Dispose();
+            _graphicsEngine?.Dispose();
+            _context?.Dispose();
+
+            if (_window != null)
+            {
+                _window.Close();
+                _window.Dispose();
+            }
+
+            _applicationScope?.Dispose();
+            _container?.Dispose();
+            GC.SuppressFinalize(this);
         }
     }
-
 }

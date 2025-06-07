@@ -1,15 +1,13 @@
 ﻿using Silk.NET.Vulkan;
 
-using System.Reflection.Metadata;
-
 namespace RockEngine.Vulkan
 {
     public class VkCommandBuffer : VkObject<CommandBuffer>, IBegginable<CommandBufferBeginInfo>
     {
         private readonly VulkanContext _context;
         private readonly VkCommandPool _commandPool;
-        private bool _isInRecordingState = false;
-        private bool _isSecondary;
+        private readonly bool _isSecondary;
+        private volatile bool _isInRecordingState = false;
 
         public VkCommandPool CommandPool => _commandPool;
 
@@ -29,13 +27,14 @@ namespace RockEngine.Vulkan
             VulkanContext.Vk.BeginCommandBuffer(_vkObject, in beginInfo)
                 .VkAssertResult("Failed to begin command buffer!");
             _isInRecordingState = true;
+
         }
         public void Begin(CommandBufferUsageFlags usageFlags)
         {
             Begin(new CommandBufferBeginInfo()
             {
-               SType = StructureType.CommandBufferBeginInfo,
-               Flags = usageFlags
+                SType = StructureType.CommandBufferBeginInfo,
+                Flags = usageFlags
             });
         }
         public void Begin(in CommandBufferBeginInfo beginInfo, Action untilEndAction)
@@ -51,7 +50,7 @@ namespace RockEngine.Vulkan
         public void End()
         {
             VulkanContext.Vk.EndCommandBuffer(_vkObject)
-                .VkAssertResult("Failed to end command buffer!");
+            .VkAssertResult("Failed to end command buffer!");
             _isInRecordingState = false;
         }
 
@@ -67,7 +66,6 @@ namespace RockEngine.Vulkan
         }
         public void CopyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, in BufferCopy bufferCopy)
         {
-          
             VulkanContext.Vk.CmdCopyBuffer(_vkObject, srcBuffer, dstBuffer, 1, in bufferCopy);
         }
 
@@ -125,12 +123,13 @@ namespace RockEngine.Vulkan
         public void Reset(CommandBufferResetFlags flags)
         {
             VulkanContext.Vk.ResetCommandBuffer(this, flags)
-                .VkAssertResult("Failed to reset commandBuffer");
+                            .VkAssertResult("Failed to reset commandBuffer");
+
         }
         public override void LabelObject(string name) => _context.DebugUtils.SetDebugUtilsObjectName(_vkObject, ObjectType.CommandBuffer, name);
         public DebugLabelScope NameAction(string name, float[] color)
         {
-            return _context.DebugUtils.CmdDebugLabelScope(this.VkObjectNative, name, color);
+            return _context.DebugUtils.CmdDebugLabelScope(this, name, color);
         }
 
         protected override void Dispose(bool disposing)
@@ -164,7 +163,7 @@ namespace RockEngine.Vulkan
                 pCommandBuffers: ptr
             );
             }
-            
+
         }
         public unsafe void ExecuteSecondary(VkCommandBuffer secondaryCommandBuffer)
         {
@@ -179,18 +178,32 @@ namespace RockEngine.Vulkan
 
         public void SetViewportAndScissor(Extent2D extent)
         {
-            var rect2d = new Rect2D(new Offset2D(),extent);
-            var viewPort = new Viewport(0,0,extent.Width,extent.Height,0,1);
-            VulkanContext.Vk.CmdSetScissor(this, 0,1, in rect2d);
-            VulkanContext.Vk.CmdSetViewport(this, 0,1, in viewPort);
+            var rect2d = new Rect2D(new Offset2D(), extent);
+            var viewPort = new Viewport(0, 0, extent.Width, extent.Height, 0, 1);
+            VulkanContext.Vk.CmdSetScissor(this, 0, 1, in rect2d);
+            VulkanContext.Vk.CmdSetViewport(this, 0, 1, in viewPort);
         }
 
-        public void PushConstants<T>(PipelineLayout layout, ShaderStageFlags stageFlags, uint offset, uint size, ref T value) where T : unmanaged => VulkanContext.Vk.CmdPushConstants(this, layout, stageFlags, offset, size, ref value);
-        public unsafe void PushConstants(PipelineLayout layout, ShaderStageFlags stageFlags, uint offset, uint size, void* value) => VulkanContext.Vk.CmdPushConstants(this, layout, stageFlags, offset, size, value);
+        public void PushConstants<T>(PipelineLayout layout, ShaderStageFlags stageFlags, uint offset, uint size, ref T value) where T : unmanaged
+            => VulkanContext.Vk.CmdPushConstants(this, layout, stageFlags, offset, size, ref value);
+
+        public unsafe void PushConstants(PipelineLayout layout, ShaderStageFlags stageFlags, uint offset, uint size, void* value)
+            => VulkanContext.Vk.CmdPushConstants(this, layout, stageFlags, offset, size, value);
 
         public void WriteTimestamp(PipelineStageFlags stage, VkQueryPool pool, uint query)
         {
             VulkanContext.Vk.CmdWriteTimestamp(this, stage, pool, query);
+        }
+
+        internal unsafe void PipelineBarrier(PipelineStageFlags srcStageMask, PipelineStageFlags dstStageMask, DependencyFlags dependencyFlags, uint memoryBarrierCount, MemoryBarrier* pMemoryBarriers, uint bufferMemoryBarrierCount, BufferMemoryBarrier* pBufferMemoryBarriers, uint imageMemoryBarrierCount, in ImageMemoryBarrier pImageMemoryBarriers)
+        {
+            VulkanContext.Vk.CmdPipelineBarrier(this, srcStageMask, dstStageMask, dependencyFlags, memoryBarrierCount, pMemoryBarriers, bufferMemoryBarrierCount, pBufferMemoryBarriers, imageMemoryBarrierCount, in pImageMemoryBarriers);
+
+        }
+
+        public unsafe void CopyBufferToImage(VkBuffer srcBuffer, VkImage dstImage, ImageLayout dstImageLayout, uint regionCount, BufferImageCopy* pRegions)
+        {
+            VulkanContext.Vk.CmdCopyBufferToImage(this, srcBuffer, dstImage, dstImageLayout, regionCount, pRegions);
         }
     }
 }

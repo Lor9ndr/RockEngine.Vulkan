@@ -11,10 +11,11 @@ namespace RockEngine.Core.Rendering
         void OnImGuiRender(VkCommandBuffer vkCommandBuffer); // For editor UI rendering
     }
 
-    public class LayerStack
+    public class LayerStack : ILayerStack
     {
         public int Count => _layers.Count;
         private readonly List<ILayer> _layers = new List<ILayer>();
+
 
         /// <summary>
         /// Pushing layer and calls the <see cref="ILayer.OnAttach"/> method
@@ -39,7 +40,7 @@ namespace RockEngine.Core.Rendering
         {
             foreach (var layer in _layers)
             {
-                layer.OnUpdate();
+               layer.OnUpdate();
             }
         }
 

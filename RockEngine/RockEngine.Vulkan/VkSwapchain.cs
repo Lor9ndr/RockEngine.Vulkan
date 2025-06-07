@@ -255,8 +255,7 @@ namespace RockEngine.Vulkan
             var currentFrame = GetFrameData();
 
             // Optimized fence wait using queue operations instead of CPU stall
-            currentFrame.InFlightFence.Wait();
-            currentFrame.InFlightFence.Reset();
+           currentFrame.FlushOperation?.Wait();
 
             var result = _khrSwapchain.AcquireNextImage(
                 _context.Device,
@@ -275,36 +274,13 @@ namespace RockEngine.Vulkan
             return result.VkAssertResult("Failed to acquire swapchain image");
         }
 
-       /* public unsafe void SubmitCommandBuffers(CommandBuffer[] buffers)
-        {
-            var currentFrame = ;
-            var waitSemaphores =  currentFrame.ImageAvailableSemaphore.VkObjectNative;
-            var signalSemaphores =  currentFrame.RenderFinishedSemaphore.VkObjectNative;
-            var stages =  PipelineStageFlags.ColorAttachmentOutputBit;
-
-            fixed (CommandBuffer* pBuffers = buffers)
-            {
-                var submitInfo = new SubmitInfo
-                {
-                    SType = StructureType.SubmitInfo,
-                    WaitSemaphoreCount = (uint)1,
-                    PWaitSemaphores = &waitSemaphores,
-                    PWaitDstStageMask = &stages,
-                    CommandBufferCount = (uint)buffers.Length,
-                    PCommandBuffers = pBuffers,
-                    SignalSemaphoreCount = 1,
-                    PSignalSemaphores = &signalSemaphores
-                };
-
-                _context.Device.GraphicsQueue.Submit(submitInfo, currentFrame.InFlightFence);
-            }
-        }*/
+    
         public SwapchainFrameData GetFrameData()
         {
             return _frameData[_currentFrameIndex];
         }
 
-        public unsafe void Present()
+        public unsafe void Present(FlushOperation operation)
         {
             var currentFrame = _frameData[_currentFrameIndex];
             var swapchains =  _vkObject;
@@ -333,6 +309,7 @@ namespace RockEngine.Vulkan
                 presentResult.VkAssertResult("Failed to present queue");
             }
             _currentFrameIndex = (_currentFrameIndex + 1) % _context.MaxFramesPerFlight;
+            GetFrameData().FlushOperation = operation;
 
         }
 
@@ -577,6 +554,7 @@ namespace RockEngine.Vulkan
             public VkSemaphore ImageAvailableSemaphore { get; }
             public VkSemaphore RenderFinishedSemaphore { get; }
             public VkFence InFlightFence { get; }
+            public FlushOperation FlushOperation { get; internal set; }
 
             public SwapchainFrameData(VulkanContext context)
             {

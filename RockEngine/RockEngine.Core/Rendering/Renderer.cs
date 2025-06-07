@@ -34,6 +34,8 @@ namespace RockEngine.Core.Rendering
         private readonly VkPipeline _screenPipeline;
         private readonly VkPipeline _skyboxPipeline;
 
+        private uint _prevFrameIndex = uint.MaxValue;
+
 
         public SubmitContext SubmitContext => _context.SubmitContext;
         public SwapchainRenderTarget SwapchainTarget { get; }
@@ -93,14 +95,11 @@ namespace RockEngine.Core.Rendering
            new ComputeShaderManager(context, _bindingManager, _pipelineManager),
            _bindingManager
             );
-
-
-
         }
 
         internal async Task InitializeAsync()
         {
-            await _iblManager.InitializeAsync();
+            var iblManagerInitalizeTask = _iblManager.InitializeAsync();
 
             // Generate IBL textures after loading environment map
             var envMap = await Texture.CreateCubeMapAsync(_context, [
@@ -111,12 +110,22 @@ namespace RockEngine.Core.Rendering
             "Resources/skybox/front.jpg",    // +Z
             "Resources/skybox/back.jpg"      // -Z
             ]);
+
             envMap.Image.LabelObject("EnviromentMap");
-            var irradiance = await _iblManager.GenerateIrradianceMap(envMap, 128);
+
+            await iblManagerInitalizeTask;
+
+            var textures = await Task.WhenAll( 
+                _iblManager.GenerateIrradianceMap(envMap, 128),
+                _iblManager.GeneratePrefilterMap(envMap, 512),
+                _iblManager.GenerateBRDFLUT(512));
+
+            var irradiance = textures[0];
+            var prefilter = textures[1];
+            var brdfLUT = textures[2];
+
             irradiance.Image.LabelObject("Irradiance");
-            var prefilter = await _iblManager.GeneratePrefilterMap(envMap, 512);
             prefilter.Image.LabelObject("Prefilter");
-            var brdfLUT = await _iblManager.GenerateBRDFLUT(512);
             brdfLUT.Image.LabelObject("BRDFLut");
 
             // Store references in lighting pass
@@ -136,12 +145,18 @@ namespace RockEngine.Core.Rendering
 
         public async Task UpdateFrameData()
         {
+            if(_prevFrameIndex == FrameIndex)
+            {
+                // Frame havent been rendered, then no update needed
+                return;
+            }
             // Update all frame data first
-            await _lightManager.Update(_cameraManager.ActiveCameras);
-            _transformManager.Update(FrameIndex);
-            _indirectCommandManager.Update();
-            await _renderPipeline.Update();
+            await Task.WhenAll( _lightManager.UpdateAsync(_cameraManager.ActiveCameras),
+                                _transformManager.UpdateAsync(FrameIndex),
+                                _indirectCommandManager.UpdateAsync(),_renderPipeline.Update()
+                                );
             PerformanceTracer.ProcessQueries(_context, (int)FrameIndex);
+            _prevFrameIndex = FrameIndex;
         }
 
         private EngineRenderPass CreateRenderPass()
@@ -198,6 +213,7 @@ namespace RockEngine.Core.Rendering
                 subPassLightingBuilder.AddInputAttachment(i, ImageLayout.ShaderReadOnlyOptimal);
                 lastI = i;
             }
+
             subPassLightingBuilder
                 .AddInputAttachment(++lastI, ImageLayout.DepthStencilReadOnlyOptimal) 
                 .AddColorAttachment(++lastI, ImageLayout.ColorAttachmentOptimal)

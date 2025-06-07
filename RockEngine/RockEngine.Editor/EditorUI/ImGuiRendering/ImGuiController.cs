@@ -42,7 +42,7 @@ namespace RockEngine.Core.Rendering.ImGuiRendering
         private RenderTarget _uiRenderTarget;
         private VkFrameBuffer[] _framebuffers;
 
-        public unsafe ImGuiController(VulkanContext vkContext, GraphicsEngine graphicsEngine,  BindingManager bindingManager, IInputContext inputContext, uint width, uint height, RenderTarget renderTarget)
+        public unsafe ImGuiController(VulkanContext vkContext, GraphicsEngine graphicsEngine, BindingManager bindingManager, IInputContext inputContext, uint width, uint height, RenderTarget renderTarget)
         {
             _vkContext = vkContext;
             _bindingManager = bindingManager;
@@ -224,7 +224,6 @@ namespace RockEngine.Core.Rendering.ImGuiRendering
         private unsafe void RenderImDrawData(ImDrawDataPtr drawData, VkCommandBuffer commandBuffer, Extent2D swapChainExtent)
         {
 
-
             ref var vertexBuffer = ref _vertexBuffers[_graphicsEngine.CurrentImageIndex];
             ref var indexBuffer = ref _indexBuffers![_graphicsEngine.CurrentImageIndex];
             if (drawData.TotalVtxCount > 0)
@@ -367,6 +366,7 @@ namespace RockEngine.Core.Rendering.ImGuiRendering
                 vertexOffset += cmd_list.VtxBuffer.Size;
             }
 
+
         }
 
         private void CreateOrResizeBuffer(ref VkBuffer? buffer, ulong size, BufferUsageFlags usage)
@@ -434,8 +434,9 @@ namespace RockEngine.Core.Rendering.ImGuiRendering
 
             var io = ImGui.GetIO();
             io.BackendFlags |= ImGuiBackendFlags.RendererHasVtxOffset;
-            io.Fonts.GetTexDataAsRGBA32(out nint pixels, out int width, out int height);
-            _fontTexture = Texture.Create(_vkContext, width, height, Format.R8G8B8A8Unorm, pixels);
+            io.Fonts.GetTexDataAsRGBA32(out nint pixels, out int width, out int height, out int bytes_per_pixel);
+            Span<byte> bytes = new Span<byte>((void*)pixels, width * height * bytes_per_pixel);
+            _fontTexture = Texture.Create(_vkContext, width, height, Format.R8G8B8A8Unorm, bytes);
 
             // Store our identifier
             io.Fonts.SetTexID(GetTextureID(_fontTexture));
@@ -443,7 +444,7 @@ namespace RockEngine.Core.Rendering.ImGuiRendering
 
         public unsafe nint GetTextureID(Texture texture)
         {
-            if(_textures.TryGetValue(texture, out var value))
+            if (_textures.TryGetValue(texture, out var value))
             {
                 if (value.Item2.IsDirty)
                 {
@@ -455,13 +456,13 @@ namespace RockEngine.Core.Rendering.ImGuiRendering
                 }
                 return GCHandle.ToIntPtr(value.Item1);
             }
-            var binding = new TextureBinding(0,0, ImageLayout.ShaderReadOnlyOptimal, texture);
+            var binding = new TextureBinding(0, 0, ImageLayout.ShaderReadOnlyOptimal, texture);
             _bindingManager.AllocateAndUpdateDescriptorSet(binding, _pipelineLayout);
             var handle = GCHandle.Alloc(binding.DescriptorSet);
             _textures[texture] = (handle, binding);
             return GCHandle.ToIntPtr(handle);
         }
-       
+
         private void CreateDeviceObjects()
         {
             // Create shaders
@@ -615,9 +616,9 @@ namespace RockEngine.Core.Rendering.ImGuiRendering
             // Tabs
             colors[(int)ImGuiCol.Tab] = darkColor;
             colors[(int)ImGuiCol.TabHovered] = accentColor;
-           /* colors[(int)ImGuiCol.TabActive] = accentHoverColor;
-            colors[(int)ImGuiCol.TabUnfocused] = darkColor;
-            colors[(int)ImGuiCol.TabUnfocusedActive] = darkColor;*/
+            /* colors[(int)ImGuiCol.TabActive] = accentHoverColor;
+             colors[(int)ImGuiCol.TabUnfocused] = darkColor;
+             colors[(int)ImGuiCol.TabUnfocusedActive] = darkColor;*/
 
             // Docking
             colors[(int)ImGuiCol.DockingPreview] = accentColor * new Vector4(1.0f, 1.0f, 1.0f, 0.7f);
@@ -648,6 +649,6 @@ namespace RockEngine.Core.Rendering.ImGuiRendering
 
         }
 
-       
+
     }
 }

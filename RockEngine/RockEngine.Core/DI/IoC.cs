@@ -1,25 +1,31 @@
-﻿using RockEngine.Core.Rendering.Managers;
-
-using SimpleInjector;
+﻿using SimpleInjector;
 using SimpleInjector.Lifestyles;
 
 namespace RockEngine.Core.DI
 {
-    internal static class IoC
+    public static class IoC
     {
         public static readonly Container Container = new Container();
+        private static bool _isInitialized = false;
 
-        public static void Register()
+        public static void Initialize()
         {
-            // Set the default scoped lifestyle
+            if (_isInitialized) return;
+
             Container.Options.DefaultScopedLifestyle = new AsyncScopedLifestyle();
             Container.Options.EnableAutoVerification = false;
+            Container.Options.ResolveUnregisteredConcreteTypes = true;
 
 
-            // Register other dependencies
-            Container.RegisterSingleton<AssimpLoader>();
-            Container.RegisterSingleton<PipelineManager>();
+            // Then register modules
+            DependencyRegistrator.RegisterModules(Container);
 
+            // Verify container for configuration errors
+/*#if DEBUG
+            Container.Verify();
+#endif*/
+
+            _isInitialized = true;
         }
     }
 }

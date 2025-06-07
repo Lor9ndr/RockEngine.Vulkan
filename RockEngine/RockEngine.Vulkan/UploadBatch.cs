@@ -1,98 +1,112 @@
-﻿using RockEngine.Core.Rendering.Managers;
-
-using Silk.NET.Vulkan;
-
-using System.Runtime.CompilerServices;
+﻿using Silk.NET.Vulkan;
 
 namespace RockEngine.Vulkan
 {
-    public sealed class UploadBatch 
+    /// <summary>
+    /// Represents a batch of GPU upload commands with associated resources
+    /// </summary>
+    public sealed class UploadBatch : IDisposable
     {
-        private readonly VulkanContext _context;
         private readonly StagingManager _stagingManager;
-        private readonly VkCommandPool _pool;
         private readonly SubmitContext _submitContext;
-        private VkCommandBuffer _commandBuffer;
+        private readonly VkCommandBuffer _commandBuffer;
+        private readonly List<IDisposable> _disposables;
+        private bool _isInUse;
+
+        public List<VkSemaphore> SignalSemaphores { get; } = new List<VkSemaphore>(2);
+        public Dictionary<VkSemaphore, PipelineStageFlags> WaitSemaphores { get; } = new Dictionary<VkSemaphore, PipelineStageFlags>(2);
         public VkCommandBuffer CommandBuffer => _commandBuffer;
+        public IReadOnlyList<IDisposable> Disposables => _disposables;
 
-        public UploadBatch(VulkanContext context, StagingManager stagingManager, VkCommandPool pool, SubmitContext submitContext)
+        public UploadBatch(StagingManager stagingManager, SubmitContext submitContext, VkCommandBuffer commandBuffer)
         {
-            _context = context;
             _stagingManager = stagingManager;
-            _pool = pool;
             _submitContext = submitContext;
-            AllocateCommandBuffer();
-        }
-
-        private void AllocateCommandBuffer()
-        {
-            _commandBuffer = _pool.AllocateCommandBuffer(CommandBufferLevel.Primary);
+            _commandBuffer = commandBuffer;
+            _disposables = new List<IDisposable>(4);
             BeginCommandBuffer();
         }
 
-        private void BeginCommandBuffer()
+        /// <summary>
+        /// Starts recording commands for this batch
+        /// </summary>
+        public void BeginCommandBuffer()
         {
             _commandBuffer.Begin(new CommandBufferBeginInfo
             {
                 SType = StructureType.CommandBufferBeginInfo,
-                Flags =  CommandBufferUsageFlags.SimultaneousUseBit
+                Flags = CommandBufferUsageFlags.SimultaneousUseBit
             });
         }
 
-        public void Reset()
+        public void AddWaitSemaphore(VkSemaphore semaphore, PipelineStageFlags stage)
+            => WaitSemaphores[semaphore] = stage;
+
+        public void AddSignalSemaphore(VkSemaphore semaphore)
+            => SignalSemaphores.Add(semaphore);
+
+        /// <summary>
+        /// Prepares the batch for reuse by resetting state and command buffer
+        /// </summary>
+        public void ResetForPool()
         {
-            // Явный сброс буфера команд
+            if (!_isInUse) return;
+
+            // Reset command buffer and clear state
             _commandBuffer.Reset(CommandBufferResetFlags.ReleaseResourcesBit);
+            _disposables.Clear();
+            SignalSemaphores.Clear();
+            WaitSemaphores.Clear();
+            _isInUse = false;
+
             BeginCommandBuffer();
         }
 
-        public unsafe void StageToBuffer<T>(
-            T[] data,
+        /// <summary>
+        /// Stages data to a GPU buffer
+        /// </summary>
+        public void StageToBuffer<T>(
+            Span<T> data,
             VkBuffer destination,
             ulong dstOffset,
             ulong size) where T : unmanaged
         {
-            StageToBuffer(data.AsSpan(), destination, dstOffset, size);
-        }
+            if (size == 0)
+                throw new InvalidOperationException("Size cannot be 0");
 
-        public unsafe void StageToBuffer<T>(
-           Span<T> data,
-           VkBuffer destination,
-           ulong dstOffset,
-           ulong size) where T : unmanaged
-        {
-            if (!_stagingManager.TryStage(data, out var srcOffset, out var stagedSize))
-            {
+            if (!_stagingManager.TryStage(this, data, out var srcOffset, out _))
                 throw new InvalidOperationException("Staging buffer overflow");
-            }
-
-            var copy = new BufferCopy
-            {
-                SrcOffset = srcOffset,
-                DstOffset = dstOffset,
-                Size = size
-            };
 
             _commandBuffer.CopyBuffer(
                 _stagingManager.StagingBuffer,
                 destination,
-                copy
+                new BufferCopy(srcOffset, dstOffset, size)
             );
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Submit(IDisposable[]? dependencies = null, VkSemaphore[] signalSemaphores = null)
+        /// <summary>
+        /// Submits the batch for execution
+        /// </summary>
+        public void Submit()
         {
             _commandBuffer.End();
-            _submitContext.AddSubmission(_commandBuffer, dependencies);
-            // Add semaphores to submit context
-            if (signalSemaphores != null)
-            {
-                foreach (var sem in signalSemaphores)
-                {
-                    _submitContext.AddSignalSemaphore(sem);
-                }
-            }
+            _submitContext.AddSubmission(this);
         }
+
+        /// <summary>
+        /// Adds a resource dependency that must be disposed after execution
+        /// </summary>
+        public void AddDependency(IDisposable disposable)
+            => _disposables.Add(disposable);
+
+        /// <summary>
+        /// Marks the batch as in-use before submission
+        /// </summary>
+        public void MarkInUse() => _isInUse = true;
+
+        /// <summary>
+        /// Returns the batch to its pool for reuse
+        /// </summary>
+        public void Dispose() => _submitContext.ReturnBatchToPool(this);
     }
 }

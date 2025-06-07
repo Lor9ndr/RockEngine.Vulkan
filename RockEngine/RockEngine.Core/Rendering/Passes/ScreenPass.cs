@@ -37,6 +37,10 @@ namespace RockEngine.Core.Rendering.Passes
             cmd.SetScissor(_swapchainTarget.Scissor);
 
             cmd.BindPipeline(_screenPipeline, PipelineBindPoint.Graphics);
+            if(!_screenMaterial.IsComplete)
+            {
+                return Task.CompletedTask;
+            }
             BindingManager.BindResourcesForMaterial(_screenMaterial, cmd);
             cmd.Draw(3, 1, 0, 0);
             return Task.CompletedTask;

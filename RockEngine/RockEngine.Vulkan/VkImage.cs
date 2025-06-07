@@ -130,6 +130,7 @@ namespace RockEngine.Vulkan
         private void TransitionToDefaultLayout()
         {
             var batch = _context.SubmitContext.CreateBatch();
+            batch.CommandBuffer.LabelObject("VKImage.TransitionToDefaultLayout cmd");
             TransitionImageLayout(batch.CommandBuffer, ImageLayout.ShaderReadOnlyOptimal,0,1);
             batch.Submit();
         }
@@ -220,8 +221,7 @@ namespace RockEngine.Vulkan
 
             unsafe
             {
-                VulkanContext.Vk.CmdPipelineBarrier(
-                    commandBuffer,
+                commandBuffer.PipelineBarrier(
                     srcStage,
                     dstStage,
                     0,
@@ -448,8 +448,7 @@ namespace RockEngine.Vulkan
 
             unsafe
             {
-                VulkanContext.Vk.CmdPipelineBarrier(
-                    commandBuffer,
+                commandBuffer.PipelineBarrier(
                     srcStage,
                     dstStage,
                     0,

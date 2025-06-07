@@ -9,8 +9,10 @@ namespace RockEngine.Core.Rendering.Texturing
         private readonly CancellationTokenSource _cts = new();
         private readonly MemoryBudgetTracker _memoryTracker;
 
-        public TextureStreamer(ulong vramBudgetMB = 2048, int workerCount = 4)
+        public TextureStreamer()
         {
+            ulong vramBudgetMB = 2048;
+            int workerCount = 4;
             _memoryTracker = new MemoryBudgetTracker(vramBudgetMB * 1024 * 1024);
 
             for (var i = 0; i < workerCount; i++)

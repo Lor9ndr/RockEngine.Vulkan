@@ -102,7 +102,7 @@ namespace RockEngine.Core.Rendering.Texturing
         /// <param name="filePath">Path to texture file</param>
         /// <param name="cancellationToken">Cancellation token</param>
         /// <returns>New texture instance</returns>
-        public static async Task<Texture> CreateAsync(VulkanContext context, string filePath, CancellationToken cancellationToken = default)
+        public static async ValueTask<Texture> CreateAsync(VulkanContext context, string filePath, CancellationToken cancellationToken = default)
         {
             var bytes = await File.ReadAllBytesAsync(filePath, cancellationToken);
             var extension = Path.GetExtension(filePath);
@@ -141,16 +141,16 @@ namespace RockEngine.Core.Rendering.Texturing
                     mipLevels);
 
                 var imageView = image.GetOrCreateView(ImageAspectFlags.ColorBit);
+                UploadBatch batch = context.SubmitContext.CreateBatch();
 
-                CopyImageData(context, skBitmap, image, mipLevels > 1);
+                CopyImageData(context, batch, skBitmap, image, mipLevels > 1);
 
                 if (mipLevels > 1)
                 {
-                    var batch = context.SubmitContext.CreateBatch();
                     image.GenerateMipmaps(batch.CommandBuffer);
-                    batch.Submit();
                     //await context.SubmitContext.FlushAsync();
                 }
+                batch.Submit();
 
                 image.LabelObject(Path.GetFileName(filePath));
 
@@ -173,13 +173,14 @@ namespace RockEngine.Core.Rendering.Texturing
         /// <param name="format">Pixel format</param>
         /// <param name="data">Raw pixel data pointer</param>
         /// <returns>New texture instance</returns>
-        public static unsafe Texture Create(VulkanContext context, int width, int height, Format format, nint data)
+        public static unsafe Texture Create(VulkanContext context, int width, int height, Format format, Span<byte> data)
         {
             var vkImage = CreateVulkanImage(context, (uint)width, (uint)height, format);
             var imageView = vkImage.GetOrCreateView(ImageAspectFlags.ColorBit);
 
-            CopyImageDataFromPointer(context, vkImage, data.ToPointer(), (uint)width, (uint)height, format);
-
+            var batch = context.SubmitContext.CreateBatch();
+            CopyImageDataFromPointer(context, batch, vkImage, data, (uint)width, (uint)height, format);
+            batch.Submit();
             var sampler = CreateSampler(context, vkImage.MipLevels);
             return new Texture(context, vkImage, imageView, sampler, null);
         }
@@ -330,8 +331,8 @@ namespace RockEngine.Core.Rendering.Texturing
                 MemoryPropertyFlags.DeviceLocalBit, ImageAspectFlags.ColorBit);
 
             // Копирование данных и генерация мипмапов
-            var batch = context.SubmitContext.CreateBatch();
             var staging = await VkBuffer.CreateAndCopyToStagingBuffer<byte>(context,bitmap.GetPixelSpan().ToArray(),(ulong)bitmap.ByteCount);
+            var batch = context.SubmitContext.CreateBatch();
 
             image.TransitionImageLayout(batch.CommandBuffer, ImageLayout.TransferDstOptimal);
 
@@ -351,7 +352,8 @@ namespace RockEngine.Core.Rendering.Texturing
                 ImageLayout.TransferDstOptimal, 1, in copy);
 
             image.GenerateMipmaps(batch.CommandBuffer);
-            batch.Submit([staging]);
+            batch.AddDependency(staging);
+            batch.Submit();
             //await context.SubmitContext.FlushAsync();
 
             return new Texture(context, image,
@@ -405,9 +407,9 @@ namespace RockEngine.Core.Rendering.Texturing
         /// Copies pixel data from SkiaSharp bitmap to Vulkan image
         /// </summary>
 
-        private static unsafe void CopyImageData(VulkanContext context, SKBitmap skBitmap, VkImage vkImage, bool keepTransferLayout = false)
+        private static unsafe void CopyImageData(VulkanContext context, UploadBatch batch, SKBitmap skBitmap, VkImage vkImage, bool keepTransferLayout = false)
         {
-            CopyImageDataFromPointer(context, vkImage, skBitmap.GetPixels().ToPointer(), (uint)skBitmap.Width, (uint)skBitmap.Height, GetVulkanFormat(skBitmap.ColorType, context), keepTransferLayout);
+            CopyImageDataFromPointer(context, batch,vkImage, skBitmap.GetPixelSpan(), (uint)skBitmap.Width, (uint)skBitmap.Height, GetVulkanFormat(skBitmap.ColorType, context), keepTransferLayout);
         }
 
 
@@ -416,52 +418,58 @@ namespace RockEngine.Core.Rendering.Texturing
         /// </summary>
         private static unsafe void CopyImageDataFromPointer(
              VulkanContext context,
+             UploadBatch batch,
              VkImage vkImage,
-             void* data,
+             Span<byte> data,
              uint width,
              uint height,
              Format format,
              bool keepTransferLayout = false)
         {
-            if (data == null)
+
+            lock (vkImage)
             {
-                // Handle the case where data is null
-                // For example, you might want to initialize the image with a default color or skip the copy
-                return;
+                var imageSize = (ulong)(width * height * format.GetBytesPerPixel());
+
+                // Create a staging buffer
+
+
+
+                // Transition the Vulkan image layout to TRANSFER_DST_OPTIMAL
+                vkImage.TransitionImageLayout(batch.CommandBuffer, ImageLayout.TransferDstOptimal);
+
+                context.SubmitContext.StagingManager.TryStage(batch, data, out var offset, out var size);
+                var copyRegion = new BufferImageCopy
+                {
+                    BufferOffset = offset,
+                    BufferRowLength = 0, // Tightly packed
+                    BufferImageHeight = 0,
+                    ImageSubresource = new ImageSubresourceLayers
+                    {
+                        AspectMask = vkImage.AspectFlags, // Use image's aspect flags
+                        MipLevel = 0,
+                        BaseArrayLayer = 0,
+                        LayerCount = 1
+                    },
+                    ImageOffset = new Offset3D(0, 0, 0),
+                    ImageExtent = new Extent3D(width, height, 1)
+                };
+
+                batch.CommandBuffer.CopyBufferToImage(
+                    srcBuffer: context.SubmitContext.StagingManager.StagingBuffer,
+                    dstImage: vkImage,
+                    dstImageLayout: ImageLayout.TransferDstOptimal,
+                    regionCount: 1,
+                    pRegions: &copyRegion
+                );
+
+                // Transition the Vulkan image layout to SHADER_READ_ONLY_OPTIMAL
+                if (!keepTransferLayout)
+                {
+                    vkImage.TransitionImageLayout(batch.CommandBuffer, ImageLayout.ShaderReadOnlyOptimal);
+                }
             }
-            var imageSize = (ulong)(width * height * format.GetBytesPerPixel());
-
-            // Create a staging buffer
-            using var stagingBuffer = VkBuffer.CreateAndCopyToStagingBuffer(context, data, imageSize);
-
-            VkCommandPool? cmdPool = null;
-            cmdPool = VkCommandPool.Create(context, CommandPoolCreateFlags.TransientBit, context.Device.QueueFamilyIndices.GraphicsFamily.Value);
-            var commandBuffer = cmdPool.AllocateCommandBuffer();
-            commandBuffer.BeginSingleTimeCommand();
-
-            using var fence = VkFence.CreateNotSignaled(context);
-            var fenceNative = fence.VkObjectNative;
-            // Transition the Vulkan image layout to TRANSFER_DST_OPTIMAL
-            vkImage.TransitionImageLayout(commandBuffer,  ImageLayout.TransferDstOptimal);
-
-            // Copy the data from the staging buffer to the Vulkan image
-            CopyBufferToImage(commandBuffer, stagingBuffer, vkImage, width, height);
-
-            // Transition the Vulkan image layout to SHADER_READ_ONLY_OPTIMAL
-            if (!keepTransferLayout)
-            {
-                vkImage.TransitionImageLayout(commandBuffer,  ImageLayout.ShaderReadOnlyOptimal);
-            }
-            commandBuffer.End();
-
-            var realBuffer = commandBuffer.VkObjectNative;
-            var submitInfo = new SubmitInfo();
-            submitInfo.SType = StructureType.SubmitInfo;
-            submitInfo.CommandBufferCount = 1;
-            submitInfo.PCommandBuffers = &realBuffer;
-            context.Device.GraphicsQueue.Submit(in submitInfo, fence);
-            VulkanContext.Vk.WaitForFences(context.Device, 1, in fenceNative, true, ulong.MaxValue);
-            cmdPool?.Dispose();
+            
         }
 
 
@@ -519,12 +527,11 @@ namespace RockEngine.Core.Rendering.Texturing
             var format = GetVulkanFormat(skImage.Info.ColorType, context);
             var vkImage = CreateVulkanImage(context, width, height, format);
             var imageView = vkImage.GetOrCreateView(ImageAspectFlags.ColorBit);
-
-            unsafe
-            {
-                // Copy image data from SkiaSharp to Vulkan image
-                CopyImageDataFromPointer(context, vkImage, skImage.GetPixels().ToPointer(), width, height, format);
-            }
+            var batch = context.SubmitContext.CreateBatch();
+            batch.CommandBuffer.LabelObject("LoadFromSKImage cmd");
+            // Copy image data from SkiaSharp to Vulkan image
+            CopyImageDataFromPointer(context, batch, vkImage, skImage.GetPixelSpan(), width, height, format);
+            batch.Submit();
 
             // Create a sampler
             var samplerCreateInfo = new SamplerCreateInfo
@@ -602,6 +609,7 @@ namespace RockEngine.Core.Rendering.Texturing
                 flags: ImageCreateFlags.CreateCubeCompatibleBit);
 
             var uploadBatch = context.SubmitContext.CreateBatch();
+            uploadBatch.CommandBuffer.LabelObject("CreateCubeMapAsync cmd");
 
             // 1. Transition entire image to TRANSFER_DST_OPTIMAL
             image.TransitionImageLayout(
@@ -615,10 +623,10 @@ namespace RockEngine.Core.Rendering.Texturing
             // 2. Copy data to each face's base mip level
             for (int i = 0; i < 6; i++)
             {
-                byte[] pixelData = faceBitmaps[i].Bytes;
+                var pixelData = faceBitmaps[i].GetPixelSpan();
                 ulong faceSize = (ulong)(width * height * format.GetBytesPerPixel());
 
-                if (!context.SubmitContext.StagingManager.TryStage(pixelData.AsSpan(), out ulong bufferOffset, out ulong stagedSize))
+                if (!context.SubmitContext.StagingManager.TryStage(uploadBatch, pixelData, out ulong bufferOffset, out ulong stagedSize))
                 {
                     throw new InvalidOperationException("Staging buffer overflow");
                 }

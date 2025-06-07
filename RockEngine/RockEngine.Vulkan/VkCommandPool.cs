@@ -7,7 +7,8 @@ namespace RockEngine.Vulkan
     {
         private readonly VulkanContext _context;
         private readonly List<VkCommandBuffer> _commandBuffers = new List<VkCommandBuffer>();
-        private Lock _locker = new Lock();
+        private readonly int _ownerThreadId = Environment.CurrentManagedThreadId;
+        public int OwnerThreadId => _ownerThreadId;
 
         public VkCommandPool(VulkanContext context, CommandPool commandPool)
             : base(commandPool)
@@ -29,7 +30,13 @@ namespace RockEngine.Vulkan
 
             return Create(context, in ci);
         }
+        internal void ReturnCommandBuffer(VkCommandBuffer cmd)
+        {
+            if (Environment.CurrentManagedThreadId != _ownerThreadId)
+                throw new InvalidOperationException("Command buffer returned to wrong thread pool");
 
+                _commandBuffers.Add(cmd);
+        }
 
         public VkCommandBuffer AllocateCommandBuffer(CommandBufferLevel level = CommandBufferLevel.Primary)
         {
@@ -46,17 +53,13 @@ namespace RockEngine.Vulkan
        
         public unsafe VkCommandBuffer AllocateCommandBuffer(in CommandBufferAllocateInfo allocInfo)
         {
-            using (_locker.EnterScope())
-            {
-                CommandBuffer cbNative = default;
-                Vk.AllocateCommandBuffers(_context.Device, in allocInfo, &cbNative)
-                  .VkAssertResult("Failed to allocate command buffer");
-                //Debugger.Log(1, "Allocation", $"Allocated a command buffer with handle: {cbNative.Handle}");
-                var cb = new VkCommandBuffer(_context, in cbNative, this, allocInfo.Level == CommandBufferLevel.Secondary);
-                _commandBuffers.Add(cb);
-                return cb;
-            }
-
+            CommandBuffer cbNative = default;
+            Vk.AllocateCommandBuffers(_context.Device, in allocInfo, &cbNative)
+              .VkAssertResult("Failed to allocate command buffer");
+            //Debugger.Log(1, "Allocation", $"Allocated a command buffer with handle: {cbNative.Handle}");
+            var cb = new VkCommandBuffer(_context, in cbNative, this, allocInfo.Level == CommandBufferLevel.Secondary);
+            _commandBuffers.Add(cb);
+            return cb;
 
         }
 
@@ -70,9 +73,7 @@ namespace RockEngine.Vulkan
                 CommandBufferCount = count
             };
 
-            CommandBuffer[] commandBuffers = new CommandBuffer[count];
-            using (_locker.EnterScope())
-            {
+            CommandBuffer[] commandBuffers = new CommandBuffer[(int)count];
                 unsafe
                 {
                     fixed (CommandBuffer* pCommandBuffers = commandBuffers)
@@ -80,24 +81,25 @@ namespace RockEngine.Vulkan
                         VulkanContext.Vk.AllocateCommandBuffers(_context.Device, ref allocateInfo, pCommandBuffers);
                     }
                 }
-                return commandBuffers.Select(s => new VkCommandBuffer(_context, in s, this, level == CommandBufferLevel.Secondary)).ToArray();
-            }
+                return commandBuffers.ToArray().Select(s => new VkCommandBuffer(_context, in s, this, level == CommandBufferLevel.Secondary)).ToArray();
+          
         }
 
         public void Reset()
         {
-            using (_locker.EnterScope())
-            {
+
                 Vk.ResetCommandPool(_context.Device, this, CommandPoolResetFlags.ReleaseResourcesBit)
                     .VkAssertResult("Failed to reset Command pool");
-            }
+            
         }
 
         public unsafe void FreeCommandBuffer(VkCommandBuffer commandBuffer)
         {
+
             var buffer = commandBuffer.VkObjectNative;
 
-            VulkanContext.Vk.FreeCommandBuffers(_context.Device, _vkObject, 1, &buffer);
+                VulkanContext.Vk.FreeCommandBuffers(_context.Device, _vkObject, 1, &buffer);
+           
 
             commandBuffer.Dispose();
             _commandBuffers.Remove(commandBuffer);
@@ -111,22 +113,6 @@ namespace RockEngine.Vulkan
                 item.Dispose();
             }
 
-        }
-
-        public VkCommandBuffer BeginSingleTimeCommands()
-        {
-            var allocInfo = new CommandBufferAllocateInfo
-            {
-                SType = StructureType.CommandBufferAllocateInfo,
-                Level = CommandBufferLevel.Primary,
-                CommandPool = this,
-                CommandBufferCount = 1
-            };
-            var commandBuffer = VkCommandBuffer.Create(in allocInfo, this);
-
-            commandBuffer.BeginSingleTimeCommand();
-
-            return commandBuffer;
         }
 
        
@@ -146,7 +132,7 @@ namespace RockEngine.Vulkan
                     FreeCommandBuffers(_commandBuffers.ToArray());
                     // Should be already empty at that moment, but let it be for now
                     _commandBuffers.Clear();
-                    VulkanContext.Vk.DestroyCommandPool(_context.Device, _vkObject, in VulkanContext.CustomAllocator<VkCommandPool>());
+                        VulkanContext.Vk.DestroyCommandPool(_context.Device, _vkObject, in VulkanContext.CustomAllocator<VkCommandPool>());
                 }
 
                 _disposed = true;

@@ -15,6 +15,7 @@ namespace RockEngine.Editor.EditorComponents
         private readonly float _mouseSensitivity = 0.1f; // Sensitivity for mouse movement
         private Vector2 _lastMousePosition;
         private bool _firstMouse = true;
+        public bool CanMove = false;
 
         public DebugCamera()
         {
@@ -40,7 +41,10 @@ namespace RockEngine.Editor.EditorComponents
 
         private void HandleKeyboardInput()
         {
-            if (_inputContext == null) return;
+            if (_inputContext == null || !CanMove)
+            {
+                return;
+            }
 
             foreach (var keyboard in _inputContext.Keyboards)
             {
@@ -88,6 +92,7 @@ namespace RockEngine.Editor.EditorComponents
 
         private void OnMouseMove(IMouse mouse, Vector2 position)
         {
+           
             if (_firstMouse)
             {
                 _lastMousePosition = position;
@@ -99,6 +104,10 @@ namespace RockEngine.Editor.EditorComponents
 
             _lastMousePosition = position;
 
+            if (!CanMove)
+            {
+                return;
+            }
             Yaw += xOffset;
             Pitch -= yOffset; // Invert Y-axis for natural camera movement
 

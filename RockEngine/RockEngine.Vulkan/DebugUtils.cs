@@ -87,7 +87,7 @@ namespace RockEngine.Vulkan
             }
         }
 
-        public DebugLabelScope CmdDebugLabelScope(CommandBuffer commandBuffer, string labelName, float[] color)
+        public DebugLabelScope CmdDebugLabelScope(VkCommandBuffer commandBuffer, string labelName, float[] color)
         {
             return new DebugLabelScope(this, commandBuffer, labelName, color);
         }
