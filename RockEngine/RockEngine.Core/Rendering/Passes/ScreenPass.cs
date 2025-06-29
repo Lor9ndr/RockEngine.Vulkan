@@ -13,7 +13,7 @@ namespace RockEngine.Core.Rendering.Passes
     {
         private readonly VkPipeline _screenPipeline;
         private readonly SwapchainRenderTarget _swapchainTarget;
-        private Material _screenMaterial;
+        private readonly Material _screenMaterial;
         protected Dictionary<Texture, TextureBinding> Bindings = new Dictionary<Texture, TextureBinding>();
 
         protected override uint Order => 2;
@@ -41,7 +41,7 @@ namespace RockEngine.Core.Rendering.Passes
             {
                 return Task.CompletedTask;
             }
-            BindingManager.BindResourcesForMaterial(_screenMaterial, cmd);
+            BindingManager.BindResourcesForMaterial(renderer.FrameIndex, _screenMaterial, cmd);
             cmd.Draw(3, 1, 0, 0);
             return Task.CompletedTask;
         }
@@ -53,7 +53,7 @@ namespace RockEngine.Core.Rendering.Passes
                 binding = new TextureBinding(0, 0, ImageLayout.ShaderReadOnlyOptimal, outputTexture);
                 Bindings.Add(outputTexture, binding);
             }
-            _screenMaterial.Bindings.Add(binding);
+            _screenMaterial.Bind(binding);
         }
     }
 }

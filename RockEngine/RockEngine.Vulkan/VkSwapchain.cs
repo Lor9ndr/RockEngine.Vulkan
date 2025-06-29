@@ -308,8 +308,8 @@ namespace RockEngine.Vulkan
             {
                 presentResult.VkAssertResult("Failed to present queue");
             }
+            currentFrame.FlushOperation = operation;
             _currentFrameIndex = (_currentFrameIndex + 1) % _context.MaxFramesPerFlight;
-            GetFrameData().FlushOperation = operation;
 
         }
 
@@ -323,8 +323,8 @@ namespace RockEngine.Vulkan
             }
 
             // Wait for the device to finish any ongoing operations
-           /* _context.Device.GraphicsQueue.WaitIdle();
-            _context.Device.PresentQueue.WaitIdle();*/
+            _context.Device.GraphicsQueue.WaitIdle();
+            _context.Device.PresentQueue.WaitIdle();
 
             // Dispose of old framebuffers and image views
             DisposeImageViews();

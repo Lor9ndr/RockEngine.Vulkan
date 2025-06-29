@@ -10,7 +10,7 @@ namespace RockEngine.Core.Internal
 
         public uint Set { get; }
         public int Count => _bindings.Count;
-        public bool NeedToUpdate => _bindings.Values.Any(b => b.IsDirty);
+        public bool NeedToUpdate => _bindings.Values.Any(b => b.DescriptorSets.Any(s=>s is null || s.IsDirty));
 
         public PerSetBindings(uint set)
         {

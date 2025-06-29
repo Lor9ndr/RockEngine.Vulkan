@@ -24,14 +24,17 @@ namespace RockEngine.Core.Rendering.ResourceBindings
 
         private void Attachment_WasUpdated()
         {
-            IsDirty = true;
+            foreach (var descriptorSet in DescriptorSets)
+            {
+                descriptorSet.IsDirty = true;
+            }
         }
 
-        public override unsafe void UpdateDescriptorSet(VulkanContext context)
+        public override unsafe void UpdateDescriptorSet(VulkanContext context, uint frameIndex)
         {
             var imageInfos = stackalloc DescriptorImageInfo[Attachments.Length];
             var writes = stackalloc WriteDescriptorSet[Attachments.Length];
-
+            var descriptor = DescriptorSets[frameIndex];
             for (int i = 0; i < Attachments.Length; i++)
             {
                 imageInfos[i] = new DescriptorImageInfo
@@ -44,7 +47,7 @@ namespace RockEngine.Core.Rendering.ResourceBindings
                 writes[i] = new WriteDescriptorSet
                 {
                     SType = StructureType.WriteDescriptorSet,
-                    DstSet = DescriptorSet,
+                    DstSet = descriptor,
                     DstBinding = BindingLocation + (uint)i,
                     DstArrayElement = 0,
                     DescriptorCount = 1,
@@ -54,7 +57,6 @@ namespace RockEngine.Core.Rendering.ResourceBindings
             }
 
             VulkanContext.Vk.UpdateDescriptorSets(context.Device, (uint)Attachments.Length, writes, 0, null);
-            IsDirty = false;
         }
         public override int GetResourceHash()
         {

@@ -1,10 +1,10 @@
 ﻿using RockEngine.Core.ECS.Components;
 using RockEngine.Core.Rendering.Managers;
 using RockEngine.Core.Rendering.ResourceBindings;
-using RockEngine.Core.Rendering.RockEngine.Core.Rendering;
 using RockEngine.Vulkan;
 
 using Silk.NET.Vulkan;
+
 using System.Runtime.InteropServices;
 
 namespace RockEngine.Core.Rendering.Passes
@@ -16,7 +16,6 @@ namespace RockEngine.Core.Rendering.Passes
         private readonly TransformManager _transformManager;
         private readonly IndirectCommandManager _indirectCommands;
         private readonly GlobalUbo _globalUbo;
-        private readonly UniformBufferBinding _binding;
         protected override uint Order => 2;
 
 
@@ -32,7 +31,6 @@ namespace RockEngine.Core.Rendering.Passes
             _transformManager = transformManager;
             _indirectCommands = indirectCommands;
             _globalUbo = globalUbo;
-            _binding = new UniformBufferBinding(_globalUbo, 0, 0);
         }
 
 
@@ -40,6 +38,7 @@ namespace RockEngine.Core.Rendering.Passes
         {
             uint frameIndex = (uint)args[0];
             var camera = args[1] as Camera ?? throw new ArgumentNullException(nameof(Camera));
+            var camIndex = (int)args[2];
             cmd.SetViewport(camera.RenderTarget.Viewport);
             cmd.SetScissor(camera.RenderTarget.Scissor);
             var pipeline = default(VkPipeline);
@@ -55,11 +54,11 @@ namespace RockEngine.Core.Rendering.Passes
                     pipeline = drawGroup.Pipeline;
                     var matrixBinding = _transformManager.GetCurrentBinding(frameIndex);
 
-                    BindingManager.BindResource(_binding, cmd, drawGroup.Pipeline.Layout);
-                    BindingManager.BindResource(matrixBinding, cmd, drawGroup.Pipeline.Layout);
+                    BindingManager.BindResource(frameIndex, _globalUbo.GetBinding((uint)camIndex), cmd, drawGroup.Pipeline.Layout);
+                    BindingManager.BindResource(frameIndex, matrixBinding, cmd, drawGroup.Pipeline.Layout);
                 }
 
-                BindingManager.BindResourcesForMaterial(drawGroup.Mesh.Material, cmd);
+                BindingManager.BindResourcesForMaterial(frameIndex,drawGroup.Mesh.Material, cmd);
 
                 drawGroup.Mesh.Material.CmdPushConstants(cmd);
 

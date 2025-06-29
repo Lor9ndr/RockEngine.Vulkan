@@ -22,10 +22,10 @@ namespace RockEngine.Core.Rendering
         /// </summary>
         /// <param name="layer">layer that will be attached</param>
         /// <returns>Task of the <see cref="ILayer.OnAttach"/> method</returns>
-        public Task PushLayer(ILayer layer)
+        public async Task PushLayer(ILayer layer)
         {
+            await layer.OnAttach();
             _layers.Add(layer);
-            return layer.OnAttach();
         }
 
         public void PopLayer(ILayer layer)

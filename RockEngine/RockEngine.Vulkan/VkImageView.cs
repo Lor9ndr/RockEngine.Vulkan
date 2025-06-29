@@ -74,13 +74,13 @@ namespace RockEngine.Vulkan
             // Destroy existing view
             if (_vkObject.Handle != 0)
             {
-                VulkanContext.Vk.DestroyImageView(_context.Device, _vkObject, null);
+                VulkanContext.Vk.DestroyImageView(_context.Device, _vkObject, in VulkanContext.CustomAllocator<VkImageView>());
             }
             _image = image;
             _createInfo.Image = _image;
            
 
-            VulkanContext.Vk.CreateImageView(_context.Device, in _createInfo, null, out var imageView);
+            VulkanContext.Vk.CreateImageView(_context.Device, in _createInfo, in VulkanContext.CustomAllocator<VkImageView>(), out var imageView);
             _vkObject = imageView;
 
             WasUpdated?.Invoke();

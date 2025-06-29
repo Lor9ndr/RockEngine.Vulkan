@@ -31,10 +31,10 @@ namespace RockEngine.Core.Rendering.Managers
                     _engine.Swapchain.Extent,
                     _deferredRenderPass
                 );
-                _engine.Swapchain.OnSwapchainRecreate += (swapchain) =>
+               /* _engine.Swapchain.OnSwapchainRecreate += (swapchain) =>
                 {
                     camera.RenderTarget.Resize(swapchain.Extent);
-                };
+                };*/
                 camera.RenderTarget.CreateFramebuffers();
                 InitializeGBuffer(camera.RenderTarget.GBuffer, renderer);
             }
@@ -44,12 +44,10 @@ namespace RockEngine.Core.Rendering.Managers
 
         private void InitializeGBuffer(GBuffer gbuffer, Renderer renderer)
         {
-            // Исправляем передачу параметров
             gbuffer.CreateLightingDescriptorSets(renderer.DeferredLightingPipeline);
-            gbuffer.Material.Bindings.Add(new UniformBufferBinding(renderer.GlobalUbo, 0, 0));
+            gbuffer.Material.Bindings.Add(renderer.GlobalUbo.GetBinding((uint)_activeCameras.Count));
 
-            gbuffer.Material.Bindings.Add(
-                new UniformBufferBinding(renderer.LightManager.CountLightUbo, 1, 1));
+            gbuffer.Material.Bindings.Add(new UniformBufferBinding(renderer.LightManager.CountLightUbo, 1, 1));
         }
 
         public void Unregister(Camera camera)

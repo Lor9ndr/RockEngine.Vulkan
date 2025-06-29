@@ -14,7 +14,7 @@ namespace RockEngine.Vulkan
         private readonly BufferUsageFlags _usage;
 
         public ulong Size => _deviceMemory.Size;
-
+        public nint MappedData => _deviceMemory.MappedData ?? throw new InvalidOperationException("Buffer is not mapped");
         public VkBuffer(VulkanContext context, in Buffer bufferNative, VkDeviceMemory deviceMemory, BufferUsageFlags usage)
             : base(in bufferNative)
         {
@@ -27,6 +27,7 @@ namespace RockEngine.Vulkan
                 _deviceMemory.Map();
             }
         }
+
 
         public static unsafe VkBuffer Create(VulkanContext context, ulong size, BufferUsageFlags usage, MemoryPropertyFlags properties)
         {
@@ -62,11 +63,10 @@ namespace RockEngine.Vulkan
             var stagingBuffer = Create(context, size, BufferUsageFlags.TransferSrcBit, MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit);
 
             // Map the staging buffer memory
-            var destination = IntPtr.Zero.ToPointer();
-            stagingBuffer.Map(ref destination);
+            stagingBuffer.Map();
 
             // Write data to the staging buffer
-            stagingBuffer.WriteToBuffer(data, destination);
+            stagingBuffer.WriteToBuffer(data, stagingBuffer._deviceMemory.MappedData!.Value.ToPointer());
 
             // Flush the staging buffer to ensure data visibility
             stagingBuffer.Flush();
@@ -190,7 +190,7 @@ namespace RockEngine.Vulkan
         {
             if (data == null || data.Length == 0)
             {
-                throw new ArgumentException("Data array is null or empty", nameof(data));
+               throw new ArgumentException("Data array is null or empty", nameof(data));
             }
             ulong dataSize = (ulong)(data.Length * Marshal.SizeOf<T>());
             ulong actualSize = size;
@@ -226,13 +226,12 @@ namespace RockEngine.Vulkan
                 else
                 {
                     // Fallback to temporary mapping for non-host-visible buffers
-                    void* destination = null;
-                    Map(ref destination, size, offset);
+                    Map(size, offset);
                     try
                     {
                         fixed (T* dataPtr = data)
                         {
-                            WriteToBuffer(dataPtr, destination, actualSize, 0);
+                            WriteToBuffer(dataPtr, _deviceMemory.MappedData!.Value.ToPointer(), actualSize, 0);
                         }
                         Flush(size, offset);
                     }
@@ -246,7 +245,7 @@ namespace RockEngine.Vulkan
 
         }
 
-        public ValueTask WriteToBufferAsync<T>(T data, ulong size = Vk.WholeSize, ulong offset = 0) where T : unmanaged
+        public ValueTask WriteToBufferAsync<T>(in T data, ulong size = Vk.WholeSize, ulong offset = 0) where T : unmanaged
         {
             ulong dataSize = (ulong)(Marshal.SizeOf<T>());
             ulong actualSize = size;
@@ -268,9 +267,50 @@ namespace RockEngine.Vulkan
             {
                 if (!_deviceMemory.IsMapped)
                 {
-                    void* destination = null;
-                    Map(ref destination, size, offset);
-                    WriteToBuffer(&data, destination, actualSize, 0);
+                    Map(size, offset);
+                    fixed(T* pData = &data)
+                    {
+                        WriteToBuffer(pData, _deviceMemory.MappedData!.Value.ToPointer(), actualSize, 0);
+                    }
+                    Flush(size, offset);
+                    Unmap();
+                }
+                else
+                {
+                    fixed(T* pData = &data)
+                    {
+                        WriteToBuffer(pData, _deviceMemory.MappedData!.Value.ToPointer(), actualSize, 0);
+                    }
+                    Flush(size, offset);
+                    Unmap();
+                }
+
+            }
+            return default;
+        }
+        public unsafe ValueTask WriteToBufferAsync<T>(void* data, ulong dataSize, ulong size = Vk.WholeSize, ulong offset = 0) where T : unmanaged
+        {
+            ulong actualSize = size;
+            if (size == Vk.WholeSize)
+            {
+                actualSize = dataSize;
+            }
+            else if (actualSize > dataSize)
+            {
+                throw new ArgumentException("Specified size is larger than the data array size", nameof(size));
+            }
+
+            if (offset + actualSize > Size)
+            {
+                throw new ArgumentException("Data exceeds buffer size", nameof(size));
+            }
+
+            unsafe
+            {
+                if (!_deviceMemory.IsMapped)
+                {
+                    Map(size, offset);
+                    WriteToBuffer(&data, _deviceMemory.MappedData!.Value.ToPointer(), actualSize, 0);
                     Flush(size, offset);
                     Unmap();
                 }
@@ -286,29 +326,26 @@ namespace RockEngine.Vulkan
         }
 
 
+
         public static ulong GetAlignment(ulong bufferSize, ulong minOffsetAlignment)
         {
             return (bufferSize + minOffsetAlignment - 1) / minOffsetAlignment * minOffsetAlignment;
         }
 
 
-        public unsafe void Map(ref void* pdata, ulong size = Vk.WholeSize, ulong offset = 0)
+        public unsafe void Map(ulong size = Vk.WholeSize, ulong offset = 0)
         {
             if (_deviceMemory.IsMapped)
             {
-                pdata = _deviceMemory.MappedData.Value.ToPointer();
                 return;
             }
             _deviceMemory.Map(size, offset);
-            pdata = _deviceMemory.MappedData.Value.ToPointer();
-
         }
 
         public unsafe void Map(out nint pdata, ulong size = Vk.WholeSize, ulong offset = 0)
         {
-            void* mappedData = nint.Zero.ToPointer();
-            Map(ref mappedData, size, offset);
-            pdata = new nint(mappedData);
+            Map(size, offset);
+            pdata = new nint(_deviceMemory.MappedData!.Value);
         }
 
         public void Unmap()

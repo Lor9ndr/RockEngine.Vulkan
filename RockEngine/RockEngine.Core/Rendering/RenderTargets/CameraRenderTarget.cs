@@ -1,7 +1,5 @@
-﻿using RockEngine.Core.Extensions.Builders;
-using RockEngine.Core.Rendering.Texturing;
+﻿using RockEngine.Core.Rendering.Texturing;
 using RockEngine.Vulkan;
-using RockEngine.Vulkan.Builders;
 
 using Silk.NET.Vulkan;
 
@@ -106,14 +104,19 @@ namespace RockEngine.Core.Rendering.RenderTargets
 
         public override void Resize(Extent2D newSize)
         {
+            if (newSize.Width == Size.Width && newSize.Height == Size.Height)
+            {
+                return;
+            }
             base.Resize(newSize);
             _gBuffer.Recreate(Size);
             CreateTexture();
             CreateFramebuffers();
+
         }
         protected override void DisposeResources()
         {
-            OutputTexture?.Dispose();
+            _context.SubmitContext.AddDependency(OutputTexture);
         }
     }
 }

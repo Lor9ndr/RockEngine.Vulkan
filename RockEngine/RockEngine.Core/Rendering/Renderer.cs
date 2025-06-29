@@ -6,12 +6,13 @@ using RockEngine.Core.Rendering.Managers;
 using RockEngine.Core.Rendering.Passes;
 using RockEngine.Core.Rendering.PipelineRenderers;
 using RockEngine.Core.Rendering.RenderTargets;
-using RockEngine.Core.Rendering.RockEngine.Core.Rendering;
 using RockEngine.Core.Rendering.Texturing;
 using RockEngine.Vulkan;
 using RockEngine.Vulkan.Builders;
 
 using Silk.NET.Vulkan;
+
+using ZLinq;
 
 namespace RockEngine.Core.Rendering
 {
@@ -33,7 +34,6 @@ namespace RockEngine.Core.Rendering
         private readonly VkPipeline _deferredLightingPipeline;
         private readonly VkPipeline _screenPipeline;
         private readonly VkPipeline _skyboxPipeline;
-
         private uint _prevFrameIndex = uint.MaxValue;
 
 
@@ -43,7 +43,9 @@ namespace RockEngine.Core.Rendering
         public uint FrameIndex => _graphicsEngine.CurrentImageIndex;
 
         public const ulong MAX_LIGHTS_SUPPORTED = 10_000;
-        public GlobalUbo GlobalUbo { get; } = new GlobalUbo("GlobalData", 0);
+        private const uint MAX_CAMERAS_SUPPORTED = 10;
+
+        public GlobalUbo GlobalUbo { get; }
 
         public LightManager LightManager => _lightManager;
 
@@ -57,17 +59,18 @@ namespace RockEngine.Core.Rendering
         {
             var poolSizes = new[]
             {
-                new DescriptorPoolSize(DescriptorType.UniformBuffer, 1000),
-                new DescriptorPoolSize(DescriptorType.CombinedImageSampler, 1000),
-                new DescriptorPoolSize(DescriptorType.StorageBuffer, 1000),
-                new DescriptorPoolSize(DescriptorType.InputAttachment, 3),
-                new DescriptorPoolSize(DescriptorType.UniformBufferDynamic, 1000),
-                new DescriptorPoolSize(DescriptorType.StorageImage, 1000)
+                new DescriptorPoolSize(DescriptorType.CombinedImageSampler, 300),
+                new DescriptorPoolSize(DescriptorType.UniformBuffer, 100),
+                new DescriptorPoolSize(DescriptorType.StorageBuffer, 50),
+                new DescriptorPoolSize(DescriptorType.InputAttachment, 10),
+                new DescriptorPoolSize(DescriptorType.UniformBufferDynamic, 20),
+                new DescriptorPoolSize(DescriptorType.StorageImage, 10)
             };
             _context = context;
             _graphicsEngine = graphicsEngine;
             _pipelineManager = pipelineManager;
             SwapchainTarget = new SwapchainRenderTarget(context, graphicsEngine.Swapchain);
+            GlobalUbo = new GlobalUbo(context, 0, MAX_CAMERAS_SUPPORTED);
 
             RenderPass = CreateRenderPass();
             _deferredLightingPipeline = CreateLightingResources();
@@ -79,15 +82,15 @@ namespace RockEngine.Core.Rendering
             _transformManager = new TransformManager(context, (uint)_context.MaxFramesPerFlight);
             _cameraManager = new CameraManager(context, graphicsEngine, RenderPass);
             _indirectCommandManager = new IndirectCommandManager(context, TransformManager.INITIAL_CAPACITY);
-            _bindingManager = new BindingManager(context, new DescriptorPoolManager(context, poolSizes, 5_000), graphicsEngine);
+            _bindingManager = new BindingManager(context, new DescriptorPoolManager(context, poolSizes, 500), graphicsEngine);
 
 
             _renderPipeline = new DeferredRenderPipeline( _context,
                 new GeometryPass(_context,_bindingManager, _transformManager, _indirectCommandManager, GlobalUbo),
-                new LightingPass(_context,_bindingManager, _lightManager, _transformManager, _indirectCommandManager,GlobalUbo, _deferredLightingPipeline, World.GetCurrent()),
+                new LightingPass(_context,_bindingManager, _lightManager, _transformManager, _indirectCommandManager, _deferredLightingPipeline, World.GetCurrent()),
                 new PostLightPass(_context, _bindingManager, _transformManager, _indirectCommandManager, GlobalUbo),
                 new ScreenPass(_context,_bindingManager, _screenPipeline, SwapchainTarget),
-                new ImGuiPass(_context,_bindingManager, _graphicsEngine.Swapchain, _indirectCommandManager.OtherCommands)
+                new ImGuiPass(_context,_bindingManager, _graphicsEngine.Swapchain, _indirectCommandManager.OtherCommands),GlobalUbo
             );
 
             _iblManager = new IBLManager(
@@ -153,8 +156,18 @@ namespace RockEngine.Core.Rendering
             // Update all frame data first
             await Task.WhenAll( _lightManager.UpdateAsync(_cameraManager.ActiveCameras),
                                 _transformManager.UpdateAsync(FrameIndex),
-                                _indirectCommandManager.UpdateAsync(),_renderPipeline.Update()
-                                );
+                                _indirectCommandManager.UpdateAsync(),
+                                _renderPipeline.Update());
+            if(_cameraManager.ActiveCameras.Count > 0)
+            {
+               await GlobalUbo.UpdateAsync(_cameraManager.ActiveCameras
+                   .AsValueEnumerable()
+                   .Select(s => new GlobalUbo.GlobalUboData()
+                {
+                    Position = s.Entity.Transform.Position,
+                    ViewProjection = s.ViewProjectionMatrix,
+                }).ToArray());
+            }
             PerformanceTracer.ProcessQueries(_context, (int)FrameIndex);
             _prevFrameIndex = FrameIndex;
         }

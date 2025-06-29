@@ -28,7 +28,7 @@ namespace RockEngine.Core.Rendering.Passes
         {
             while (_commands.TryPeek(out var command) && command is ImguiRenderCommand imguiCmd)
             {
-                imguiCmd.RenderCommand.Invoke(cmd, _swapchain.Extent);
+                imguiCmd.RenderCommand(cmd, _swapchain.Extent);
                 while (!_commands.TryDequeue(out _)) { }
             }
         }

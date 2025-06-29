@@ -14,6 +14,7 @@ namespace RockEngine.Vulkan
         public VkRenderPass? RenderPass => _renderPass;
         public uint SubPass { get; private set; }
 
+
         public VkPipeline(VulkanContext context, string name, Pipeline pipeline, VkPipelineLayout pipelineLayout, VkRenderPass? renderPass, uint subpass)
             : base(pipeline)
         {

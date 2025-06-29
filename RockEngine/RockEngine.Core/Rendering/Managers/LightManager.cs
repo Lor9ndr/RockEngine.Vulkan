@@ -33,7 +33,7 @@ namespace RockEngine.Core.Rendering.Managers
                 );
             }
 
-            _countLightUbo = new UniformBuffer("LightCount", 1, sizeof(uint), sizeof(uint));
+            _countLightUbo = new UniformBuffer("LightCount", 1, sizeof(uint));
 
             _countLightBinding = new UniformBufferBinding(_countLightUbo, 1, 1);
         }

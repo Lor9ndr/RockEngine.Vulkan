@@ -30,11 +30,11 @@ namespace RockEngine.Core.Rendering.ResourceBindings
 
         protected override DescriptorType DescriptorType => DescriptorType.StorageImage;
 
-        public unsafe override void UpdateDescriptorSet(VulkanContext context)
+        public unsafe override void UpdateDescriptorSet(VulkanContext context, uint frameIndex)
         {
             var imageInfos = stackalloc DescriptorImageInfo[_textures.Length];
             var writeDescriptorSets = stackalloc WriteDescriptorSet[_textures.Length];
-
+            var descriptor = DescriptorSets[frameIndex];
             for (int i = 0; i < _textures.Length; i++)
             {
                 var texture = _textures[i];
@@ -53,7 +53,7 @@ namespace RockEngine.Core.Rendering.ResourceBindings
                 writeDescriptorSets[i] = new WriteDescriptorSet
                 {
                     SType = StructureType.WriteDescriptorSet,
-                    DstSet = DescriptorSet,
+                    DstSet = DescriptorSets[frameIndex],
                     DstBinding = BindingLocation + (uint)i,
                     DstArrayElement = 0,
                     DescriptorType = DescriptorType,
@@ -69,7 +69,6 @@ namespace RockEngine.Core.Rendering.ResourceBindings
                 0,
                 null
             );
-            IsDirty = false;
         }
 
         public override int GetResourceHash()

@@ -238,14 +238,14 @@ namespace RockEngine.Vulkan
             public DescriptorSetLayoutBindingReflected[] Bindings;
         }
 
-        public struct PushConstantInfo
+        public class PushConstantInfo
         {
             public string Name { get; set; }
             public ShaderStageFlags StageFlags { get; set; }
             public uint Offset { get; set; }
             public uint Size { get; set; }
-            public byte[] Value;
-            public PushConstantRange ToPushConstantRangeVulkan() => new PushConstantRange() { Offset = Offset, Size = Size, StageFlags = StageFlags };
+
+            public static implicit operator PushConstantRange(PushConstantInfo v) => new PushConstantRange() { Offset = v.Offset, Size = v.Size, StageFlags = v.StageFlags };
         }
 
         public struct InputVariable

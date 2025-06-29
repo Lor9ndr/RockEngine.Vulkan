@@ -2,7 +2,7 @@
 #extension GL_KHR_vulkan_glsl : enable
 
 
-layout(set = 0, binding = 0) uniform GlobalUbo {
+layout(set = 0, binding = 0) uniform GlobalUbo_Dynamic {
     mat4 viewProj;
     vec3 camPos;
 } ubo;

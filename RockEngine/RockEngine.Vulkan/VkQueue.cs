@@ -108,7 +108,6 @@ namespace RockEngine.Vulkan
                     in submitInfo,
                     fence.VkObjectNative
                 ).VkAssertResult("Failed to submit to queue");
-                fence.Wait();
             }
             finally
             {

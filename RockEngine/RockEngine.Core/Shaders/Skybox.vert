@@ -8,7 +8,7 @@ layout(location = 3) in vec3 aTangent;
 layout(location = 4) in vec3 aBitangent;
 
 // Uniform block
-layout(set = 0, binding = 0) uniform GlobalData {
+layout(set = 0, binding = 0) uniform GlobalUbo_Dynamic {
     mat4 viewProjection;
     vec3 position;
 } globalData;

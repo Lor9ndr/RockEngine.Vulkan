@@ -11,28 +11,37 @@ namespace RockEngine.Core.Rendering.ResourceBindings
         public UniformBuffer Buffer { get; }
         public ulong Offset { get; }
 
+        private readonly ulong? _elementSize;
+
         protected override DescriptorType DescriptorType => Buffer.IsDynamic ? DescriptorType.UniformBufferDynamic : DescriptorType.UniformBuffer;
 
-        public UniformBufferBinding(UniformBuffer buffer, uint bindingLocation, uint setLocation, ulong offset = 0)
+        public UniformBufferBinding(
+            UniformBuffer buffer,
+            uint bindingLocation,
+            uint setLocation,
+            ulong offset = 0,
+            ulong? elementSize = null)
             : base(setLocation, bindingLocation)
         {
             Buffer = buffer;
             Offset = offset;
+            _elementSize = elementSize;
         }
 
-        public override unsafe void UpdateDescriptorSet(VulkanContext renderingContext)
+        public override unsafe void UpdateDescriptorSet(VulkanContext renderingContext, uint frameIndex)
         {
+            var descriptor = DescriptorSets[frameIndex];
             var bufferInfo = new DescriptorBufferInfo
             {
                 Buffer = Buffer.Buffer,
                 Offset = 0,
-                Range =  Buffer.Buffer.Size,
+                Range = _elementSize ?? Buffer.Buffer.Size
             };
 
             var writeDescriptorSet = new WriteDescriptorSet
             {
                 SType = StructureType.WriteDescriptorSet,
-                DstSet = DescriptorSet,
+                DstSet = descriptor,
                 DstBinding = BindingLocation,
                 DstArrayElement = 0,
                 DescriptorType = DescriptorType,
@@ -41,7 +50,6 @@ namespace RockEngine.Core.Rendering.ResourceBindings
             };
 
             VulkanContext.Vk.UpdateDescriptorSets(renderingContext.Device, 1, in writeDescriptorSet, 0, null);
-            IsDirty = false;
         }
         public override int GetResourceHash()
         {

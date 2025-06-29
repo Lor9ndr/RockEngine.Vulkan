@@ -9,9 +9,11 @@ using Silk.NET.Vulkan;
 
 using System.Runtime.CompilerServices;
 
+using static RockEngine.Vulkan.ShaderReflectionData;
+
 namespace RockEngine.Core.ECS.Components
 {
-    public class Material
+    public class Material : IDisposable
     {
         public VkPipeline Pipeline;
         public Texture[] Textures;
@@ -19,17 +21,32 @@ namespace RockEngine.Core.ECS.Components
 
         internal BindingCollection Bindings { get; private set; } = new BindingCollection();
         public Dictionary<string, ShaderReflectionData.PushConstantInfo> PushConstants { get;private set;}
+        private readonly Dictionary<string, byte[]> _pushConstantValues = new();
 
         public bool IsComplete => Pipeline != null &&
          Pipeline.Layout.DescriptorSetLayouts.All(setLayout =>
              setLayout.Value.Bindings.All(bindingInfo =>
                  Bindings.Any(b => b.Set == setLayout.Key)));
 
+        public Dictionary<string, byte[]> PushConstantValues => _pushConstantValues;
 
         public Material(VkPipeline pipeline, params List<Texture> textures)
         {
             Pipeline = pipeline;
-            PushConstants = Pipeline.Layout.PushConstantRanges.ToDictionary(s => s.Name);
+            var dict = new Dictionary<string, PushConstantInfo>();
+            foreach (var pushConstant in Pipeline.Layout.PushConstantRanges)
+            {
+                if (dict.TryGetValue(pushConstant.Name, out var value))
+                {
+                    value.StageFlags |= pushConstant.StageFlags;
+                }
+                else
+                {
+                    dict[pushConstant.Name] = pushConstant;
+                }
+            }
+               
+            PushConstants = dict;
 
            /* Console.WriteLine( pipeline.Name);
             foreach (var set in pipeline.Layout.DescriptorSetLayouts)
@@ -80,42 +97,31 @@ namespace RockEngine.Core.ECS.Components
         public void PushConstant<T>(string name, T value) where T : unmanaged
         {
             if (!PushConstants.TryGetValue(name, out var constant))
-            {
                 throw new ArgumentException($"Push constant '{name}' not found.");
+
+            uint size = (uint)Unsafe.SizeOf<T>();
+            /*if (size != constant.Size)
+                throw new ArgumentException($"Size mismatch for '{name}'. Expected: {constant.Size}, Actual: {size}");*/
+
+            // Get or create byte array
+            if (!_pushConstantValues.TryGetValue(name, out byte[]? buffer) || buffer.Length != size)
+            {
+                buffer = new byte[size];
+                _pushConstantValues[name] = buffer;
             }
 
-            // Validate size
-            uint expectedSize = constant.Size;
-            uint actualSize = (uint)Unsafe.SizeOf<T>();
-           /* if (actualSize != expectedSize)
-            {
-                throw new ArgumentException(
-                    $"Size mismatch for push constant '{name}'. Expected: {expectedSize}, Actual: {actualSize}");
-            }*/
-
-            // Serialize the struct into a byte array
-            constant.Value = new byte[expectedSize];
-            unsafe
-            {
-                fixed (byte* dataPtr = constant.Value)
-                {
-                    *(T*)dataPtr = value; // Directly write the struct into the byte array
-                }
-            }
-
-            PushConstants[name] = constant; // Update the stored data
+            // Direct memory copy
+            Unsafe.As<byte, T>(ref buffer[0]) = value;
         }
 
         internal unsafe void CmdPushConstants(VkCommandBuffer cmd)
         {
-            foreach (var constant in PushConstants.Values)
+            foreach (var (name, constant) in PushConstants)
             {
-                if (constant.Value == null || constant.Value.Length != constant.Size)
-                {
-                    continue; // Skip unset or invalid constants (or throw)
-                }
+                if (!_pushConstantValues.TryGetValue(name, out var buffer))
+                    continue;
 
-                fixed (byte* dataPtr = constant.Value)
+                fixed (byte* dataPtr = buffer)
                 {
                     cmd.PushConstants(
                         Pipeline.Layout,
@@ -126,6 +132,11 @@ namespace RockEngine.Core.ECS.Components
                     );
                 }
             }
+        }
+
+        public void Dispose()
+        {
+            _pushConstantValues.Clear();
         }
     }
 }

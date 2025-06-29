@@ -37,6 +37,22 @@ namespace RockEngine.Vulkan
                 Flags = usageFlags
             });
         }
+        public void Begin(CommandBufferUsageFlags usageFlags, in CommandBufferInheritanceInfo inheritanceInfo)
+        {
+            unsafe
+            {
+                fixed(CommandBufferInheritanceInfo* pInheritanceInfo = &inheritanceInfo)
+                {
+                    Begin(new CommandBufferBeginInfo()
+                    {
+                        SType = StructureType.CommandBufferBeginInfo,
+                        Flags = usageFlags,
+                        PInheritanceInfo = pInheritanceInfo
+                    });
+                }
+            }
+          
+        }
         public void Begin(in CommandBufferBeginInfo beginInfo, Action untilEndAction)
         {
             if (_isInRecordingState)
@@ -204,6 +220,14 @@ namespace RockEngine.Vulkan
         public unsafe void CopyBufferToImage(VkBuffer srcBuffer, VkImage dstImage, ImageLayout dstImageLayout, uint regionCount, BufferImageCopy* pRegions)
         {
             VulkanContext.Vk.CmdCopyBufferToImage(this, srcBuffer, dstImage, dstImageLayout, regionCount, pRegions);
+        }
+        public unsafe void CopyBufferToImage(VkBuffer srcBuffer, VkImage dstImage, ImageLayout dstImageLayout, uint regionCount, Span<BufferImageCopy> pRegions)
+        {
+            VulkanContext.Vk.CmdCopyBufferToImage(this, srcBuffer, dstImage, dstImageLayout, regionCount, pRegions);
+        }
+        public unsafe void CopyBufferToImage(VkBuffer srcBuffer, VkImage dstImage, ImageLayout dstImageLayout, uint regionCount, in BufferImageCopy pRegions)
+        {
+            VulkanContext.Vk.CmdCopyBufferToImage(this, srcBuffer, dstImage, dstImageLayout, regionCount, in pRegions);
         }
     }
 }

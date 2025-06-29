@@ -119,21 +119,21 @@ namespace RockEngine.Core
             {
                 if (_layerStack.Count == 0) return;
 
-                var vkCommandBuffer = _graphicsEngine.Begin();
-                if (vkCommandBuffer is null) return;
+                var batch = _graphicsEngine.Begin();
+                if (batch is null) return;
 
 
                 using (PerformanceTracer.BeginSection("_layerStack.RenderImGui"))
-                    _layerStack.RenderImGui(vkCommandBuffer.CommandBuffer);
+                    _layerStack.RenderImGui(batch.CommandBuffer);
 
                 using (PerformanceTracer.BeginSection("_layerStack.Render"))
-                    _layerStack.Render(vkCommandBuffer.CommandBuffer);
+                    _layerStack.Render(batch.CommandBuffer);
 
-                await _renderer.Render(vkCommandBuffer.CommandBuffer);
+                await _renderer.Render(batch.CommandBuffer);
 
                 using (PerformanceTracer.BeginSection("_graphicsEngine.end & Submit"))
                 {
-                    _graphicsEngine.SubmitAndPresent(vkCommandBuffer);
+                    _graphicsEngine.SubmitAndPresent(batch);
                 }
             }
         }

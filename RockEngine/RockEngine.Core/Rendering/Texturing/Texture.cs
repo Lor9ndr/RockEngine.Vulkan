@@ -33,22 +33,34 @@ namespace RockEngine.Core.Rendering.Texturing
         private static Texture? _emptyTexture;
         private uint _loadedMipLevels;
 
-        /// <summary>Image view for texture sampling</summary>
+        /// <summary>
+        /// Image view for texture sampling
+        /// </summary>
         public VkImageView ImageView => _imageView;
 
-        /// <summary>Texture sampler for filtering and addressing</summary>
+        /// <summary>
+        /// Texture sampler for filtering and addressing
+        /// </summary>
         public VkSampler Sampler => _sampler;
 
-        /// <summary>Vulkan image resource</summary>
+        /// <summary>
+        /// Vulkan image resource
+        /// </summary>
         public VkImage Image => _image;
 
-        /// <summary>Number of loaded mipmap levels</summary>
+        /// <summary>
+        /// Number of loaded mipmap levels
+        /// </summary>
         public uint LoadedMipLevels { get => _loadedMipLevels; protected set => _loadedMipLevels = value; }
 
-        /// <summary>Total available mipmap levels</summary>
+        /// <summary>
+        /// Total available mipmap levels
+        /// </summary>
         public uint TotalMipLevels => _image.MipLevels;
 
-        /// <summary>Texture width in pixels</summary>
+        /// <summary>
+        /// Texture width in pixels
+        /// </summary>
         public uint Width => _image.Extent.Width;
 
         /// <summary>
@@ -72,7 +84,6 @@ namespace RockEngine.Core.Rendering.Texturing
         public event Action<Texture>? OnTextureUpdated;
 
         #endregion
-
 
         #region Constructor and Core Methods
 
@@ -427,49 +438,45 @@ namespace RockEngine.Core.Rendering.Texturing
              bool keepTransferLayout = false)
         {
 
-            lock (vkImage)
+            var imageSize = (ulong)(width * height * format.GetBytesPerPixel());
+
+            // Transition the Vulkan image layout to TRANSFER_DST_OPTIMAL
+            vkImage.TransitionImageLayout(batch.CommandBuffer, ImageLayout.TransferDstOptimal);
+
+            if(!context.SubmitContext.StagingManager.TryStage(batch, data, out var offset, out var size))
             {
-                var imageSize = (ulong)(width * height * format.GetBytesPerPixel());
-
-                // Create a staging buffer
-
-
-
-                // Transition the Vulkan image layout to TRANSFER_DST_OPTIMAL
-                vkImage.TransitionImageLayout(batch.CommandBuffer, ImageLayout.TransferDstOptimal);
-
-                context.SubmitContext.StagingManager.TryStage(batch, data, out var offset, out var size);
-                var copyRegion = new BufferImageCopy
-                {
-                    BufferOffset = offset,
-                    BufferRowLength = 0, // Tightly packed
-                    BufferImageHeight = 0,
-                    ImageSubresource = new ImageSubresourceLayers
-                    {
-                        AspectMask = vkImage.AspectFlags, // Use image's aspect flags
-                        MipLevel = 0,
-                        BaseArrayLayer = 0,
-                        LayerCount = 1
-                    },
-                    ImageOffset = new Offset3D(0, 0, 0),
-                    ImageExtent = new Extent3D(width, height, 1)
-                };
-
-                batch.CommandBuffer.CopyBufferToImage(
-                    srcBuffer: context.SubmitContext.StagingManager.StagingBuffer,
-                    dstImage: vkImage,
-                    dstImageLayout: ImageLayout.TransferDstOptimal,
-                    regionCount: 1,
-                    pRegions: &copyRegion
-                );
-
-                // Transition the Vulkan image layout to SHADER_READ_ONLY_OPTIMAL
-                if (!keepTransferLayout)
-                {
-                    vkImage.TransitionImageLayout(batch.CommandBuffer, ImageLayout.ShaderReadOnlyOptimal);
-                }
+                throw new Exception("Failed to stage data from image");
             }
-            
+            var copyRegion = new BufferImageCopy
+            {
+                BufferOffset = offset,
+                BufferRowLength = 0, // Tightly packed
+                BufferImageHeight = 0,
+                ImageSubresource = new ImageSubresourceLayers
+                {
+                    AspectMask = vkImage.AspectFlags, // Use image's aspect flags
+                    MipLevel = 0,
+                    BaseArrayLayer = 0,
+                    LayerCount = 1
+                },
+                ImageOffset = new Offset3D(0, 0, 0),
+                ImageExtent = new Extent3D(width, height, 1)
+            };
+
+            batch.CommandBuffer.CopyBufferToImage(
+                srcBuffer: context.SubmitContext.StagingManager.StagingBuffer,
+                dstImage: vkImage,
+                dstImageLayout: ImageLayout.TransferDstOptimal,
+                regionCount: 1,
+                pRegions: &copyRegion
+            );
+
+            // Transition the Vulkan image layout to SHADER_READ_ONLY_OPTIMAL
+            if (!keepTransferLayout)
+            {
+                vkImage.TransitionImageLayout(batch.CommandBuffer, ImageLayout.ShaderReadOnlyOptimal);
+            }
+
         }
 
 
@@ -574,7 +581,7 @@ namespace RockEngine.Core.Rendering.Texturing
         /// <returns>Created cubemap texture</returns>
         /// <exception cref="ArgumentException">Invalid number of faces</exception>
         /// <exception cref="InvalidOperationException">Face size/format mismatch</exception>
-        public static async Task<Texture> CreateCubeMapAsync(VulkanContext context, string[] facePaths, CancellationToken cancellationToken = default)
+        public static async Task<Texture> CreateCubeMapAsync(VulkanContext context, string[] facePaths, bool generateMipMaps = false, CancellationToken cancellationToken = default)
         {
             if (facePaths.Length != 6)
                 throw new ArgumentException("Cube map requires exactly 6 face paths.");
@@ -595,7 +602,8 @@ namespace RockEngine.Core.Rendering.Texturing
             uint width = (uint)faceBitmaps[0].Width;
             uint height = (uint)faceBitmaps[0].Height;
             var format = GetVulkanFormat(faceBitmaps[0].ColorType, context);
-            uint mipLevels = CalculateMipLevels(width, height);
+            
+            uint mipLevels = generateMipMaps ? CalculateMipLevels(width, height) : 1;
 
             // Create cube-compatible image
             var image = CreateVulkanImage(
@@ -624,8 +632,6 @@ namespace RockEngine.Core.Rendering.Texturing
             for (int i = 0; i < 6; i++)
             {
                 var pixelData = faceBitmaps[i].GetPixelSpan();
-                ulong faceSize = (ulong)(width * height * format.GetBytesPerPixel());
-
                 if (!context.SubmitContext.StagingManager.TryStage(uploadBatch, pixelData, out ulong bufferOffset, out ulong stagedSize))
                 {
                     throw new InvalidOperationException("Staging buffer overflow");
@@ -653,26 +659,34 @@ namespace RockEngine.Core.Rendering.Texturing
                     in copyRegion);
             }
 
-            // 3. Transition base mip to TRANSFER_SRC_OPTIMAL for mipmap generation
-            image.TransitionImageLayout(
-                uploadBatch.CommandBuffer,
-                ImageLayout.TransferSrcOptimal,
-                baseMipLevel: 0,
-                levelCount: 1,
-                baseArrayLayer: 0,
-                layerCount: 6);
+
 
             // 4. Generate mipmaps for each face
-            image.GenerateMipmaps(uploadBatch.CommandBuffer);
+            if (generateMipMaps)
+            {
+                image.GenerateMipmaps(uploadBatch.CommandBuffer);
+            }
+            else
+            {
+                image.TransitionImageLayout(
+                        uploadBatch.CommandBuffer,
+                        ImageLayout.ShaderReadOnlyOptimal,
+                        baseMipLevel: 0,
+                        levelCount: 1,
+                        baseArrayLayer: 0,
+                        layerCount: 6);
 
-           /* // 5. Transition all mip levels to SHADER_READ_ONLY_OPTIMAL
-            image.TransitionImageLayout(
-                uploadBatch.CommandBuffer,
-                ImageLayout.ShaderReadOnlyOptimal,
-                baseMipLevel: 0,
-                levelCount: mipLevels,
-                baseArrayLayer: 0,
-                layerCount: 6);*/
+
+            }
+
+            /* // 5. Transition all mip levels to SHADER_READ_ONLY_OPTIMAL
+             image.TransitionImageLayout(
+                 uploadBatch.CommandBuffer,
+                 ImageLayout.ShaderReadOnlyOptimal,
+                 baseMipLevel: 0,
+                 levelCount: mipLevels,
+                 baseArrayLayer: 0,
+                 layerCount: 6);*/
 
             // Submit all commands
             uploadBatch.Submit();
@@ -681,6 +695,11 @@ namespace RockEngine.Core.Rendering.Texturing
             // Create associated resources
             var imageView = CreateCubeMapImageView(context, image, format);
             var sampler = CreateCubeMapSampler(context, mipLevels);
+
+            foreach (var item in faceBitmaps)
+            {
+                item.Dispose();
+            }
 
             return new Texture(context, image, imageView, sampler, null);
         }

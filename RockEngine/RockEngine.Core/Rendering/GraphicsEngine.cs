@@ -52,10 +52,10 @@ namespace RockEngine.Core.Rendering
         public void SubmitAndPresent(UploadBatch batch)
         {
             var data = _swapchain.GetFrameData();
-            _renderingContext.SubmitContext.AddSignalSemaphore(data.RenderFinishedSemaphore);
+            batch.AddSignalSemaphore(data.RenderFinishedSemaphore);
+            batch.AddWaitSemaphore(data.ImageAvailableSemaphore, PipelineStageFlags.ColorAttachmentOutputBit);
             batch.Submit();
 
-            _renderingContext.SubmitContext.AddWaitSemaphore(data.ImageAvailableSemaphore, PipelineStageFlags.ColorAttachmentOutputBit);
 
              var operation = _renderingContext.SubmitContext.FlushAsync(data.InFlightFence);
             _swapchain.Present(operation);

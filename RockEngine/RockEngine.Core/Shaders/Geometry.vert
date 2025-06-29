@@ -13,7 +13,7 @@ layout(set = 1, binding = 0) readonly buffer ModelData {
 };
 
 
-layout(set = 0, binding = 0) uniform GlobalUbo {
+layout(set = 0, binding = 0) uniform GlobalUbo_Dynamic {
     mat4 viewProj;
     vec3 camPos;
 } ubo;

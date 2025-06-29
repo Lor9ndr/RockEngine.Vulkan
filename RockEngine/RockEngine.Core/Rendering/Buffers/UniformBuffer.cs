@@ -19,16 +19,14 @@ namespace RockEngine.Core.Rendering.Buffers
         public string Name => _name;
         public uint BindingLocation { get; }
         public ulong DynamicOffset { get; set; }
-        public int DataSize { get; init; }
         public Dictionary<VkPipelineLayout, VkDescriptorSet> DescriptorSets { get; } = new Dictionary<VkPipelineLayout, VkDescriptorSet>();
 
-        public UniformBuffer(VulkanContext context, string name, uint bindingLocation, ulong size, int dataSize, bool isDynamic = false)
+        public UniformBuffer(VulkanContext context, string name, uint bindingLocation, ulong size,  bool isDynamic = false)
         {
             _context = context;
             _name = name;
             BindingLocation = bindingLocation;
             _isDynamic = isDynamic;
-            DataSize = dataSize;
 
             var bufferUsage = BufferUsageFlags.UniformBufferBit;
             var memoryProperties = MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit;
@@ -36,20 +34,30 @@ namespace RockEngine.Core.Rendering.Buffers
             bufferUsage |= BufferUsageFlags.TransferDstBit;
 
             _buffer = VkBuffer.Create(context, size, bufferUsage, memoryProperties);
+            _buffer.LabelObject(name);
         }
 
-        public UniformBuffer(string name, uint bindingLocation, ulong size, int dataSize, bool isDynamic = false)
-            : this(VulkanContext.GetCurrent(), name, bindingLocation, size, dataSize, isDynamic)
+        public UniformBuffer(string name, uint bindingLocation, ulong size, bool isDynamic = false)
+            : this(VulkanContext.GetCurrent(), name, bindingLocation, size, isDynamic)
         {
         }
 
-        public ValueTask UpdateAsync<T>(T data, ulong size = Vk.WholeSize, ulong offset = 0) where T : unmanaged
+        public ValueTask UpdateAsync<T>(in T data, ulong size = Vk.WholeSize, ulong offset = 0) where T : unmanaged
         {
             return Buffer.WriteToBufferAsync(data, size, offset);
         }
         public ValueTask UpdateAsync<T>(T[] data, ulong size = Vk.WholeSize, ulong offset = 0) where T : unmanaged
         {
             return Buffer.WriteToBufferAsync(data, size, offset);
+        }
+        public nint GetMappedData()
+        {
+            return _buffer.MappedData;
+        }
+
+        public void FlushBuffer(ulong size = Vk.WholeSize, ulong offset = 0)
+        {
+            _buffer.Flush(size, offset);
         }
 
 

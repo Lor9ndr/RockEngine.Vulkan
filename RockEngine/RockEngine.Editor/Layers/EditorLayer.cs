@@ -6,6 +6,7 @@ using RockEngine.Core.ECS.Components;
 using RockEngine.Core.Rendering;
 using RockEngine.Core.Rendering.Commands;
 using RockEngine.Core.Rendering.ImGuiRendering;
+using RockEngine.Core.Rendering.RenderTargets;
 using RockEngine.Core.Rendering.Texturing;
 using RockEngine.Editor.EditorComponents;
 using RockEngine.Editor.UIAttributes;
@@ -42,6 +43,7 @@ namespace RockEngine.Editor.Layers
         private readonly List<float> _lightSpeeds = new List<float>();
         private readonly List<float> _lightRadii = new List<float>();
         private Entity _selectedEntity;
+        private Vector2 _currentContentSize;
 
         public EditorLayer(World world, VulkanContext context, GraphicsEngine graphicsEngine, Renderer renderer, IInputContext inputContext, AssimpLoader assimpLoader)
         {
@@ -70,8 +72,13 @@ namespace RockEngine.Editor.Layers
                 "Resources/skybox/back.jpg"      // -Z
             ]);
             var skybox = _world.CreateEntity();
-             skybox.AddComponent<Skybox>().Cubemap = cubemap;
+            skybox.AddComponent<Skybox>().Cubemap = cubemap;
             skybox.Transform.Scale = new Vector3(100,100,100);
+
+
+
+            var gameCam = _world.CreateEntity();
+            gameCam.AddComponent<Camera>();
 
             var cam = _world.CreateEntity();
             var debugCam = cam.AddComponent<DebugCamera>();
@@ -295,11 +302,9 @@ namespace RockEngine.Editor.Layers
             DrawAllocationStats();
             DrawPerformanceMetrics();
             
-            if (ImGui.Begin("RENDER"))
+            if (ImGui.Begin("Scene"))
             {
-
                 var debugCam = _world.GetEntities()
-                    .AsValueEnumerable()
                     .FirstOrDefault(s=>s.GetComponent<DebugCamera>() is not null)?
                     .GetComponent<DebugCamera>();
                 if (debugCam != null)
@@ -329,7 +334,31 @@ namespace RockEngine.Editor.Layers
                     {
                         var texId = _imGuiController.GetTextureID(renderTarget.OutputTexture);
                         // Get proper size maintaining aspect ratio
-                        var imageSize = new Vector2(renderTarget.OutputTexture.Image.Extent.Width, renderTarget.OutputTexture.Image.Extent.Height);
+                        var imageSize = new Vector2(renderTarget.OutputTexture.Width, renderTarget.OutputTexture.Height);
+                        var availableSize = ImGui.GetContentRegionAvail();
+                        var scale = Math.Min(availableSize.X / imageSize.X, availableSize.Y / imageSize.Y);
+                        var displaySize = imageSize * scale;
+
+                        ImGui.Image(texId, displaySize);
+                        _currentContentSize = availableSize;
+                    }
+                }
+               
+                ImGui.End();
+            }
+            if (ImGui.Begin("Game"))
+            {
+                var camera = _world.GetEntities()
+                    .FirstOrDefault(s => s.GetComponent<Camera>() is not null && s.GetComponent<DebugCamera>() is null)?
+                    .GetComponent<Camera>();
+                if (camera != null)
+                {
+                    var renderTarget = camera.RenderTarget;
+                    if (renderTarget != null)
+                    {
+                        var texId = _imGuiController.GetTextureID(renderTarget.OutputTexture);
+                        // Get proper size maintaining aspect ratio
+                        var imageSize = new Vector2(renderTarget.OutputTexture.Width, renderTarget.OutputTexture.Height);
                         var availableSize = ImGui.GetContentRegionAvail();
                         var scale = Math.Min(availableSize.X / imageSize.X, availableSize.Y / imageSize.Y);
                         var displaySize = imageSize * scale;
@@ -337,11 +366,11 @@ namespace RockEngine.Editor.Layers
                         ImGui.Image(texId, displaySize);
                     }
                 }
-               
+
                 ImGui.End();
             }
 
-            var cameras = _world.GetEntities().AsValueEnumerable().Where(s=>s.GetComponent<Camera>() is not null);
+            var cameras = _world.GetEntities().Where(s=>s.GetComponent<Camera>() is not null);
             foreach (var camEntity in cameras)
             {
                 var cam = camEntity.GetComponent<Camera>();
@@ -366,15 +395,20 @@ namespace RockEngine.Editor.Layers
 
         public void OnUpdate()
         {
+            var debugCam = _world.GetEntities()
+                    .FirstOrDefault(s => s.GetComponent<DebugCamera>() is not null)?
+                    .GetComponent<DebugCamera>();
+             _currentContentSize.X = Math.Max(_currentContentSize.X, 1);
+             _currentContentSize.Y = Math.Max(_currentContentSize.Y, 1);
+            debugCam?.RenderTarget?.Resize(new Extent2D((uint)_currentContentSize.X, (uint)_currentContentSize.Y));
+
             _imGuiController.Update();
             float time = (float)Time.TotalTime;
             var lightEntities = _world.GetEntities()
-                .AsValueEnumerable()
                 .Where(s => s.GetComponent<Light>() != null).
                 ToArray();
 
             var camEntity = _world.GetEntities()
-                .AsValueEnumerable()
                 .FirstOrDefault(s => s.GetComponent<Camera>() != null);
 
 
@@ -649,7 +683,7 @@ namespace RockEngine.Editor.Layers
                             Vector4 value = default;
                             unsafe
                             {
-                                fixed (byte* ptr = constant.Value)
+                                fixed (byte* ptr = material.PushConstantValues[constant.Name])
                                 {
                                     value = *(Vector4*)ptr;
                                 }
@@ -659,7 +693,7 @@ namespace RockEngine.Editor.Layers
                             {
                                 unsafe
                                 {
-                                    fixed (byte* ptr = constant.Value)
+                                    fixed (byte* ptr = material.PushConstantValues[constant.Name])
                                     {
                                         *(Vector4*)ptr = value;
                                     }

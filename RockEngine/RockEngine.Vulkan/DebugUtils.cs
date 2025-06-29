@@ -39,7 +39,7 @@ namespace RockEngine.Vulkan
             return ptr != nint.Zero ? Marshal.GetDelegateForFunctionPointer<T>(ptr) : null;
         }
 
-        public unsafe void CmdBeginDebugUtilsLabel(CommandBuffer commandBuffer, string labelName, float[] color)
+        public unsafe void CmdBeginDebugUtilsLabel(CommandBuffer commandBuffer, string labelName, Span<float> color)
         {
             if (_cmdBeginDebugUtilsLabel != null)
             {

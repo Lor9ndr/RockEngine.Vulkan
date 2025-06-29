@@ -47,13 +47,13 @@ namespace RockEngine.Core.ECS
             _entities.Remove(entity);
         }
 
-        public IEnumerable<Entity> GetEntities()
+        public ValueEnumerable<ZLinq.Linq.FromList<Entity>, Entity> GetEntities()
         {
-            return _entities;
+            return  _entities.AsValueEnumerable();
         }
-        public List<Entity> GetEntitiesWithComponent<T>() where T : IComponent
+        public ValueEnumerable<ZLinq.Linq.ListWhere<Entity>, Entity> GetEntitiesWithComponent<T>() where T : IComponent
         {
-            return _entities.AsValueEnumerable().Where(s=>s.GetComponent<T>() is not null).ToList();
+            return _entities.AsValueEnumerable().Where(s=>s.GetComponent<T>() is not null);
         }
 
         public async Task Start(Renderer renderer)
@@ -74,7 +74,7 @@ namespace RockEngine.Core.ECS
             await ProcessPendingStarts(renderer);
         }
 
-        private async Task ProcessEntityComponents(Entity entity, Renderer renderer)
+        private async ValueTask ProcessEntityComponents(Entity entity, Renderer renderer)
         {
             foreach (var component in entity.Components)
             {
@@ -82,7 +82,7 @@ namespace RockEngine.Core.ECS
             }
         }
 
-        private async Task ProcessPendingStarts(Renderer renderer)
+        private async ValueTask ProcessPendingStarts(Renderer renderer)
         {
             while (_pendingStartComponents.TryDequeue(out var component))
             {

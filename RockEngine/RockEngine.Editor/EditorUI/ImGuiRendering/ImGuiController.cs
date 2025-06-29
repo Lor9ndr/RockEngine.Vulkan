@@ -446,19 +446,21 @@ namespace RockEngine.Core.Rendering.ImGuiRendering
         {
             if (_textures.TryGetValue(texture, out var value))
             {
-                if (value.Item2.IsDirty)
+                var desc = value.Item2.DescriptorSets[_graphicsEngine.CurrentImageIndex];
+                if (desc is null || desc.IsDirty)
                 {
                     value.Item1.Free();
-                    _bindingManager.AllocateAndUpdateDescriptorSet(value.Item2, _pipelineLayout);
-                    var newHandle = GCHandle.Alloc(value.Item2.DescriptorSet);
+                    _bindingManager.AllocateAndUpdateDescriptorSet(_graphicsEngine.CurrentImageIndex, value.Item2, _pipelineLayout);
+                    value.Item2.DescriptorSets[_graphicsEngine.CurrentImageIndex].IsDirty = false;
+                    var newHandle = GCHandle.Alloc(value.Item2.DescriptorSets[_graphicsEngine.CurrentImageIndex]);
                     _textures[texture] = (newHandle, value.Item2);
                     return GCHandle.ToIntPtr(newHandle);
                 }
                 return GCHandle.ToIntPtr(value.Item1);
             }
             var binding = new TextureBinding(0, 0, ImageLayout.ShaderReadOnlyOptimal, texture);
-            _bindingManager.AllocateAndUpdateDescriptorSet(binding, _pipelineLayout);
-            var handle = GCHandle.Alloc(binding.DescriptorSet);
+            _bindingManager.AllocateAndUpdateDescriptorSet(_graphicsEngine.CurrentImageIndex, binding, _pipelineLayout);
+            var handle = GCHandle.Alloc(binding.DescriptorSets[_graphicsEngine.CurrentImageIndex]);
             _textures[texture] = (handle, binding);
             return GCHandle.ToIntPtr(handle);
         }

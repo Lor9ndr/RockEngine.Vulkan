@@ -24,15 +24,18 @@ namespace RockEngine.Core.Rendering.ResourceBindings
 
         private void MarkAsDirty(Texture _)
         {
-            IsDirty = true;
+            foreach (var item in DescriptorSets)
+            {
+                item.IsDirty = true;
+            }
         }
 
 
-        public override unsafe void UpdateDescriptorSet(VulkanContext renderingContext)
+        public override unsafe void UpdateDescriptorSet(VulkanContext renderingContext, uint frameIndex)
         {
             WriteDescriptorSet* writeDescriptorSets = stackalloc WriteDescriptorSet[Textures.Length];
             DescriptorImageInfo* imageInfos = stackalloc DescriptorImageInfo[Textures.Length];
-
+            var descriptor = DescriptorSets[frameIndex];
             for (int i = 0; i < Textures.Length; i++)
             {
                 var item = Textures[i];
@@ -62,7 +65,7 @@ namespace RockEngine.Core.Rendering.ResourceBindings
                 writeDescriptorSets[i] = new WriteDescriptorSet
                 {
                     SType = StructureType.WriteDescriptorSet,
-                    DstSet = DescriptorSet,
+                    DstSet = descriptor,
                     DstBinding = (uint)(BindingLocation + i),
                     DstArrayElement = 0,
                     DescriptorType = DescriptorType,
@@ -72,7 +75,6 @@ namespace RockEngine.Core.Rendering.ResourceBindings
             }
 
             VulkanContext.Vk.UpdateDescriptorSets(renderingContext.Device, (uint)Textures.Length, writeDescriptorSets, 0, null);
-            IsDirty = false;
         }
         public override int GetResourceHash()
         {

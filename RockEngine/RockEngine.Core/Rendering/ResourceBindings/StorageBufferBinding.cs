@@ -19,8 +19,9 @@ namespace RockEngine.Core.Rendering.ResourceBindings
             Offset = offset;
         }
 
-        public override unsafe void UpdateDescriptorSet(VulkanContext renderingContext)
+        public override unsafe void UpdateDescriptorSet(VulkanContext renderingContext, uint frameIndex)
         {
+            var descriptor = DescriptorSets[frameIndex];
             var bufferInfo = new DescriptorBufferInfo
             {
                 Buffer = Buffer.Buffer,
@@ -31,7 +32,7 @@ namespace RockEngine.Core.Rendering.ResourceBindings
             var writeDescriptorSet = new WriteDescriptorSet
             {
                 SType = StructureType.WriteDescriptorSet,
-                DstSet = DescriptorSet,
+                DstSet = descriptor,
                 DstBinding = BindingLocation,
                 DstArrayElement = 0,
                 DescriptorType = DescriptorType.StorageBuffer,
@@ -40,7 +41,6 @@ namespace RockEngine.Core.Rendering.ResourceBindings
             };
 
             VulkanContext.Vk.UpdateDescriptorSets(renderingContext.Device, 1, in writeDescriptorSet, 0, null);
-            IsDirty = false;
         }
         public override int GetResourceHash()
         {

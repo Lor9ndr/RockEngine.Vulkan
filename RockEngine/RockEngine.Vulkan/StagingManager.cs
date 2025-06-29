@@ -63,14 +63,13 @@ namespace RockEngine.Vulkan
                     return false;
                 }
 
-                void* mappedPtr = null;
-                _stagingBuffer.Map(ref mappedPtr, size, alignedOffset);
+                _stagingBuffer.Map(out var pdata, size, alignedOffset);
 
                 fixed (T* dataPtr = data)
                 {
                     System.Buffer.MemoryCopy(
                         dataPtr,
-                        (byte*)mappedPtr + alignedOffset,
+                        (byte*)pdata + alignedOffset,
                         _bufferSize - alignedOffset,
                         size);
                 }

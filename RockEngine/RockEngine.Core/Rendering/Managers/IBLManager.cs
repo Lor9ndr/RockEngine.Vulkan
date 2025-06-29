@@ -6,8 +6,6 @@ using RockEngine.Vulkan;
 using Silk.NET.Maths;
 using Silk.NET.Vulkan;
 
-using SkiaSharp;
-
 using System.Runtime.InteropServices;
 
 namespace RockEngine.Core.Rendering.Managers
@@ -78,7 +76,7 @@ namespace RockEngine.Core.Rendering.Managers
             // Dispatch compute
             uint groupsX = (size + 31) / 32;
             uint groupsY = (size + 31) / 32;
-            _bindingManager.BindResourcesForMaterial(material, cmd, true);
+            _bindingManager.BindResourcesForMaterial(0,material, cmd, true);
             cmd.BindPipeline(_irradiancePipeline, PipelineBindPoint.Compute);
             _computeManager.Dispatch(cmd, groupsX, groupsY, 6);
             // Transition and return
@@ -140,7 +138,7 @@ namespace RockEngine.Core.Rendering.Managers
                 material.CmdPushConstants(cmd);
 
                 // Bind and dispatch
-                _bindingManager.BindResourcesForMaterial(material, cmd, true);
+                _bindingManager.BindResourcesForMaterial(0,material, cmd, true);
                 uint groups = (mipSize + 31) / 32;
                 _computeManager.Dispatch(cmd, groups, groups, 6);
             }
@@ -175,7 +173,7 @@ namespace RockEngine.Core.Rendering.Managers
 
             var output = new Texture.Builder(_context)
                 .SetSize(new Extent2D(size, size))
-                .SetFormat(Format.R32G32B32A32Sfloat)
+                .SetFormat(Format.R16G16Sfloat)
                 .SetUsage(ImageUsageFlags.StorageBit | ImageUsageFlags.SampledBit)
                 .Build();
 
@@ -186,7 +184,7 @@ namespace RockEngine.Core.Rendering.Managers
             material.Bind(new StorageImageBinding(output, 0, 0));
 
             // Ensure proper descriptor set binding
-            _bindingManager.BindResourcesForMaterial(material, cmd, true);
+            _bindingManager.BindResourcesForMaterial(0, material, cmd, true);
 
             uint groups = (size + 31) / 32;
             _computeManager.Dispatch(cmd, groups, groups, 1);

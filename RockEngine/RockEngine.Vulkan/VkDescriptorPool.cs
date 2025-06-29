@@ -22,7 +22,7 @@ namespace RockEngine.Vulkan
 
         public unsafe VkDescriptorSet AllocateDescriptorSet(DescriptorSetLayout setLayout)
         {
-            var allocInfo = new DescriptorSetAllocateInfo
+             var allocInfo = new DescriptorSetAllocateInfo
             {
                 SType = StructureType.DescriptorSetAllocateInfo,
                 DescriptorPool = this,

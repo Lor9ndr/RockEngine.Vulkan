@@ -2,7 +2,6 @@
 using RockEngine.Core.ECS.Components;
 using RockEngine.Core.Rendering.Managers;
 using RockEngine.Core.Rendering.ResourceBindings;
-using RockEngine.Core.Rendering.RockEngine.Core.Rendering;
 using RockEngine.Core.Rendering.Texturing;
 using RockEngine.Vulkan;
 
@@ -17,8 +16,6 @@ namespace RockEngine.Core.Rendering.Passes
         private readonly IndirectCommandManager _indirectCommands;
         private readonly VkPipeline _lightingPipeline;
         private readonly World _world;
-        private readonly GlobalUbo _globalUbo;
-        private readonly UniformBufferBinding _binding;
         private TextureBinding _IblBinding;
 
         public LightingPass(
@@ -27,7 +24,6 @@ namespace RockEngine.Core.Rendering.Passes
             LightManager lightManager,
             TransformManager transformManager,
             IndirectCommandManager indirectCommands,
-            GlobalUbo globalUbo,
             VkPipeline lightingPipeline,
             World world)
             : base(context, bindingManager)
@@ -37,9 +33,6 @@ namespace RockEngine.Core.Rendering.Passes
             _indirectCommands = indirectCommands;
             _lightingPipeline = lightingPipeline;
             _world = world;
-            _globalUbo = globalUbo;
-            _binding = new UniformBufferBinding(_globalUbo, 0, 0);
-
            
         }
 
@@ -58,19 +51,18 @@ namespace RockEngine.Core.Rendering.Passes
             {
                 camera.RenderTarget.GBuffer.Material.Bind(_IblBinding);
             }
-
+            //camera.RenderTarget.GBuffer.Material.Bind(_binding);
             cmd.BindPipeline(_lightingPipeline, PipelineBindPoint.Graphics);
             
             camera.RenderTarget.GBuffer.Material.CmdPushConstants(cmd);
 
-            BindingManager.BindResourcesForMaterial(camera.RenderTarget.GBuffer.Material, cmd);
+            BindingManager.BindResourcesForMaterial(frameIndex,camera.RenderTarget.GBuffer.Material, cmd);
             cmd.Draw(3, 1, 0, 0);
             return Task.CompletedTask;
         }
 
         internal void SetIBLTextures(Texture irradiance, Texture prefilter, Texture brdfLUT)
         {
-            
             _IblBinding =  new TextureBinding(3, 0, default,irradiance, prefilter, brdfLUT);
         }
 

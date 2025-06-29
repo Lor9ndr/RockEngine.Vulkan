@@ -1,7 +1,6 @@
 ﻿using RockEngine.Core.ECS.Components;
 using RockEngine.Core.Rendering.Managers;
 using RockEngine.Core.Rendering.ResourceBindings;
-using RockEngine.Core.Rendering.RockEngine.Core.Rendering;
 using RockEngine.Vulkan;
 
 using Silk.NET.Vulkan;
@@ -15,7 +14,6 @@ namespace RockEngine.Core.Rendering.Passes
         private readonly TransformManager _transformManager;
         private readonly IndirectCommandManager _indirectCommands;
         private readonly GlobalUbo _globalUbo;
-        private readonly UniformBufferBinding _globalBinding;
         protected override uint Order => 0;
 
         public GeometryPass(
@@ -29,7 +27,6 @@ namespace RockEngine.Core.Rendering.Passes
             _transformManager = transformManager;
             _indirectCommands = indirectCommands;
             _globalUbo = globalUbo;
-            _globalBinding = new UniformBufferBinding(_globalUbo, 0,0);
         }
 
         public override async Task Execute(VkCommandBuffer cmd, params object[] args)
@@ -37,13 +34,10 @@ namespace RockEngine.Core.Rendering.Passes
             // Extract frame index and camera from args
             uint frameIndex = (uint)args[0];
             var camera = args[1] as Camera ?? throw new ArgumentNullException(nameof(Camera));
+            var camIndex = (int)args[2];
 
-            _globalUbo.GlobalData = new GlobalUbo.GlobalUboData()
-            {
-                Position = camera.Entity.Transform.WorldPosition,
-                ViewProjection = camera.ViewProjectionMatrix
-            };
-            await _globalUbo.UpdateAsync();
+
+           
 
             cmd.SetViewport(camera.RenderTarget.Viewport);
             cmd.SetScissor(camera.RenderTarget.Scissor);
@@ -59,12 +53,13 @@ namespace RockEngine.Core.Rendering.Passes
                 {
                     cmd.BindPipeline(drawGroup.Pipeline);
                     pipeline = drawGroup.Pipeline;
+                    
 
-                    BindingManager.BindResource(_globalBinding, cmd, drawGroup.Pipeline.Layout);
-                    BindingManager.BindResource(matrixBinding, cmd, drawGroup.Pipeline.Layout);
+                    BindingManager.BindResource(frameIndex, _globalUbo.GetBinding((uint)camIndex) , cmd, drawGroup.Pipeline.Layout);
+                    BindingManager.BindResource(frameIndex, matrixBinding, cmd, drawGroup.Pipeline.Layout);
                 }
 
-                BindingManager.BindResourcesForMaterial(drawGroup.Mesh.Material, cmd, false,[matrixBinding.SetLocation, _globalBinding.SetLocation]);
+                BindingManager.BindResourcesForMaterial(frameIndex, drawGroup.Mesh.Material, cmd, false,[matrixBinding.SetLocation, _globalUbo.GetBinding((uint)camIndex).SetLocation]);
 
                 drawGroup.Mesh.VertexBuffer.BindVertexBuffer(cmd);
                 drawGroup.Mesh.IndexBuffer.BindIndexBuffer(cmd, 0, IndexType.Uint32);

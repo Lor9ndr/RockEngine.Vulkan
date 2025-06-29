@@ -3,6 +3,8 @@ using Silk.NET.Vulkan;
 
 using System.Collections.ObjectModel;
 
+using ZLinq;
+
 namespace RockEngine.Vulkan
 {
     public class VkPipelineLayout : VkObject<PipelineLayout>
@@ -38,7 +40,7 @@ namespace RockEngine.Vulkan
                 .ToArray();
 
             fixed (DescriptorSetLayout* setLayoutsPtr = descriptorSetLayouts)
-            fixed (PushConstantRange* pushConstantsPtr = pushConstantRanges.Select(s=>s.ToPushConstantRangeVulkan()).ToArray())
+            fixed (PushConstantRange* pushConstantsPtr = pushConstantRanges.AsValueEnumerable().Select(s=>(PushConstantRange)s).ToArray())
             {
                 var layoutInfo = new PipelineLayoutCreateInfo
                 {

@@ -5,7 +5,7 @@
         private readonly DebugUtilsFunctions _debugUtils;
         private readonly VkCommandBuffer _commandBuffer;
 
-        public DebugLabelScope(DebugUtilsFunctions debugUtils, VkCommandBuffer commandBuffer, string labelName, float[] color)
+        public DebugLabelScope(DebugUtilsFunctions debugUtils, VkCommandBuffer commandBuffer, string labelName, Span<float> color)
         {
             _debugUtils = debugUtils;
             _commandBuffer = commandBuffer;
@@ -23,7 +23,7 @@
 
         public void Dispose()
         {
-            _debugUtils._cmdEndDebugUtilsLabel?.Invoke(_commandBuffer);
+            _debugUtils._cmdEndDebugUtilsLabel(_commandBuffer);
         }
     }
 }
