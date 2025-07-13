@@ -200,30 +200,7 @@ namespace RockEngine.Vulkan
         {
             for (int i = 0; i < images.Length; i++)
             {
-                var image = images[i];
-                var ci = new ImageViewCreateInfo()
-                {
-                    SType = StructureType.ImageViewCreateInfo,
-                    Image = image,
-                    ViewType = ImageViewType.Type2D,
-                    Format = format,
-                    Components = new ComponentMapping()
-                    {
-                        A = ComponentSwizzle.Identity,
-                        B = ComponentSwizzle.Identity,
-                        G = ComponentSwizzle.Identity,
-                        R = ComponentSwizzle.Identity,
-                    },
-                    SubresourceRange = new ImageSubresourceRange()
-                    {
-                        AspectMask = ImageAspectFlags.ColorBit,
-                        BaseMipLevel = 0,
-                        LevelCount = 1,
-                        BaseArrayLayer = 0,
-                        LayerCount = 1
-                    }
-                };
-                swapChainImageViews[i] = VkImageView.Create(context, image, in ci);
+                swapChainImageViews[i] = images[i].GetOrCreateView(ImageAspectFlags.ColorBit);
             }
         }
 

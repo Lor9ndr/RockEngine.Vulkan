@@ -5,7 +5,7 @@ using System.Collections.Concurrent;
 
 namespace RockEngine.Core.Assets.Registres
 {
-    public class SerializerRegistry : IRegistry<IAssetSerializer<IAssetData>>
+    public class SerializerRegistry //: IRegistry<IAssetSerializer<IAssetData>>
     {
         private readonly ConcurrentDictionary<Type, IAssetSerializer<IAssetData>> _serializers = new();
 

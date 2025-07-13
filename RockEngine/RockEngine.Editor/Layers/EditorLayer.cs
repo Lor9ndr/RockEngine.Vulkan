@@ -1,17 +1,16 @@
 ﻿using ImGuiNET;
 
 using RockEngine.Core;
+using RockEngine.Core.Builders;
 using RockEngine.Core.ECS;
 using RockEngine.Core.ECS.Components;
 using RockEngine.Core.Rendering;
 using RockEngine.Core.Rendering.Commands;
-using RockEngine.Core.Rendering.ImGuiRendering;
-using RockEngine.Core.Rendering.RenderTargets;
 using RockEngine.Core.Rendering.Texturing;
 using RockEngine.Editor.EditorComponents;
+using RockEngine.Editor.EditorUI.ImGuiRendering;
 using RockEngine.Editor.UIAttributes;
 using RockEngine.Vulkan;
-using RockEngine.Vulkan.Builders;
 
 using Silk.NET.Input;
 using Silk.NET.Vulkan;
@@ -33,7 +32,7 @@ namespace RockEngine.Editor.Layers
         private readonly IInputContext _inputContext;
         private readonly AssimpLoader _assimpLoader;
         private readonly TextureStreamer _textureStreamer;
-        private readonly ImGuiController _imGuiController;
+        private ImGuiController _imGuiController;
         private VkPipelineLayout _pipelineLayout;
         private VkPipeline _pipeline;
         private IBLParams _iblParams = new IBLParams();
@@ -44,6 +43,7 @@ namespace RockEngine.Editor.Layers
         private readonly List<float> _lightRadii = new List<float>();
         private Entity _selectedEntity;
         private Vector2 _currentContentSize;
+        private Vector2 _currentGameSize;
 
         public EditorLayer(World world, VulkanContext context, GraphicsEngine graphicsEngine, Renderer renderer, IInputContext inputContext, AssimpLoader assimpLoader)
         {
@@ -53,7 +53,7 @@ namespace RockEngine.Editor.Layers
             _renderer = renderer;
             _inputContext = inputContext;
             _assimpLoader = assimpLoader;
-            _imGuiController = new ImGuiController(context, graphicsEngine, renderer.BindingManager, _inputContext, graphicsEngine.Swapchain.Extent.Width, graphicsEngine.Swapchain.Extent.Height, renderer.SwapchainTarget);
+
         }
 
         public async Task OnAttach()
@@ -173,6 +173,7 @@ namespace RockEngine.Editor.Layers
 
                mesh.Material.PushConstant("color", light.Color);
             }
+            _imGuiController = new ImGuiController(_context, _graphicsEngine, _renderer.BindingManager, _inputContext, _graphicsEngine.Swapchain.Extent.Width, _graphicsEngine.Swapchain.Extent.Height, _renderer.SwapchainTarget);
         }
 
         private struct IBLParams
@@ -364,6 +365,7 @@ namespace RockEngine.Editor.Layers
                         var displaySize = imageSize * scale;
 
                         ImGui.Image(texId, displaySize);
+                        _currentGameSize = availableSize;
                     }
                 }
 
@@ -398,10 +400,15 @@ namespace RockEngine.Editor.Layers
             var debugCam = _world.GetEntities()
                     .FirstOrDefault(s => s.GetComponent<DebugCamera>() is not null)?
                     .GetComponent<DebugCamera>();
-             _currentContentSize.X = Math.Max(_currentContentSize.X, 1);
+            var cam = _world.GetEntities()
+                .FirstOrDefault(s => s.GetComponent<Camera>() is not null && s.GetComponent<DebugCamera>() is null)?
+                .GetComponent<Camera>();
+            _currentContentSize.X = Math.Max(_currentContentSize.X, 1);
              _currentContentSize.Y = Math.Max(_currentContentSize.Y, 1);
+            _currentGameSize.X = Math.Max(_currentGameSize.X, 1);
+            _currentGameSize.Y = Math.Max(_currentGameSize.Y, 1);
             debugCam?.RenderTarget?.Resize(new Extent2D((uint)_currentContentSize.X, (uint)_currentContentSize.Y));
-
+            cam?.RenderTarget?.Resize(new Extent2D((uint)_currentGameSize.X, (uint)_currentGameSize.Y));
             _imGuiController.Update();
             float time = (float)Time.TotalTime;
             var lightEntities = _world.GetEntities()

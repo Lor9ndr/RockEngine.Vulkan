@@ -1,10 +1,12 @@
-﻿using Silk.NET.Vulkan;
+﻿using RockEngine.Vulkan;
+using RockEngine.Vulkan.Builders;
+
+using Silk.NET.Vulkan;
 
 using System.Buffers;
-using System.Linq;
 using System.Text;
 
-namespace RockEngine.Vulkan.Builders
+namespace RockEngine.Core.Builders
 {
     public class GraphicsPipelineBuilder : DisposableBuilder
     {

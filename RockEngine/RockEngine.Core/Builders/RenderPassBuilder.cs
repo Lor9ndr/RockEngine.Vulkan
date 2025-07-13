@@ -1,10 +1,11 @@
 ﻿using RockEngine.Vulkan;
+using RockEngine.Vulkan.Builders;
 
 using Silk.NET.Vulkan;
 
 using System.Buffers;
 
-namespace RockEngine.Vulkan.Builders;
+namespace RockEngine.Core.Builders;
 
 public class RenderPassBuilder : DisposableBuilder
 {
@@ -18,7 +19,7 @@ public class RenderPassBuilder : DisposableBuilder
     public AttachmentConfigurer ConfigureAttachment(Format format, SampleCountFlags samples = SampleCountFlags.Count1Bit)
         => new AttachmentConfigurer(this, format, samples);
 
-    public SubpassConfigurer BeginSubpass() => new SubpassConfigurer(this, _subpasses.Count);
+    public SubpassConfigurer BeginSubpass() => new SubpassConfigurer(this);
     public DependencyConfigurer AddDependency() => new DependencyConfigurer(this);
 
     public unsafe VkRenderPass Build()
@@ -48,26 +49,6 @@ public class RenderPassBuilder : DisposableBuilder
             return VkRenderPass.Create(_context, in createInfo);
         }
 
-    }
-
-    private unsafe SubpassDescription ConvertToNativeSubpass(VkSubpassDescription desc)
-    {
-        fixed (AttachmentReference* pColor = desc.ColorAttachments.ToArray())
-        fixed (AttachmentReference* pInput = desc.InputAttachments.ToArray())
-        fixed (AttachmentReference* pResolve = desc.ResolveAttachments.ToArray())
-        fixed (AttachmentReference* pDepth = desc.DepthStencilAttachment.ToArray())
-        {
-            return new SubpassDescription
-            {
-                PipelineBindPoint = desc.PipelineBindPoint,
-                ColorAttachmentCount = (uint)desc.ColorAttachments.Count,
-                PColorAttachments = pColor,
-                InputAttachmentCount = (uint)desc.InputAttachments.Count,
-                PInputAttachments = pInput,
-                PResolveAttachments = desc.ResolveAttachments?.Count > 0 ? pResolve : null,
-                PDepthStencilAttachment = desc.DepthStencilAttachment?.Count() > 0 ? pDepth : null
-            };
-        }
     }
 
     public class AttachmentConfigurer
@@ -125,7 +106,7 @@ public class RenderPassBuilder : DisposableBuilder
         private readonly RenderPassBuilder _parent;
         private readonly VkSubpassDescription _desc;
 
-        internal SubpassConfigurer(RenderPassBuilder parent, int index)
+        internal SubpassConfigurer(RenderPassBuilder parent)
         {
             _parent = parent;
             _desc = new VkSubpassDescription

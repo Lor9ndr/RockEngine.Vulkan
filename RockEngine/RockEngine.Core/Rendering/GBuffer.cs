@@ -55,7 +55,6 @@ namespace RockEngine.Core.Rendering
                 Material = new Material(_pipeline, ColorTextures.ToList());
             }
 
-            Material.Unbind(_attachmentBinding);
             _attachmentBinding = new InputAttachmentBinding(
                 setLocation: 2,
                 bindingLocation: 0,

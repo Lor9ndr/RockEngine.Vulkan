@@ -25,6 +25,7 @@ namespace RockEngine.Core.DI
                     module.RegisterDependencies(container);
                 }
             }
+            ContainerExtensions.BuildRenderPassSystem(container);
         }
     }
 }

@@ -8,23 +8,16 @@ namespace RockEngine.Core.Rendering
     public class GraphicsEngine : IDisposable
     {
         private readonly VulkanContext _renderingContext;
-        private readonly VkCommandPool _commandBufferPool;
         private readonly VkSwapchain _swapchain;
-        private readonly RenderPassManager _renderPassManager;
 
         public VkSwapchain Swapchain => _swapchain;
 
-        public RenderPassManager RenderPassManager => _renderPassManager;
-
         public uint CurrentImageIndex => _swapchain.CurrentImageIndex;
-
 
         public GraphicsEngine(VulkanContext renderingContext)
         {
             _renderingContext = renderingContext;
-            
             _swapchain = VkSwapchain.Create(_renderingContext, _renderingContext.Surface);
-            _renderPassManager = new RenderPassManager(_renderingContext);
         }
 
 
@@ -56,22 +49,17 @@ namespace RockEngine.Core.Rendering
             batch.AddWaitSemaphore(data.ImageAvailableSemaphore, PipelineStageFlags.ColorAttachmentOutputBit);
             batch.Submit();
 
-
              var operation = _renderingContext.SubmitContext.FlushAsync(data.InFlightFence);
             _swapchain.Present(operation);
         }
-
-      
 
         private void RecreateSwapchain()
         {
             _swapchain.RecreateSwapchain();
         }
 
-
         public void Dispose()
         {
-            _commandBufferPool.Dispose();
             _swapchain.Dispose();
         }
     }

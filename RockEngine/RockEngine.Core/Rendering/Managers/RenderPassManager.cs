@@ -1,49 +1,42 @@
-﻿using RockEngine.Vulkan;
+﻿using RockEngine.Core.Registries;
+using RockEngine.Core.Rendering.PipelineRenderers;
+using RockEngine.Vulkan;
 
 namespace RockEngine.Core.Rendering.Managers
 {
     public class RenderPassManager : IDisposable
     {
         private readonly VulkanContext _context;
-        private readonly List<EngineRenderPass> _renderPasses;
+        private readonly IRegistry<EngineRenderPass, Type> _registry;
 
-        public RenderPassManager(VulkanContext context)
+        public RenderPassManager(VulkanContext context, IRegistry<EngineRenderPass, Type> registry)
         {
             _context = context;
-            _renderPasses = new List<EngineRenderPass>();
+            _registry = registry;
         }
 
-        public EngineRenderPass? GetRenderPass(string name)
-        {
-            foreach (var item in _renderPasses)
-            {
-                if (name.Equals(item.Name, StringComparison.OrdinalIgnoreCase))
-                {
-                    return item;
-                }
-            }
-            return null;
+        public EngineRenderPass? GetRenderPass<T>() where T:IRenderPassStrategy
+        { 
+            return _registry.Get(typeof(T));
         }
 
 
-        internal EngineRenderPass CreateRenderPass(VkRenderPass renderPass, string name)
+        public EngineRenderPass CreateRenderPass<T>(VkRenderPass renderPass) where T : IRenderPassStrategy
         {
-            
-            var engineRenderPass =  new EngineRenderPass(name, renderPass);
-            _renderPasses.Add(engineRenderPass);
+            var engineRenderPass =  new EngineRenderPass(renderPass);
+            _registry.Register(typeof(T),engineRenderPass);
+            return engineRenderPass;
+        }
+        public EngineRenderPass CreateRenderPass(VkRenderPass renderPass, Type type) 
+        {
+            var engineRenderPass = new EngineRenderPass(renderPass);
+            _registry.Register(type, engineRenderPass);
             return engineRenderPass;
         }
 
         public void Dispose()
         {
-            foreach (var renderPass in _renderPasses)
-            {
-                renderPass.Dispose();
-            }
-            _renderPasses.Clear();
+            _registry.Dispose();
         }
-
-
     }
-
 }

@@ -6,14 +6,15 @@ using RockEngine.Core.Assets.AssetData;
 using RockEngine.Core.Assets.Factories;
 using RockEngine.Core.Assets.Registres;
 using RockEngine.Core.Assets.Serializers;
+using RockEngine.Core.Registries;
 
 namespace RockEngine.Core.Assets;
 
 public class AssetManager : IDisposable
 {
-    private readonly IRegistry<Type> _typeRegistry;
+   /* private readonly IRegistry<Type> _typeRegistry;
     private readonly IRegistry<IAssetSerializer<IAssetData>> _serializerRegistry;
-    private readonly IRegistry<IAssetFactory<IAssetData, IAsset>> _factoryRegistry;
+    private readonly IRegistry<IAssetFactory<IAssetData, IAsset>> _factoryRegistry;*/
 
     private readonly ConcurrentDictionary<Guid, IAsset> _assets = new();
     private readonly ConcurrentDictionary<string, Guid> _pathToGuid = new();
@@ -24,13 +25,13 @@ public class AssetManager : IDisposable
     private readonly ConcurrentDictionary<Guid, int> _refCounts = new();
 
     public AssetManager(
-        IRegistry<Type> typeRegistry,
+        /*IRegistry<Type, > typeRegistry,
         IRegistry<IAssetSerializer<IAssetData>> serializerRegistry,
-        IRegistry<IAssetFactory<IAssetData, IAsset>> factoryRegistry)
-    {
+        IRegistry<IAssetFactory<IAssetData, IAsset>> factoryRegistry*/)
+    {/*
         _typeRegistry = typeRegistry;
         _serializerRegistry = serializerRegistry;
-        _factoryRegistry = factoryRegistry;
+        _factoryRegistry = factoryRegistry;*/
     }
 
     private async Task<T> LoadAsync<T>(string path) where T : class, IAsset
@@ -61,58 +62,61 @@ public class AssetManager : IDisposable
 
     private async Task<IAsset> LoadAssetInternal<T>(string path) where T : class, IAsset
     {
-        if (!File.Exists(path))
-        {
-            throw new FileNotFoundException($"Asset file not found: {path}");
-        }
+        throw new NotImplementedException();
+        /* if (!File.Exists(path))
+         {
+             throw new FileNotFoundException($"Asset file not found: {path}");
+         }
 
-        var json = await File.ReadAllTextAsync(path);
-        var jObject = JObject.Parse(json);
-        var typeIdentifier = jObject["$type"]?.Value<string>();
+         var json = await File.ReadAllTextAsync(path);
+         var jObject = JObject.Parse(json);
+         var typeIdentifier = jObject["$type"]?.Value<string>();
 
-        if (string.IsNullOrEmpty(typeIdentifier))
-        {
-            throw new InvalidOperationException("Asset type identifier is missing");
-        }
+         if (string.IsNullOrEmpty(typeIdentifier))
+         {
+             throw new InvalidOperationException("Asset type identifier is missing");
+         }
 
-        if (!_typeRegistry.TryGet(typeIdentifier, out var dataType))
-        {
-            throw new InvalidOperationException($"Unregistered asset type: {typeIdentifier}");
-        }
+         if (!_typeRegistry.TryGet(typeIdentifier, out var dataType))
+         {
+             throw new InvalidOperationException($"Unregistered asset type: {typeIdentifier}");
+         }
 
-        if (!_serializerRegistry.TryGet(dataType, out var serializer))
-        {
-            throw new InvalidOperationException($"No serializer found for {dataType.Name}");
-        }
+         if (!_serializerRegistry.TryGet(dataType, out var serializer))
+         {
+             throw new InvalidOperationException($"No serializer found for {dataType.Name}");
+         }
 
-        if (!_factoryRegistry.TryGet(dataType, out var factory))
-        {
-            throw new InvalidOperationException($"No factory found for {dataType.Name}");
-        }
+         if (!_factoryRegistry.TryGet(dataType, out var factory))
+         {
+             throw new InvalidOperationException($"No factory found for {dataType.Name}");
+         }
 
-        var data = serializer.Deserialize(json);
-        var asset = factory.CreateAsset(path, data);
+         var data = serializer.Deserialize(json);
+         var asset = factory.CreateAsset(path, data);
 
-        // Store before loading to prevent circular dependencies
-        _assets[asset.ID] = asset;
-        _pathToGuid[path] = asset.ID;
-        _guidToPath[asset.ID] = path;
-        _refCounts[asset.ID] = 1; // Initial reference
+         // Store before loading to prevent circular dependencies
+         _assets[asset.ID] = asset;
+         _pathToGuid[path] = asset.ID;
+         _guidToPath[asset.ID] = path;
+         _refCounts[asset.ID] = 1; // Initial reference
 
-        // Handle dependencies
-        if (asset is ISerializableAsset<IAssetData> serializableAsset)
-        {
-            var dependencies = new HashSet<Guid>();
-            await ProcessDependencies(serializableAsset.GetData(), asset.ID, dependencies);
-            _dependencies[asset.ID] = dependencies;
-        }
+         // Handle dependencies
+         if (asset is ISerializableAsset<IAssetData> serializableAsset)
+         {
+             var dependencies = new HashSet<Guid>();
+             await ProcessDependencies(serializableAsset.GetData(), asset.ID, dependencies);
+             _dependencies[asset.ID] = dependencies;
+         }
 
-        await asset.LoadAsync();
-        return asset;
+         await asset.LoadAsync();
+         return asset;*/
     }
 
     public async Task SaveAsync(IAsset asset, string? path = null)
     {
+        throw new NotImplementedException();
+/*
         var savePath = path ?? asset.Path;
         if (string.IsNullOrEmpty(savePath))
         {
@@ -150,7 +154,7 @@ public class AssetManager : IDisposable
             asset.Path = savePath;
             _pathToGuid[savePath] = asset.ID;
             _guidToPath[asset.ID] = savePath;
-        }
+        }*/
     }
 
     public T GetAsset<T>(Guid id) where T : class, IAsset

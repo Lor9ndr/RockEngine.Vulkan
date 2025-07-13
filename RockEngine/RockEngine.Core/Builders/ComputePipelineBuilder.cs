@@ -1,7 +1,10 @@
-﻿using Silk.NET.Core.Native;
+﻿using RockEngine.Vulkan;
+using RockEngine.Vulkan.Builders;
+
+using Silk.NET.Core.Native;
 using Silk.NET.Vulkan;
 
-namespace RockEngine.Vulkan.Builders
+namespace RockEngine.Core.Builders
 {
     public class ComputePipelineBuilder : DisposableBuilder
     {

@@ -1,8 +1,10 @@
-﻿using Silk.NET.Vulkan;
+﻿using RockEngine.Vulkan.Builders;
+
+using Silk.NET.Vulkan;
 
 using System.Buffers;
 
-namespace RockEngine.Vulkan.Builders
+namespace RockEngine.Core.Builders
 {
     public class VulkanColorBlendStateBuilder : DisposableBuilder
     {
@@ -41,7 +43,7 @@ namespace RockEngine.Vulkan.Builders
 
         public VulkanColorBlendStateBuilder AddDefaultAttachment()
         {
-            AddAttachment((new PipelineColorBlendAttachmentState
+            AddAttachment(new PipelineColorBlendAttachmentState
             {
                 BlendEnable = false,  // Default to no blending
                 SrcColorBlendFactor = BlendFactor.SrcAlpha,
@@ -54,7 +56,7 @@ namespace RockEngine.Vulkan.Builders
                                 ColorComponentFlags.GBit |
                                 ColorComponentFlags.BBit |
                                 ColorComponentFlags.ABit
-            }));
+            });
             return this;
         }
     }

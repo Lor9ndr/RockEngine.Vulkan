@@ -1,6 +1,6 @@
-﻿using RockEngine.Core.ECS.Components;
+﻿using RockEngine.Core.Builders;
+using RockEngine.Core.ECS.Components;
 using RockEngine.Core.Rendering.Managers;
-using RockEngine.Core.Rendering.ResourceBindings;
 using RockEngine.Vulkan;
 
 using Silk.NET.Vulkan;
@@ -9,34 +9,40 @@ using System.Runtime.InteropServices;
 
 namespace RockEngine.Core.Rendering.Passes
 {
-    public class GeometryPass : Subpass
+    public class GeometryPass : IRenderSubPass
     {
+        private readonly VulkanContext _context;
+        private readonly GraphicsEngine _graphicsEngine;
+        private readonly BindingManager _bindingManager;
         private readonly TransformManager _transformManager;
         private readonly IndirectCommandManager _indirectCommands;
         private readonly GlobalUbo _globalUbo;
-        protected override uint Order => 0;
 
         public GeometryPass(
             VulkanContext context,
+            GraphicsEngine graphicsEngine,
             BindingManager bindingManager,
             TransformManager transformManager,
             IndirectCommandManager indirectCommands,
             GlobalUbo globalUbo)
-            : base(context, bindingManager)
         {
+            _context = context;
+            _graphicsEngine = graphicsEngine;
+            _bindingManager = bindingManager;
             _transformManager = transformManager;
             _indirectCommands = indirectCommands;
             _globalUbo = globalUbo;
         }
 
-        public override async Task Execute(VkCommandBuffer cmd, params object[] args)
+        public uint Order => 0;
+
+      
+        public Task Execute(VkCommandBuffer cmd, params object[] args)
         {
             // Extract frame index and camera from args
             uint frameIndex = (uint)args[0];
             var camera = args[1] as Camera ?? throw new ArgumentNullException(nameof(Camera));
             var camIndex = (int)args[2];
-
-
            
 
             cmd.SetViewport(camera.RenderTarget.Viewport);
@@ -53,13 +59,13 @@ namespace RockEngine.Core.Rendering.Passes
                 {
                     cmd.BindPipeline(drawGroup.Pipeline);
                     pipeline = drawGroup.Pipeline;
-                    
 
-                    BindingManager.BindResource(frameIndex, _globalUbo.GetBinding((uint)camIndex) , cmd, drawGroup.Pipeline.Layout);
-                    BindingManager.BindResource(frameIndex, matrixBinding, cmd, drawGroup.Pipeline.Layout);
+
+                    _bindingManager.BindResource(frameIndex, _globalUbo.GetBinding((uint)camIndex) , cmd, drawGroup.Pipeline.Layout);
+                    _bindingManager.BindResource(frameIndex, matrixBinding, cmd, drawGroup.Pipeline.Layout);
                 }
 
-                BindingManager.BindResourcesForMaterial(frameIndex, drawGroup.Mesh.Material, cmd, false,[matrixBinding.SetLocation, _globalUbo.GetBinding((uint)camIndex).SetLocation]);
+                _bindingManager.BindResourcesForMaterial(frameIndex, drawGroup.Mesh.Material, cmd, false,[matrixBinding.SetLocation, _globalUbo.GetBinding((uint)camIndex).SetLocation]);
 
                 drawGroup.Mesh.VertexBuffer.BindVertexBuffer(cmd);
                 drawGroup.Mesh.IndexBuffer.BindIndexBuffer(cmd, 0, IndexType.Uint32);
@@ -85,11 +91,75 @@ namespace RockEngine.Core.Rendering.Passes
                     }
                 }
             }
+            return Task.CompletedTask;
         }
 
         private Silk.NET.Core.Bool32 GetMultiDrawIndirectFeature()
         {
-            return Context.Device.PhysicalDevice.Features2.Features.MultiDrawIndirect;
+            return _context.Device.PhysicalDevice.Features2.Features.MultiDrawIndirect;
+        }
+        public void SetupAttachmentDescriptions(RenderPassBuilder builder)
+        {
+            // GBuffer Color Attachments
+            for (int i = 0; i < GBuffer.ColorAttachmentFormats.Length; i++)
+            {
+                builder.ConfigureAttachment(GBuffer.ColorAttachmentFormats[i])
+                    .WithColorOperations(
+                        load: AttachmentLoadOp.Clear,
+                        store: AttachmentStoreOp.Store,
+                        initialLayout: ImageLayout.Undefined,
+                        finalLayout: ImageLayout.ShaderReadOnlyOptimal)
+                    .Add();
+            }
+
+            // Depth Attachment
+            builder.ConfigureAttachment(_graphicsEngine.Swapchain.DepthFormat)
+                .WithDepthOperations(
+                    load: AttachmentLoadOp.Clear,
+                    store: AttachmentStoreOp.DontCare,
+                    initialLayout: ImageLayout.Undefined,
+                    finalLayout: ImageLayout.DepthStencilReadOnlyOptimal)
+                .Add();
+        }
+
+        public void SetupSubpassDescription(RenderPassBuilder.SubpassConfigurer subpass)
+        {
+            // Color attachments (GBuffer)
+            for (int i = 0; i < GBuffer.ColorAttachmentFormats.Length; i++)
+            {
+                subpass.AddColorAttachment(i, ImageLayout.ColorAttachmentOptimal);
+            }
+
+            // Depth attachment
+            subpass.SetDepthAttachment(
+                GBuffer.ColorAttachmentFormats.Length,
+                ImageLayout.DepthStencilAttachmentOptimal);
+        }
+
+        public void SetupDependencies(RenderPassBuilder builder, uint subpassIndex)
+        {
+            // External -> GeometryPass dependency
+            if (subpassIndex == 0)
+            {
+                builder.AddDependency()
+                    .FromExternal()
+                    .ToSubpass(subpassIndex)
+                    .WithStages(
+                        PipelineStageFlags.BottomOfPipeBit,
+                        PipelineStageFlags.ColorAttachmentOutputBit | PipelineStageFlags.EarlyFragmentTestsBit)
+                    .WithAccess(
+                        AccessFlags.None,
+                        AccessFlags.ColorAttachmentWriteBit | AccessFlags.DepthStencilAttachmentWriteBit)
+                    .Add();
+            }
+        }
+
+        public void Dispose()
+        {
+        }
+
+        public void Initilize()
+        {
         }
     }
 }

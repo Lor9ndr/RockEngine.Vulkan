@@ -27,14 +27,13 @@ namespace RockEngine.Core.Rendering.RenderTargets
             Extent = Size
         };
 
-        public CameraRenderTarget(VulkanContext context, GraphicsEngine engine, Extent2D size, EngineRenderPass deferredRenderPass)
+        public CameraRenderTarget(VulkanContext context, GraphicsEngine engine, Extent2D size)
             : base(context, size, engine.Swapchain.Format, ImageUsageFlags.ColorAttachmentBit | ImageUsageFlags.TransientAttachmentBit | ImageUsageFlags.SampledBit)
         {
             _context = context;
             _engine = engine;
             _gBuffer = new GBuffer(context, size, engine.Swapchain.DepthFormat);
             CreateTexture();
-            RenderPass = deferredRenderPass;
             ClearValues =
            [
                 // Color attachments (Albedo, Normal, Position)
@@ -52,6 +51,12 @@ namespace RockEngine.Core.Rendering.RenderTargets
            ];
         }
 
+        public override void Initialize(VkRenderPass renderPass)
+        {
+            RenderPass = renderPass;
+            CreateFramebuffers();
+        }
+
         private void CreateTexture()
         {
             OutputTexture = new Texture.Builder(_context)
@@ -62,7 +67,7 @@ namespace RockEngine.Core.Rendering.RenderTargets
             OutputTexture.Image.LabelObject("Camera render target");
         }
 
-        public override void CreateFramebuffers()
+        protected override void CreateFramebuffers()
         {
             foreach (var fb in Framebuffers)
             {
@@ -118,5 +123,7 @@ namespace RockEngine.Core.Rendering.RenderTargets
         {
             _context.SubmitContext.AddDependency(OutputTexture);
         }
+
+        
     }
 }

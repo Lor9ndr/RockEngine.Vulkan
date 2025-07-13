@@ -1,4 +1,5 @@
-﻿using RockEngine.Core.ECS.Components;
+﻿using RockEngine.Core.Builders;
+using RockEngine.Core.ECS.Components;
 using RockEngine.Core.Rendering.Managers;
 using RockEngine.Core.Rendering.ResourceBindings;
 using RockEngine.Vulkan;
@@ -9,22 +10,20 @@ using System.Runtime.InteropServices;
 
 namespace RockEngine.Core.Rendering.Passes
 {
-    internal class PostLightPass : Subpass
+    internal class PostLightPass : IRenderSubPass
     {
         private readonly VulkanContext _context;
         private readonly BindingManager _bindingManager;
         private readonly TransformManager _transformManager;
         private readonly IndirectCommandManager _indirectCommands;
         private readonly GlobalUbo _globalUbo;
-        protected override uint Order => 2;
-
+        public uint Order => 2;
 
         public PostLightPass(VulkanContext context,
             BindingManager bindingManager,
             TransformManager transformManager,
             IndirectCommandManager indirectCommands,
             GlobalUbo globalUbo)
-            : base(context, bindingManager)
         {
             _context = context;
             _bindingManager = bindingManager;
@@ -32,9 +31,12 @@ namespace RockEngine.Core.Rendering.Passes
             _indirectCommands = indirectCommands;
             _globalUbo = globalUbo;
         }
+        public void Initilize()
+        {
+        }
 
 
-        public override Task Execute(VkCommandBuffer cmd, params object[] args)
+        public Task Execute(VkCommandBuffer cmd, params object[] args)
         {
             uint frameIndex = (uint)args[0];
             var camera = args[1] as Camera ?? throw new ArgumentNullException(nameof(Camera));
@@ -54,11 +56,11 @@ namespace RockEngine.Core.Rendering.Passes
                     pipeline = drawGroup.Pipeline;
                     var matrixBinding = _transformManager.GetCurrentBinding(frameIndex);
 
-                    BindingManager.BindResource(frameIndex, _globalUbo.GetBinding((uint)camIndex), cmd, drawGroup.Pipeline.Layout);
-                    BindingManager.BindResource(frameIndex, matrixBinding, cmd, drawGroup.Pipeline.Layout);
+                    _bindingManager.BindResource(frameIndex, _globalUbo.GetBinding((uint)camIndex), cmd, drawGroup.Pipeline.Layout);
+                    _bindingManager.BindResource(frameIndex, matrixBinding, cmd, drawGroup.Pipeline.Layout);
                 }
 
-                BindingManager.BindResourcesForMaterial(frameIndex,drawGroup.Mesh.Material, cmd);
+                _bindingManager.BindResourcesForMaterial(frameIndex,drawGroup.Mesh.Material, cmd);
 
                 drawGroup.Mesh.Material.CmdPushConstants(cmd);
 
@@ -88,9 +90,48 @@ namespace RockEngine.Core.Rendering.Passes
             }
             return Task.CompletedTask;
         }
+
+
         private Silk.NET.Core.Bool32 GetMultiDrawIndirectFeature()
         {
-            return Context.Device.PhysicalDevice.Features2.Features.MultiDrawIndirect;
+            return _context.Device.PhysicalDevice.Features2.Features.MultiDrawIndirect;
         }
+
+
+        public void SetupSubpassDescription(RenderPassBuilder.SubpassConfigurer subpass)
+        {
+            int colorIndex = GBuffer.ColorAttachmentFormats.Length + 1;
+            int depthIndex = GBuffer.ColorAttachmentFormats.Length;
+
+            subpass.AddColorAttachment(colorIndex, ImageLayout.ColorAttachmentOptimal);
+            subpass.SetDepthAttachment(depthIndex, ImageLayout.DepthStencilReadOnlyOptimal);
+        }
+
+        public void SetupDependencies(RenderPassBuilder builder, uint subpassIndex)
+        {
+            // LightingPass -> PostLightPass dependency
+            if (subpassIndex == 2)
+            {
+                builder.AddDependency()
+                    .FromSubpass(subpassIndex - 1)
+                    .ToSubpass(subpassIndex)
+                    .WithStages(
+                        PipelineStageFlags.ColorAttachmentOutputBit,
+                        PipelineStageFlags.ColorAttachmentOutputBit | PipelineStageFlags.EarlyFragmentTestsBit)
+                    .WithAccess(
+                        AccessFlags.ColorAttachmentWriteBit,
+                        AccessFlags.ColorAttachmentWriteBit | AccessFlags.DepthStencilAttachmentReadBit)
+                    .Add();
+            }
+        }
+        public void SetupAttachmentDescriptions(RenderPassBuilder builder)
+        {
+        }
+
+        public void Dispose()
+        {
+        }
+
+       
     }
 }

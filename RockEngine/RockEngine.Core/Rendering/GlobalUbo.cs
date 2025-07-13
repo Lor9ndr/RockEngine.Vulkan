@@ -14,15 +14,15 @@ namespace RockEngine.Core.Rendering
         private readonly uint _maxCameras;
         private readonly UniformBufferBinding[] _bindings;
 
-        public GlobalUbo(VulkanContext context, uint bindingLocation, uint maxCameras)
-            : base("GlobalUbo", bindingLocation, CalculateTotalSize(maxCameras), true)
+        public GlobalUbo(VulkanContext context, AppSettings appSettings)
+            : base("GlobalUbo", 0, CalculateTotalSize(appSettings.MaxCamerasSupported), true)
         {
             _context = context;
-            _maxCameras = maxCameras;
+            _maxCameras = appSettings.MaxCamerasSupported;
             _alignedElementSize = CalculateAlignedElementSize();
            
-            _bindings = new UniformBufferBinding[maxCameras];
-            for (int i = 0; i < maxCameras; i++)
+            _bindings = new UniformBufferBinding[_maxCameras];
+            for (int i = 0; i < _maxCameras; i++)
             {
                 _bindings[i] = new UniformBufferBinding(this, 0, 0, GetDynamicOffset((uint)i), _alignedElementSize);
             }

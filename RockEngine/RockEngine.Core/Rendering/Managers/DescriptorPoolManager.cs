@@ -10,7 +10,7 @@ namespace RockEngine.Core.Rendering.Managers
         private readonly DescriptorPoolSize[] _poolSizes;
         private readonly uint _maxSetsPerPool;
         private readonly ThreadLocal<List<VkDescriptorPool>> _pools;
-        private readonly ThreadLocal<List<VkDescriptorPool>> _exhaustedPools;
+        //private readonly ThreadLocal<List<VkDescriptorPool>> _exhaustedPools;
 
         public DescriptorPoolManager(VulkanContext context, DescriptorPoolSize[] poolSizes, uint maxSetsPerPool)
         {
@@ -27,7 +27,7 @@ namespace RockEngine.Core.Rendering.Managers
                 return list;
             });
 
-            _exhaustedPools = new ThreadLocal<List<VkDescriptorPool>>(() => new List<VkDescriptorPool>());
+            //_exhaustedPools = new ThreadLocal<List<VkDescriptorPool>>(() => new List<VkDescriptorPool>());
         }
 
         private unsafe VkDescriptorPool CreateNewPool(List<VkDescriptorPool> targetList)
@@ -52,12 +52,12 @@ namespace RockEngine.Core.Rendering.Managers
         public unsafe VkDescriptorSet AllocateDescriptorSet(VkDescriptorSetLayout layout)
         {
             var currentPools = _pools.Value!;
-            var currentExhausted = _exhaustedPools.Value!;
+            //var currentExhausted = _exhaustedPools.Value!;
 
             foreach (var pool in currentPools)
             {
-                if (currentExhausted.Contains(pool))
-                    continue;
+                /*if (currentExhausted.Contains(pool))
+                    continue;*/
 
                 var result = pool.AllocateDescriptorSet(layout, out var descriptorSet)
                     .VkAssertResult("Failed to allocate descriptor set", Result.ErrorOutOfPoolMemory);
@@ -65,7 +65,7 @@ namespace RockEngine.Core.Rendering.Managers
                 if (result == Result.Success)
                     return descriptorSet;
 
-                currentExhausted.Add(pool);
+                //currentExhausted.Add(pool);
             }
 
             // All pools exhausted, create new one
@@ -85,10 +85,10 @@ namespace RockEngine.Core.Rendering.Managers
                 pools.Clear();
             }
             _pools.Dispose();
-
+/*
             foreach (var exhausted in _exhaustedPools.Values)
                 exhausted.Clear();
-            _exhaustedPools.Dispose();
+            _exhaustedPools.Dispose();*/
         }
     }
 }

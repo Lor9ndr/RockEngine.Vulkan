@@ -19,21 +19,16 @@ namespace RockEngine.Core.Rendering.Managers
     /// </summary>
     public sealed class IndirectCommandManager : IDisposable
     {
-        // Основные зависимости
-        private readonly VulkanContext _context;        // Контекст Vulkan API
-        private readonly IndirectBuffer _indirectBuffer; // GPU буфер для хранения команд
+        private readonly VulkanContext _context;
+        private readonly IndirectBuffer _indirectBuffer;
+        private readonly List<MeshRenderCommand> _commands = new List<MeshRenderCommand>();
+        private readonly ConcurrentQueue<IRenderCommand> _otherCommands = new ConcurrentQueue<IRenderCommand>();
+        private readonly Dictionary<RenderLayerType, List<DrawGroup>> _drawGroupsByLayer = new Dictionary<RenderLayerType, List<DrawGroup>>();
+        private readonly uint _transformBufferCapacity;
+        private bool _isDirty;
+        private static readonly ulong _commandStride = (ulong)Marshal.SizeOf<DrawIndexedIndirectCommand>();
+        private readonly List<DrawIndexedIndirectCommand> _indirectCommandsList = new List<DrawIndexedIndirectCommand>();
 
-        // Коллекции команд
-        private readonly List<MeshRenderCommand> _commands = new List<MeshRenderCommand>(); // Основные команды рендеринга
-        private readonly ConcurrentQueue<IRenderCommand> _otherCommands = new ConcurrentQueue<IRenderCommand>(); // Другие команды (потокобезопасные)
-        private readonly Dictionary<RenderLayerType, List<DrawGroup>> _drawGroupsByLayer = new Dictionary<RenderLayerType, List<DrawGroup>>(); // Группировка по слоям
-
-        // Состояние
-        private readonly uint _transformBufferCapacity; // Макс. количество трансформ в буфере
-        private bool _isDirty; // Флаг необходимости обновления данных
-        private static readonly ulong _commandStride = (ulong)Marshal.SizeOf<DrawIndexedIndirectCommand>(); // Размер одной команды в байтах
-
-        // Свойства
         public IndirectBuffer IndirectBuffer => _indirectBuffer;
         public ConcurrentQueue<IRenderCommand> OtherCommands => _otherCommands;
 
@@ -46,12 +41,7 @@ namespace RockEngine.Core.Rendering.Managers
         {
             _context = context;
             _transformBufferCapacity = transformBufferCapacity;
-
-            // Выделяем буфер на 10 000 команд (можно масштабировать)
-            _indirectBuffer = new IndirectBuffer(
-                context,
-                10_000 * _commandStride
-            );
+            _indirectBuffer = new IndirectBuffer(context, 10_000 * _commandStride);
         }
 
         /// <summary>
@@ -63,74 +53,63 @@ namespace RockEngine.Core.Rendering.Managers
             if (transformIndex < 0 || transformIndex >= _transformBufferCapacity)
                 throw new ArgumentOutOfRangeException(nameof(transformIndex), "Transform index exceeds buffer capacity");
 
-            // Добавляем команду и помечаем данные как "грязные"
             _commands.Add(new MeshRenderCommand(mesh, (uint)transformIndex, mesh.Entity.Layer));
             _isDirty = true;
         }
+
 
         /// <summary>
         /// Обновляет команды отрисовки. Должен вызываться перед рендерингом.
         /// </summary>
         public Task UpdateAsync()
         {
-            if (!_isDirty) 
+            if (!_isDirty)
                 return Task.CompletedTask;
 
-            // 1. Сортируем команды для оптимальной группировки
+            // Sort commands for optimal grouping
             _commands.Sort(MeshRenderCommandComparer.Default);
-
-            // 2. Работаем через Span для прямого доступа к памяти списка
             Span<MeshRenderCommand> commandsSpan = CollectionsMarshal.AsSpan(_commands);
 
-            List<DrawIndexedIndirectCommand> indirectCommands = new List<DrawIndexedIndirectCommand>(_commands.Count);
+            // Clear reused collections
+            _indirectCommandsList.Clear();
             _drawGroupsByLayer.Clear();
 
-            // 3. Группируем команды по критериям
-            RenderLayerType currentLayer = default;
-            VkPipeline? currentPipeline = null;
-            Material? currentMaterial = null;
-            Mesh? currentMesh = null;
-            int groupStartIndex = 0;
-
-            for (int i = 0; i < commandsSpan.Length; i++)
+            if (commandsSpan.Length == 0)
             {
-                ref readonly MeshRenderCommand cmd = ref commandsSpan[i];
-
-                // Определяем начало новой группы
-                bool isNewGroup = i == 0 ||
-                    cmd.Layer != currentLayer ||
-                    !ReferenceEquals(cmd.Mesh.Material.Pipeline, currentPipeline) ||
-                    !ReferenceEquals(cmd.Mesh.Material, currentMaterial) ||
-                    !ReferenceEquals(cmd.Mesh, currentMesh);
-
-                if (isNewGroup && i > 0)
-                {
-                    // Добавляем найденную группу
-                    AddGroup(commandsSpan.Slice(groupStartIndex, i - groupStartIndex), indirectCommands);
-                    groupStartIndex = i;
-                }
-
-                // Обновляем текущие параметры группы
-                currentLayer = cmd.Layer;
-                currentPipeline = cmd.Mesh.Material.Pipeline;
-                currentMaterial = cmd.Mesh.Material;
-                currentMesh = cmd.Mesh;
+                _isDirty = false;
+                return Task.CompletedTask;
             }
 
-            // 4. Добавляем последнюю группу
-            if (commandsSpan.Length > 0)
-                AddGroup(commandsSpan.Slice(groupStartIndex), indirectCommands);
+            // Group commands by boundaries
+            int groupStartIndex = 0;
+            for (int i = 1; i < commandsSpan.Length; i++)
+            {
+                if (IsNewGroup(in commandsSpan[i - 1], in commandsSpan[i]))
+                {
+                    AddGroup(commandsSpan.Slice(groupStartIndex, i - groupStartIndex));
+                    groupStartIndex = i;
+                }
+            }
+            // Add final group
+            AddGroup(commandsSpan.Slice(groupStartIndex));
 
-            // 5. Отправляем команды в GPU
+            // Submit commands to GPU
             var batch = _context.SubmitContext.CreateBatch();
             batch.CommandBuffer.LabelObject("IndirectDrawManager cmd");
-            _indirectBuffer.StageCommands(batch, CollectionsMarshal.AsSpan(indirectCommands));
+            _indirectBuffer.StageCommands(batch, CollectionsMarshal.AsSpan(_indirectCommandsList));
             batch.Submit();
 
-            // 6. Сбрасываем состояние
             _commands.Clear();
             _isDirty = false;
             return Task.CompletedTask;
+        }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private bool IsNewGroup(in MeshRenderCommand a, in MeshRenderCommand b)
+        {
+            return a.Layer != b.Layer ||
+                   !ReferenceEquals(a.Mesh.Material.Pipeline, b.Mesh.Material.Pipeline) ||
+                   !ReferenceEquals(a.Mesh.Material, b.Mesh.Material) ||
+                   !ReferenceEquals(a.Mesh, b.Mesh);
         }
 
         /// <summary>
@@ -138,40 +117,41 @@ namespace RockEngine.Core.Rendering.Managers
         /// </summary>
         /// <param name="groupSpan">Срез команд для группы</param>
         /// <param name="indirectCommands">Целевой список команд</param>
-        private void AddGroup(Span<MeshRenderCommand> groupSpan, List<DrawIndexedIndirectCommand> indirectCommands)
+        private void AddGroup(Span<MeshRenderCommand> groupSpan)
         {
-            if (groupSpan.IsEmpty) return;
-
-            // Извлекаем данные из первой команды группы
+            // Sort group by transform index for consecutive GPU access
+            groupSpan.Sort((a, b) => a.TransformIndex.CompareTo(b.TransformIndex));
             ref readonly MeshRenderCommand firstCmd = ref groupSpan[0];
-            Mesh mesh = firstCmd.Mesh;
-            uint firstInstance = firstCmd.TransformIndex;
-            ulong byteOffset = (ulong)indirectCommands.Count * _commandStride;
 
-            // Создаем команду инстансированного рендеринга
-            indirectCommands.Add(new DrawIndexedIndirectCommand
+            // Create indirect command
+            _indirectCommandsList.Add(new DrawIndexedIndirectCommand
             {
-                IndexCount = mesh.IndicesCount,
+                IndexCount = firstCmd.Mesh.IndicesCount,
                 InstanceCount = (uint)groupSpan.Length,
                 FirstIndex = 0,
                 VertexOffset = 0,
-                FirstInstance = firstInstance
+                FirstInstance = firstCmd.TransformIndex
             });
 
-            // Регистрируем группу для рендера
-            if (!_drawGroupsByLayer.TryGetValue(firstCmd.Layer, out var drawGroups))
-            {
-                drawGroups = new List<DrawGroup>();
-                _drawGroupsByLayer[firstCmd.Layer] = drawGroups;
-            }
-
+            // Register draw group
+            var drawGroups = GetOrAddLayerGroups(firstCmd.Layer);
             drawGroups.Add(new DrawGroup(
                 firstCmd.Mesh.Material.Pipeline,
                 firstCmd.Mesh.Material,
-                mesh,
+                firstCmd.Mesh,
                 (uint)groupSpan.Length,
-                byteOffset
+                (ulong)(_indirectCommandsList.Count - 1) * _commandStride
             ));
+        }
+
+        private List<DrawGroup> GetOrAddLayerGroups(RenderLayerType layer)
+        {
+            if (!_drawGroupsByLayer.TryGetValue(layer, out var groups))
+            {
+                groups = new List<DrawGroup>();
+                _drawGroupsByLayer[layer] = groups;
+            }
+            return groups;
         }
 
         /// <summary>
@@ -181,6 +161,7 @@ namespace RockEngine.Core.Rendering.Managers
             => _drawGroupsByLayer.TryGetValue(layerType, out var groups)
                 ? groups
                 : Enumerable.Empty<DrawGroup>();
+
 
         /// <summary>
         /// Освобождает ресурсы Vulkan

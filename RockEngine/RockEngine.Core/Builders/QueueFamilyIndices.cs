@@ -1,4 +1,4 @@
-﻿namespace RockEngine.Vulkan.Builders
+﻿namespace RockEngine.Core.Builders
 {
     public struct QueueFamilyIndices
     {

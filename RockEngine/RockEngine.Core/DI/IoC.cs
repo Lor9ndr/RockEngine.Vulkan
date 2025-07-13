@@ -1,5 +1,10 @@
-﻿using SimpleInjector;
+﻿using RockEngine.Core.Rendering;
+
+using SimpleInjector;
 using SimpleInjector.Lifestyles;
+
+    
+
 
 namespace RockEngine.Core.DI
 {
@@ -15,6 +20,8 @@ namespace RockEngine.Core.DI
             Container.Options.DefaultScopedLifestyle = new AsyncScopedLifestyle();
             Container.Options.EnableAutoVerification = false;
             Container.Options.ResolveUnregisteredConcreteTypes = true;
+            Container.Options.DefaultLifestyle = Lifestyle.Scoped;
+            Container.Collection.Register<ILayer>(Array.Empty<Type>());
 
 
             // Then register modules

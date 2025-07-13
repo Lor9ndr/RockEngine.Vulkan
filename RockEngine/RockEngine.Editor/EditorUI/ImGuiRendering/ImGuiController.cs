@@ -1,23 +1,22 @@
 ﻿using ImGuiNET;
 
-using RockEngine.Core.Extensions.Builders;
+using RockEngine.Core;
+using RockEngine.Core.Builders;
+using RockEngine.Core.Rendering;
 using RockEngine.Core.Rendering.Managers;
 using RockEngine.Core.Rendering.RenderTargets;
 using RockEngine.Core.Rendering.ResourceBindings;
 using RockEngine.Core.Rendering.Texturing;
 using RockEngine.Vulkan;
-using RockEngine.Vulkan.Builders;
 
 using Silk.NET.Input;
 using Silk.NET.Vulkan;
-
-using SkiaSharp;
 
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
-namespace RockEngine.Core.Rendering.ImGuiRendering
+namespace RockEngine.Editor.EditorUI.ImGuiRendering
 {
     public class ImGuiController : IDisposable
     {

@@ -1,5 +1,5 @@
-﻿using RockEngine.Vulkan;
-using RockEngine.Vulkan.Builders;
+﻿using RockEngine.Core.Builders;
+using RockEngine.Vulkan;
 
 using Silk.NET.Vulkan;
 
@@ -14,12 +14,10 @@ namespace RockEngine.Core.Rendering.RenderTargets
         {
             _swapchain = swapchain;
             _swapchain.OnSwapchainRecreate += HandleSwapchainRecreated;
-            InitializeResources();
         }
 
         private void InitializeResources()
         {
-            RenderPass = CreateRenderPass();
             CreateFramebuffers();
 
             ClearValues =
@@ -29,6 +27,11 @@ namespace RockEngine.Core.Rendering.RenderTargets
             ];
 
             UpdateViewportAndScissor();
+        }
+        public override void Initialize(VkRenderPass renderPass)
+        {
+            RenderPass = renderPass;
+            InitializeResources();
         }
 
         private void HandleSwapchainRecreated(VkSwapchain newSwapchain)
@@ -77,34 +80,8 @@ namespace RockEngine.Core.Rendering.RenderTargets
             };
         }
 
-        private VkRenderPass CreateRenderPass()
-        {
-            var builder = new RenderPassBuilder(Context)
-               .ConfigureAttachment(Format)
-                   .WithColorOperations(
-                       load: AttachmentLoadOp.Clear,
-                       store: AttachmentStoreOp.Store,
-                       initialLayout: ImageLayout.Undefined,
-                       finalLayout: ImageLayout.PresentSrcKhr)
-                   .Add()
-               .ConfigureAttachment(_swapchain.DepthFormat)
-                   .WithDepthOperations(
-                       load: AttachmentLoadOp.Clear,
-                       store: AttachmentStoreOp.Store,
-                       initialLayout: ImageLayout.Undefined,
-                       finalLayout: ImageLayout.DepthStencilAttachmentOptimal)
-           .Add();
 
-            // Single subpass for color and depth
-            builder.BeginSubpass()
-                .AddColorAttachment(0)
-                .SetDepthAttachment(1)
-                .EndSubpass();
-
-            return builder.Build();
-        }
-
-        public override void CreateFramebuffers()
+        protected override void CreateFramebuffers()
         {
             Framebuffers = new VkFrameBuffer[_swapchain.SwapChainImagesCount];
             for (int i = 0; i < _swapchain.SwapChainImagesCount; i++)
@@ -144,5 +121,33 @@ namespace RockEngine.Core.Rendering.RenderTargets
             }
             RenderPass?.Dispose();
         }
+
+        /*   private VkRenderPass CreateRenderPass()
+           {
+               var builder = new RenderPassBuilder(Context)
+                  .ConfigureAttachment(Format)
+                      .WithColorOperations(
+                          load: AttachmentLoadOp.Clear,
+                          store: AttachmentStoreOp.Store,
+                          initialLayout: ImageLayout.Undefined,
+                          finalLayout: ImageLayout.PresentSrcKhr)
+                      .Add()
+                  .ConfigureAttachment(_swapchain.DepthFormat)
+                      .WithDepthOperations(
+                          load: AttachmentLoadOp.Clear,
+                          store: AttachmentStoreOp.Store,
+                          initialLayout: ImageLayout.Undefined,
+                          finalLayout: ImageLayout.DepthStencilAttachmentOptimal)
+              .Add();
+
+               // Single subpass for color and depth
+               builder.BeginSubpass()
+                   .AddColorAttachment(0)
+                   .SetDepthAttachment(1)
+                   .EndSubpass();
+
+               return builder.Build();
+           }*/
+
     }
 }

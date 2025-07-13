@@ -18,7 +18,6 @@ namespace RockEngine.Core.Rendering.RenderTargets
         public ClearValue[] ClearValues { get; protected set; }
         protected VulkanContext Context { get; }
 
-
         protected readonly ImageUsageFlags _usageFlags;
         protected VkFrameBuffer _framebuffer;
 
@@ -33,7 +32,9 @@ namespace RockEngine.Core.Rendering.RenderTargets
 
         public abstract void PrepareForRender(VkCommandBuffer cmd);
         public abstract void TransitionToRead(VkCommandBuffer cmd);
-        public abstract void CreateFramebuffers();
+        protected abstract void CreateFramebuffers();
+        public abstract void Initialize(VkRenderPass renderPass);
+        
 
         public virtual void Resize(Extent2D newSize)
         {

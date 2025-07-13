@@ -5,7 +5,7 @@ using System.Collections.Concurrent;
 
 namespace RockEngine.Core.Assets.Registres
 {
-    public class FactoryRegistry : IRegistry<IAssetFactory<IAssetData, IAsset>>
+    public class FactoryRegistry //: IRegistry<IAssetFactory<IAssetData, IAsset>>
     {
         private readonly ConcurrentDictionary<Type, IAssetFactory<IAssetData, IAsset>> _factories = new();
 

@@ -1,4 +1,5 @@
 ﻿using RockEngine.Core.ECS.Components;
+using RockEngine.Core.Rendering.PipelineRenderers;
 using RockEngine.Core.Rendering.RenderTargets;
 using RockEngine.Core.Rendering.ResourceBindings;
 using RockEngine.Vulkan;
@@ -9,16 +10,18 @@ namespace RockEngine.Core.Rendering.Managers
     {
         private readonly VulkanContext _context;
         private readonly GraphicsEngine _engine;
+        private readonly RenderPassManager _renderPassManager;
+        private readonly PipelineManager _pipelineManager;
         private readonly List<Camera> _activeCameras = new List<Camera>();
-        private readonly EngineRenderPass _deferredRenderPass;
 
         public IReadOnlyList<Camera> ActiveCameras => _activeCameras;
 
-        public CameraManager(VulkanContext context, GraphicsEngine engine, EngineRenderPass deferredRenderPass)
+        public CameraManager(VulkanContext context, GraphicsEngine engine, RenderPassManager renderPassManager, PipelineManager pipelineManager)
         {
             _context = context;
             _engine = engine;
-            _deferredRenderPass = deferredRenderPass;
+            _renderPassManager = renderPassManager;
+            _pipelineManager = pipelineManager;
         }
 
         public void Register(Camera camera, Renderer renderer)
@@ -28,14 +31,9 @@ namespace RockEngine.Core.Rendering.Managers
                 camera.RenderTarget = new CameraRenderTarget(
                     _context,
                     _engine,
-                    _engine.Swapchain.Extent,
-                    _deferredRenderPass
-                );
-               /* _engine.Swapchain.OnSwapchainRecreate += (swapchain) =>
-                {
-                    camera.RenderTarget.Resize(swapchain.Extent);
-                };*/
-                camera.RenderTarget.CreateFramebuffers();
+                    _engine.Swapchain.Extent);
+
+                camera.RenderTarget.Initialize(_renderPassManager.GetRenderPass<DeferredPassStrategy>() ?? throw new Exception($"Unable to get renderPass of {nameof(DeferredPassStrategy)}"));
                 InitializeGBuffer(camera.RenderTarget.GBuffer, renderer);
             }
 
@@ -44,7 +42,8 @@ namespace RockEngine.Core.Rendering.Managers
 
         private void InitializeGBuffer(GBuffer gbuffer, Renderer renderer)
         {
-            gbuffer.CreateLightingDescriptorSets(renderer.DeferredLightingPipeline);
+            
+            gbuffer.CreateLightingDescriptorSets(_pipelineManager.GetPipelineByName("DeferredLighting"));
             gbuffer.Material.Bindings.Add(renderer.GlobalUbo.GetBinding((uint)_activeCameras.Count));
 
             gbuffer.Material.Bindings.Add(new UniformBufferBinding(renderer.LightManager.CountLightUbo, 1, 1));
