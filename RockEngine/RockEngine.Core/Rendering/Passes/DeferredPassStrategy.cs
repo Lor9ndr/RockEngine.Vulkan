@@ -1,14 +1,14 @@
 ﻿using RockEngine.Core.Builders;
 using RockEngine.Core.ECS.Components;
 using RockEngine.Core.Rendering.Managers;
-using RockEngine.Core.Rendering.Passes;
+using RockEngine.Core.Rendering.SubPasses;
 using RockEngine.Vulkan;
 
 using Silk.NET.Vulkan;
 
-namespace RockEngine.Core.Rendering.PipelineRenderers
+namespace RockEngine.Core.Rendering.Passes
 {
-    public class DeferredPassStrategy : PassStrategyBase, IRenderPassStrategy
+    public class DeferredPassStrategy : PassStrategyBase
     {
         private readonly GlobalUbo _globalUbo;
 
@@ -72,24 +72,19 @@ namespace RockEngine.Core.Rendering.PipelineRenderers
                 childCmd.Begin(CommandBufferUsageFlags.RenderPassContinueBit, in inheritanceInfo);
 
                 childCmd.LabelObject($"ExecuteCameraPass [{i}] cmd");
-
-               
-            }
-            for (int i = 0; i < _subPasses.Length; i++)
-            {
                 IRenderSubPass? subpass = _subPasses[i];
-                var childCmd  = buffers[i];
                 using (cmd.NameAction(subpass.GetType().Name, [0.8f, 0.2f, 0.2f, 1.0f]))
                 {
                     await subpass.Execute(childCmd, renderer.FrameIndex, camera, camIndex);
                     childCmd.End();
                     cmd.ExecuteSecondary(childCmd);
-                    if(_subPasses.Length -1 != i) 
+                    if (_subPasses.Length - 1 != i)
                     {
                         cmd.NextSubpass(SubpassContents.SecondaryCommandBuffers);
                     }
                 }
             }
+          
 
             cmd.EndRenderPass();
             camera.RenderTarget.TransitionToRead(cmd);

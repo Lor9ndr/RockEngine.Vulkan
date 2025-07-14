@@ -1,5 +1,5 @@
 ﻿using RockEngine.Core.ECS.Components;
-using RockEngine.Core.Rendering.PipelineRenderers;
+using RockEngine.Core.Rendering.Passes;
 using RockEngine.Core.Rendering.RenderTargets;
 using RockEngine.Core.Rendering.ResourceBindings;
 using RockEngine.Vulkan;

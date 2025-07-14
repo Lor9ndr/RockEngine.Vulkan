@@ -90,15 +90,6 @@ namespace RockEngine.Vulkan
         {
             if (!_disposed)
             {
-                if (disposing)
-                {
-                    // Dispose managed state (managed objects).
-                    foreach (var attachment in ColorAttachmentViews)
-                    {
-                        attachment.Dispose();
-                    }
-                }
-
                 DisposeInternal();
 
                 _disposed = true;

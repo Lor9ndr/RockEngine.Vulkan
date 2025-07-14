@@ -13,6 +13,7 @@ using Silk.NET.Input;
 using Silk.NET.Vulkan;
 
 using System.Numerics;
+using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
@@ -40,6 +41,10 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
         private Dictionary<Texture, (GCHandle, TextureBinding)> _textures = new Dictionary<Texture, (GCHandle, TextureBinding)>();
         private RenderTarget _uiRenderTarget;
         private VkFrameBuffer[] _framebuffers;
+        private ImFontPtr _iconFont;
+        private bool _fontsMerged;
+
+        public ImFontPtr IconFont { get => _iconFont; set => _iconFont = value; }
 
         public unsafe ImGuiController(VulkanContext vkContext, GraphicsEngine graphicsEngine, BindingManager bindingManager, IInputContext inputContext, uint width, uint height, RenderTarget renderTarget)
         {
@@ -51,7 +56,6 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
             _renderPass = _uiRenderTarget.RenderPass;
             ImGui.CreateContext();
             var io = ImGui.GetIO();
-            io.Fonts.AddFontDefault();
             _vertexBuffers = new VkBuffer[_vkContext.MaxFramesPerFlight];
             _indexBuffers = new VkBuffer[_vkContext.MaxFramesPerFlight];
             CreateDescriptorPool();
@@ -430,15 +434,97 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
 
         private unsafe void CreateFontResources()
         {
-
             var io = ImGui.GetIO();
             io.BackendFlags |= ImGuiBackendFlags.RendererHasVtxOffset;
+
+            // 1. Load default font
+            var baseFont = io.Fonts.AddFontDefault();
+
+            // 2. Configure icon font merging
+            var cfgNative = ImGuiNative.ImFontConfig_ImFontConfig(); ;
+            var config = new ImFontConfigPtr(cfgNative);
+            config.MergeMode = true;
+            config.PixelSnapH = true;
+            // 3. Define the specific icons we want to use
+            var glyphRanges = new ushort[] { 0xe000, 0xf8ff, 0 };
+
+            // 4. Load icon font
+            byte[] fontData = GetEmbeddedResourceBytes("RockEngine.Editor.Resources.Fonts.forkawesome-webfont.ttf");
+            fixed (byte* pFontData = fontData)
+            fixed (ushort* rangesPtr = glyphRanges)
+            {
+                _iconFont = io.Fonts.AddFontFromMemoryTTF(
+                    (IntPtr)pFontData,
+                    fontData.Length,
+                    16.0f,
+                    config,
+                    (IntPtr)rangesPtr
+                );
+            }
+
+            // 5. Build font atlas only once
+            io.Fonts.Build();
+          
+
+                // 6. Retrieve texture data
             io.Fonts.GetTexDataAsRGBA32(out nint pixels, out int width, out int height, out int bytes_per_pixel);
             Span<byte> bytes = new Span<byte>((void*)pixels, width * height * bytes_per_pixel);
-            _fontTexture = Texture.Create(_vkContext, width, height, Format.R8G8B8A8Unorm, bytes);
+            _fontTexture = Texture.Create(_vkContext, width, height, Format.R8G8B8A8Srgb, bytes);
 
-            // Store our identifier
+            // 7. Store texture identifier
             io.Fonts.SetTexID(GetTextureID(_fontTexture));
+            io.Fonts.ClearTexData();
+        }
+   
+        private unsafe void LoadIconFont(ImGuiIOPtr io, string resourcePath, float size)
+        {
+            // Load font data from embedded resources
+            byte[] fontData = GetEmbeddedResourceBytes(resourcePath);
+
+            // Configure font merging
+            ImFontConfig fontConfigNative = new ImFontConfig();
+            var config = new ImFontConfigPtr(&fontConfigNative);
+            config.MergeMode = true;
+            config.PixelSnapH = true;
+            config.GlyphOffset = new Vector2(0, 2);
+            config.FontDataOwnedByAtlas = false; 
+            size = size * 2.0f / 3.0f;
+
+            // Define icon ranges (Font Awesome range)
+
+            var builder = new ImFontGlyphRangesBuilderPtr(ImGuiNative.ImFontGlyphRangesBuilder_ImFontGlyphRangesBuilder());
+            builder.BuildRanges(out ImVector ranges);
+            fixed (byte* pFontData = fontData)
+                _iconFont = io.Fonts.AddFontFromMemoryTTF(
+                    (IntPtr)pFontData,
+                    fontData.Length,
+                    size,
+                    config,
+                    ranges.Data
+                );
+
+            _fontsMerged = true;
+            builder.Destroy();
+        }
+        private ushort[] CreateGlyphRanges(string glyphs)
+        {
+            List<ushort> ranges = new List<ushort>();
+            foreach (char c in glyphs)
+            {
+                ranges.Add((ushort)c);
+            }
+            ranges.Add(0); // Null-terminator
+            return ranges.ToArray();
+        }
+
+
+        private static byte[] GetEmbeddedResourceBytes(string resourcePath)
+        {
+            var assembly = Assembly.GetExecutingAssembly();
+            using Stream stream = assembly.GetManifestResourceStream(resourcePath) ?? throw new FileNotFoundException($"Resource '{resourcePath}' not found.");
+            byte[] data = new byte[stream.Length];
+            stream.ReadExactly(data);
+            return data;
         }
 
         public unsafe nint GetTextureID(Texture texture)
@@ -550,7 +636,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
         {
             var style = ImGui.GetStyle();
             var colors = style.Colors;
-
+            var io = ImGui.GetIO();
             // Increased spacing and rounded corners
             style.WindowPadding = new Vector2(12, 12);
             style.WindowRounding = 8.0f;
@@ -643,6 +729,18 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
 
             // Text selection
             colors[(int)ImGuiCol.TextSelectedBg] = accentColor * new Vector4(0.24f, 0.45f, 0.68f, 0.35f);
+
+            if (io.Fonts.Fonts.Size > 1)
+            {
+                // Scale icons to match main font
+                float baseSize = io.Fonts.Fonts[0].FontSize;
+                float iconSize = io.Fonts.Fonts[1].FontSize;
+                float scaleFactor = baseSize / iconSize;
+
+                // Rebuild font atlas with proper scaling
+                io.Fonts.Fonts[1].Scale = scaleFactor;
+                io.Fonts.Build();
+            }
         }
 
         public void Dispose()

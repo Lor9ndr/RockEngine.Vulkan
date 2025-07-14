@@ -1,4 +1,6 @@
 ﻿
+using NLog;
+
 using Silk.NET.Vulkan;
 
 using System.Collections.ObjectModel;
@@ -13,6 +15,7 @@ namespace RockEngine.Vulkan
         public readonly ReadOnlyDictionary<uint, VkDescriptorSetLayout> DescriptorSetLayouts;
 
         private readonly VulkanContext _context;
+        private static readonly Logger _logger = LogManager.GetCurrentClassLogger();
 
         private VkPipelineLayout(VulkanContext context, PipelineLayout layout, ShaderReflectionData.PushConstantInfo[] pushConstantRanges, Dictionary<uint, VkDescriptorSetLayout> descriptorSetLayouts)
             : base(layout)
@@ -109,13 +112,13 @@ namespace RockEngine.Vulkan
                 result.Add(setNumber, layout);
             }
 #if DEBUG
-            Console.WriteLine("Merged descriptor sets for pipeline layout:");
+            _logger.Trace("Merged descriptor sets for pipeline layout:");
             foreach (var (setNumber, bindings) in mergedSets)
             {
-                Console.WriteLine($"  Set {setNumber} has {bindings.Count} bindings");
+                _logger.Trace($"  Set {setNumber} has {bindings.Count} bindings");
                 foreach (var binding in bindings)
                 {
-                    Console.WriteLine($"    Binding {binding.Binding}: {binding.DescriptorType} ({binding.StageFlags} { binding.Name})");
+                    _logger.Trace($"    Binding {binding.Binding}: {binding.DescriptorType} ({binding.StageFlags} { binding.Name})");
                 }
             }
 #endif

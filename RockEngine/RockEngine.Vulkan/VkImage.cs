@@ -1,5 +1,7 @@
 ﻿using Silk.NET.Vulkan;
 
+using System.Diagnostics;
+
 namespace RockEngine.Vulkan
 {
     public sealed class VkImage : VkObject<Image>
@@ -129,9 +131,21 @@ namespace RockEngine.Vulkan
 
         private void TransitionToDefaultLayout()
         {
+      
+            ImageLayout targetLayout;
+            if (_aspectFlags.HasFlag( ImageAspectFlags.DepthBit))
+            {
+                Debug.Write("Skipping TransitionToDefaultLayout for Depth texture, you have to manually transition that");
+                return;
+            }
+            else
+            {
+                targetLayout = ImageLayout.ColorAttachmentOptimal ;
+            }
             var batch = _context.SubmitContext.CreateBatch();
             batch.CommandBuffer.LabelObject("VKImage.TransitionToDefaultLayout cmd");
-            TransitionImageLayout(batch.CommandBuffer, ImageLayout.ShaderReadOnlyOptimal,0,1);
+            SetMipLayout(0, ImageLayout.Undefined);
+            TransitionImageLayout(batch.CommandBuffer, targetLayout, 0,1);
             batch.Submit();
         }
 
@@ -542,6 +556,9 @@ namespace RockEngine.Vulkan
                 // Add depth/stencil transitions
                 (ImageLayout.Undefined, ImageLayout.DepthStencilAttachmentOptimal) =>
                     (PipelineStageFlags.TopOfPipeBit, PipelineStageFlags.EarlyFragmentTestsBit),
+                (ImageLayout.Undefined, ImageLayout.DepthAttachmentOptimal) =>
+                    (PipelineStageFlags.TopOfPipeBit, PipelineStageFlags.EarlyFragmentTestsBit),
+
                 (ImageLayout.Undefined, ImageLayout.ShaderReadOnlyOptimal) =>
                     (PipelineStageFlags.TopOfPipeBit, PipelineStageFlags.FragmentShaderBit),
                 (ImageLayout.ShaderReadOnlyOptimal, ImageLayout.ColorAttachmentOptimal) =>
@@ -590,6 +607,9 @@ namespace RockEngine.Vulkan
                     (AccessFlags.None, AccessFlags.ShaderWriteBit),
                 // Add depth/stencil transitions
                 (ImageLayout.Undefined, ImageLayout.DepthStencilAttachmentOptimal) =>
+                    (AccessFlags.None, AccessFlags.DepthStencilAttachmentReadBit | AccessFlags.DepthStencilAttachmentWriteBit),
+
+                (ImageLayout.Undefined, ImageLayout.DepthAttachmentOptimal) =>
                     (AccessFlags.None, AccessFlags.DepthStencilAttachmentReadBit | AccessFlags.DepthStencilAttachmentWriteBit),
                 (ImageLayout.Undefined, ImageLayout.ShaderReadOnlyOptimal) =>
                     (AccessFlags.None, AccessFlags.ShaderReadBit),

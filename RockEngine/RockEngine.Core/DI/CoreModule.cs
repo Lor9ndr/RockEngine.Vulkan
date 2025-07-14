@@ -1,10 +1,9 @@
-﻿using RockEngine.Core.Assets.Registres;
-using RockEngine.Core.ECS;
+﻿using RockEngine.Core.ECS;
 using RockEngine.Core.Registries;
 using RockEngine.Core.Rendering;
 using RockEngine.Core.Rendering.Managers;
 using RockEngine.Core.Rendering.Passes;
-using RockEngine.Core.Rendering.PipelineRenderers;
+using RockEngine.Core.Rendering.SubPasses;
 using RockEngine.Core.Rendering.Texturing;
 using RockEngine.Vulkan;
 
@@ -13,8 +12,6 @@ using Silk.NET.Vulkan;
 using Silk.NET.Windowing;
 
 using SimpleInjector;
-
-using SkiaSharp;
 
 namespace RockEngine.Core.DI
 {
@@ -59,8 +56,10 @@ namespace RockEngine.Core.DI
 
 
 
-            container.RegisterRenderPassStrategy<DeferredPassStrategy>().Before<SwapchainPassStrategy>();
-            container.RegisterRenderPassStrategy<SwapchainPassStrategy>().AfterAll();
+            container.RegisterRenderPassStrategy<DeferredPassStrategy>()
+                .Before<SwapchainPassStrategy>();
+            container.RegisterRenderPassStrategy<SwapchainPassStrategy>()
+                .AfterAll();
             container.RegisterRenderSubPass<GeometryPass, DeferredPassStrategy>();
             container.RegisterRenderSubPass<LightingPass, DeferredPassStrategy>();
             container.RegisterRenderSubPass<PostLightPass, DeferredPassStrategy>();

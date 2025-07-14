@@ -1,5 +1,5 @@
 ﻿using RockEngine.Core.Registries;
-using RockEngine.Core.Rendering.PipelineRenderers;
+using RockEngine.Core.Rendering.Passes;
 using RockEngine.Vulkan;
 
 namespace RockEngine.Core.Rendering.Managers

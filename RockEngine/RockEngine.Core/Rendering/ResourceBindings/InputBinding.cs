@@ -26,6 +26,11 @@ namespace RockEngine.Core.Rendering.ResourceBindings
         {
             foreach (var descriptorSet in DescriptorSets)
             {
+                if(descriptorSet is null)
+                {
+                    continue;
+                }
+
                 descriptorSet.IsDirty = true;
             }
         }

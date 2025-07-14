@@ -6,7 +6,6 @@ namespace RockEngine.Core.Rendering.Passes
     public interface IRenderSubPass
     {
         uint Order { get; }
-
         Task Execute(VkCommandBuffer cmd, params object[] args);
         void Dispose();
         /// <summary>

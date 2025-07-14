@@ -1,11 +1,9 @@
-﻿using RockEngine.Core.Builders;
-using RockEngine.Core.Rendering.Managers;
-using RockEngine.Core.Rendering.Passes;
+﻿using RockEngine.Core.Rendering.Managers;
 using RockEngine.Vulkan;
 
 using Silk.NET.Vulkan;
 
-namespace RockEngine.Core.Rendering.PipelineRenderers
+namespace RockEngine.Core.Rendering.Passes
 {
     public class SwapchainPassStrategy : PassStrategyBase
     {

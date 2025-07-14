@@ -9,6 +9,7 @@ using RockEngine.Core.Rendering.Commands;
 using RockEngine.Core.Rendering.Texturing;
 using RockEngine.Editor.EditorComponents;
 using RockEngine.Editor.EditorUI.ImGuiRendering;
+using RockEngine.Editor.EditorUI.Logging;
 using RockEngine.Editor.UIAttributes;
 using RockEngine.Vulkan;
 
@@ -18,6 +19,7 @@ using Silk.NET.Vulkan;
 using System.Numerics;
 using System.Reflection;
 using System.Runtime.CompilerServices;
+using System.Text;
 
 using ZLinq;
 
@@ -31,12 +33,19 @@ namespace RockEngine.Editor.Layers
         private readonly Renderer _renderer;
         private readonly IInputContext _inputContext;
         private readonly AssimpLoader _assimpLoader;
+        private readonly EditorConsole _editorConsole;
+        private readonly EditorStateManager _stateManager;
         private readonly TextureStreamer _textureStreamer;
         private ImGuiController _imGuiController;
         private VkPipelineLayout _pipelineLayout;
         private VkPipeline _pipeline;
         private IBLParams _iblParams = new IBLParams();
 
+        private const string ICON_PLAY = "\uf04b";       // fa-play
+        private const string ICON_PAUSE = "\uf04c";      // fa-pause
+        private const string ICON_STOP = "\uf04d";       // fa-stop
+        private const string ICON_STEP = "\uf051";       // fa-step-forward
+        private const string ICON_SETTINGS = "\uf013";   // fa-cog
 
         private readonly List<Vector3> _lightCenters = new List<Vector3>();
         private readonly List<float> _lightSpeeds = new List<float>();
@@ -45,7 +54,7 @@ namespace RockEngine.Editor.Layers
         private Vector2 _currentContentSize;
         private Vector2 _currentGameSize;
 
-        public EditorLayer(World world, VulkanContext context, GraphicsEngine graphicsEngine, Renderer renderer, IInputContext inputContext, AssimpLoader assimpLoader)
+        public EditorLayer(World world, VulkanContext context, GraphicsEngine graphicsEngine, Renderer renderer, IInputContext inputContext, AssimpLoader assimpLoader, EditorConsole editorConsole)
         {
             _world = world;
             _context = context;
@@ -53,6 +62,8 @@ namespace RockEngine.Editor.Layers
             _renderer = renderer;
             _inputContext = inputContext;
             _assimpLoader = assimpLoader;
+            _editorConsole = editorConsole;
+            _stateManager = new EditorStateManager();
 
         }
 
@@ -299,6 +310,7 @@ namespace RockEngine.Editor.Layers
         {
             ImGui.DockSpaceOverViewport(1,ImGui.GetMainViewport(), ImGuiDockNodeFlags.PassthruCentralNode);
             ImGui.ShowDemoWindow();
+            DrawToolbar();
             DrawFps();
             DrawAllocationStats();
             DrawPerformanceMetrics();
@@ -389,6 +401,124 @@ namespace RockEngine.Editor.Layers
             // Existing windows and new UI components
             DrawSceneHierarchy();
             DrawInspector();
+            _editorConsole.Draw();
+        }
+
+        private void DrawToolbar()
+        {
+            float padding = 4f;
+            float buttonSize = 32f;
+            float iconSize = buttonSize * 0.6f;
+            float spacing = 6f;
+
+            // Calculate centered position
+            float totalWidth = (buttonSize * 6) + (spacing * 5);
+            float startX = (ImGui.GetContentRegionAvail().X - totalWidth) * 0.5f;
+
+            // Style setup
+            var style = ImGui.GetStyle();
+            var colors = style.Colors;
+            Vector4 activeColor = new Vector4(0.26f, 0.59f, 0.98f, 1.00f);
+            Vector4 hoverColor = new Vector4(0.26f, 0.59f, 0.98f, 0.4f);
+            Vector4 inactiveColor = new Vector4(0.3f, 0.3f, 0.3f, 1.0f);
+            Vector4 disabledColor = new Vector4(0.3f, 0.3f, 0.3f, 0.4f);
+
+            // Create toolbar background
+            ImGui.BeginChild("##toolbar", new Vector2(0, buttonSize + padding * 2),
+                ImGuiChildFlags.None,
+                ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse);
+
+            // Draw subtle background
+            var drawList = ImGui.GetWindowDrawList();
+            var min = ImGui.GetWindowPos();
+            var max = new Vector2(min.X + ImGui.GetWindowWidth(), min.Y + ImGui.GetWindowHeight());
+            drawList.AddRectFilled(min, max, ImGui.ColorConvertFloat4ToU32(new Vector4(0.15f, 0.15f, 0.15f, 0.9f)), style.ChildRounding);
+
+            // Center buttons horizontally
+            ImGui.SetCursorPosX(startX);
+            ImGui.SetCursorPosY(padding);
+
+            // Button group
+            ImGui.BeginGroup();
+
+            // Play Button
+            bool isPlayMode = _stateManager.State == EditorState.Play;
+            ImGui.PushStyleColor(ImGuiCol.Button, isPlayMode ? activeColor : inactiveColor);
+            ImGui.PushStyleColor(ImGuiCol.ButtonHovered, hoverColor);
+            ImGui.PushStyleColor(ImGuiCol.Text, isPlayMode ? new Vector4(1, 1, 1, 1) : disabledColor);
+            if (ImGui.Button($"{ICON_PLAY}##Play", new Vector2(buttonSize, buttonSize)))
+            {
+                _stateManager.SetState(EditorState.Play);
+            }
+            ImGui.PopStyleColor(3);
+            if (ImGui.IsItemHovered()) ImGui.SetTooltip("Play Mode");
+
+            ImGui.SameLine(0, spacing);
+
+            // Pause Button
+            bool isPaused = _stateManager.State == EditorState.Paused;
+            ImGui.BeginDisabled(_stateManager.State != EditorState.Play && !isPaused);
+            ImGui.PushStyleColor(ImGuiCol.Button, isPaused ? activeColor : inactiveColor);
+            ImGui.PushStyleColor(ImGuiCol.ButtonHovered, hoverColor);
+            if (ImGui.Button($"{ICON_PAUSE}##Pause", new Vector2(buttonSize, buttonSize)))
+            {
+                _stateManager.SetState(isPaused ? EditorState.Play : EditorState.Paused);
+            }
+            ImGui.PopStyleColor(2);
+            ImGui.EndDisabled();
+            if (ImGui.IsItemHovered()) ImGui.SetTooltip(isPaused ? "Resume" : "Pause");
+
+            ImGui.SameLine(0, spacing);
+
+            // Stop Button
+            ImGui.BeginDisabled(_stateManager.State == EditorState.Edit);
+            ImGui.PushStyleColor(ImGuiCol.Button, inactiveColor);
+            ImGui.PushStyleColor(ImGuiCol.ButtonHovered, hoverColor);
+            if (ImGui.Button($"{ICON_STOP}##Stop", new Vector2(buttonSize, buttonSize)))
+            {
+                _stateManager.SetState(EditorState.Edit);
+            }
+            ImGui.PopStyleColor(2);
+            ImGui.EndDisabled();
+            if (ImGui.IsItemHovered()) ImGui.SetTooltip("Stop");
+
+            ImGui.SameLine(0, spacing);
+
+            // Step Button (optional)
+            ImGui.BeginDisabled(_stateManager.State != EditorState.Paused);
+            if (ImGui.Button($"{ICON_STEP}##Step", new Vector2(buttonSize, buttonSize)))
+            {
+                // Step through one frame
+            }
+            ImGui.EndDisabled();
+            if (ImGui.IsItemHovered()) ImGui.SetTooltip("Step Forward");
+
+            ImGui.SameLine(0, spacing);
+
+            // Settings Button
+            if (ImGui.Button($"{ICON_SETTINGS}##Settings", new Vector2(buttonSize, buttonSize)))
+            {
+                // Show editor settings
+            }
+            if (ImGui.IsItemHovered()) ImGui.SetTooltip("Editor Settings");
+
+            ImGui.EndGroup();
+
+            // State indicator with colored badge
+            ImGui.SameLine(0, spacing * 2);
+            ImGui.SetCursorPosY(padding + (buttonSize - ImGui.GetTextLineHeight()) * 0.5f);
+
+            var stateText = _stateManager.State.ToString();
+            var stateColor = _stateManager.State switch
+            {
+                EditorState.Play => new Vector4(0.0f, 0.8f, 0.0f, 1.0f),   // Green
+                EditorState.Paused => new Vector4(0.8f, 0.8f, 0.0f, 1.0f), // Yellow
+                _ => new Vector4(0.8f, 0.8f, 0.8f, 1.0f)                   // Light Gray
+            };
+
+            ImGui.TextColored(stateColor, stateText);
+
+            ImGui.EndChild();
         }
         public void OnRender(VkCommandBuffer vkCommandBuffer)
         {
@@ -417,8 +547,6 @@ namespace RockEngine.Editor.Layers
 
             var camEntity = _world.GetEntities()
                 .FirstOrDefault(s => s.GetComponent<Camera>() != null);
-
-
             for (int i = 0; i < lightEntities.Length; i++)
             {
                 Entity entity = lightEntities[i];
@@ -656,7 +784,7 @@ namespace RockEngine.Editor.Layers
                 // Texture bindings section
                 if (ImGui.CollapsingHeader("Texture Bindings", ImGuiTreeNodeFlags.DefaultOpen))
                 {
-                    for (int i = 0; i < material.Textures.Length; i++)
+                    for (int i = 0; i < material.Textures?.Length; i++)
                     {
                         var texture = material.Textures[i];
                         ImGui.PushID(i);

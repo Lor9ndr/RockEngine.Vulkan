@@ -1,4 +1,6 @@
-﻿using RockEngine.Vulkan.Builders;
+﻿using NLog;
+
+using RockEngine.Vulkan.Builders;
 
 using Silk.NET.Core;
 using Silk.NET.Vulkan;
@@ -11,6 +13,8 @@ namespace RockEngine.Vulkan
 {
     public class VulkanContext : IDisposable
     {
+        private static readonly Logger _logger = LogManager.GetCurrentClassLogger();
+
         public static Vk Vk = Vk.GetApi();
         public VkLogicalDevice Device { get; }
         public VkInstance Instance { get; }
@@ -114,28 +118,28 @@ namespace RockEngine.Vulkan
         private static unsafe uint DebugUtilsMessengerCallbackFunctionEXT(DebugUtilsMessageSeverityFlagsEXT messageSeverity, DebugUtilsMessageTypeFlagsEXT messageTypes, DebugUtilsMessengerCallbackDataEXT* pCallbackData, void* pUserData)
         {
             var message = Marshal.PtrToStringUTF8((nint)pCallbackData->PMessage);
-
+            var logLevel = LogLevel.Trace;
             // Change console color based on severity
             switch (messageSeverity)
             {
                 case DebugUtilsMessageSeverityFlagsEXT.ErrorBitExt:
-                    Console.ForegroundColor = ConsoleColor.Red;
+                    logLevel = LogLevel.Error;
                     break;
                 case DebugUtilsMessageSeverityFlagsEXT.WarningBitExt:
-                    Console.ForegroundColor = ConsoleColor.Yellow;
+                    logLevel = LogLevel.Warn;
                     break;
                 case DebugUtilsMessageSeverityFlagsEXT.InfoBitExt:
-                    Console.ForegroundColor = ConsoleColor.Cyan;
+                    logLevel = LogLevel.Info;
                     break;
                 case DebugUtilsMessageSeverityFlagsEXT.VerboseBitExt:
-                    Console.ForegroundColor = ConsoleColor.Gray;
+                    logLevel = LogLevel.Trace;
                     break;
                 default:
                     Console.ResetColor();
                     break;
             }
 
-            Console.WriteLine($"{messageSeverity} ||| {message}\n{Environment.StackTrace}");
+            _logger.Log(logLevel, $"{message}\n{Environment.StackTrace}");
 
             // Reset console color to default
             Console.ResetColor();
@@ -143,7 +147,7 @@ namespace RockEngine.Vulkan
             // Throw an exception if severity is ErrorBitEXT
             if (messageSeverity == DebugUtilsMessageSeverityFlagsEXT.ErrorBitExt)
             {
-                throw new Exception(message: $"Vulkan Error: {message}");
+               // throw new Exception(message: $"Vulkan Error: {message}");
             }
 
             return new Bool32(false);

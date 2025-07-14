@@ -2,7 +2,7 @@
 using RockEngine.Core.DI;
 using RockEngine.Core.ECS.Components;
 using RockEngine.Core.Rendering.Managers;
-using RockEngine.Core.Rendering.PipelineRenderers;
+using RockEngine.Core.Rendering.Passes;
 using RockEngine.Core.Rendering.ResourceBindings;
 using RockEngine.Core.Rendering.Texturing;
 using RockEngine.Vulkan;
@@ -11,7 +11,7 @@ using Silk.NET.Vulkan;
 
 using System.ComponentModel;
 
-namespace RockEngine.Core.Rendering.Passes
+namespace RockEngine.Core.Rendering.SubPasses
 {
     public class LightingPass : IRenderSubPass
     {

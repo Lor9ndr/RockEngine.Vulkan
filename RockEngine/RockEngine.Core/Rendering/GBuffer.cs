@@ -154,14 +154,17 @@ namespace RockEngine.Core.Rendering
             _context.Device.GraphicsQueue.WaitIdle();
 
             // Cleanup old resources
-            foreach (var attachment in ColorAttachments) attachment?.Dispose();
-            foreach (var texture in ColorTextures) texture?.Dispose();
-            DepthAttachment?.Dispose();
+            foreach (var attachment in ColorAttachments)
+            {
+                attachment.Image.Resize(new Extent3D(size.Width, size.Height, 1));
+            }
+
+            DepthAttachment.Image.Resize(new Extent3D(size.Width, size.Height, 1));
+
             _size = size;
 
-            CreateAttachments();
-            CreateTextures();
-            CreateLightingDescriptorSets(_pipeline);
+            /* CreateAttachments();
+             CreateTextures();*/
         }
     }
 }

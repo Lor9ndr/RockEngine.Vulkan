@@ -1,38 +1,29 @@
 ﻿using RockEngine.Core.Builders;
 using RockEngine.Core.ECS.Components;
 using RockEngine.Core.Rendering.Managers;
+using RockEngine.Core.Rendering.Passes;
 using RockEngine.Vulkan;
 
 using Silk.NET.Vulkan;
 
 using System.Runtime.InteropServices;
 
-namespace RockEngine.Core.Rendering.Passes
+namespace RockEngine.Core.Rendering.SubPasses
 {
-    public class GeometryPass : IRenderSubPass
+    public class GeometryPass(
+        VulkanContext context,
+        GraphicsEngine graphicsEngine,
+        BindingManager bindingManager,
+        TransformManager transformManager,
+        IndirectCommandManager indirectCommands,
+        GlobalUbo globalUbo) : IRenderSubPass
     {
-        private readonly VulkanContext _context;
-        private readonly GraphicsEngine _graphicsEngine;
-        private readonly BindingManager _bindingManager;
-        private readonly TransformManager _transformManager;
-        private readonly IndirectCommandManager _indirectCommands;
-        private readonly GlobalUbo _globalUbo;
-
-        public GeometryPass(
-            VulkanContext context,
-            GraphicsEngine graphicsEngine,
-            BindingManager bindingManager,
-            TransformManager transformManager,
-            IndirectCommandManager indirectCommands,
-            GlobalUbo globalUbo)
-        {
-            _context = context;
-            _graphicsEngine = graphicsEngine;
-            _bindingManager = bindingManager;
-            _transformManager = transformManager;
-            _indirectCommands = indirectCommands;
-            _globalUbo = globalUbo;
-        }
+        private readonly VulkanContext _context = context;
+        private readonly GraphicsEngine _graphicsEngine = graphicsEngine;
+        private readonly BindingManager _bindingManager = bindingManager;
+        private readonly TransformManager _transformManager = transformManager;
+        private readonly IndirectCommandManager _indirectCommands = indirectCommands;
+        private readonly GlobalUbo _globalUbo = globalUbo;
 
         public uint Order => 0;
 

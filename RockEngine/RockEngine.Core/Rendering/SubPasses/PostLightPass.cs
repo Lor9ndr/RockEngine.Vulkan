@@ -1,14 +1,14 @@
 ﻿using RockEngine.Core.Builders;
 using RockEngine.Core.ECS.Components;
 using RockEngine.Core.Rendering.Managers;
-using RockEngine.Core.Rendering.ResourceBindings;
+using RockEngine.Core.Rendering.Passes;
 using RockEngine.Vulkan;
 
 using Silk.NET.Vulkan;
 
 using System.Runtime.InteropServices;
 
-namespace RockEngine.Core.Rendering.Passes
+namespace RockEngine.Core.Rendering.SubPasses
 {
     internal class PostLightPass : IRenderSubPass
     {

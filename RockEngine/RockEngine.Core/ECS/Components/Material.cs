@@ -48,11 +48,7 @@ namespace RockEngine.Core.ECS.Components
                
             PushConstants = dict;
 
-           /* Console.WriteLine( pipeline.Name);
-            foreach (var set in pipeline.Layout.DescriptorSetLayouts)
-            {
-                Console.WriteLine($"Set {set.Key} bindings: {string.Join(",", set.Value.Bindings.Select(b => $"{b.Binding}:{b.DescriptorType}"))}");
-            }*/
+          
 
             foreach (var set in Pipeline.Layout.DescriptorSetLayouts)
             {

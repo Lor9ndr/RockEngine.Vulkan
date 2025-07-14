@@ -1,4 +1,8 @@
-﻿using RockEngine.Core;
+﻿using NLog;
+
+using RockEngine.Core;
+using RockEngine.Core.DI;
+using RockEngine.Editor.EditorUI.Logging;
 
 namespace RockEngine.Editor
 {
@@ -6,21 +10,11 @@ namespace RockEngine.Editor
     {
         public EditorApplication(): base()
         {
-        }
-
-        protected override Task Load()
-        {
-            return Task.CompletedTask;
-        }
-
-        protected override Task Render(double time)
-        {
-            return base.Render(time);
-        }
-
-        protected override Task Update(double deltaTime)
-        {
-            return base.Update(deltaTime);
+            var config = new NLog.Config.LoggingConfiguration();
+            var consoleTarget = new EditorConsoleTarget(IoC.Container.GetInstance<EditorConsole>());
+            config.AddTarget("EditorConsole", consoleTarget);
+            config.AddRuleForAllLevels(consoleTarget);
+            LogManager.Configuration = config;
         }
     }
 }

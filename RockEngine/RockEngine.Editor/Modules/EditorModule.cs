@@ -1,7 +1,7 @@
 ﻿using RockEngine.Core.DI;
 using RockEngine.Core.Rendering;
 using RockEngine.Core.Rendering.Passes;
-using RockEngine.Core.Rendering.PipelineRenderers;
+using RockEngine.Editor.EditorUI.Logging;
 using RockEngine.Editor.Layers;
 using RockEngine.Editor.SubPasses;
 
@@ -15,6 +15,7 @@ namespace RockEngine.Editor.Modules
         {
             container.Collection.Append<ILayer, EditorLayer>();
             container.RegisterRenderSubPass<ImGuiPass, SwapchainPassStrategy>();
+            container.Register<EditorConsole>();
 
             //container.Collection.Append<ILayer, TitleBarLayer>();
 

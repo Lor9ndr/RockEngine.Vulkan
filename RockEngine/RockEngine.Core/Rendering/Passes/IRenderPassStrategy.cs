@@ -1,8 +1,8 @@
 ﻿using RockEngine.Core.Rendering.Managers;
-using RockEngine.Core.Rendering.Passes;
+using RockEngine.Core.Rendering.SubPasses;
 using RockEngine.Vulkan;
 
-namespace RockEngine.Core.Rendering.PipelineRenderers
+namespace RockEngine.Core.Rendering.Passes
 {
     public interface IRenderPassStrategy : IDisposable
     {

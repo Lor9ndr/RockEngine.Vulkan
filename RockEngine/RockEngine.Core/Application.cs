@@ -1,4 +1,6 @@
-﻿using RockEngine.Core.DI;
+﻿using NLog;
+
+using RockEngine.Core.DI;
 using RockEngine.Core.ECS;
 using RockEngine.Core.Rendering;
 using RockEngine.Core.Rendering.Managers;
@@ -32,6 +34,8 @@ namespace RockEngine.Core
 
         public CancellationTokenSource CancellationTokenSource { get; set; }
         protected CancellationToken CancellationToken => CancellationTokenSource.Token;
+        private static readonly Logger _logger = LogManager.GetCurrentClassLogger();
+
 
         public Application()
         {
@@ -40,12 +44,13 @@ namespace RockEngine.Core
             {
                 IoC.Initialize();
             }
+            _applicationScope = AsyncScopedLifestyle.BeginScope(IoC.Container);
+
             _appSettings = IoC.Container.GetInstance<AppSettings>();
         }
 
         public async Task Run()
         {
-            _applicationScope = AsyncScopedLifestyle.BeginScope(IoC.Container);
             CancellationTokenSource = new CancellationTokenSource();
             // Configure window
             _window = IoC.Container.GetInstance<IWindow>();
@@ -82,7 +87,7 @@ namespace RockEngine.Core
 
                 PerformanceTracer.Initialize(_context);
 
-                Console.WriteLine($"Core systems initialized in: {loadWatch.ElapsedMilliseconds} ms");
+                _logger.Info($"Core systems initialized in: {loadWatch.ElapsedMilliseconds} ms");
                 await _renderer.InitializeAsync().ConfigureAwait(false);
                 await _world.Start(_renderer).ConfigureAwait(false);
                 _layerStack = IoC.Container.GetInstance<LayerStack>();
@@ -92,11 +97,11 @@ namespace RockEngine.Core
                 _window.Update += async (s) => await Update(s);
 
                 loadWatch.Stop();
-                Console.WriteLine($"Application loaded in: {loadWatch.ElapsedMilliseconds} ms");
+                _logger.Info($"Application loaded in: {loadWatch.ElapsedMilliseconds} ms");
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Initialization failed: {ex}");
+                _logger.Info($"Initialization failed: {ex}");
                 throw;
             }
         }
