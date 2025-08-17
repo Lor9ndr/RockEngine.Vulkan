@@ -1,11 +1,11 @@
 ﻿using RockEngine.Core.Builders;
 using RockEngine.Core.ECS.Components;
 using RockEngine.Core.Rendering.Managers;
-using RockEngine.Core.Rendering.Passes;
 using RockEngine.Vulkan;
 
 using Silk.NET.Vulkan;
 
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
 namespace RockEngine.Core.Rendering.SubPasses
@@ -27,64 +27,107 @@ namespace RockEngine.Core.Rendering.SubPasses
 
         public uint Order => 0;
 
-      
-        public Task Execute(VkCommandBuffer cmd, params object[] args)
+
+        public void Execute(VkCommandBuffer cmd, params object[] args)
         {
-            // Extract frame index and camera from args
-            uint frameIndex = (uint)args[0];
-            var camera = args[1] as Camera ?? throw new ArgumentNullException(nameof(Camera));
-            var camIndex = (int)args[2];
-           
-
-            cmd.SetViewport(camera.RenderTarget.Viewport);
-            cmd.SetScissor(camera.RenderTarget.Scissor);
-            var pipeline = default(VkPipeline);
-            foreach (var drawGroup in _indirectCommands.GetDrawGroups(RenderLayerType.Opaque))
+            using (PerformanceTracer.BeginSection(nameof(GeometryPass)))
             {
-                if (drawGroup.Pipeline.SubPass != Order)
-                {
-                    continue;
-                }
+                uint frameIndex = (uint)args[0];
+                var camera = args[1] as Camera ?? throw new ArgumentNullException(nameof(Camera));
+                var camIndex = (int)args[2];
+
+                cmd.SetViewport(camera.RenderTarget.Viewport);
+                cmd.SetScissor(camera.RenderTarget.Scissor);
+
                 var matrixBinding = _transformManager.GetCurrentBinding(frameIndex);
-                if (pipeline != drawGroup.Pipeline)
+                var globalUbo = _globalUbo.GetBinding((uint)camIndex);
+
+                // Get draw groups as span for zero-allocation iteration
+                var drawGroupsSpan = CollectionsMarshal.AsSpan(
+                    _indirectCommands.GetDrawGroups(RenderLayerType.Opaque, Order));
+
+                // Cache last bound states to minimize state changes
+                VkPipeline? lastPipeline = default;
+                Material? lastMaterial = default;
+                MeshRenderer? lastMesh = default;
+                bool multiDraw = GetMultiDrawIndirectFeature();
+
+                unsafe
                 {
-                    cmd.BindPipeline(drawGroup.Pipeline);
-                    pipeline = drawGroup.Pipeline;
+                    // Use stackalloc for small arrays to avoid heap allocations
+                    uint* dynamicOffsets = stackalloc uint[2];
+                    dynamicOffsets[0] = 0;
+                    dynamicOffsets[1] = 0;
 
-
-                    _bindingManager.BindResource(frameIndex, _globalUbo.GetBinding((uint)camIndex) , cmd, drawGroup.Pipeline.Layout);
-                    _bindingManager.BindResource(frameIndex, matrixBinding, cmd, drawGroup.Pipeline.Layout);
-                }
-
-                _bindingManager.BindResourcesForMaterial(frameIndex, drawGroup.Mesh.Material, cmd, false,[matrixBinding.SetLocation, _globalUbo.GetBinding((uint)camIndex).SetLocation]);
-
-                drawGroup.Mesh.VertexBuffer.BindVertexBuffer(cmd);
-                drawGroup.Mesh.IndexBuffer.BindIndexBuffer(cmd, 0, IndexType.Uint32);
-                if (GetMultiDrawIndirectFeature())
-                {
-                    VulkanContext.Vk.CmdDrawIndexedIndirect(
-                        cmd,
-                        _indirectCommands.IndirectBuffer.Buffer,
-                        drawGroup.ByteOffset,
-                        drawGroup.Count,
-                        (uint)Marshal.SizeOf<DrawIndexedIndirectCommand>());
-                }
-                else
-                {
-                    for (uint i = 0; i < drawGroup.Count; i++)
+                    // Iterate using for loop with ref local to avoid struct copies
+                    for (int i = 0; i < drawGroupsSpan.Length; i++)
                     {
-                        VulkanContext.Vk.CmdDrawIndexedIndirect(
-                            cmd,
-                            _indirectCommands.IndirectBuffer.Buffer,
-                            drawGroup.ByteOffset + (ulong)(i * Marshal.SizeOf<DrawIndexedIndirectCommand>()),
-                            1,
-                            (uint)Marshal.SizeOf<DrawIndexedIndirectCommand>());
+                        ref readonly var drawGroup = ref drawGroupsSpan[i];
+
+                        // Pipeline state change
+                        if (lastPipeline != drawGroup.Pipeline)
+                        {
+                            cmd.BindPipeline(drawGroup.Pipeline);
+                            lastPipeline = drawGroup.Pipeline;
+
+                            // Bind global resources
+                            _bindingManager.BindResource(frameIndex, globalUbo, cmd, drawGroup.Pipeline.Layout);
+                            _bindingManager.BindResource(frameIndex, matrixBinding, cmd, drawGroup.Pipeline.Layout);
+                        }
+
+                        // Material change
+                        if (lastMaterial != drawGroup.Material)
+                        {
+                            _bindingManager.BindResourcesForMaterial(
+                                frameIndex,
+                                drawGroup.Material,
+                                cmd,
+                                false,
+                                [matrixBinding.SetLocation, globalUbo.SetLocation]
+                            );
+                            lastMaterial = drawGroup.Material;
+                        }
+
+                        // Mesh change
+                        if (lastMesh != drawGroup.Mesh)
+                        {
+                            drawGroup.Mesh.Mesh.VertexBuffer.BindVertexBuffer(cmd);
+                            drawGroup.Mesh.Mesh.IndexBuffer.BindIndexBuffer(cmd, 0, IndexType.Uint32);
+                            lastMesh = drawGroup.Mesh;
+                        }
+
+                        // Issue draw command
+                        if (multiDraw)
+                        {
+                            VulkanContext.Vk.CmdDrawIndexedIndirect(
+                                cmd,
+                                _indirectCommands.IndirectBuffer.Buffer,
+                                drawGroup.ByteOffset,
+                                drawGroup.Count,
+                                (uint)Marshal.SizeOf<DrawIndexedIndirectCommand>());
+                        }
+                        else
+                        {
+                            // Pre-calculate stride
+                            int stride = Marshal.SizeOf<DrawIndexedIndirectCommand>();
+
+                            for (uint j = 0; j < drawGroup.Count; j++)
+                            {
+                                VulkanContext.Vk.CmdDrawIndexedIndirect(
+                                    cmd,
+                                    _indirectCommands.IndirectBuffer.Buffer,
+                                    drawGroup.ByteOffset + (ulong)(j * stride),
+                                    1,
+                                    (uint)stride);
+                            }
+                        }
                     }
                 }
+               
             }
-            return Task.CompletedTask;
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private Silk.NET.Core.Bool32 GetMultiDrawIndirectFeature()
         {
             return _context.Device.PhysicalDevice.Features2.Features.MultiDrawIndirect;

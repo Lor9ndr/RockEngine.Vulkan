@@ -16,6 +16,7 @@ namespace RockEngine.Core.DI
         public static void Initialize()
         {
             if (_isInitialized) return;
+            Container.Options.ConstructorResolutionBehavior = new GreediestConstructorBehavior();
 
             Container.Options.DefaultScopedLifestyle = new AsyncScopedLifestyle();
             Container.Options.EnableAutoVerification = false;

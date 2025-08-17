@@ -12,7 +12,7 @@ namespace RockEngine.Core.Rendering.RenderTargets
         public Format Format { get; protected set; }
         public VkFrameBuffer[] Framebuffers { get; protected set; }
         public VkRenderPass RenderPass { get; protected set; }
-        public Texture OutputTexture { get; protected set; }
+        public Texture2D OutputTexture { get; protected set; }
         public virtual Viewport Viewport { get; protected set; }
         public virtual Rect2D Scissor { get; protected set; }
         public ClearValue[] ClearValues { get; protected set; }

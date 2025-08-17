@@ -1,44 +1,105 @@
 ﻿using ImGuiNET;
-
 using RockEngine.Vulkan;
-
 using Silk.NET.Vulkan;
-
+using System.Buffers;
 using System.Diagnostics;
+using System.Numerics;
+using System.Collections.Concurrent;
+using NLog;
+using System.Threading;
 
 namespace RockEngine.Core
 {
-    public  class PerformanceTracer
+    public sealed class PerformanceTracer : IDisposable
     {
-        private const uint QUERIES_PER_FRAME = 100;
-        private const int MAX_HISTORY = 100;
+        private static readonly Logger _logger = LogManager.GetCurrentClassLogger();
+        private const uint QUERIES_PER_FRAME = 200;
+        private const float MIN_DISPLAY_DURATION = 0.1f;
+        private const double UPDATE_INTERVAL_SECONDS = 0.5;
+        private const int MAX_SAMPLES = 300;
+        private const int CLEANUP_INTERVAL = 300;
+        private const int UNUSED_FRAME_THRESHOLD = 600;
 
-        // CPU tracking
-        private static readonly Dictionary<string, Queue<float>> _cpuDurations = new();
-        private static readonly Dictionary<string, Stopwatch> _activeCpuTimers = new();
+        // Thread-safe scope tracking with object pooling
+        private static readonly ConcurrentDictionary<string, ScopeInfo> _scopesByPath = new();
+        private static readonly WeakReference<ScopeInfo>[] _scopesById = new WeakReference<ScopeInfo>[10000];
+        private static readonly ScopeData[] _scopeDataArray = new ScopeData[10000];
+        private static readonly ConcurrentDictionary<int, List<int>> _childScopesByParentId = new();
 
-        // GPU tracking
-        private static readonly Dictionary<string, Queue<float>> _gpuDurations = new();
-        private static PerFrameData[] _frameData;
+        // Frame data
+        private static PerFrameData[] _frameData = Array.Empty<PerFrameData>();
         private static float _timestampPeriod;
         private static int _maxFramesPerFlight;
+        private static int _cleanupCounter;
+        private static long _currentFrameCount;
+
+        // UI state
+        private static readonly bool[] _expandedNodes = new bool[10000];
+        private static string _searchFilter = string.Empty;
+        private static bool _showOnlySignificant = true;
+        private static float _minDurationFilter = MIN_DISPLAY_DURATION;
+        private static long _lastFrameCount;
+        private static double _fps;
+        private static Stopwatch _updateTimer = Stopwatch.StartNew();
+
+        // Thread-local current scopes
+        private static readonly AsyncLocal<ScopeInfo> _currentCpuScope = new();
+        private static readonly AsyncLocal<ScopeInfo> _currentGpuScope = new();
+
+        // Root scopes
+        private static readonly ScopeInfo _cpuRoot;
+        private static readonly ScopeInfo _gpuRoot;
+
+        static PerformanceTracer()
+        {
+            _cpuRoot = new ScopeInfo(1, "CPU", null, "CPU");
+            _gpuRoot = new ScopeInfo(2, "GPU", null, "GPU");
+
+            _scopesByPath["CPU"] = _cpuRoot;
+            _scopesByPath["GPU"] = _gpuRoot;
+            _scopesById[1] = new (_cpuRoot);
+            _scopesById[2] = new(_gpuRoot);
+            _scopeDataArray[1] = new ScopeData();
+            _scopeDataArray[2] = new ScopeData();
+            _childScopesByParentId[1] = new List<int>();
+            _childScopesByParentId[2] = new List<int>();
+            _expandedNodes[1] = true;
+            _expandedNodes[2] = true;
+
+            // Initialize thread locals
+            _currentCpuScope.Value = _cpuRoot;
+            _currentGpuScope.Value = _gpuRoot;
+        }
 
         public static void Initialize(VulkanContext context)
         {
             _timestampPeriod = context.Device.PhysicalDevice.Properties.Limits.TimestampPeriod;
             _maxFramesPerFlight = context.MaxFramesPerFlight;
             _frameData = new PerFrameData[_maxFramesPerFlight];
-            for (int i = 0; i < context.MaxFramesPerFlight; i++)
+            _cleanupCounter = 0;
+
+            for (int i = 0; i < _maxFramesPerFlight; i++)
             {
                 _frameData[i] = new PerFrameData(context);
             }
         }
 
-        public static IDisposable BeginSection(string name)
+        public void Dispose()
         {
-            return new CPUSectionTracker(name);
+            foreach (var frame in _frameData)
+            {
+                frame?.Dispose();
+            }
+            _frameData = Array.Empty<PerFrameData>();
+            GC.SuppressFinalize(this);
         }
-        public static IDisposable BeginSection(string name, VkCommandBuffer cmd, int frameIndex)
+
+        public static CpuSectionTracker BeginSection(string name)
+        {
+            return new CpuSectionTracker(name);
+        }
+
+        public static GpuSectionTracker BeginSection(string name, VkCommandBuffer cmd, int frameIndex)
         {
             var frame = _frameData[frameIndex % _maxFramesPerFlight];
             return new GpuSectionTracker(name, cmd, frame);
@@ -48,70 +109,382 @@ namespace RockEngine.Core
         {
             var frame = _frameData[frameIndex % _maxFramesPerFlight];
             frame.Process(context);
+            Interlocked.Increment(ref _currentFrameCount);
+
+            if (++_cleanupCounter >= CLEANUP_INTERVAL)
+            {
+                _cleanupCounter = 0;
+                CleanupUnusedScopes();
+            }
         }
 
+        private static void CleanupUnusedScopes()
+        {
+            long currentFrame = Interlocked.Read(ref _currentFrameCount);
+
+            // Only clean up when we have many scopes to avoid unnecessary work
+            if (_scopesByPath.Count <= 100) return;
+
+            foreach (var kvp in _scopesByPath)
+            {
+                int id = kvp.Value.Id;
+                if (id == 1 || id == 2) continue; // Skip roots
+
+                var data = _scopeDataArray[id];
+                if (data == null) continue;
+
+                if (currentFrame - data.LastUsedFrame > UNUSED_FRAME_THRESHOLD)
+                {
+                    RemoveScope(id);
+                }
+            }
+        }
+
+        private static void RemoveScope(int id)
+        {
+            if (!_scopesById[id].TryGetTarget(out var scope)) return;
+
+            _scopesByPath.TryRemove(scope.FullPath, out _);
+            _scopesById[id] = null;
+            _scopeDataArray[id] = null;
+
+            if (scope.ParentId.HasValue &&
+                _childScopesByParentId.TryGetValue(scope.ParentId.Value, out var parentChildren))
+            {
+                lock (parentChildren)
+                {
+                    parentChildren.Remove(id);
+                }
+            }
+        }
 
         public static void DrawMetrics()
         {
-            if (ImGui.Begin("Performance Metrics"))
+            if (!ImGui.Begin("Performance Metrics##PerformanceMetrics"))
             {
-                // CPU metrics
-                ImGui.Text("CPU Timings");
-                lock (_cpuDurations)
+                ImGui.End();
+                return;
+            }
+
+            try
+            {
+                double elapsedSeconds = _updateTimer.Elapsed.TotalSeconds;
+                if (elapsedSeconds > UPDATE_INTERVAL_SECONDS)
                 {
-                    foreach (var (name, values) in _cpuDurations)
-                    {
-                        var arr = values.ToArray();
-                        ImGui.PlotLines(name, ref arr[0], arr.Length, 0, string.Empty, 0, 16.67f);
-                    }
+                    long currentFrame = Interlocked.Read(ref _currentFrameCount);
+                    _fps = (currentFrame - _lastFrameCount) / elapsedSeconds;
+                    _lastFrameCount = currentFrame;
+                    _updateTimer.Restart();
                 }
 
-                // GPU metrics
-                ImGui.Text("GPU Timings");
-                lock (_gpuDurations)
+                ImGui.Text($"FPS: {_fps:0.0}");
+
+                ImGui.Checkbox("Only Significant", ref _showOnlySignificant);
+                ImGui.SameLine();
+                ImGui.SetNextItemWidth(100);
+                ImGui.DragFloat("Min Duration (ms)", ref _minDurationFilter, 0.01f, 0.01f, 100f);
+                ImGui.SameLine();
+                ImGui.SetNextItemWidth(200);
+                ImGui.InputText("Search", ref _searchFilter, 100);
+
+                if (ImGui.CollapsingHeader("CPU Timings", ImGuiTreeNodeFlags.DefaultOpen))
                 {
-                    foreach (var (name, values) in _gpuDurations)
-                    {
-                        var arr = values.ToArray();
-                        ImGui.PlotLines(name, ref arr[0], arr.Length, 0, string.Empty, 0, 16.67f);
-                    }
+                    DrawChildScopes(_cpuRoot.Id);
                 }
+
+                if (ImGui.CollapsingHeader("GPU Timings", ImGuiTreeNodeFlags.DefaultOpen))
+                {
+                    DrawChildScopes(_gpuRoot.Id);
+                }
+            }
+            finally
+            {
                 ImGui.End();
             }
         }
 
-        private readonly struct CPUSectionTracker : IDisposable
+        private static void DrawChildScopes(int parentId)
         {
-            private readonly string _name;
-            private readonly Stopwatch _sw;
+            if (!_childScopesByParentId.TryGetValue(parentId, out var children))
+                return;
 
-            public CPUSectionTracker(string name)
+            lock (children)
             {
-                _name = name;
-                _sw = Stopwatch.StartNew();
-                lock (_activeCpuTimers) _activeCpuTimers[name] = _sw;
+                foreach (int childId in children)
+                {
+                    var scopeID = _scopesById[childId];
+                    if(scopeID != null)
+                    {
+                        var hasScope = scopeID.TryGetTarget(out var scope);
+                        if (hasScope && scope is not null)
+                        {
+                            var data = _scopeDataArray[childId];
+
+                            DrawScopeNode(scope, data);
+                        }
+                    }
+                    
+                 
+                }
+            }
+        }
+
+        private static void DrawScopeNode(ScopeInfo scope, ScopeData data)
+        {
+            bool hasChildren = _childScopesByParentId.TryGetValue(scope.Id, out var children) &&
+                               children.Count > 0;
+
+            // Filtering
+            bool shouldShow = !_showOnlySignificant || data.IsSignificant || hasChildren;
+            shouldShow = shouldShow && (data.AverageDuration >= _minDurationFilter || hasChildren);
+            shouldShow = shouldShow && (string.IsNullOrEmpty(_searchFilter) ||
+                         scope.FullPath.Contains(_searchFilter, StringComparison.OrdinalIgnoreCase));
+
+            if (!shouldShow)
+                return;
+
+            float displayDuration = data.LastDuration > 0 ? data.LastDuration : data.AverageDuration;
+            float fraction = Math.Clamp(displayDuration / 33f, 0f, 1f);
+
+            ImGui.ProgressBar(fraction, new Vector2(100, 20), $"{displayDuration:0.00}ms");
+            ImGui.SameLine();
+
+            bool isExpanded = _expandedNodes[scope.Id];
+            ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags.FramePadding | ImGuiTreeNodeFlags.OpenOnArrow;
+            if (isExpanded) flags |= ImGuiTreeNodeFlags.DefaultOpen;
+
+            bool nodeOpen = ImGui.TreeNodeEx($"{scope.Name}##{scope.Id}", flags);
+
+            if (ImGui.IsItemClicked())
+            {
+                _expandedNodes[scope.Id] = !isExpanded;
+            }
+
+            if (nodeOpen)
+            {
+                ImGui.Indent(10);
+                ImGui.Text($"Full Path: {scope.FullPath}");
+                ImGui.Text($"Average: {data.AverageDuration:0.00}ms");
+                ImGui.Text($"Last: {data.LastDuration:0.00}ms");
+                ImGui.Text($"Min: {data.MinDuration:0.00}ms");
+                ImGui.Text($"Max: {data.MaxDuration:0.00}ms");
+                ImGui.Text($"Samples: {data.SampleCount}");
+
+                // Draw children
+                if (hasChildren)
+                {
+                    lock (children)
+                    {
+                        foreach (int childId in children)
+                        {
+                            var scopeID = _scopesById[childId];
+                            if (scopeID != null)
+                            {
+                                var hasScope = scopeID.TryGetTarget(out var childScope);
+                                if (hasScope && childScope is not null)
+                                {
+                                    var childScopeData = _scopeDataArray[childId];
+
+                                    DrawScopeNode(childScope, childScopeData);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                ImGui.Unindent(10);
+                ImGui.TreePop();
+            }
+        }
+
+        private static ScopeInfo GetOrCreateScope(string name, ScopeInfo parent)
+        {
+            string fullPath = parent != null ? $"{parent.FullPath}/{name}" : name;
+
+            // Check if scope already exists
+            if (_scopesByPath.TryGetValue(fullPath, out var existing))
+            {
+                return existing;
+            }
+
+            // Create new scope
+            int newId = (int)Interlocked.Increment(ref _lastScopeId);
+            var newScope = new ScopeInfo(newId, name, parent?.Id, fullPath);
+
+            // Add to dictionaries
+            _scopesByPath[fullPath] = newScope;
+            _scopesById[newId] = new WeakReference<ScopeInfo>(newScope);
+            _scopeDataArray[newId] = new ScopeData();
+
+            // Add to parent's children
+            if (parent != null)
+            {
+                var parentChildren = _childScopesByParentId.GetOrAdd(parent.Id, _ => new List<int>());
+                lock (parentChildren)
+                {
+                    parentChildren.Add(newId);
+                }
+            }
+
+            return newScope;
+        }
+        private static long _lastScopeId = 1000;
+
+        private struct ValueStopwatch
+        {
+            private long _startTimestamp;
+            public bool IsActive => _startTimestamp != 0;
+
+            public static ValueStopwatch StartNew() => new()
+            {
+                _startTimestamp = Stopwatch.GetTimestamp()
+            };
+
+            public TimeSpan Elapsed
+            {
+                get
+                {
+                    long end = Stopwatch.GetTimestamp();
+                    long ticks = (end - _startTimestamp) * TimeSpan.TicksPerSecond / Stopwatch.Frequency;
+                    return new TimeSpan(ticks);
+                }
+            }
+        }
+
+        private sealed class ScopeInfo
+        {
+            public int Id { get; }
+            public string Name { get; }
+            public int? ParentId { get; }
+            public string FullPath { get; }
+
+            public ScopeInfo(int id, string name, int? parentId, string fullPath)
+            {
+                Id = id;
+                Name = name;
+                ParentId = parentId;
+                FullPath = fullPath;
+            }
+        }
+
+        private sealed class ScopeData
+        {
+            public float LastDuration;
+            public float AverageDuration;
+            public float MaxDuration;
+            public float MinDuration = float.MaxValue;
+            public int SampleCount;
+            public long LastUsedFrame;
+            public bool IsSignificant => AverageDuration >= MIN_DISPLAY_DURATION;
+
+            public void AddDuration(float duration, long frameCount)
+            {
+                LastDuration = duration;
+                LastUsedFrame = frameCount;
+
+                if (duration < MinDuration) MinDuration = duration;
+                if (duration > MaxDuration) MaxDuration = duration;
+
+                if (SampleCount < MAX_SAMPLES)
+                {
+                    AverageDuration = (AverageDuration * SampleCount + duration) / (SampleCount + 1);
+                    SampleCount++;
+                }
+                else
+                {
+                    // Exponential moving average
+                    const float alpha = 0.1f;
+                    AverageDuration = AverageDuration * (1 - alpha) + duration * alpha;
+                }
+            }
+        }
+
+        // Changed to ref struct to prevent boxing
+        public ref struct CpuSectionTracker:IDisposable
+        {
+            private readonly int _scopeId;
+            private readonly ValueStopwatch _sw;
+            private readonly ScopeInfo _previousScope;
+            private bool _disposed;
+
+            public CpuSectionTracker(string name)
+            {
+                _previousScope = _currentCpuScope.Value;
+                var parent = _previousScope ?? _cpuRoot;
+                var scopeInfo = GetOrCreateScope(name, parent);
+                _scopeId = scopeInfo.Id;
+                _sw = ValueStopwatch.StartNew();
+                _currentCpuScope.Value = scopeInfo;
             }
 
             public void Dispose()
             {
-                _sw.Stop();
-                lock (_cpuDurations)
-                {
-                    if (!_cpuDurations.TryGetValue(_name, out var queue))
-                    {
-                        queue = new Queue<float>(MAX_HISTORY);
-                        _cpuDurations[_name] = queue;
-                    }
-                    if (queue.Count >= MAX_HISTORY) queue.Dequeue();
-                    queue.Enqueue((float)_sw.Elapsed.TotalMilliseconds);
-                }
-                lock (_activeCpuTimers) _activeCpuTimers.Remove(_name);
+                if (_disposed) return;
+                _disposed = true;
+
+                float duration = (float)_sw.Elapsed.TotalMilliseconds;
+                long frameCount = Interlocked.Read(ref _currentFrameCount);
+
+                var data = _scopeDataArray[_scopeId];
+                data?.AddDuration(duration, frameCount);
+
+                _currentCpuScope.Value = _previousScope;
             }
         }
-        private class PerFrameData
+
+        // Changed to ref struct to prevent boxing
+        public ref struct GpuSectionTracker:IDisposable
         {
-            public readonly VkQueryPool QueryPool;
-            private readonly List<GpuQuery> _pendingQueries = new();
+            private readonly int _scopeId;
+            private readonly VkCommandBuffer _cmd;
+            private readonly PerFrameData _frame;
+            private readonly uint _startIndex;
+            private readonly bool _valid;
+            private readonly ScopeInfo _previousScope;
+            private bool _disposed;
+
+            public GpuSectionTracker(string name, VkCommandBuffer cmd, PerFrameData frame)
+            {
+                _previousScope = _currentGpuScope.Value;
+                var parent = _previousScope ?? _gpuRoot;
+                var scopeInfo = GetOrCreateScope(name, parent);
+                _scopeId = scopeInfo.Id;
+                _cmd = cmd;
+                _frame = frame;
+                _startIndex = _frame.ReserveQueries(_scopeId, 2);
+                _currentGpuScope.Value = scopeInfo;
+                _valid = _startIndex != uint.MaxValue;
+
+                if (_valid)
+                {
+                    _cmd.WriteTimestamp(
+                        PipelineStageFlags.AllCommandsBit,
+                        _frame.QueryPool,
+                        _startIndex
+                    );
+                }
+            }
+
+            public void Dispose()
+            {
+                if (_disposed || !_valid) return;
+                _disposed = true;
+
+                _cmd.WriteTimestamp(
+                    PipelineStageFlags.AllCommandsBit,
+                    _frame.QueryPool,
+                    _startIndex + 1
+                );
+
+                _currentGpuScope.Value = _previousScope;
+            }
+        }
+
+        public sealed class PerFrameData : IDisposable
+        {
+            public VkQueryPool QueryPool { get; private set; }
+            private readonly GpuQuery[] _pendingQueries;
+            private int _pendingQueryCount;
             private uint _queryIndex;
 
             public PerFrameData(VulkanContext context)
@@ -122,95 +495,92 @@ namespace RockEngine.Core
                     QueryType = QueryType.Timestamp,
                     QueryCount = QUERIES_PER_FRAME
                 };
+
                 QueryPool = VkQueryPool.Create(context, createInfo);
-                QueryPool.LabelObject($"PerfQueryPool_{GetHashCode()}");
                 QueryPool.Reset(0, QUERIES_PER_FRAME);
-            }
-
-            public unsafe void Process(VulkanContext context)
-            {
-                // Only process if we have queries
-                if (_queryIndex > 0)
-                {
-                    QueryPool.Reset(0, QUERIES_PER_FRAME);
-
-                    var results = stackalloc ulong[(int)_queryIndex];
-                    unsafe
-                    {
-                        VulkanContext.Vk.GetQueryPoolResults(
-                            context.Device,
-                            QueryPool,
-                            0,
-                            _queryIndex,
-                            sizeof(ulong) * _queryIndex,
-                            results,
-                            sizeof(ulong),
-                            QueryResultFlags.None
-                        );
-                    }
-
-                    lock (_gpuDurations)
-                    {
-                        foreach (var query in _pendingQueries)
-                        {
-                            if (query.StartIndex + 1 >= _queryIndex) continue;
-
-                            var start = results[query.StartIndex];
-                            var end = results[query.StartIndex + 1];
-                            var duration = (end - start) * _timestampPeriod / 1e6f;
-
-                            if (!_gpuDurations.TryGetValue(query.Name, out var queue))
-                            {
-                                queue = new Queue<float>(MAX_HISTORY);
-                                _gpuDurations[query.Name] = queue;
-                            }
-
-                            if (queue.Count >= MAX_HISTORY) queue.Dequeue();
-                            queue.Enqueue((float)duration);
-                        }
-                    }
-                }
-
-                _pendingQueries.Clear();
-                _queryIndex = 0;
-            }
-
-            public uint ReserveQueries(string name, uint count)
-            {
-                lock (_pendingQueries)
-                {
-                    var start = _queryIndex;
-                    _queryIndex += count;
-                    _pendingQueries.Add(new GpuQuery(name, start));
-                    return start;
-                }
-            }
-        }
-        private readonly struct GpuSectionTracker : IDisposable
-        {
-            private readonly string _name;
-            private readonly VkCommandBuffer _cmd;
-            private readonly PerFrameData _frame;
-            private readonly uint _startIndex;
-
-            public GpuSectionTracker(string name, VkCommandBuffer cmd, PerFrameData frame)
-            {
-                _name = name;
-                _cmd = cmd;
-                _frame = frame;
-                _startIndex = _frame.ReserveQueries(name, 2);
-
-                // Write start timestamp
-                _cmd.WriteTimestamp(PipelineStageFlags.TopOfPipeBit, _frame.QueryPool, _startIndex);
+                _pendingQueries = new GpuQuery[QUERIES_PER_FRAME / 2];
             }
 
             public void Dispose()
             {
-                // Write end timestamp
-                _cmd.WriteTimestamp(PipelineStageFlags.BottomOfPipeBit, _frame.QueryPool, _startIndex + 1);
+                QueryPool?.Dispose();
+                QueryPool = null!;
+            }
+
+            public unsafe void Process(VulkanContext context)
+            {
+                if (_queryIndex == 0 || _pendingQueryCount == 0) return;
+
+                Span<ulong> results = stackalloc ulong[(int)_queryIndex];
+                try
+                {
+                    var status = QueryPool.GetResults(
+                        firstQuery: 0,
+                        queryCount: _queryIndex,
+                        results,
+                        stride: sizeof(ulong),
+                        flags: QueryResultFlags.Result64Bit
+                    );
+
+                    if (status != Result.Success) return;
+
+                    long frameCount = Interlocked.Read(ref _currentFrameCount);
+                    for (int i = 0; i < _pendingQueryCount; i++)
+                    {
+                        var query = _pendingQueries[i];
+                        if (query.StartIndex + 1 >= _queryIndex) continue;
+
+                        ulong start = results[query.StartIndex];
+                        ulong end = results[query.StartIndex + 1];
+
+                        if (end < start) continue;
+
+                        float duration = (end - start) * _timestampPeriod / 1e6f;
+                        var data = _scopeDataArray[query.ScopeId];
+                        if (data != null)
+                        {
+                            data.AddDuration(duration, frameCount);
+                        }
+                    }
+                }
+                finally
+                {
+                    // Stack allocated, no need to free
+                }
+
+                QueryPool.Reset(0, QUERIES_PER_FRAME);
+                _pendingQueryCount = 0;
+                _queryIndex = 0;
+            }
+
+            public uint ReserveQueries(int scopeId, uint count)
+            {
+                if (_queryIndex + count > QUERIES_PER_FRAME)
+                {
+                    return uint.MaxValue;
+                }
+
+                uint start = _queryIndex;
+                _queryIndex += count;
+
+                if (_pendingQueryCount < _pendingQueries.Length)
+                {
+                    _pendingQueries[_pendingQueryCount++] = new GpuQuery(scopeId, (int)start);
+                }
+                return start;
             }
         }
 
-        private record struct GpuQuery(string Name, uint StartIndex);
+        private readonly struct GpuQuery
+        {
+            public readonly int ScopeId;
+            public readonly int StartIndex;
+
+            public GpuQuery(int scopeId, int startIndex)
+            {
+                ScopeId = scopeId;
+                StartIndex = startIndex;
+            }
+        }
     }
 }

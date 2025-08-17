@@ -1,10 +1,12 @@
 ﻿using Silk.NET.Vulkan;
 
+using System.Collections.Concurrent;
+
 namespace RockEngine.Vulkan
 {
     public class SamplerCache : IDisposable
     {
-        private readonly Dictionary<SamplerKey, VkSampler> _samplers = new();
+        private readonly ConcurrentDictionary<SamplerKey, VkSampler> _samplers = new();
         private readonly VulkanContext _context;
 
         public SamplerCache(VulkanContext context)

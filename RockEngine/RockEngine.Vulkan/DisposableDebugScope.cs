@@ -16,14 +16,20 @@
                 {
                     throw new ArgumentException("Color array must contain at least 4 elements", nameof(color));
                 }
-                _debugUtils.CmdBeginDebugUtilsLabel(_commandBuffer, labelName, color);
+                //lock (_commandBuffer.CommandPool._lock)
+                {
+                    _debugUtils.CmdBeginDebugUtilsLabel(_commandBuffer, labelName, color);
+                }
 
             }
         }
 
         public void Dispose()
         {
-            _debugUtils._cmdEndDebugUtilsLabel(_commandBuffer);
+            //lock (_commandBuffer.CommandPool._lock)
+            {
+                _debugUtils._cmdEndDebugUtilsLabel(_commandBuffer);
+            }
         }
     }
 }

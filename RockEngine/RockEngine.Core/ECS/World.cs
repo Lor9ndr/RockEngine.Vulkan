@@ -110,17 +110,6 @@ namespace RockEngine.Core.ECS
             }
         }
 
-        internal Entity AddEntity(EntityData entityData)
-        {
-
-            var entity = new Entity();
-            _entities.Add(entity);
-
-            // instatiate components by their data and so on
-
-            return entity;
-        }
-
 
         public void Dispose()
         {

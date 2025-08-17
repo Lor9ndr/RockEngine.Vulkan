@@ -80,7 +80,6 @@ namespace RockEngine.Core.Rendering.Texturing
                 Image.TransitionImageLayout(batch.CommandBuffer, ImageLayout.Undefined, baseMipLevel: mipLevel);
                 LoadedMipLevels = mipLevel;
                 batch.Submit();
-
             }
         }
 

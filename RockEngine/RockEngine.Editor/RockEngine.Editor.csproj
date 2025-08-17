@@ -6,10 +6,7 @@
     <TargetFramework>net9.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <PublishAot>true</PublishAot>
-    <IsAotCompatible>true</IsAotCompatible>
     <InvariantGlobalization>true</InvariantGlobalization>
-    <TrimMode>full</TrimMode>
     <IlcGenerateStackTraceData>false</IlcGenerateStackTraceData>
     <InvariantGlobalization>true</InvariantGlobalization>
     <GenerateDocumentationFile>True</GenerateDocumentationFile>
@@ -33,21 +30,11 @@
     <ProjectReference Include="..\RockEngine.Core\RockEngine.Core.csproj" />
   </ItemGroup>
 
-  <ItemGroup>
-    <CompiledShader Include="..\RockEngine.Core\**\*.spv" />
-  </ItemGroup>
 
   <ItemGroup>
     <Content Include="Resources\**\*">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
-  </ItemGroup>
-  
-  
-  <ItemGroup>
-    <EmbeddedResource Include="..\RockEngine.Core\**\*.vert" />
-    <EmbeddedResource Include="..\RockEngine.Core\**\*.frag" />
-    <EmbeddedResource Include="..\RockEngine.Core\**\*.glsl" />
   </ItemGroup>
   
   
@@ -74,12 +61,17 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\RockEngine.Analyzer\RockEngine.Analyzer\RockEngine.Analyzer.csproj" ReferenceOutputAssembly="false" OutputItemType="Analyzer" />
+  </ItemGroup>
+  
+
+  <ItemGroup>
     <Folder Include="Resources\Models\Revoulier\" />
   </ItemGroup>
 
  
+ 
 
-  <Target Name="CopyCompiledShaders" AfterTargets="Build">
-    <Copy SourceFiles="@(CompiledShader)" DestinationFolder="$(ShadersOutputPath)" SkipUnchangedFiles="true" />
-  </Target>
+
+
 </Project>

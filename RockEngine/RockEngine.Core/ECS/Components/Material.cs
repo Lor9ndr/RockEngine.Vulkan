@@ -20,7 +20,7 @@ namespace RockEngine.Core.ECS.Components
         private readonly int _textureSetLocation = -1;
 
         internal BindingCollection Bindings { get; private set; } = new BindingCollection();
-        public Dictionary<string, ShaderReflectionData.PushConstantInfo> PushConstants { get;private set;}
+        public Dictionary<string, PushConstantInfo> PushConstants { get;private set;}
         private readonly Dictionary<string, byte[]> _pushConstantValues = new();
 
         public bool IsComplete => Pipeline != null &&
@@ -68,7 +68,7 @@ namespace RockEngine.Core.ECS.Components
             {
                 while (setLayout.Bindings.Length > textures.Count)
                 {
-                    textures.Add(Texture.GetEmptyTexture(VulkanContext.GetCurrent()));
+                    textures.Add(Texture2D.GetEmptyTexture(VulkanContext.GetCurrent()));
                 }
                 Textures = textures.ToArray();
 
@@ -115,7 +115,10 @@ namespace RockEngine.Core.ECS.Components
             foreach (var (name, constant) in PushConstants)
             {
                 if (!_pushConstantValues.TryGetValue(name, out var buffer))
-                    continue;
+                {
+                    buffer  = new byte[Pipeline.Layout.PushConstantRanges.First(s => s.Name == name).Size];
+                    _pushConstantValues[name] = buffer;
+                }
 
                 fixed (byte* dataPtr = buffer)
                 {
@@ -133,6 +136,7 @@ namespace RockEngine.Core.ECS.Components
         public void Dispose()
         {
             _pushConstantValues.Clear();
+            Bindings.Clear();
         }
     }
 }

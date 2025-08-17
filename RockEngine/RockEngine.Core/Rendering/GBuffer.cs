@@ -139,7 +139,7 @@ namespace RockEngine.Core.Rendering
             ColorTextures = new Texture[ColorAttachments.Length];
             for (int i = 0; i < ColorAttachments.Length; i++)
             {
-                ColorTextures[i] = new Texture(
+                ColorTextures[i] = new Texture2D(
                     _context,
                     ColorAttachments[i].Image,
                     ColorAttachments[i],

@@ -1,9 +1,10 @@
-﻿using RockEngine.Core.Builders;
+﻿using RockEngine.Core;
+using RockEngine.Core.Builders;
 using RockEngine.Core.ECS.Components;
 using RockEngine.Core.Rendering;
 using RockEngine.Core.Rendering.Commands;
 using RockEngine.Core.Rendering.Managers;
-using RockEngine.Core.Rendering.Passes;
+using RockEngine.Core.Rendering.SubPasses;
 using RockEngine.Vulkan;
 
 using Silk.NET.Vulkan;
@@ -27,14 +28,16 @@ namespace RockEngine.Editor.SubPasses
 
        
 
-        public Task Execute(VkCommandBuffer cmd, params object[] args)
+        public void Execute(VkCommandBuffer cmd, params object[] args)
         {
-            while (_commandManager.OtherCommands.TryPeek(out var command) && command is ImguiRenderCommand imguiCmd)
+            using (PerformanceTracer.BeginSection(nameof(ImGuiPass)))
             {
-                imguiCmd.RenderCommand(cmd, _graphicsEngine.Swapchain.Extent);
-                while (!_commandManager.OtherCommands.TryDequeue(out _)) { }
+                while (_commandManager.OtherCommands.TryPeek(out var command) && command is ImguiRenderCommand imguiCmd)
+                {
+                    imguiCmd.RenderCommand(cmd, _graphicsEngine.Swapchain.Extent);
+                    while (!_commandManager.OtherCommands.TryDequeue(out _)) { }
+                }
             }
-            return Task.CompletedTask;
         }
         public void Dispose()
         {
@@ -71,17 +74,6 @@ namespace RockEngine.Editor.SubPasses
 
         public void SetupDependencies(RenderPassBuilder builder, uint subpassIndex)
         {
-          /*  // Dependency from previous subpass (ScreenPass)
-            builder.AddDependency()
-                .FromSubpass(subpassIndex - 1)
-                .ToSubpass(subpassIndex)
-                .WithStages(
-                    PipelineStageFlags.ColorAttachmentOutputBit,
-                    PipelineStageFlags.ColorAttachmentOutputBit)
-                .WithAccess(
-                    AccessFlags.ColorAttachmentWriteBit,
-                    AccessFlags.ColorAttachmentWriteBit)
-                .Add();
 
             // Dependency to external (presentation)
             builder.AddDependency()
@@ -93,7 +85,7 @@ namespace RockEngine.Editor.SubPasses
                 .WithAccess(
                     AccessFlags.ColorAttachmentWriteBit,
                     AccessFlags.None)
-                .Add();*/
+                .Add();
         }
 
         public void Initilize()

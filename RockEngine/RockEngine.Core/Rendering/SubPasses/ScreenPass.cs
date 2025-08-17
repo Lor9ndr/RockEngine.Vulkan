@@ -41,24 +41,26 @@ namespace RockEngine.Core.Rendering.SubPasses
         }
 
      
-        public Task Execute(VkCommandBuffer cmd, params object[] args)
+        public void Execute(VkCommandBuffer cmd, params object[] args)
         {
-            var renderer = args[0] as Renderer ?? throw new ArgumentNullException(nameof(Renderer));
-            var camera = args[1] as Camera ?? throw new ArgumentNullException(nameof(Camera));
-            
-            SetInputTexture(camera.RenderTarget.OutputTexture);
-
-            cmd.SetViewport(_renderer.SwapchainTarget.Viewport);
-            cmd.SetScissor(_renderer.SwapchainTarget.Scissor);
-
-            cmd.BindPipeline(_screenPipeline, PipelineBindPoint.Graphics);
-            if(!_screenMaterial.IsComplete)
+            using (PerformanceTracer.BeginSection(nameof(ScreenPass)))
             {
-                return Task.CompletedTask;
+                var renderer = args[0] as Renderer ?? throw new ArgumentNullException(nameof(Renderer));
+                var camera = args[1] as Camera ?? throw new ArgumentNullException(nameof(Camera));
+            
+                SetInputTexture(camera.RenderTarget.OutputTexture);
+
+                cmd.SetViewport(_renderer.SwapchainTarget.Viewport);
+                cmd.SetScissor(_renderer.SwapchainTarget.Scissor);
+
+                cmd.BindPipeline(_screenPipeline, PipelineBindPoint.Graphics);
+                if(!_screenMaterial.IsComplete)
+                {
+                    return;
+                }
+                _bindingManager.BindResourcesForMaterial(renderer.FrameIndex, _screenMaterial, cmd);
+                cmd.Draw(3, 1, 0, 0);
             }
-            _bindingManager.BindResourcesForMaterial(renderer.FrameIndex, _screenMaterial, cmd);
-            cmd.Draw(3, 1, 0, 0);
-            return Task.CompletedTask;
         }
         public void Initilize()
         {

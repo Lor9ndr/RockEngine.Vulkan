@@ -1,66 +1,72 @@
-﻿using RockEngine.Core.Rendering.Managers;
-using RockEngine.Vulkan;
+﻿using RockEngine.Vulkan;
 
 using Silk.NET.Vulkan;
+
+using System;
 
 namespace RockEngine.Core.Rendering
 {
     public class GraphicsEngine : IDisposable
     {
-        private readonly VulkanContext _renderingContext;
+        private readonly VulkanContext _context;
         private readonly VkSwapchain _swapchain;
+        private int _frameCount = 0;
 
+        public int FrameIndex => _frameCount % _swapchain.SwapChainImagesCount;
         public VkSwapchain Swapchain => _swapchain;
 
-        public uint CurrentImageIndex => _swapchain.CurrentImageIndex;
-
-        public GraphicsEngine(VulkanContext renderingContext)
+        public GraphicsEngine(VulkanContext context)
         {
-            _renderingContext = renderingContext;
-            _swapchain = VkSwapchain.Create(_renderingContext, _renderingContext.Surface);
+            _context = context;
+            _swapchain = VkSwapchain.Create(context, context.Surface);
         }
-
 
         public UploadBatch? Begin()
         {
-            if (_swapchain.Surface.Size.X == 0 || _swapchain.Surface.Size.Y == 0)
-            {
-                return null;
-            }
+            var size = _swapchain.Surface.Size;
+            if (size.X < 1 || size.Y < 1) return null;
 
-            var result = _swapchain.AcquireNextImage()
-               .VkAssertResult("Failed to acquire swap chain image!", Result.SuboptimalKhr, Result.ErrorOutOfDateKhr);
 
+            var frameData = _swapchain.GetFrameData(FrameIndex);
+            frameData.FlushOperation?.Wait();
+
+            var result = _swapchain.AcquireNextImage(FrameIndex);
             if (result == Result.ErrorOutOfDateKhr)
             {
                 RecreateSwapchain();
                 return null;
             }
-            var batch = _renderingContext.SubmitContext.CreateBatch();
-            batch.CommandBuffer.LabelObject("GraphicsEngine cmd");
+
+            var batch = _context.SubmitContext.CreateBatch();
             return batch;
-            
         }
 
         public void SubmitAndPresent(UploadBatch batch)
         {
-            var data = _swapchain.GetFrameData();
-            batch.AddSignalSemaphore(data.RenderFinishedSemaphore);
-            batch.AddWaitSemaphore(data.ImageAvailableSemaphore, PipelineStageFlags.ColorAttachmentOutputBit);
+            var frameData = _swapchain.GetFrameData(FrameIndex);
+
+            batch.AddWaitSemaphore(frameData.ImageAvailableSemaphore, PipelineStageFlags.ColorAttachmentOutputBit);
+            batch.AddSignalSemaphore(frameData.RenderFinishedSemaphore);
             batch.Submit();
 
-             var operation = _renderingContext.SubmitContext.FlushAsync(data.InFlightFence);
-            _swapchain.Present(operation);
+            // Сбрасываем забор перед использованием
+            frameData.InFlightFence.Reset();
+
+            // Отправляем команды и ждем завершения
+            var operation = _context.SubmitContext.FlushAsync(frameData.InFlightFence);
+
+            // Представляем кадр
+            var result = _swapchain.Present(FrameIndex, operation);
+
+            _frameCount++;
         }
 
         private void RecreateSwapchain()
         {
             _swapchain.RecreateSwapchain();
+            _frameCount = 0;
         }
 
-        public void Dispose()
-        {
-            _swapchain.Dispose();
-        }
+        public void Dispose() => _swapchain.Dispose();
     }
 }

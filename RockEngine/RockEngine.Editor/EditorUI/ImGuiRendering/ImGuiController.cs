@@ -46,26 +46,20 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
 
         public ImFontPtr IconFont { get => _iconFont; set => _iconFont = value; }
 
-        public unsafe ImGuiController(VulkanContext vkContext, GraphicsEngine graphicsEngine, BindingManager bindingManager, IInputContext inputContext, uint width, uint height, RenderTarget renderTarget)
+        public unsafe ImGuiController(VulkanContext vkContext, GraphicsEngine graphicsEngine, BindingManager bindingManager, IInputContext inputContext, Renderer renderer)
         {
             _vkContext = vkContext;
             _bindingManager = bindingManager;
             _graphicsEngine = graphicsEngine;
             _input = inputContext;
-            _uiRenderTarget = renderTarget;
+            _uiRenderTarget = renderer.SwapchainTarget;
             _renderPass = _uiRenderTarget.RenderPass;
             ImGui.CreateContext();
             var io = ImGui.GetIO();
             _vertexBuffers = new VkBuffer[_vkContext.MaxFramesPerFlight];
             _indexBuffers = new VkBuffer[_vkContext.MaxFramesPerFlight];
-            CreateDescriptorPool();
-            CreateDeviceObjects();
-            CreateFontResources();
-            CreateDescriptorSet();
-            ApplyModernDarkTheme();
-            ImGui.GetIO().DisplaySize = new Vector2(width, height);
+           
             _input.Keyboards[0].KeyChar += (s, c) => PressChar(c);
-
 
 
             io.ConfigFlags |= ImGuiConfigFlags.DockingEnable;
@@ -73,6 +67,15 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
             io.BackendFlags |= ImGuiBackendFlags.HasSetMousePos;
             io.BackendFlags |= ImGuiBackendFlags.RendererHasVtxOffset;
             SetPerFrameImGuiData(1f / 60f);
+
+        }
+        public void Init()
+        {
+            CreateDescriptorPool();
+            CreateDeviceObjects();
+            CreateFontResources();
+            CreateDescriptorSet();
+            ApplyModernDarkTheme();
             ImGui.NewFrame();
 
         }
@@ -227,8 +230,8 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
         private unsafe void RenderImDrawData(ImDrawDataPtr drawData, VkCommandBuffer commandBuffer, Extent2D swapChainExtent)
         {
 
-            ref var vertexBuffer = ref _vertexBuffers[_graphicsEngine.CurrentImageIndex];
-            ref var indexBuffer = ref _indexBuffers![_graphicsEngine.CurrentImageIndex];
+            ref var vertexBuffer = ref _vertexBuffers[_graphicsEngine.FrameIndex];
+            ref var indexBuffer = ref _indexBuffers![_graphicsEngine.FrameIndex];
             if (drawData.TotalVtxCount > 0)
             {
                 // Calculate required buffer sizes
@@ -317,7 +320,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
                     if (pcmd.ElemCount == 0) continue;
 
                     // Get the descriptor set from the pinned handle
-                    VkDescriptorSet descriptor = default;
+                    VkDescriptorSet? descriptor = default;
                     var handle = GCHandle.FromIntPtr(pcmd.TextureId);
                     descriptor = (VkDescriptorSet)handle.Target;
                     if (descriptor is null)
@@ -469,7 +472,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
                 // 6. Retrieve texture data
             io.Fonts.GetTexDataAsRGBA32(out nint pixels, out int width, out int height, out int bytes_per_pixel);
             Span<byte> bytes = new Span<byte>((void*)pixels, width * height * bytes_per_pixel);
-            _fontTexture = Texture.Create(_vkContext, width, height, Format.R8G8B8A8Srgb, bytes);
+            _fontTexture = Texture2D.Create(_vkContext, width, height, Format.R8G8B8A8Srgb, bytes);
 
             // 7. Store texture identifier
             io.Fonts.SetTexID(GetTextureID(_fontTexture));
@@ -531,21 +534,21 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
         {
             if (_textures.TryGetValue(texture, out var value))
             {
-                var desc = value.Item2.DescriptorSets[_graphicsEngine.CurrentImageIndex];
+                var desc = value.Item2.DescriptorSets[_graphicsEngine.FrameIndex];
                 if (desc is null || desc.IsDirty)
                 {
                     value.Item1.Free();
-                    _bindingManager.AllocateAndUpdateDescriptorSet(_graphicsEngine.CurrentImageIndex, value.Item2, _pipelineLayout);
-                    value.Item2.DescriptorSets[_graphicsEngine.CurrentImageIndex].IsDirty = false;
-                    var newHandle = GCHandle.Alloc(value.Item2.DescriptorSets[_graphicsEngine.CurrentImageIndex]);
+                    _bindingManager.AllocateAndUpdateDescriptorSet((uint)_graphicsEngine.FrameIndex, value.Item2, _pipelineLayout);
+                    value.Item2.DescriptorSets[_graphicsEngine.FrameIndex].IsDirty = false;
+                    var newHandle = GCHandle.Alloc(value.Item2.DescriptorSets[_graphicsEngine.FrameIndex]);
                     _textures[texture] = (newHandle, value.Item2);
                     return GCHandle.ToIntPtr(newHandle);
                 }
                 return GCHandle.ToIntPtr(value.Item1);
             }
             var binding = new TextureBinding(0, 0, ImageLayout.ShaderReadOnlyOptimal, texture);
-            _bindingManager.AllocateAndUpdateDescriptorSet(_graphicsEngine.CurrentImageIndex, binding, _pipelineLayout);
-            var handle = GCHandle.Alloc(binding.DescriptorSets[_graphicsEngine.CurrentImageIndex]);
+            _bindingManager.AllocateAndUpdateDescriptorSet((uint)_graphicsEngine.FrameIndex, binding, _pipelineLayout);
+            var handle = GCHandle.Alloc(binding.DescriptorSets[_graphicsEngine.FrameIndex]);
             _textures[texture] = (handle, binding);
             return GCHandle.ToIntPtr(handle);
         }

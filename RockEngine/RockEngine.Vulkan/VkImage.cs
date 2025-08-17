@@ -22,6 +22,7 @@ namespace RockEngine.Vulkan
 
         public event Action<VkImage>? OnImageResized;
         private readonly Dictionary<(uint, uint, uint, uint), VkImageView> _viewsCache = new();
+        private static uint _id = 0;
 
         public VkImage(
             VulkanContext context,
@@ -43,6 +44,7 @@ namespace RockEngine.Vulkan
                     _layerMipLayouts[mip, layer] = createInfo.InitialLayout;
                 }
             }
+            LabelObject($"Image ({_id++})");
 
         }
 
@@ -147,6 +149,7 @@ namespace RockEngine.Vulkan
             SetMipLayout(0, ImageLayout.Undefined);
             TransitionImageLayout(batch.CommandBuffer, targetLayout, 0,1);
             batch.Submit();
+
         }
 
         public VkImageView GetOrCreateView(
@@ -255,18 +258,18 @@ namespace RockEngine.Vulkan
             _currentQueueFamily = dstQueueFamilyIndex;
         }
         public void TransitionImageLayout(
-     VkCommandBuffer commandBuffer,
-     ImageLayout newLayout,
-     PipelineStageFlags srcStage,
-     PipelineStageFlags dstStage,
-     uint baseMipLevel,
-     uint levelCount,
-     uint baseArrayLayer,
-     uint layerCount,
-     uint srcQueueFamilyIndex,
-     uint dstQueueFamilyIndex,
-     AccessFlags srcAccessMask,
-     AccessFlags dstAccessMask)
+             VkCommandBuffer commandBuffer,
+             ImageLayout newLayout,
+             PipelineStageFlags srcStage,
+             PipelineStageFlags dstStage,
+             uint baseMipLevel,
+             uint levelCount,
+             uint baseArrayLayer,
+             uint layerCount,
+             uint srcQueueFamilyIndex,
+             uint dstQueueFamilyIndex,
+             AccessFlags srcAccessMask,
+             AccessFlags dstAccessMask)
         {
             ImageLayout oldLayout = GetMipLayout(baseMipLevel, baseArrayLayer);
             if (oldLayout == newLayout) return;
@@ -430,10 +433,10 @@ namespace RockEngine.Vulkan
         }
 
         private void TransitionMipLevel(
-    VkCommandBuffer commandBuffer,
-    uint mipLevel,
-    ImageLayout newLayout,
-    uint layer)
+            VkCommandBuffer commandBuffer,
+            uint mipLevel,
+            ImageLayout newLayout,
+            uint layer)
         {
             // Get current layout for THIS mip+layer
             ImageLayout oldLayout = GetMipLayout(mipLevel, layer);

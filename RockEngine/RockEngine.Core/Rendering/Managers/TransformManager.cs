@@ -2,6 +2,8 @@
 using RockEngine.Core.Rendering.ResourceBindings;
 using RockEngine.Vulkan;
 
+using Silk.NET.Vulkan;
+
 using System.Numerics;
 
 namespace RockEngine.Core.Rendering.Managers
@@ -84,27 +86,57 @@ namespace RockEngine.Core.Rendering.Managers
         /// <summary>
         /// Updates GPU buffers only if changes exist for current frame
         /// </summary>
-        public Task UpdateAsync(uint currentFrameIndex)
+        public async ValueTask UpdateAsync(uint currentFrameIndex)
         {
             int frameVersion = _frameVersions[currentFrameIndex];
-
-            // Skip update if no changes since last frame update
             if (_globalVersion == frameVersion)
             {
-                return Task.CompletedTask;
+                return;
             }
 
             var buffer = _transformBuffers[currentFrameIndex];
             var batch = _context.SubmitContext.CreateBatch();
 
-            // Update entire buffer (could optimize to update only changed ranges)
+            // Барьер перед обновлением
+            var preBarrier = new BufferMemoryBarrier
+            {
+                SType = StructureType.BufferMemoryBarrier,
+                SrcAccessMask = AccessFlags.VertexAttributeReadBit | AccessFlags.IndexReadBit,
+                DstAccessMask = AccessFlags.TransferWriteBit,
+                Buffer = buffer.Buffer,
+                Offset = 0,
+                Size = Vk.WholeSize
+            };
+
+            batch.PipelineBarrier(
+                srcStage: PipelineStageFlags.VertexInputBit,
+                dstStage: PipelineStageFlags.TransferBit,
+                bufferMemoryBarriers: new[] { preBarrier }
+            );
+
             buffer.StageData(batch, _transforms.ToArray());
+
+            // Барьер после обновления
+            var postBarrier = new BufferMemoryBarrier
+            {
+                SType = StructureType.BufferMemoryBarrier,
+                SrcAccessMask = AccessFlags.TransferWriteBit,
+                DstAccessMask = AccessFlags.VertexAttributeReadBit | AccessFlags.IndexReadBit,
+                Buffer = buffer.Buffer,
+                Offset = 0,
+                Size = Vk.WholeSize
+            };
+
+            batch.PipelineBarrier(
+                srcStage: PipelineStageFlags.TransferBit,
+                dstStage: PipelineStageFlags.VertexInputBit,
+                bufferMemoryBarriers: new[] { postBarrier }
+            );
+
+            // Ожидание завершения
             batch.Submit();
 
-            // Update frame version tracking
             _frameVersions[currentFrameIndex] = _globalVersion;
-            return Task.CompletedTask;
-
         }
 
         /// <summary>
@@ -112,11 +144,6 @@ namespace RockEngine.Core.Rendering.Managers
         /// </summary>
         public StorageBufferBinding<Matrix4x4> GetCurrentBinding(uint currentFrameIndex)
             => _transformBindings[currentFrameIndex];
-
-        /// <summary>
-        /// Gets direct access to transform matrices (use with caution)
-        /// </summary>
-        public Matrix4x4[] Transforms => _transforms.ToArray();
 
         /// <summary>
         /// Current number of stored transforms

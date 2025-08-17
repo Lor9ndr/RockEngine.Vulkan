@@ -24,17 +24,21 @@ namespace RockEngine.Core
         protected GraphicsEngine _graphicsEngine;
         protected IInputContext _inputContext;
         protected Renderer _renderer;
+        private IShaderManager _shaderManager;
         protected World _world;
         protected PipelineManager _pipelineManager;
         protected AssimpLoader _assimpLoader;
         protected readonly AppSettings _appSettings;
 
         private readonly Container _container;
-        private Scope _applicationScope;
+        private readonly Scope _applicationScope;
 
         public CancellationTokenSource CancellationTokenSource { get; set; }
         protected CancellationToken CancellationToken => CancellationTokenSource.Token;
         private static readonly Logger _logger = LogManager.GetCurrentClassLogger();
+        private readonly SemaphoreSlim _renderingLock = new SemaphoreSlim(1, 1);
+        private readonly SemaphoreSlim _updateLock = new SemaphoreSlim(1, 1);
+
 
 
         public Application()
@@ -47,9 +51,17 @@ namespace RockEngine.Core
             _applicationScope = AsyncScopedLifestyle.BeginScope(IoC.Container);
 
             _appSettings = IoC.Container.GetInstance<AppSettings>();
+            AppDomain.CurrentDomain.UnhandledException += AppDomain_UnhandledException;
         }
 
-        public async Task Run()
+        private void AppDomain_UnhandledException(object sender, UnhandledExceptionEventArgs e)
+        {
+            Console.WriteLine(sender);
+            Console.WriteLine(e.ExceptionObject);
+            Console.WriteLine(Environment.StackTrace);
+        }
+
+        public void Run()
         {
             CancellationTokenSource = new CancellationTokenSource();
             // Configure window
@@ -60,15 +72,9 @@ namespace RockEngine.Core
             // Resolve other dependencies
             _world = IoC.Container.GetInstance<World>();
             _assimpLoader = IoC.Container.GetInstance<AssimpLoader>();
+            _window.Load += () => OnWindowLoad().GetAwaiter().GetResult();
 
-            _window.Load += async() => await OnWindowLoad();
-
-            await Task.Factory.StartNew(
-                _window.Run,
-                CancellationToken,
-                TaskCreationOptions.LongRunning,
-                TaskScheduler.Default
-            );
+            _window.Run();
         }
 
         private async Task OnWindowLoad()
@@ -83,7 +89,9 @@ namespace RockEngine.Core
                 _graphicsEngine = IoC.Container.GetInstance<GraphicsEngine>();
                 _pipelineManager = IoC.Container.GetInstance<PipelineManager>();
                 _renderer = IoC.Container.GetInstance<Renderer>();
+                _shaderManager = IoC.Container.GetInstance<IShaderManager>();
 
+                await _shaderManager.CompileAllShadersAsync();
 
                 PerformanceTracer.Initialize(_context);
 
@@ -91,19 +99,32 @@ namespace RockEngine.Core
                 await _renderer.InitializeAsync().ConfigureAwait(false);
                 await _world.Start(_renderer).ConfigureAwait(false);
                 _layerStack = IoC.Container.GetInstance<LayerStack>();
+
+                foreach (var item in IoC.Container.GetAllInstances<ILayer>())
+                {
+                    await _layerStack.PushLayer(item);
+                }
                 await Load().ConfigureAwait(false);
 
-                _window.Render += async (s) => await Render(s);
-                _window.Update += async (s) => await Update(s);
+
+                _window.Render += Render;
+                _window.Update += (s) =>
+                {
+                    using (PerformanceTracer.BeginSection("Update"))
+                    {
+                        Update(s).GetAwaiter().GetResult();
+                    }
+                    PerformanceTracer.ProcessQueries(_context, _graphicsEngine.FrameIndex);
+                };
 
                 loadWatch.Stop();
                 _logger.Info($"Application loaded in: {loadWatch.ElapsedMilliseconds} ms");
             }
             catch (Exception ex)
             {
-                _logger.Info($"Initialization failed: {ex}");
-                throw;
+                _logger.Error(ex);
             }
+
         }
 
 
@@ -112,35 +133,60 @@ namespace RockEngine.Core
 
         protected virtual async Task Update(double deltaTime)
         {
-            Time.Update(_window.Time, deltaTime);
-            _layerStack.Update();
-            await _world.Update(_renderer);
-            await _renderer.UpdateFrameData();
+            try
+            {
+                Time.Update(_window.Time, deltaTime);
+                _layerStack.Update();
+                await _world.Update(_renderer);
+                await _renderer.UpdateFrameData();
+            }
+            catch (Exception ex)
+            {
+                _logger.Error(ex);
+                throw;
+            }
         }
 
-        protected virtual async Task Render(double time)
+        protected virtual void Render(double time)
         {
-            using (PerformanceTracer.BeginSection("Whole Render"))
+            try
             {
-                if (_layerStack.Count == 0) return;
-
-                var batch = _graphicsEngine.Begin();
-                if (batch is null) return;
-
-
-                using (PerformanceTracer.BeginSection("_layerStack.RenderImGui"))
-                    _layerStack.RenderImGui(batch.CommandBuffer);
-
-                using (PerformanceTracer.BeginSection("_layerStack.Render"))
-                    _layerStack.Render(batch.CommandBuffer);
-
-                await _renderer.Render(batch.CommandBuffer);
-
-                using (PerformanceTracer.BeginSection("_graphicsEngine.end & Submit"))
+                using (PerformanceTracer.BeginSection("Whole Render"))
                 {
-                    _graphicsEngine.SubmitAndPresent(batch);
+                    if (_layerStack.Count == 0) return;
+
+                    var batch = _graphicsEngine.Begin();
+                    if (batch is null) return;
+                   // var gpuPerfSec = PerformanceTracer.BeginSection("Whole GPU Render", batch.CommandBuffer, _graphicsEngine.FrameIndex);
+
+                    using (PerformanceTracer.BeginSection("_layerStack.RenderImGui"))
+                    {
+                        _layerStack.RenderImGui(batch.CommandBuffer);
+                    }
+
+                    using (PerformanceTracer.BeginSection("_layerStack.Render"))
+                    {
+                        _layerStack.Render(batch.CommandBuffer);
+                    }
+
+                    using (PerformanceTracer.BeginSection("_renderer.Render"))
+                    {
+                        _renderer.Render(batch);
+                    }
+
+                    using (PerformanceTracer.BeginSection("_graphicsEngine.end & Submit"))
+                    {
+                        //gpuPerfSec.Dispose();
+                        _graphicsEngine.SubmitAndPresent(batch);
+                    }
                 }
             }
+            catch (Exception ex)
+            {
+                _logger.Error(ex);
+                throw;
+            }
+
         }
 
         public Task PushLayer(ILayer layer) => _layerStack.PushLayer(layer);

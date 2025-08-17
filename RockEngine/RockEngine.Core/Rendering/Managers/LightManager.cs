@@ -41,12 +41,12 @@ namespace RockEngine.Core.Rendering.Managers
         public void RegisterLight(Light light) => _activeLights.Add(light);
         public void UnregisterLight(Light light) => _activeLights.Remove(light);
 
-        public Task UpdateAsync(IEnumerable<Camera> cameras)
+        public ValueTask UpdateAsync(IEnumerable<Camera> cameras)
         {
             var frameBuffer = _lightBuffers[_currentFrameIndex];
             if (_activeLights.Count == 0)
             {
-                return Task.CompletedTask;
+                return ValueTask.CompletedTask;
             }
             var lightData = new LightData[_activeLights.Count];
             for (int i = 0; i < _activeLights.Count; i++)
@@ -69,6 +69,7 @@ namespace RockEngine.Core.Rendering.Managers
 
             batch.Submit();
 
+
             // Update camera materials
             foreach (var camera in cameras)
             {
@@ -77,7 +78,7 @@ namespace RockEngine.Core.Rendering.Managers
             }
 
             _currentFrameIndex = (_currentFrameIndex + 1) % _lightBuffers.Length;
-            return Task.CompletedTask;
+            return ValueTask.CompletedTask;
         }
 
         public void Dispose()

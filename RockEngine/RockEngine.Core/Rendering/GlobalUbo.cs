@@ -49,7 +49,7 @@ namespace RockEngine.Core.Rendering
             ulong offset = _alignedElementSize * index;
             return base.UpdateAsync(in data, (ulong)Marshal.SizeOf<GlobalUboData>(), offset);
         }
-        public  Task UpdateAsync(GlobalUboData[] data)
+        public  ValueTask UpdateAsync(GlobalUboData[] data)
         {
             /*//
             for (int i = 0; i < data.Length; i++)
@@ -74,7 +74,7 @@ namespace RockEngine.Core.Rendering
                 }
             }
             FlushBuffer(_alignedElementSize * (ulong)data.Length, 0);
-            return Task.CompletedTask;
+            return ValueTask.CompletedTask;
 
         }
         public UniformBufferBinding GetBinding(uint cameraIndex)

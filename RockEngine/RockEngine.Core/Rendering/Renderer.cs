@@ -33,10 +33,9 @@ namespace RockEngine.Core.Rendering
         private uint _prevFrameIndex = uint.MaxValue;
 
 
-        public SubmitContext SubmitContext => _context.SubmitContext;
         public SwapchainRenderTarget SwapchainTarget { get; }
 
-        public uint FrameIndex => _graphicsEngine.CurrentImageIndex;
+        public uint FrameIndex => (uint)_graphicsEngine.FrameIndex;
 
         public const ulong MAX_LIGHTS_SUPPORTED = 10_000;
         private const uint MAX_CAMERAS_SUPPORTED = 10;
@@ -48,6 +47,7 @@ namespace RockEngine.Core.Rendering
         public PipelineManager PipelineManager =>_pipelineManager;
 
         public BindingManager BindingManager => _bindingManager;
+        public SubmitContext SubmitContext => _context.SubmitContext;
 
         public Renderer(VulkanContext context,
                         GraphicsEngine graphicsEngine,
@@ -98,23 +98,25 @@ namespace RockEngine.Core.Rendering
 
 
             // Generate IBL textures after loading environment map
-            var envMap = await Texture.CreateCubeMapAsync(_context, [
+            var envMap = await Texture3D.CreateCubeMapAsync(_context, [
             "Resources/skybox/right.jpg",    // +X
             "Resources/skybox/left.jpg",     // -X
             "Resources/skybox/top.jpg",      // +Y (Vulkan's Y points down)
             "Resources/skybox/bottom.jpg",   // -Y
             "Resources/skybox/front.jpg",    // +Z
             "Resources/skybox/back.jpg"      // -Z
-            ]);
+            ]).ConfigureAwait(true); ;
 
             envMap.Image.LabelObject("EnviromentMap");
 
             await iblManagerInitalizeTask;
-
-            var textures = await Task.WhenAll( 
+            // Ожидаем генерацию всех IBL текстур
+            var textures = await Task.WhenAll(
                 _iblManager.GenerateIrradianceMap(envMap, 128),
                 _iblManager.GeneratePrefilterMap(envMap, 512),
-                _iblManager.GenerateBRDFLUT(512));
+                _iblManager.GenerateBRDFLUT(512)
+            ).ConfigureAwait(true);
+
 
             var irradiance = textures[0];
             var prefilter = textures[1];
@@ -127,22 +129,48 @@ namespace RockEngine.Core.Rendering
             // Store references in lighting pass
             var lightingPass = _renderPassStrategies.OfType<DeferredPassStrategy>().First().LightingPass;
             lightingPass.SetIBLTextures(irradiance, prefilter, brdfLUT);
-
         }
 
        
-        public async Task Render(VkCommandBuffer primaryCmdBuffer)
+        public  void Render(UploadBatch uploadBatch)
         {
+            //CreateBarrier(uploadBatch.CommandBuffer);
+
             using (PerformanceTracer.BeginSection("Frame Render"))
             {
                 foreach (var item in _renderPassStrategies)
                 {
-                    await item.Execute(primaryCmdBuffer, _cameraManager, this);
+                    item.Execute(uploadBatch, _cameraManager, this);
                 }
             }
         }
 
-        public async Task UpdateFrameData()
+        private static void CreateBarrier(VkCommandBuffer primaryCmdBuffer)
+        {
+            var barrier = new MemoryBarrier
+            {
+                SType = StructureType.MemoryBarrier,
+                SrcAccessMask = AccessFlags.MemoryWriteBit,
+                DstAccessMask = AccessFlags.MemoryReadBit | AccessFlags.MemoryWriteBit
+            };
+            unsafe
+            {
+                VulkanContext.Vk.CmdPipelineBarrier(
+               primaryCmdBuffer,
+               PipelineStageFlags.AllCommandsBit,
+               PipelineStageFlags.AllCommandsBit,
+               0,
+               1,
+               &barrier,
+               0,
+               null,
+               0,
+               null
+           );
+            }
+        }
+
+        public async ValueTask UpdateFrameData()
         {
             if(_prevFrameIndex == FrameIndex)
             {
@@ -151,11 +179,14 @@ namespace RockEngine.Core.Rendering
             }
 
             // Update all frame data first
-            await Task.WhenAll(_lightManager.UpdateAsync(_cameraManager.ActiveCameras),
-                                _transformManager.UpdateAsync(FrameIndex),
-                                _indirectCommandManager.UpdateAsync());
+            await _lightManager.UpdateAsync(_cameraManager.ActiveCameras).ConfigureAwait(false);
+            await _transformManager.UpdateAsync(FrameIndex).ConfigureAwait(false);
+            await _indirectCommandManager.UpdateAsync().ConfigureAwait(false);
 
-            await Task.WhenAll(_renderPassStrategies.Select(s => s.Update()));
+            foreach (var item in _renderPassStrategies)
+            {
+                await item.Update().ConfigureAwait(false);
+            }
 
             if(_cameraManager.ActiveCameras.Count > 0)
             {
@@ -165,9 +196,8 @@ namespace RockEngine.Core.Rendering
                 {
                     Position = s.Entity.Transform.Position,
                     ViewProjection = s.ViewProjectionMatrix,
-                }).ToArray());
+                }).ToArray()).ConfigureAwait(false);
             }
-            PerformanceTracer.ProcessQueries(_context, (int)FrameIndex);
             _prevFrameIndex = FrameIndex;
         }
 
@@ -208,22 +238,15 @@ namespace RockEngine.Core.Rendering
             return _pipelineManager.Create(pipelineBuilder);
         }
 
-      
-       
-        
-
-
-        public void Draw(Mesh mesh)
+        public void Draw(MeshRenderer mesh)
         {
-            var transformIndex = _transformManager.AddTransform(mesh.Entity.Transform.GetModelMatrix());
+            var transformIndex = _transformManager.AddTransform(mesh.Entity.Transform.WorldMatrix);
             _indirectCommandManager.AddMesh(mesh, transformIndex);
             mesh.Entity.Transform.TransformChanged += () =>
             {
-                _transformManager.UpdateTransform(transformIndex,mesh.Entity.Transform.GetModelMatrix());
+                _transformManager.UpdateTransform(transformIndex,mesh.Entity.Transform.WorldMatrix);
             };
         }
-
-     
 
         public void AddCommand(IRenderCommand command)
         {

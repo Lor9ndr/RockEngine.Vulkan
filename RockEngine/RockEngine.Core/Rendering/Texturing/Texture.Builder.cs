@@ -114,11 +114,17 @@ namespace RockEngine.Core.Rendering.Texturing
                     var batch = _context.SubmitContext.CreateBatch();
                     image.GenerateMipmaps(batch.CommandBuffer);
                     batch.CommandBuffer.LabelObject("GenerateMipmap cmd");
-                    batch.Submit();
-                    _context.SubmitContext.Flush();
+                    _context.SubmitContext.FlushSingle(batch, VkFence.CreateNotSignaled(_context)).Wait();
+                }
+                if (_isCubeMap)
+                {
+                    return new Texture3D(_context, image,imageView,sampler);
+                }
+                else
+                {
+                    return new Texture2D(_context, image, imageView, sampler);
                 }
 
-                return new Texture(_context, image, imageView, sampler);
             }
             private void ValidateParameters()
             {

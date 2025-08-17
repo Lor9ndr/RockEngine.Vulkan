@@ -14,6 +14,7 @@ namespace RockEngine.Core.Rendering.Managers
         private readonly VulkanContext _context;
         private readonly DescriptorPoolManager _descriptorPoolManager;
         private readonly GraphicsEngine _graphicsEngine;
+        private readonly Lock _updateLocker = new Lock();
 
         public BindingManager(VulkanContext context, DescriptorPoolManager descriptorPool, GraphicsEngine graphicsEngine)
         {
@@ -22,14 +23,14 @@ namespace RockEngine.Core.Rendering.Managers
             _graphicsEngine = graphicsEngine;
         }
 
-        public void BindResourcesForMaterial(
+        public unsafe void BindResourcesForMaterial(
              uint frameIndex,
              Material material,
              VkCommandBuffer commandBuffer,
              bool isCompute = false,
              Span<uint> skipSets = default)
         {
-            var setsToBind = new DescriptorSet[material.Bindings.Count];
+            Span<DescriptorSet> setsToBind =  stackalloc DescriptorSet[material.Bindings.Count];
             int index = 0;
 
             foreach(var(setLocation, perSetBindings) in material.Bindings)
@@ -87,7 +88,7 @@ namespace RockEngine.Core.Rendering.Managers
           
         }
 
-        private void ProcessSet(uint frameIndex,VkPipelineLayout pipelineLayout, uint setLocation, PerSetBindings perSetBindings, DescriptorSet[] setsToBind, ref int index)
+        private void ProcessSet(uint frameIndex,VkPipelineLayout pipelineLayout, uint setLocation, PerSetBindings perSetBindings, Span<DescriptorSet> setsToBind, ref int index)
         {
             // Get or allocate descriptor set
             var descriptorSet = GetOrCreateDescriptorSet(frameIndex,pipelineLayout, setLocation, perSetBindings);
@@ -97,29 +98,33 @@ namespace RockEngine.Core.Rendering.Managers
 
         private VkDescriptorSet GetOrCreateDescriptorSet(uint frameIndex, VkPipelineLayout pipelineLayout, uint setLocation, PerSetBindings perSetBindings)
         {
-            // Проверяем, есть ли актуальный набор дескрипторов
-            var existingSet = perSetBindings.FirstOrDefault(b => b.DescriptorSets is not null && b.DescriptorSets[frameIndex] != null)?.DescriptorSets[frameIndex];
-            bool needsUpdate = perSetBindings.NeedToUpdate;
-
-            if (existingSet is not null && !needsUpdate)
+            lock (_updateLocker)
             {
-                return existingSet;
-            }
+                // Проверяем, есть ли актуальный набор дескрипторов
+                var existingSet = perSetBindings.FirstOrDefault(b => b.DescriptorSets is not null && b.DescriptorSets[frameIndex] != null)?.DescriptorSets[frameIndex];
+                bool needsUpdate = perSetBindings.NeedToUpdate;
 
-            // Выделяем новый набор или обновляем существующий
-            var setLayout = pipelineLayout.GetSetLayout(setLocation);
-            var descriptorSet = existingSet ?? _descriptorPoolManager.AllocateDescriptorSet(setLayout);
-
-            foreach (var binding in perSetBindings)
-            {
-                binding.DescriptorSets[frameIndex] = descriptorSet;
-                if (descriptorSet.IsDirty)
+                if (existingSet is not null && !needsUpdate)
                 {
-                    binding.UpdateDescriptorSet(_context,frameIndex);
+                    return existingSet;
                 }
+
+                // Выделяем новый набор или обновляем существующий
+                var setLayout = pipelineLayout.GetSetLayout(setLocation);
+                var descriptorSet = existingSet ?? _descriptorPoolManager.AllocateDescriptorSet(setLayout);
+
+                foreach (var binding in perSetBindings)
+                {
+                    binding.DescriptorSets[frameIndex] = descriptorSet;
+                    if (descriptorSet.IsDirty)
+                    {
+                        binding.UpdateDescriptorSet(_context, frameIndex);
+                    }
+                }
+                descriptorSet.IsDirty = false;
+                return descriptorSet;
             }
-            descriptorSet.IsDirty = false;
-            return descriptorSet;
+            
         }
 
         private BindingFingerprint CreateFingerprint(uint setLocation, PerSetBindings bindings)

@@ -5,25 +5,17 @@ namespace RockEngine.Vulkan
     [Serializable]
     internal class VulkanException : Exception
     {
-        private Result _status;
-        private string _v;
 
-        public VulkanException()
+        public VulkanException(Result result, string message) :
+            base(message + Environment.NewLine + $"Result: {result}")
         {
+            Data["Result"] = result;
         }
 
-        public VulkanException(string? message) : base(message)
+        public VulkanException(DebugUtilsMessageSeverityFlagsEXT messageSeverity, string? message):
+            base(messageSeverity.ToString() +  Environment.NewLine + message) 
         {
-        }
-
-        public VulkanException(Result status, string v)
-        {
-            _status = status;
-            _v = v;
-        }
-
-        public VulkanException(string? message, Exception? innerException) : base(message, innerException)
-        {
+            Data["Result"] = messageSeverity;
         }
     }
 }

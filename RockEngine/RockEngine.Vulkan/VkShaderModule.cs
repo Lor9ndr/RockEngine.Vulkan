@@ -28,8 +28,7 @@ namespace RockEngine.Vulkan
 
         public static async Task<VkShaderModule> CreateAsync(VulkanContext context, string path, ShaderStageFlags stage, CancellationToken cancellationToken = default)
         {
-            var shaderCode = await File.ReadAllBytesAsync(path, cancellationToken)
-               .ConfigureAwait(false);
+            var shaderCode = await File.ReadAllBytesAsync(path, cancellationToken);
 
             cancellationToken.ThrowIfCancellationRequested();
             return Create(context, shaderCode, stage);

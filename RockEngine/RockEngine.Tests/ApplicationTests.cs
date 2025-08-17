@@ -35,7 +35,7 @@ namespace RockEngine.Tests
             public VulkanContext RenderingContext => _context;
             public IWindow Window => _window;
 
-            public TestApplication() : base("TEST", 800, 600)
+            public TestApplication() : base()
             {
             }
             protected override Task Load()
@@ -47,7 +47,7 @@ namespace RockEngine.Tests
            
 
             public void InvokeUpdate(double deltaTime) => Update(deltaTime).GetAwaiter().GetResult();
-            public void InvokeRender(double time) => Render(time);
+            public void InvokeRender(double time) => Render(time).GetAwaiter().GetResult();
         }
 
         private TestApplication _application;
@@ -60,7 +60,7 @@ namespace RockEngine.Tests
             _application = new TestApplication();
 
             // Запускаем приложение в фоне
-            var runTask = _application.Run();
+            var runTask = Task.Run(_application.Run);
 
             // Ждем инициализации с таймаутом
             if (!_application.LoadedEvent.Wait(TimeSpan.FromSeconds(200), _cts.Token))

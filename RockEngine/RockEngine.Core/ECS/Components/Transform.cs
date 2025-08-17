@@ -79,14 +79,6 @@ namespace RockEngine.Core.ECS.Components
 
         public Transform() : this(Vector3.Zero, Quaternion.Identity, Vector3.One) { }
 
-        public Matrix4x4 GetModelMatrix()
-        {
-            var scaleMatrix = Matrix4x4.CreateScale(Scale);
-            var rotationMatrix = Matrix4x4.CreateFromQuaternion(Rotation);
-            var translationMatrix = Matrix4x4.CreateTranslation(Position);
-            return scaleMatrix * rotationMatrix * translationMatrix;
-        }
-
         public override ValueTask OnStart(Renderer renderer)
         {
             return default;

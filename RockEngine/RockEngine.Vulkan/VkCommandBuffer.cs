@@ -1,5 +1,7 @@
 ﻿using Silk.NET.Vulkan;
 
+using ZLinq;
+
 namespace RockEngine.Vulkan
 {
     public class VkCommandBuffer : VkObject<CommandBuffer>, IBegginable<CommandBufferBeginInfo>
@@ -7,12 +9,14 @@ namespace RockEngine.Vulkan
         private readonly VulkanContext _context;
         private readonly VkCommandPool _commandPool;
         private readonly bool _isSecondary;
-        private volatile bool _isInRecordingState = false;
+        private bool _isInRecordingState = false;
 
         public VkCommandPool CommandPool => _commandPool;
 
         public bool IsInRecordingState => _isInRecordingState;
         public bool IsSecondary => _isSecondary;
+        private static uint _id = 0;
+        private uint _cmdID;
 
         public VkCommandBuffer(VulkanContext context, in CommandBuffer commandBuffer, VkCommandPool commandPool, bool isSecondary = false)
             : base(in commandBuffer)
@@ -20,6 +24,12 @@ namespace RockEngine.Vulkan
             _context = context;
             _commandPool = commandPool;
             _isSecondary = isSecondary;
+            _cmdID = _id++;
+            LabelObject($"Cmd ({_cmdID})");
+            if(_cmdID == 1153)
+            {
+
+            }
         }
 
         public void Begin(in CommandBufferBeginInfo beginInfo)
@@ -139,8 +149,7 @@ namespace RockEngine.Vulkan
         public void Reset(CommandBufferResetFlags flags)
         {
             VulkanContext.Vk.ResetCommandBuffer(this, flags)
-                            .VkAssertResult("Failed to reset commandBuffer");
-
+                        .VkAssertResult("Failed to reset commandBuffer");
         }
         public override void LabelObject(string name) => _context.DebugUtils.SetDebugUtilsObjectName(_vkObject, ObjectType.CommandBuffer, name);
         public DebugLabelScope NameAction(string name, float[] color)
@@ -159,6 +168,7 @@ namespace RockEngine.Vulkan
             {
                 // Dispose managed state (managed objects).
             }
+            
             _disposed = true;
             _commandPool.FreeCommandBuffer(this);
             _vkObject = default;
@@ -166,30 +176,43 @@ namespace RockEngine.Vulkan
 
         public void BindDescriptorSet(PipelineBindPoint pipelineBindPoint, VkPipelineLayout deferredPipelineLayout, uint firstSet, ReadOnlySpan<DescriptorSet> descriptorSets, ReadOnlySpan<uint> dynamicOffsets = default)
         {
-            VulkanContext.Vk.CmdBindDescriptorSets(this, pipelineBindPoint, deferredPipelineLayout, firstSet, descriptorSets, dynamicOffsets);
-        }
-
-        public unsafe void ExecuteSecondary(CommandBuffer[] secondaryCommandBuffer)
-        {
-            fixed (CommandBuffer* ptr = secondaryCommandBuffer)
+            //lock (_commandPool._lock)
             {
-                VulkanContext.Vk.CmdExecuteCommands(
-                commandBuffer: _vkObject,
-                commandBufferCount: (uint)secondaryCommandBuffer.Length,
-                pCommandBuffers: ptr
-            );
+                VulkanContext.Vk.CmdBindDescriptorSets(this, pipelineBindPoint, deferredPipelineLayout, firstSet, descriptorSets, dynamicOffsets);
             }
-
         }
+
+        public unsafe void ExecuteSecondary(VkCommandBuffer[] secondaryCommandBuffer)
+        {
+            //lock (_commandPool._lock)
+            {
+                fixed (CommandBuffer* ptr = secondaryCommandBuffer.AsValueEnumerable().Select(s=>s.VkObjectNative).ToArray())
+                {
+                    VulkanContext.Vk.CmdExecuteCommands(
+                    commandBuffer: _vkObject,
+                    commandBufferCount: (uint)secondaryCommandBuffer.Length,
+                    pCommandBuffers: ptr
+                );
+                }
+            }
+        }
+
         public unsafe void ExecuteSecondary(VkCommandBuffer secondaryCommandBuffer)
         {
             var cmd = secondaryCommandBuffer.VkObjectNative;
             VulkanContext.Vk.CmdExecuteCommands(commandBuffer: _vkObject, commandBufferCount: 1, pCommandBuffers: in cmd);
         }
+        public unsafe void ExecuteSecondary(in CommandBuffer secondaryCommandBuffer)
+        {
+            VulkanContext.Vk.CmdExecuteCommands(commandBuffer: _vkObject, commandBufferCount: 1, pCommandBuffers: in secondaryCommandBuffer);
+        }
 
         public void DrawIndirect(VkBuffer buffer, uint drawCount, uint offset, uint stride)
         {
-            VulkanContext.Vk.CmdDrawIndexedIndirect(this, buffer, offset, drawCount, stride);
+            //lock (_commandPool._lock)
+            {
+                VulkanContext.Vk.CmdDrawIndexedIndirect(this, buffer, offset, drawCount, stride);
+            }
         }
 
         public void SetViewportAndScissor(Extent2D extent)
@@ -204,7 +227,12 @@ namespace RockEngine.Vulkan
             => VulkanContext.Vk.CmdPushConstants(this, layout, stageFlags, offset, size, ref value);
 
         public unsafe void PushConstants(PipelineLayout layout, ShaderStageFlags stageFlags, uint offset, uint size, void* value)
-            => VulkanContext.Vk.CmdPushConstants(this, layout, stageFlags, offset, size, value);
+        {
+            //lock (_commandPool._lock)
+            {
+                VulkanContext.Vk.CmdPushConstants(this, layout, stageFlags, offset, size, value);
+            }
+        }
 
         public void WriteTimestamp(PipelineStageFlags stage, VkQueryPool pool, uint query)
         {
@@ -214,7 +242,10 @@ namespace RockEngine.Vulkan
         internal unsafe void PipelineBarrier(PipelineStageFlags srcStageMask, PipelineStageFlags dstStageMask, DependencyFlags dependencyFlags, uint memoryBarrierCount, MemoryBarrier* pMemoryBarriers, uint bufferMemoryBarrierCount, BufferMemoryBarrier* pBufferMemoryBarriers, uint imageMemoryBarrierCount, in ImageMemoryBarrier pImageMemoryBarriers)
         {
             VulkanContext.Vk.CmdPipelineBarrier(this, srcStageMask, dstStageMask, dependencyFlags, memoryBarrierCount, pMemoryBarriers, bufferMemoryBarrierCount, pBufferMemoryBarriers, imageMemoryBarrierCount, in pImageMemoryBarriers);
-
+        }
+        internal void PipelineBarrier(PipelineStageFlags srcStageMask, PipelineStageFlags dstStageMask, DependencyFlags dependencyFlags, uint memoryBarrierCount, Span<MemoryBarrier> pMemoryBarriers, uint bufferMemoryBarrierCount, Span<BufferMemoryBarrier> pBufferMemoryBarriers, uint imageMemoryBarrierCount, Span<ImageMemoryBarrier> pImageMemoryBarriers)
+        {
+            VulkanContext.Vk.CmdPipelineBarrier(this, srcStageMask, dstStageMask, dependencyFlags, memoryBarrierCount, pMemoryBarriers, bufferMemoryBarrierCount, pBufferMemoryBarriers, imageMemoryBarrierCount, pImageMemoryBarriers);
         }
 
         public unsafe void CopyBufferToImage(VkBuffer srcBuffer, VkImage dstImage, ImageLayout dstImageLayout, uint regionCount, BufferImageCopy* pRegions)
@@ -227,7 +258,12 @@ namespace RockEngine.Vulkan
         }
         public unsafe void CopyBufferToImage(VkBuffer srcBuffer, VkImage dstImage, ImageLayout dstImageLayout, uint regionCount, in BufferImageCopy pRegions)
         {
-            VulkanContext.Vk.CmdCopyBufferToImage(this, srcBuffer, dstImage, dstImageLayout, regionCount, in pRegions);
+            Vk.CmdCopyBufferToImage(this, srcBuffer, dstImage, dstImageLayout, regionCount, in pRegions);
+        }
+
+        public void ResetQueryPool(VkQueryPool queryPool, int firstQuery, uint queryCount)
+        {
+            Vk.ResetQueryPool(_context.Device, queryPool, 0, queryCount);
         }
     }
 }

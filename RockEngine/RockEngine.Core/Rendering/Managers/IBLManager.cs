@@ -50,7 +50,6 @@ namespace RockEngine.Core.Rendering.Managers
         {
             var output = await CreateCubeTexture(size, Format.R16G16B16A16Sfloat, "Irradiance");
             var batch = _context.SubmitComputeContext.CreateBatch();
-            var fence = VkFence.CreateNotSignaled(_context);
 
             var cmd = batch.CommandBuffer;
             cmd.LabelObject("Irradiance cmd");
@@ -59,8 +58,8 @@ namespace RockEngine.Core.Rendering.Managers
             output.Image.TransitionImageLayout(cmd, ImageLayout.General, 0, 1, 0, 6);
 
             // Create material with required bindings
-            var material = new Material(_irradiancePipeline);
-            material.Bind(new TextureBinding(0, 0, default, envMap));
+            var material = new Material(_irradiancePipeline, envMap);
+            material.Bind(new TextureBinding(0, 0,  ImageLayout.General, envMap));
             material.Bind(new StorageImageBinding([output], 0, 1));
 
             // Set push constants
@@ -84,12 +83,8 @@ namespace RockEngine.Core.Rendering.Managers
             envMap.Image.TransitionImageLayout(cmd, ImageLayout.ShaderReadOnlyOptimal, 0, envMap.Image.MipLevels, 0, 6);
 
 
-            var semaphore = VkSemaphore.Create(_context);
-            semaphore.LabelObject("IRRADIANCE SEMAPHORE");
-            batch.AddSignalSemaphore(semaphore);
-            batch.Submit();
-            _context.SubmitContext.AddWaitSemaphore(semaphore, PipelineStageFlags.FragmentShaderBit);
-            await _context.SubmitComputeContext.FlushAsync(fence);
+            await _context.SubmitComputeContext.FlushSingle(batch, VkFence.CreateNotSignaled(_context));
+
             return output;
         }
 
@@ -110,6 +105,33 @@ namespace RockEngine.Core.Rendering.Managers
 
             for (uint mip = 0; mip < mipLevels; mip++)
             {
+                if (mip > 0)
+                {
+                    var barrier = new ImageMemoryBarrier
+                    {
+                        SType = StructureType.ImageMemoryBarrier,
+                        Image = output.Image,
+                        OldLayout = ImageLayout.General,
+                        NewLayout = ImageLayout.General,
+                        SubresourceRange = new ImageSubresourceRange
+                        {
+                            AspectMask = ImageAspectFlags.ColorBit,
+                            BaseMipLevel = mip - 1,
+                            LevelCount = 1,
+                            BaseArrayLayer = 0,
+                            LayerCount = 6
+                        },
+                        SrcAccessMask = AccessFlags.ShaderWriteBit,
+                        DstAccessMask = AccessFlags.ShaderReadBit
+                    };
+
+                    batch.PipelineBarrier(
+                        srcStage: PipelineStageFlags.ComputeShaderBit,
+                        dstStage: PipelineStageFlags.ComputeShaderBit,
+                        imageMemoryBarriers: new[] { barrier }
+                    );
+                }
+
                 var mipSize = (uint)(size * Math.Pow(0.5, mip));
                 float roughness = mip / (float)(mipLevels - 1);
 
@@ -154,15 +176,8 @@ namespace RockEngine.Core.Rendering.Managers
             );
             envMap.Image.TransitionImageLayout(cmd, ImageLayout.ShaderReadOnlyOptimal, 0, envMap.Image.MipLevels, 0, 6);
 
-            var semaphore = VkSemaphore.Create(_context);
-            semaphore.LabelObject("PREFILTER SEMAPHORE");
+            await _context.SubmitComputeContext.FlushSingle(batch, VkFence.CreateNotSignaled(_context));
 
-            batch.AddSignalSemaphore(semaphore);
-            batch.Submit();
-            var fence = VkFence.CreateNotSignaled(_context);
-            await _context.SubmitComputeContext.FlushAsync(fence);
-            _context.SubmitContext.AddWaitSemaphore(semaphore, PipelineStageFlags.FragmentShaderBit);
-            fence.Reset();
             return output;
         }
         public async Task<Texture> GenerateBRDFLUT(uint size = 512)
@@ -192,14 +207,11 @@ namespace RockEngine.Core.Rendering.Managers
             output.Image.TransitionImageLayout(cmd, ImageLayout.ShaderReadOnlyOptimal);
             var semaphore = VkSemaphore.Create(_context);
             semaphore.LabelObject("BRDFLUT SEMAPHORE");
-            batch.AddSignalSemaphore(semaphore);
-            batch.Submit();
-            var fence = VkFence.CreateNotSignaled(_context);
 
-            await _context.SubmitComputeContext.FlushAsync(fence);
-            _context.SubmitContext.AddWaitSemaphore(semaphore, PipelineStageFlags.FragmentShaderBit);
-            await fence.WaitAsync();
-            fence.Reset();
+            var fence = VkFence.CreateSignaled(_context);
+            await _context.SubmitComputeContext.FlushSingle(batch, VkFence.CreateNotSignaled(_context));
+
+
             return output;
         }
 
@@ -226,7 +238,6 @@ namespace RockEngine.Core.Rendering.Managers
 
             var texture =  builder.Build();
             texture.Image.LabelObject(name);
-            _context.SubmitContext.Flush();
             return Task.FromResult(texture);
         }
 

@@ -247,5 +247,9 @@ namespace RockEngine.Vulkan
         }
         public override void LabelObject(string name) => VulkanContext.GetCurrent().DebugUtils.SetDebugUtilsObjectName(_vkObject, ObjectType.Buffer, name);
 
+        public void WaitIdle()
+        {
+            Vk.DeviceWaitIdle(this);
+        }
     }
 }

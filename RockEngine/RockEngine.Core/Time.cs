@@ -19,7 +19,7 @@
             _frameCount++;
 
             // Update FPS every second
-            if (_totalTime - _lastFpsUpdateTime >= 1.0f)
+            if (_totalTime - _lastFpsUpdateTime >= 0.5f)
             {
                 _currentFps = _frameCount;
                 _frameCount = 0;

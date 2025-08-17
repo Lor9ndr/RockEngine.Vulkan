@@ -16,6 +16,7 @@ namespace RockEngine.Editor.EditorUI.Logging
         protected override void Write(LogEventInfo logEvent)
         {
             _console.AddLog(logEvent.Level, logEvent.FormattedMessage);
+            Console.WriteLine( logEvent.FormattedMessage);
         }
     }
 }

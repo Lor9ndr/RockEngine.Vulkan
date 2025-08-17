@@ -89,7 +89,7 @@ namespace RockEngine.Vulkan
             return result switch
             {
                 Result.Success => result,
-                _ => throw new Exception(message + Environment.NewLine + result),
+                _ => throw new VulkanException(result, message),
             };
         }
         public static Result VkAssertResult(this Result result, Result additionalCheck, string message)
@@ -98,7 +98,7 @@ namespace RockEngine.Vulkan
             {
                 return result;
             }
-            throw new Exception(message + Environment.NewLine + result);
+            throw new VulkanException(result, message);
         }
         public static Result VkAssertResult(this Result result, string message, params Result[] additionalChecks)
         {
@@ -106,7 +106,7 @@ namespace RockEngine.Vulkan
             {
                 return result;
             }
-            throw new Exception(message + Environment.NewLine + result);
+            throw new VulkanException(result,message );
         }
 
         public static bool HasStencilComponent(this Format format)

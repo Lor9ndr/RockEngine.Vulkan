@@ -10,23 +10,25 @@ namespace RockEngine.Vulkan
         private readonly StagingManager _stagingManager;
         private readonly SubmitContext _submitContext;
         private readonly VkCommandBuffer _commandBuffer;
-        private readonly List<IDisposable> _disposables;
+        private readonly List<Action> _disposables;
         private bool _isInUse;
 
         public List<VkSemaphore> SignalSemaphores { get; } = new List<VkSemaphore>(2);
         public Dictionary<VkSemaphore, PipelineStageFlags> WaitSemaphores { get; } = new Dictionary<VkSemaphore, PipelineStageFlags>(2);
         public VkCommandBuffer CommandBuffer => _commandBuffer;
-        public IReadOnlyList<IDisposable> Disposables => _disposables;
+        public IReadOnlyList<Action> Disposables => _disposables;
+
+        public SubmitContext SubmitContext => _submitContext;
+
 
         public UploadBatch(StagingManager stagingManager, SubmitContext submitContext, VkCommandBuffer commandBuffer)
         {
             _stagingManager = stagingManager;
             _submitContext = submitContext;
             _commandBuffer = commandBuffer;
-            _disposables = new List<IDisposable>(4);
+            _disposables = new List<Action>(4);
             BeginCommandBuffer();
         }
-
         /// <summary>
         /// Starts recording commands for this batch
         /// </summary>
@@ -35,7 +37,7 @@ namespace RockEngine.Vulkan
             _commandBuffer.Begin(new CommandBufferBeginInfo
             {
                 SType = StructureType.CommandBufferBeginInfo,
-                Flags = CommandBufferUsageFlags.SimultaneousUseBit
+                Flags = CommandBufferUsageFlags.OneTimeSubmitBit
             });
         }
 
@@ -53,7 +55,7 @@ namespace RockEngine.Vulkan
             if (!_isInUse) return;
 
             // Reset command buffer and clear state
-            _commandBuffer.Reset(CommandBufferResetFlags.ReleaseResourcesBit);
+            _commandBuffer.Reset(CommandBufferResetFlags.None);
             _disposables.Clear();
             SignalSemaphores.Clear();
             WaitSemaphores.Clear();
@@ -89,24 +91,46 @@ namespace RockEngine.Vulkan
         /// </summary>
         public void Submit()
         {
-            _commandBuffer.End();
+            End();
             _submitContext.AddSubmission(this);
+        }
+        public void End()
+        {
+            _commandBuffer.End();
         }
 
         /// <summary>
         /// Adds a resource dependency that must be disposed after execution
         /// </summary>
         public void AddDependency(IDisposable disposable)
-            => _disposables.Add(disposable);
+            => _disposables.Add(disposable.Dispose);
+        public void AddDependency(Action action)
+           => _disposables.Add(action);
 
         /// <summary>
         /// Marks the batch as in-use before submission
         /// </summary>
-        public void MarkInUse() => _isInUse = true;
+        public void MarkInUse()
+        {
+            _isInUse = true;
+        }
 
         /// <summary>
         /// Returns the batch to its pool for reuse
         /// </summary>
-        public void Dispose() => _submitContext.ReturnBatchToPool(this);
+        public void Dispose()
+        {
+            _submitContext.ReturnBatchToPool(this);
+        }
+
+        public void PipelineBarrier(
+     PipelineStageFlags srcStage,
+     PipelineStageFlags dstStage,
+     MemoryBarrier[]? memoryBarriers = null,
+     BufferMemoryBarrier[]? bufferMemoryBarriers = null,
+     ImageMemoryBarrier[]? imageMemoryBarriers = null)
+        {
+            _commandBuffer.PipelineBarrier(srcStage, dstStage,DependencyFlags.None, (uint)(memoryBarriers?.Length ?? 0), memoryBarriers, (uint)(bufferMemoryBarriers?.Length ?? 0),bufferMemoryBarriers, (uint)(imageMemoryBarriers?.Length ?? 0), imageMemoryBarriers);
+        }
     }
 }

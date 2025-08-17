@@ -17,7 +17,6 @@ namespace RockEngine.Vulkan
         {
             VulkanContext.Vk.CreateFence(context.Device, in fenceCreateInfo, in VulkanContext.CustomAllocator<VkFence>(), out Fence fence)
                 .VkAssertResult("Failed to create fence.");
-
             return new VkFence(context, in fence);
         }
 
@@ -26,6 +25,7 @@ namespace RockEngine.Vulkan
             FenceCreateInfo fci = new FenceCreateInfo(StructureType.FenceCreateInfo, flags: FenceCreateFlags.SignaledBit);
             return Create(context, fci);
         }
+
         public static unsafe VkFence CreateNotSignaled(VulkanContext context)
         {
             FenceCreateInfo fci = new FenceCreateInfo(StructureType.FenceCreateInfo, flags: FenceCreateFlags.None);
@@ -39,27 +39,42 @@ namespace RockEngine.Vulkan
 
         public void Wait()
         {
-            Vk.WaitForFences(_context.Device, 1, in _vkObject, true, ulong.MaxValue)
+            /*var status = GetFenceStatus();
+            if (status == Result.Success) return; // Уже сигнален*/
+
+            Vk.WaitForFences(_context.Device, 1, in _vkObject, true, 10_000_000_000) // 10 сек
                 .VkAssertResult("Failed to wait fence");
+        }
+        public void Signal(VkQueue queue)
+        {
+            var submitInfo = new SubmitInfo
+            {
+                SType = StructureType.SubmitInfo,
+                CommandBufferCount = 0,
+                PCommandBuffers = null
+            };
+            queue.Submit(submitInfo, this);
         }
         public async Task WaitAsync(CancellationToken cancellationToken = default)
         {
-            while (true)
+            Wait();
+            return;
+           /* while (true)
             {
-                cancellationToken.ThrowIfCancellationRequested();
-
-                var status = GetFenceStatus();
-                switch (status)
+                var result = GetFenceStatus();
+                Console.WriteLine(result);
+                switch (result)
                 {
                     case Result.Success:
                         return;
                     case Result.NotReady:
                         await Task.Delay(1, cancellationToken).ConfigureAwait(false);
-                        break;
-                    default:
-                        throw new VulkanException(status, "Fence wait failed");
+                        continue;
+                    case Result.Timeout:
+                        throw new VulkanException(result, "Failed to wait fence, timeout");
+
                 }
-            }
+            }*/
         }
 
         public Result GetFenceStatus()

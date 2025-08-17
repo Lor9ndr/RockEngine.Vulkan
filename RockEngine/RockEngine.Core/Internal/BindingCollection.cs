@@ -55,16 +55,13 @@ namespace RockEngine.Core.Internal
 
             return removed;
         }
+        public Enumerator GetEnumerator() => new Enumerator(_setBindings);
 
-        public IEnumerator<(uint Set, PerSetBindings)> GetEnumerator()
-        {
-            foreach (var kvp in _setBindings)
-            {
-                yield return (kvp.Key, kvp.Value);
-            }
-        }
+        IEnumerator<(uint Set, PerSetBindings)> IEnumerable<(uint Set, PerSetBindings)>.GetEnumerator()
+             => GetEnumerator();
 
-        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+        IEnumerator IEnumerable.GetEnumerator()
+            => GetEnumerator();
 
         public bool TryGetBindings(uint set, out PerSetBindings bindings)
         {
@@ -77,6 +74,34 @@ namespace RockEngine.Core.Internal
             {
                 set.Value.RemoveAll(value);
             }
+        }
+
+        internal void Clear()
+        {
+            foreach (var item in _setBindings)
+            {
+                item.Value.Clear();
+            }
+        }
+        public struct Enumerator : IEnumerator<(uint Set, PerSetBindings)>
+        {
+            private SortedDictionary<uint, PerSetBindings>.Enumerator _inner;
+
+            internal Enumerator(SortedDictionary<uint, PerSetBindings> bindings)
+            {
+                _inner = bindings.GetEnumerator();
+            }
+
+            public (uint Set, PerSetBindings) Current
+                => (_inner.Current.Key, _inner.Current.Value);
+
+            object IEnumerator.Current => Current;
+
+            public bool MoveNext() => _inner.MoveNext();
+
+            public void Reset() => throw new NotSupportedException();
+
+            public void Dispose() => _inner.Dispose();
         }
     }
 }

@@ -1,312 +1,366 @@
-﻿using System.Collections.Concurrent;
+﻿using NLog;
 
-using Newtonsoft.Json.Linq;
-
-using RockEngine.Core.Assets.AssetData;
-using RockEngine.Core.Assets.Factories;
-using RockEngine.Core.Assets.Registres;
+using RockEngine.Core.Assets.RockEngine.Core.Assets;
 using RockEngine.Core.Assets.Serializers;
-using RockEngine.Core.Registries;
+using RockEngine.Core.DI;
 
-namespace RockEngine.Core.Assets;
+using System.Buffers;
+using System.Collections.Concurrent;
+using System.Collections.Frozen;
 
-public class AssetManager : IDisposable
+namespace RockEngine.Core.Assets
 {
-   /* private readonly IRegistry<Type> _typeRegistry;
-    private readonly IRegistry<IAssetSerializer<IAssetData>> _serializerRegistry;
-    private readonly IRegistry<IAssetFactory<IAssetData, IAsset>> _factoryRegistry;*/
-
-    private readonly ConcurrentDictionary<Guid, IAsset> _assets = new();
-    private readonly ConcurrentDictionary<string, Guid> _pathToGuid = new();
-    private readonly ConcurrentDictionary<Guid, string> _guidToPath = new();
-    private readonly ConcurrentDictionary<Guid, HashSet<Guid>> _dependencies = new();
-    private readonly ConcurrentDictionary<Guid, HashSet<Guid>> _reverseDependencies = new();
-    private readonly ConcurrentDictionary<string, Task<IAsset>> _loadingTasks = new();
-    private readonly ConcurrentDictionary<Guid, int> _refCounts = new();
-
-    public AssetManager(
-        /*IRegistry<Type, > typeRegistry,
-        IRegistry<IAssetSerializer<IAssetData>> serializerRegistry,
-        IRegistry<IAssetFactory<IAssetData, IAsset>> factoryRegistry*/)
-    {/*
-        _typeRegistry = typeRegistry;
-        _serializerRegistry = serializerRegistry;
-        _factoryRegistry = factoryRegistry;*/
-    }
-
-    private async Task<T> LoadAsync<T>(string path) where T : class, IAsset
+    public sealed class AssetManager : IAssetStorage, IDisposable
     {
-        if (_pathToGuid.TryGetValue(path, out var existingId))
+
+        private static readonly Logger _logger = LogManager.GetCurrentClassLogger();
+        private const string ProjectExtension = ".rockproj";
+
+        private readonly struct AssetRecord(IAsset asset)
         {
-            return (T)_assets[existingId];
+            public readonly IAsset Asset = asset;
         }
 
-        if (_loadingTasks.TryGetValue(path, out var existingTask))
+        private readonly IAssetSerializer _serializer;
+        private readonly AssetFactoryRegistry _factoryRegistry;
+        private readonly AssimpLoader _assimpLoader;
+        private readonly ConcurrentDictionary<Guid, AssetRecord> _assetsById = new();
+        private readonly ConcurrentDictionary<string, AssetRecord> _assetsByPath = new(StringComparer.OrdinalIgnoreCase);
+        private readonly ConcurrentDictionary<string, SemaphoreSlim> _assetLocks = new(StringComparer.OrdinalIgnoreCase);
+        private FrozenSet<string> _assetFiles = FrozenSet<string>.Empty;
+        private string _basePath = string.Empty;
+
+        public string BasePath => _basePath;
+
+        public AssetManager(IAssetSerializer serializer, AssetFactoryRegistry factoryRegistry, AssimpLoader assimpLoader)
         {
-            return (T)await existingTask;
+            _logger.Info("AssetManager initializing...");
+            _serializer = serializer;
+            _factoryRegistry = factoryRegistry;
+            _assimpLoader = assimpLoader;
         }
 
-        Task<IAsset> loadTask = LoadAssetInternal<T>(path); // Fixed type
-        _loadingTasks[path] = loadTask;
-
-        try
+        private void Initialize(ProjectAsset project)
         {
-            var asset = (T)await loadTask; // Cast to T
+            _basePath = project.Data.RootPath;
+            IndexProjectAssets();
+        }
+
+        private void IndexProjectAssets()
+        {
+            var files = Directory.GetFiles(_basePath, "*.asset", SearchOption.AllDirectories);
+            _assetFiles = files.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+        }
+
+        public async Task<ProjectAsset> CreateProjectAsync(string projectName, string basePath)
+        {
+            var projectDir = Path.Combine(basePath, projectName);
+            var projectPath = new AssetPath(projectDir, projectName, ProjectExtension);
+
+            var project = Create<ProjectAsset>(projectPath);
+            project.SetData(new ProjectData { Name = projectName, RootPath = projectDir });
+
+            RegisterAsset(project);
+            Initialize(project);
+            await SaveAsync(project);
+
+            return project;
+        }
+
+        public async Task<ModelAsset> LoadModelAsync(string filePath, string? modelName = null, string parentPath = "Models")
+        {
+            modelName ??= Path.GetFileNameWithoutExtension(filePath);
+            var modelPathKey = NormalizePath(Path.Combine(parentPath, modelName));
+
+            if (_assetsByPath.TryGetValue(modelPathKey, out var existing))
+                return (ModelAsset)existing.Asset;
+
+            var meshesData = await _assimpLoader.LoadMeshesAsync(filePath);
+            var modelAsset = Create<ModelAsset>(new AssetPath(parentPath, modelName));
+
+            var saveTasks = new List<Task>(meshesData.Count * 3 + 1);
+            var textureCache = new Dictionary<string, TextureAsset>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var meshData in meshesData)
+            {
+                var meshName = !string.IsNullOrEmpty(meshData.Name) ? meshData.Name : $"Mesh_{Guid.NewGuid()}";
+                var meshAsset = Create<MeshAsset>(
+                    new AssetPath($"{parentPath}/{modelName}/Meshes", meshName),
+                    meshName);
+
+                meshAsset.SetGeometry(meshData.Vertices, meshData.Indices);
+
+                var materialAsset = Create<MaterialAsset>(
+                    new AssetPath($"{parentPath}/{modelName}/Materials", meshName),
+                    meshName);
+
+                var textureIDs = new Guid[meshData.Textures.Count];
+                for (int i = 0; i < meshData.Textures.Count; i++)
+                {
+                    var texturePath = meshData.Textures[i];
+                    if (!textureCache.TryGetValue(texturePath, out var textureAsset))
+                    {
+                        var textureName = Path.GetFileName(texturePath);
+                        textureAsset = Create<TextureAsset>(
+                            new AssetPath($"{parentPath}/{modelName}/Textures", textureName));
+                        textureAsset.SetData(new TextureData
+                        {
+                            FilePaths = [texturePath],
+                            GenerateMipmaps = true,
+                            Type = TextureType.Texture2D
+                        });
+                        textureCache[texturePath] = textureAsset;
+                        RegisterAsset(textureAsset);
+                        saveTasks.Add(SaveAsync(textureAsset));
+                    }
+                    textureIDs[i] = textureAsset.ID;
+                }
+
+                materialAsset.SetData(new MaterialData
+                {
+                    PipelineName = "Geometry",
+                    TextureAssetIDs = new List<Guid>(textureIDs)
+                });
+
+                modelAsset.AddPart(new ModelPart { Mesh = meshAsset, Material = materialAsset });
+
+                RegisterAsset(meshAsset);
+                RegisterAsset(materialAsset);
+                saveTasks.Add(SaveAsync(meshAsset));
+                saveTasks.Add(SaveAsync(materialAsset));
+            }
+
+            RegisterAsset(modelAsset);
+            saveTasks.Add(SaveAsync(modelAsset));
+            await Task.WhenAll(saveTasks);
+
+            return modelAsset;
+        }
+
+        public T Create<T>(AssetPath path, string? name = null) where T : IAsset =>
+            (T)Create(typeof(T), path, name);
+
+        public IAsset Create(Type assetType, AssetPath path, string? name = null)
+        {
+            var asset = (IAsset)IoC.Container.GetInstance(assetType);
+            asset.Path = path;
+            asset.Name = name;
+            RegisterAsset(asset);
             return asset;
         }
-        finally
+
+        public async Task<ProjectAsset> LoadProjectAsync(string projectName, string basePath)
         {
-            _loadingTasks.TryRemove(path, out _);
-        }
-    }
-
-    private async Task<IAsset> LoadAssetInternal<T>(string path) where T : class, IAsset
-    {
-        throw new NotImplementedException();
-        /* if (!File.Exists(path))
-         {
-             throw new FileNotFoundException($"Asset file not found: {path}");
-         }
-
-         var json = await File.ReadAllTextAsync(path);
-         var jObject = JObject.Parse(json);
-         var typeIdentifier = jObject["$type"]?.Value<string>();
-
-         if (string.IsNullOrEmpty(typeIdentifier))
-         {
-             throw new InvalidOperationException("Asset type identifier is missing");
-         }
-
-         if (!_typeRegistry.TryGet(typeIdentifier, out var dataType))
-         {
-             throw new InvalidOperationException($"Unregistered asset type: {typeIdentifier}");
-         }
-
-         if (!_serializerRegistry.TryGet(dataType, out var serializer))
-         {
-             throw new InvalidOperationException($"No serializer found for {dataType.Name}");
-         }
-
-         if (!_factoryRegistry.TryGet(dataType, out var factory))
-         {
-             throw new InvalidOperationException($"No factory found for {dataType.Name}");
-         }
-
-         var data = serializer.Deserialize(json);
-         var asset = factory.CreateAsset(path, data);
-
-         // Store before loading to prevent circular dependencies
-         _assets[asset.ID] = asset;
-         _pathToGuid[path] = asset.ID;
-         _guidToPath[asset.ID] = path;
-         _refCounts[asset.ID] = 1; // Initial reference
-
-         // Handle dependencies
-         if (asset is ISerializableAsset<IAssetData> serializableAsset)
-         {
-             var dependencies = new HashSet<Guid>();
-             await ProcessDependencies(serializableAsset.GetData(), asset.ID, dependencies);
-             _dependencies[asset.ID] = dependencies;
-         }
-
-         await asset.LoadAsync();
-         return asset;*/
-    }
-
-    public async Task SaveAsync(IAsset asset, string? path = null)
-    {
-        throw new NotImplementedException();
-/*
-        var savePath = path ?? asset.Path;
-        if (string.IsNullOrEmpty(savePath))
-        {
-            throw new ArgumentException("Path must be provided for saving");
+            var projectFile = Path.Combine(basePath, projectName, $"{projectName}{ProjectExtension}");
+            var project = (ProjectAsset)await LoadFullAsync<ProjectData>(new AssetPath(projectFile), true, default);
+            Initialize(project);
+            return project;
         }
 
-        if (asset is not ISerializableAsset<IAssetData> serializableAsset)
+        public async Task SaveAsync<T>(IAsset<T> asset) where T : class =>
+            await SaveAsync(asset, GetFullPath(asset.Path));
+
+        private async Task SaveAsync<T>(IAsset<T> asset, string fullPath) where T : class
         {
-            throw new InvalidOperationException("Asset doesn't support serialization");
-        }
+            var assetLock = _assetLocks.GetOrAdd(fullPath, _ => new SemaphoreSlim(1, 1));
+            await assetLock.WaitAsync().ConfigureAwait(false);
 
-        var data = serializableAsset.GetData();
-        var dataType = data.GetType();
-
-        if (!((AssetTypeRegistry)_typeRegistry).TryGetTypeIdentifier(dataType, out var typeIdentifier))
-        {
-            throw new InvalidOperationException($"No type identifier registered for {dataType.Name}");
-        }
-
-        if (!_serializerRegistry.TryGet(dataType, out var serializer))
-        {
-            throw new InvalidOperationException($"No serializer found for {dataType.Name}");
-        }
-
-        var json = serializer.Serialize(data);
-        var jObject = JObject.Parse(json);
-        jObject["$type"] = typeIdentifier;
-
-        await File.WriteAllTextAsync(savePath, jObject.ToString());
-
-        // Update tracking if path changed
-        if (savePath != asset.Path)
-        {
-            _pathToGuid.TryRemove(asset.Path, out _);
-            asset.Path = savePath;
-            _pathToGuid[savePath] = asset.ID;
-            _guidToPath[asset.ID] = savePath;
-        }*/
-    }
-
-    public T GetAsset<T>(Guid id) where T : class, IAsset
-    {
-        return _assets.TryGetValue(id, out var asset) ? (T)asset : null;
-    }
-
-    public T GetAssetByPath<T>(string path) where T : class, IAsset
-    {
-        return _pathToGuid.TryGetValue(path, out var id) ? GetAsset<T>(id) : null;
-    }
-
-    public void AddReference(Guid assetId)
-    {
-        _refCounts.AddOrUpdate(assetId, 1, (id, count) => count + 1);
-    }
-
-    public void ReleaseReference(Guid assetId)
-    {
-        _refCounts.AddOrUpdate(assetId, 0, (id, count) => Math.Max(0, count - 1));
-        if (_refCounts.TryGetValue(assetId, out var count) && count == 0)
-        {
-            Unload(assetId);
-        }
-    }
-
-    public void Unload(Guid id)
-    {
-        if (!_assets.TryRemove(id, out var asset)) return;
-
-        // Remove reverse dependencies
-        if (_reverseDependencies.TryRemove(id, out var dependents))
-        {
-            foreach (var dependentId in dependents)
+            try
             {
-                ReleaseReference(dependentId);
+                asset.UpdateModified();
+                var directory = Path.GetDirectoryName(fullPath);
+                if (!string.IsNullOrEmpty(directory)) Directory.CreateDirectory(directory);
+
+                var tempPath = Path.ChangeExtension(fullPath, ".tmp");
+                using var buffer = MemoryPool<byte>.Shared.Rent(8192);
+                using (var stream = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None, buffer.Memory.Length, FileOptions.Asynchronous | FileOptions.SequentialScan))
+                {
+                    await _serializer.SerializeAsync(asset, stream).ConfigureAwait(false);
+                }
+
+                File.Move(tempPath, fullPath, true);
+            }
+            finally
+            {
+                assetLock.Release();
             }
         }
 
-        // Remove from path mapping
-        if (_guidToPath.TryRemove(id, out var path))
+        public async Task<IAsset> LoadMetadataAsync(AssetPath path)
         {
-            _pathToGuid.TryRemove(path, out _);
-        }
+            var fullPath = GetFullPath(path);
+            var assetLock = _assetLocks.GetOrAdd(fullPath, _ => new SemaphoreSlim(1, 1));
+            await assetLock.WaitAsync().ConfigureAwait(false);
 
-        // Unload dependencies
-        if (_dependencies.TryRemove(id, out var dependencies))
-        {
-            foreach (var dependencyId in dependencies)
+            // TODO: THINK TO USE MemoryMappedFiles and so on
+            try
             {
-                ReleaseReference(dependencyId);
+                using var stream = new FileStream(
+                    fullPath,
+                    FileMode.Open,
+                    FileAccess.Read,
+                    FileShare.Read,
+                    4096,
+                    FileOptions.Asynchronous | FileOptions.SequentialScan);
+
+                return await _serializer.DeserializeMetadataAsync(stream).ConfigureAwait(false);
+            }
+            finally
+            {
+                assetLock.Release();
             }
         }
 
-        // Unload the asset
-        asset.Unload();
-        asset.Dispose();
-        _refCounts.TryRemove(id, out _);
-    }
-
-    public void Dispose()
-    {
-        foreach (var assetId in _assets.Keys)
+        public async Task<IAsset<T>> LoadFullAsync<T>(
+            AssetPath path,
+            bool loadDependencies = true,
+            CancellationToken ct = default) where T : class
         {
-            Unload(assetId);
-        }
-        _assets.Clear();
-        _pathToGuid.Clear();
-        _guidToPath.Clear();
-        _dependencies.Clear();
-        _reverseDependencies.Clear();
-        _loadingTasks.Clear();
-        _refCounts.Clear();
-    }
+            var pathKey = NormalizePath(path.ToString());
+            if (_assetsByPath.TryGetValue(pathKey, out var record))
+                return (IAsset<T>)record.Asset;
 
-    private async Task ProcessDependencies(IAssetData data, Guid parentId, HashSet<Guid> dependencies)
-    {
-        switch (data)
-        {
-            case SceneData sceneData:
-                foreach (var assetPath in sceneData.AssetDependencies)
-                {
-                    await LoadDependency(assetPath, parentId, dependencies);
-                }
-                break;
+            var fullPath = GetFullPath(path);
+            var assetLock = _assetLocks.GetOrAdd(fullPath, _ => new SemaphoreSlim(1, 1));
+            await assetLock.WaitAsync(ct).ConfigureAwait(false);
 
-            case ProjectData projectData:
-                foreach (var assetId in projectData.AssetIDs)
-                {
-                    await LoadDependency(assetId, parentId, dependencies);
-                }
-                break;
+            try
+            {
+                using var stream = new FileStream(
+                    fullPath,
+                    FileMode.Open,
+                    FileAccess.Read,
+                    FileShare.Read,
+                    4096,
+                    FileOptions.Asynchronous | FileOptions.SequentialScan);
 
-            case MaterialData materialData:
-                foreach (var item in materialData.Properties)
+                var asset = await _serializer.DeserializeMetadataAsync(stream).ConfigureAwait(false);
+                stream.Position = 0;
+                await LoadDataForAssetAsync(asset, stream).ConfigureAwait(false);
+
+                RegisterAsset(asset);
+
+                if (loadDependencies && asset.Dependencies.Any())
                 {
-                    if (item.Value.Type == MaterialPropertyType.Texture)
+                    var dependencyTasks = new Task<IAsset?>[asset.Dependencies.Count()];
+                    for (int i = 0; i < asset.Dependencies.Count(); i++)
                     {
-                        if (item.Value.Value is string texturePath)
+                        dependencyTasks[i] = FindDependencyAsync(asset.Dependencies.ElementAt(i).ID, ct);
+                    }
+
+                    await Task.WhenAll(dependencyTasks).ConfigureAwait(false);
+
+                    for (int i = 0; i < dependencyTasks.Length; i++)
+                    {
+                        var dependency = await dependencyTasks[i];
+                        if (dependency != null)
                         {
-                            await LoadDependency(texturePath, parentId, dependencies);
+                            asset.AddDependency(dependency);
                         }
                     }
                 }
-                break;
 
-            // Add MeshData processing
-            case MeshData meshData:
-                foreach (var texturePath in meshData.TexturePaths)
+                return (IAsset<T>)asset;
+            }
+            finally
+            {
+                assetLock.Release();
+            }
+        }
+
+        private async Task LoadDataForAssetAsync(IAsset asset, Stream stream)
+        {
+            if (asset.IsDataLoaded) return;
+
+            var data = await _serializer.DeserializeDataAsync(stream, asset.GetDataType());
+            asset.SetData(data);
+        }
+
+        private async Task<IAsset?> FindDependencyAsync(Guid depId, CancellationToken ct)
+        {
+            if (_assetsById.TryGetValue(depId, out var record))
+                return record.Asset;
+
+            foreach (var file in _assetFiles)
+            {
+                ct.ThrowIfCancellationRequested();
+                var assetLock = _assetLocks.GetOrAdd(file, _ => new SemaphoreSlim(1, 1));
+                await assetLock.WaitAsync(ct).ConfigureAwait(false);
+
+                try
                 {
-                    await LoadDependency(texturePath, parentId, dependencies);
+                    using var stream = new FileStream(
+                        file,
+                        FileMode.Open,
+                        FileAccess.Read,
+                        FileShare.Read,
+                        4096,
+                        FileOptions.Asynchronous | FileOptions.SequentialScan);
+
+                    var metadata = await _serializer.DeserializeMetadataAsync(stream).ConfigureAwait(false);
+                    if (metadata.ID == depId)
+                    {
+                        stream.Position = 0;
+                        await LoadDataForAssetAsync(metadata, stream).ConfigureAwait(false);
+                        RegisterAsset(metadata);
+                        return metadata;
+                    }
                 }
-                break;
-        }
-    }
-    private async Task LoadDependency(Guid dependencyId, Guid parentId, HashSet<Guid> dependencies)
-    {
-        if (!_guidToPath.TryGetValue(dependencyId, out var path))
-        {
-            throw new InvalidOperationException($"No path found for asset ID: {dependencyId}");
-        }
-        await LoadDependency(path, parentId, dependencies);
-    }
-    private async Task LoadDependency(string dependencyPath, Guid parentId, HashSet<Guid> dependencies)
-    {
-        try
-        {
-            var dependency = await LoadAsync<IAsset>(dependencyPath);
-            dependencies.Add(dependency.ID);
-
-            // Add reverse dependency
-            _reverseDependencies.AddOrUpdate(dependency.ID,
-                new HashSet<Guid> { parentId },
-                (id, set) =>
+                catch (Exception ex)
                 {
-                    set.Add(parentId);
-                    return set;
-                });
+                    _logger.Warn(ex, $"Skipping corrupt asset file: {file}");
+                }
+                finally
+                {
+                    assetLock.Release();
+                }
+            }
 
-            // Add reference count
-            AddReference(dependency.ID);
+            return null;
         }
-        catch (Exception ex)
+
+        private void RegisterAsset(IAsset asset)
         {
-            throw new InvalidOperationException($"Failed to load dependency: {dependencyPath}", ex);
-        }
-    }
+            var pathKey = NormalizePath(asset.Path.ToString());
+            var record = new AssetRecord(asset);
 
-    public async Task ReloadAsync(Guid id)
-    {
-        if (!_guidToPath.TryGetValue(id, out var path)) return;
-        Unload(id);
-        await LoadAsync<IAsset>(path);
+            _assetsByPath[pathKey] = record;
+            _assetsById[asset.ID] = record;
+        }
+
+        private string GetFullPath(AssetPath assetPath) =>
+            Path.Combine(_basePath, assetPath.ToString());
+
+        private static string NormalizePath(string path) =>
+            Path.GetFullPath(path)
+                .Replace('\\', '/')
+                .TrimEnd('/')
+                .ToLowerInvariant();
+
+        public void Dispose()
+        {
+            foreach (var lockObj in _assetLocks.Values)
+            {
+                lockObj.Dispose();
+            }
+        }
+
+        // Interface implementations
+        public async Task<IAsset<TData>> LoadAsync<TAsset, TData>(AssetPath path)
+            where TAsset : IAsset<TData>
+            where TData : class =>
+            await LoadFullAsync<TData>(path, true, default);
+
+        public async Task<IAsset<T>> LoadAsync<T>(AssetPath path) where T : class =>
+            await LoadFullAsync<T>(path, true, default);
+
+        public async Task SaveProjectAsync(ProjectAsset project) =>
+            await SaveAsync(project);
+
+        public bool Exists(AssetPath path) =>
+            File.Exists(GetFullPath(path));
+
+        public T? GetAsset<T>(Guid assetID) where T : class, IAsset =>
+            _assetsById.TryGetValue(assetID, out var record) ? (T)record.Asset : null;
     }
 }

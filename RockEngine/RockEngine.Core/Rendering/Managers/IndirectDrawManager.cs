@@ -1,4 +1,5 @@
-﻿using RockEngine.Core.ECS.Components;
+﻿using RockEngine.Core.Assets;
+using RockEngine.Core.ECS.Components;
 using RockEngine.Core.Rendering.Buffers;
 using RockEngine.Core.Rendering.Commands;
 using RockEngine.Vulkan;
@@ -8,6 +9,7 @@ using Silk.NET.Vulkan;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Reflection.Emit;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
@@ -23,7 +25,7 @@ namespace RockEngine.Core.Rendering.Managers
         private readonly IndirectBuffer _indirectBuffer;
         private readonly List<MeshRenderCommand> _commands = new List<MeshRenderCommand>();
         private readonly ConcurrentQueue<IRenderCommand> _otherCommands = new ConcurrentQueue<IRenderCommand>();
-        private readonly Dictionary<RenderLayerType, List<DrawGroup>> _drawGroupsByLayer = new Dictionary<RenderLayerType, List<DrawGroup>>();
+        private readonly Dictionary<(RenderLayerType Layer, uint Subpass), List<DrawGroup>> _drawGroupsByLayerAndSubpass = new();
         private readonly uint _transformBufferCapacity;
         private bool _isDirty;
         private static readonly ulong _commandStride = (ulong)Marshal.SizeOf<DrawIndexedIndirectCommand>();
@@ -48,7 +50,7 @@ namespace RockEngine.Core.Rendering.Managers
         /// Добавляет меш для отрисовки с указанным индексом трансформации
         /// </summary>
         /// <exception cref="ArgumentOutOfRangeException">При невалидном индексе трансформации</exception>
-        public void AddMesh(Mesh mesh, int transformIndex)
+        public void AddMesh(MeshRenderer mesh, int transformIndex)
         {
             if (transformIndex < 0 || transformIndex >= _transformBufferCapacity)
                 throw new ArgumentOutOfRangeException(nameof(transformIndex), "Transform index exceeds buffer capacity");
@@ -61,26 +63,26 @@ namespace RockEngine.Core.Rendering.Managers
         /// <summary>
         /// Обновляет команды отрисовки. Должен вызываться перед рендерингом.
         /// </summary>
-        public Task UpdateAsync()
+        public ValueTask UpdateAsync()
         {
             if (!_isDirty)
-                return Task.CompletedTask;
+                return ValueTask.CompletedTask;
 
-            // Sort commands for optimal grouping
             _commands.Sort(MeshRenderCommandComparer.Default);
             Span<MeshRenderCommand> commandsSpan = CollectionsMarshal.AsSpan(_commands);
 
-            // Clear reused collections
             _indirectCommandsList.Clear();
-            _drawGroupsByLayer.Clear();
+            _drawGroupsByLayerAndSubpass.Clear();
 
             if (commandsSpan.Length == 0)
             {
                 _isDirty = false;
-                return Task.CompletedTask;
+                return ValueTask.CompletedTask;
             }
 
-            // Group commands by boundaries
+            // Устанавливаем достаточную емкость для списка команд
+            _indirectCommandsList.Capacity = Math.Max(_indirectCommandsList.Capacity, commandsSpan.Length);
+
             int groupStartIndex = 0;
             for (int i = 1; i < commandsSpan.Length; i++)
             {
@@ -90,25 +92,43 @@ namespace RockEngine.Core.Rendering.Managers
                     groupStartIndex = i;
                 }
             }
-            // Add final group
-            AddGroup(commandsSpan.Slice(groupStartIndex));
+            AddGroup(commandsSpan[groupStartIndex..]);
 
-            // Submit commands to GPU
             var batch = _context.SubmitContext.CreateBatch();
             batch.CommandBuffer.LabelObject("IndirectDrawManager cmd");
             _indirectBuffer.StageCommands(batch, CollectionsMarshal.AsSpan(_indirectCommandsList));
+
+            // Добавлен барьер после обновления буфера
+            var bufferBarrier = new BufferMemoryBarrier
+            {
+                SType = StructureType.BufferMemoryBarrier,
+                SrcAccessMask = AccessFlags.TransferWriteBit,
+                DstAccessMask = AccessFlags.IndirectCommandReadBit,
+                Buffer = _indirectBuffer.Buffer,
+                Offset = 0,
+                Size = Vk.WholeSize
+            };
+
+            batch.PipelineBarrier(
+                srcStage: PipelineStageFlags.TransferBit,
+                dstStage: PipelineStageFlags.DrawIndirectBit,
+                bufferMemoryBarriers: new[] { bufferBarrier }
+            );
+
             batch.Submit();
+
 
             _commands.Clear();
             _isDirty = false;
-            return Task.CompletedTask;
+            return ValueTask.CompletedTask;
         }
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool IsNewGroup(in MeshRenderCommand a, in MeshRenderCommand b)
         {
             return a.Layer != b.Layer ||
-                   !ReferenceEquals(a.Mesh.Material.Pipeline, b.Mesh.Material.Pipeline) ||
-                   !ReferenceEquals(a.Mesh.Material, b.Mesh.Material) ||
+                   !ReferenceEquals(a.Mesh.Material.MaterialInstance.Pipeline, b.Mesh.Material.MaterialInstance.Pipeline) ||
+                   !ReferenceEquals(a.Mesh.Material.MaterialInstance, b.Mesh.Material.MaterialInstance) ||
                    !ReferenceEquals(a.Mesh, b.Mesh);
         }
 
@@ -119,48 +139,47 @@ namespace RockEngine.Core.Rendering.Managers
         /// <param name="indirectCommands">Целевой список команд</param>
         private void AddGroup(Span<MeshRenderCommand> groupSpan)
         {
-            // Sort group by transform index for consecutive GPU access
             groupSpan.Sort((a, b) => a.TransformIndex.CompareTo(b.TransformIndex));
             ref readonly MeshRenderCommand firstCmd = ref groupSpan[0];
 
-            // Create indirect command
+            var pipeline = firstCmd.Mesh.Material.MaterialInstance.Pipeline;
+            var key = (firstCmd.Layer, pipeline.SubPass);
+
+            if (!_drawGroupsByLayerAndSubpass.TryGetValue(key, out var groups))
+            {
+                groups = new List<DrawGroup>();
+                _drawGroupsByLayerAndSubpass[key] = groups;
+            }
+
+            groups.Add(new DrawGroup(
+                pipeline,
+                firstCmd.Mesh.Material.MaterialInstance,
+                firstCmd.Mesh,
+                (uint)groupSpan.Length,
+                (ulong)(_indirectCommandsList.Count) * _commandStride
+            ));
+
             _indirectCommandsList.Add(new DrawIndexedIndirectCommand
             {
-                IndexCount = firstCmd.Mesh.IndicesCount,
+                IndexCount = firstCmd.Mesh.IndicesCount.Value,
                 InstanceCount = (uint)groupSpan.Length,
                 FirstIndex = 0,
                 VertexOffset = 0,
                 FirstInstance = firstCmd.TransformIndex
             });
-
-            // Register draw group
-            var drawGroups = GetOrAddLayerGroups(firstCmd.Layer);
-            drawGroups.Add(new DrawGroup(
-                firstCmd.Mesh.Material.Pipeline,
-                firstCmd.Mesh.Material,
-                firstCmd.Mesh,
-                (uint)groupSpan.Length,
-                (ulong)(_indirectCommandsList.Count - 1) * _commandStride
-            ));
-        }
-
-        private List<DrawGroup> GetOrAddLayerGroups(RenderLayerType layer)
-        {
-            if (!_drawGroupsByLayer.TryGetValue(layer, out var groups))
-            {
-                groups = new List<DrawGroup>();
-                _drawGroupsByLayer[layer] = groups;
-            }
-            return groups;
         }
 
         /// <summary>
         /// Возвращает группы отрисовки для указанного слоя
         /// </summary>
-        public IEnumerable<DrawGroup> GetDrawGroups(RenderLayerType layerType)
-            => _drawGroupsByLayer.TryGetValue(layerType, out var groups)
+        public List<DrawGroup> GetDrawGroups(RenderLayerType layer, uint subpass)
+        {
+            var key = (layer, subpass);
+            return _drawGroupsByLayerAndSubpass.TryGetValue(key, out var groups)
                 ? groups
-                : Enumerable.Empty<DrawGroup>();
+                : [];
+           
+        }
 
 
         /// <summary>
@@ -181,12 +200,12 @@ namespace RockEngine.Core.Rendering.Managers
         /// </summary>
         private readonly struct MeshRenderCommand
         {
-            public readonly Mesh Mesh;             // Ссылка на меш
+            public readonly MeshRenderer Mesh;             // Ссылка на меш
             public readonly uint TransformIndex;   // Индекс в трансформ-буфере
             public readonly RenderLayerType Layer; // Слой рендеринга
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public MeshRenderCommand(Mesh mesh, uint transformIndex, RenderLayerType layer)
+            public MeshRenderCommand(MeshRenderer mesh, uint transformIndex, RenderLayerType layer)
             {
                 Mesh = mesh;
                 TransformIndex = transformIndex;
@@ -214,22 +233,22 @@ namespace RockEngine.Core.Rendering.Managers
                 if (layerCompare != 0) return layerCompare;
 
                 // Сортировка по subpass пайплайна
-                int subPassCompare = x.Mesh.Material.Pipeline.SubPass.CompareTo(y.Mesh.Material.Pipeline.SubPass);
+                int subPassCompare = x.Mesh.Material.MaterialInstance.Pipeline.SubPass
+                    .CompareTo(y.Mesh.Material.MaterialInstance.Pipeline.SubPass);
                 if (subPassCompare != 0) return subPassCompare;
 
-                // Сравнение пайплайнов по хешу (для группировки одинаковых объектов)
-                int pipelineCompare = RuntimeHelpers.GetHashCode(x.Mesh.Material.Pipeline)
-                    .CompareTo(RuntimeHelpers.GetHashCode(y.Mesh.Material.Pipeline));
+                // Сравнение пайплайнов по ID
+                int pipelineCompare = x.Mesh.Material.MaterialInstance.Pipeline.VkObjectNative.Handle
+                    .CompareTo(y.Mesh.Material.MaterialInstance.Pipeline.VkObjectNative.Handle);
                 if (pipelineCompare != 0) return pipelineCompare;
 
-                // Сравнение материалов
-                int materialCompare = RuntimeHelpers.GetHashCode(x.Mesh.Material)
-                    .CompareTo(RuntimeHelpers.GetHashCode(y.Mesh.Material));
+                // Сравнение материалов по ID
+                int materialCompare = x.Mesh.Material.ID
+                    .CompareTo(y.Mesh.Material.ID);
                 if (materialCompare != 0) return materialCompare;
 
-                // Сравнение мешей
-                return RuntimeHelpers.GetHashCode(x.Mesh)
-                    .CompareTo(RuntimeHelpers.GetHashCode(y.Mesh));
+                // Сравнение мешей по ID
+                return x.Mesh.Mesh.ID.CompareTo(y.Mesh.Mesh.ID);
             }
         }
 
@@ -244,7 +263,7 @@ namespace RockEngine.Core.Rendering.Managers
         public readonly record struct DrawGroup(
             VkPipeline Pipeline,
             Material Material,
-            Mesh Mesh,
+            MeshRenderer Mesh,
             uint Count,
             ulong ByteOffset
         );

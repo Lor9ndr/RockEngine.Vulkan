@@ -23,6 +23,7 @@ namespace RockEngine.Vulkan
         public SamplerCache SamplerCache { get; }
         public SubmitContext SubmitContext { get; }
         public SubmitContext SubmitComputeContext { get; }
+        public SubmitContext SubmitRenderContext { get; }
 
         public DebugUtilsFunctions DebugUtils => _debugUtilsFunctions;
 
@@ -37,6 +38,7 @@ namespace RockEngine.Vulkan
         private readonly Stack<IDisposable> _pendingDisposals = new Stack<IDisposable>();
         private readonly DebugUtilsFunctions _debugUtilsFunctions;
         private readonly AppSettings _settings;
+        public readonly Vk Api = Vk;
 
         public VulkanContext(IWindow window, AppSettings settings)
         {
@@ -58,7 +60,7 @@ namespace RockEngine.Vulkan
             SamplerCache = new SamplerCache(this);
             SubmitContext = new SubmitContext(this, Device.GraphicsQueue);
             SubmitComputeContext = new SubmitContext(this, Device.ComputeQueue);
-
+            SubmitRenderContext = new SubmitContext(this, Device.PresentQueue);
             _settings = settings;
         }
 
@@ -135,19 +137,17 @@ namespace RockEngine.Vulkan
                     logLevel = LogLevel.Trace;
                     break;
                 default:
-                    Console.ResetColor();
                     break;
             }
 
             _logger.Log(logLevel, $"{message}\n{Environment.StackTrace}");
 
             // Reset console color to default
-            Console.ResetColor();
 
             // Throw an exception if severity is ErrorBitEXT
             if (messageSeverity == DebugUtilsMessageSeverityFlagsEXT.ErrorBitExt)
             {
-               // throw new Exception(message: $"Vulkan Error: {message}");
+               throw new VulkanException(messageSeverity, message);
             }
 
             return new Bool32(false);

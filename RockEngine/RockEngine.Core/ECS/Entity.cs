@@ -6,6 +6,7 @@ namespace RockEngine.Core.ECS
     public class Entity
     {
         private static ulong _id = 0;
+        private readonly Lock _componentsLock = new Lock();
 
         public string Name { get;set;}
 
@@ -75,16 +76,31 @@ namespace RockEngine.Core.ECS
 
         public async ValueTask Update(Renderer renderer)
         {
-            foreach (var item in _components)
+            IComponent[] array;
+            lock (_componentsLock)
             {
-                await item.Update(renderer).ConfigureAwait(false);
+                array = _components.ToArray();
+            }
+            for (int i = 0; i < array.Length; i++)
+            {
+                IComponent? item = array[i];
+                if(item is not null)
+                {
+                    await item.Update(renderer).ConfigureAwait(false);
+                }
             }
         }
 
         public async Task OnStart(Renderer renderer)
         {
-            foreach (var item in _components)
+            IComponent[] array;
+            lock (_componentsLock)
             {
+                array = _components.ToArray();
+            }
+            for (int i = 0; i < array.Length; i++)
+            {
+                IComponent? item = array[i];
                 await item.OnStart(renderer).ConfigureAwait(false);
             }
         }

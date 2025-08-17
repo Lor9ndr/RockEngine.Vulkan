@@ -59,7 +59,7 @@ namespace RockEngine.Core.Rendering.RenderTargets
 
         private void CreateTexture()
         {
-            OutputTexture = new Texture.Builder(_context)
+            OutputTexture = (Texture2D)new Texture.Builder(_context)
                                     .SetSize(Size)
                                     .SetFormat(Format)
                                     .SetUsage(ImageUsageFlags.ColorAttachmentBit | ImageUsageFlags.SampledBit)

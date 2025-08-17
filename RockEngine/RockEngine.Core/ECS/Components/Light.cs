@@ -17,15 +17,15 @@ namespace RockEngine.Core.ECS.Components
     public class Light : Component
     {
         private static UniformBuffer? _buffer;
-        public LightType Type = LightType.Point;
-        public Vector3 Color = Vector3.One;
-        public float Intensity = 1.0f;
+        public LightType Type { get; set; } = LightType.Point;
+        public Vector3 Color { get; set; } = Vector3.One;
+        public float Intensity { get; set; } = 1.0f;
 
         // Directional/Spot properties
-        public Vector3 Direction = Vector3.UnitZ;
+        public Vector3 Direction { get; set; } = Vector3.UnitY;
 
         // Point/Spot properties
-        public float Radius = 10.0f;
+        public float Radius { get; set; } = 10.0f;
 
         // Spot specific
         public float InnerCutoff = 0.9f;  // Cos(25 degrees)
@@ -43,14 +43,13 @@ namespace RockEngine.Core.ECS.Components
             _offsetCounter += LightData.DataSize; // Increment for the next instance
         }
 
-        public override ValueTask OnStart(Renderer renderer)
+        public override async ValueTask OnStart(Renderer renderer)
         {
             _buffer ??= new UniformBuffer(VulkanContext.GetCurrent(), "Lights", 0, Renderer.MAX_LIGHTS_SUPPORTED * LightData.DataSize, true);
             renderer.LightManager.RegisterLight(this);
-            return base.OnStart(renderer);
         }
 
-        public override ValueTask Update(Renderer renderer)
+        public override async ValueTask Update(Renderer renderer)
         {
             _lightData = new LightData
             {
@@ -59,7 +58,6 @@ namespace RockEngine.Core.ECS.Components
                 ColorAndIntensity = new Vector4(Color, Intensity),
                 Cutoffs = new Vector2(InnerCutoff, OuterCutoff)
             };
-            return default;
         }
 
         public ref LightData GetLightData()

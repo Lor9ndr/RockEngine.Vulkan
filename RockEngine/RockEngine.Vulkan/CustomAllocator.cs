@@ -28,7 +28,7 @@ namespace RockEngine.Vulkan
         private static void* Allocate<T>(void* pUserData, nuint size, nuint alignment, SystemAllocationScope allocationScope)
         {
             var ptr = (void*)Marshal.AllocHGlobal((int)size);
-            var name = typeof(T).Name;
+            /*var name = typeof(T).Name;
             var allocInfo = new AllocationInfo
             {
                 Size = size,
@@ -44,7 +44,7 @@ namespace RockEngine.Vulkan
             _allocations[(IntPtr)ptr] = allocInfo;
             Interlocked.Add(ref _totalAllocatedBytes, (long)size);
             Interlocked.Increment(ref _totalAllocationCount);
-            UpdatePeakMemoryUsage();
+            UpdatePeakMemoryUsage();*/
 
             //_logger.Trace($"{typeof(T)} [ALLOC] Size: {size} bytes, Alignment: {alignment}, Scope: {allocationScope}, Address: 0x{(nint)ptr:X}");
             return ptr;
@@ -56,7 +56,7 @@ namespace RockEngine.Vulkan
             var ptr = (void*)Marshal.ReAllocHGlobal((nint)pOriginal, (IntPtr)size);
 
 
-            _allocations[(IntPtr)ptr] = new AllocationInfo
+           /* _allocations[(IntPtr)ptr] = new AllocationInfo
             {
                 Size = size,
                 Scope = allocationScope,
@@ -66,18 +66,18 @@ namespace RockEngine.Vulkan
 
             Interlocked.Add(ref _totalAllocatedBytes, (long)size - (long)oldSize);
             UpdatePeakMemoryUsage();
-
+*/
             //_logger.Trace($"{typeof(T)}[REALLOC] Old Address: 0x{(nint)pOriginal:X}, New Address: 0x{(nint)ptr:X}, New Size: {size} bytes, Alignment: {alignment}, Scope: {allocationScope}");
             return ptr;
         }
 
         private static void Free<T>(void* pUserData, void* pMemory)
         {
-            if (_allocations.TryRemove((IntPtr)pMemory, out var allocInfo))
+          /*  if (_allocations.TryRemove((IntPtr)pMemory, out var allocInfo))
             {
                 Interlocked.Add(ref _totalAllocatedBytes, -(long)allocInfo.Size);
                 Interlocked.Decrement(ref _totalAllocationCount);
-            }
+            }*/
 
             //_logger.Trace($"{typeof(T)} [FREE] Address: 0x{(nint)pMemory:X}");
             Marshal.FreeHGlobal((nint)pMemory);

@@ -41,8 +41,9 @@ namespace RockEngine.Core.Rendering.SubPasses
 
         public void Initilize()
         {
-            var vertShader = VkShaderModule.Create(_context, "Shaders/deferred_lighting.vert.spv", ShaderStageFlags.VertexBit);
-            var fragShader = VkShaderModule.Create(_context, "Shaders/deferred_lighting.frag.spv", ShaderStageFlags.FragmentBit);
+            var shaderManager = IoC.Container.GetInstance<IShaderManager>();
+            var vertShader = VkShaderModule.Create(_context, shaderManager.GetShader("deferred_lighting.vert"), ShaderStageFlags.VertexBit);
+            var fragShader = VkShaderModule.Create(_context, shaderManager.GetShader("deferred_lighting.frag"), ShaderStageFlags.FragmentBit);
 
             var pipelineLayout = VkPipelineLayout.Create(_context, vertShader, fragShader);
 
@@ -86,30 +87,30 @@ namespace RockEngine.Core.Rendering.SubPasses
             _lightingPipeline = _pipelineManager.Create(pipelineBuilder)!;
         }
 
-        public  Task Execute(VkCommandBuffer cmd, params object[] args)
+        public void Execute(VkCommandBuffer cmd, params object[] args)
         {
-            uint frameIndex = (uint)args[0];
-            var camera = args[1] as Camera ?? throw new ArgumentNullException(nameof(Camera));
-
-            cmd.SetViewport(camera.RenderTarget.Viewport);
-            cmd.SetScissor(camera.RenderTarget.Scissor);
-            camera.RenderTarget.GBuffer.Material.Bind(_lightManager.GetCurrentLightBufferBinding());
-
-            if(_iblBinding != null)
+            using (PerformanceTracer.BeginSection(nameof(LightingPass)))
             {
-                camera.RenderTarget.GBuffer.Material.Bind(_iblBinding);
+                uint frameIndex = (uint)args[0];
+                var camera = args[1] as Camera ?? throw new ArgumentNullException(nameof(Camera));
+
+                cmd.SetViewport(camera.RenderTarget.Viewport);
+                cmd.SetScissor(camera.RenderTarget.Scissor);
+                camera.RenderTarget.GBuffer.Material.Bind(_lightManager.GetCurrentLightBufferBinding());
+
+                if (_iblBinding != null)
+                {
+                    camera.RenderTarget.GBuffer.Material.Bind(_iblBinding);
+                }
+                //camera.RenderTarget.GBuffer.Material.Bind(_binding);
+                cmd.BindPipeline(_lightingPipeline, PipelineBindPoint.Graphics);
+
+                camera.RenderTarget.GBuffer.Material.CmdPushConstants(cmd);
+
+                _bindingManager.BindResourcesForMaterial(frameIndex, camera.RenderTarget.GBuffer.Material, cmd);
+                cmd.Draw(3, 1, 0, 0);
             }
-            //camera.RenderTarget.GBuffer.Material.Bind(_binding);
-            cmd.BindPipeline(_lightingPipeline, PipelineBindPoint.Graphics);
-            
-            camera.RenderTarget.GBuffer.Material.CmdPushConstants(cmd);
-
-            _bindingManager.BindResourcesForMaterial(frameIndex,camera.RenderTarget.GBuffer.Material, cmd);
-            cmd.Draw(3, 1, 0, 0);
-            return Task.CompletedTask;
         }
-
-
 
         internal void SetIBLTextures(Texture irradiance, Texture prefilter, Texture brdfLUT)
         {

@@ -50,5 +50,10 @@ namespace RockEngine.Core.Internal
 
         public IEnumerator<ResourceBinding> GetEnumerator() => _bindings.Values.GetEnumerator();
         IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+
+        internal void Clear()
+        {
+            _bindings.Clear();  
+        }
     }
 }

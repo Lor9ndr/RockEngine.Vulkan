@@ -27,7 +27,6 @@ namespace RockEngine.Core.DI
 
             // Singleton services
             container.RegisterSingleton<AssimpLoader>();
-            container.RegisterSingleton<PerformanceTracer>();
 
             // Window-dependent registrations (factory pattern)
             container.Register<VulkanContext>(Lifestyle.Scoped);
@@ -35,13 +34,14 @@ namespace RockEngine.Core.DI
             container.Register<PipelineManager>(Lifestyle.Scoped);
             container.Register<Renderer>(Lifestyle.Scoped);
             container.Register<InputManager>(Lifestyle.Scoped);
-            IoC.Container.RegisterInitializer<LayerStack>(async s =>
+            container.Register<IShaderManager, ShaderManager>(Lifestyle.Scoped);
+            /*IoC.Container.RegisterInitializer<LayerStack>(async s =>
             {
                 foreach (var item in IoC.Container.GetInstance<IEnumerable<ILayer>>())
                 {
                     await s.PushLayer(item);
                 }
-            });
+            });*/
             IoC.Container.RegisterInitializer<InputManager>(s =>
             {
                 var inputContext = IoC.Container.GetInstance<IInputContext>();

@@ -1,6 +1,7 @@
 ﻿using RockEngine.Editor;
+using RockEngine.Vulkan;
 
 EditorApplication editor = new EditorApplication();
-await editor.Run();
+editor.Run();
 
 

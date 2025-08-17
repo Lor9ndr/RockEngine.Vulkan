@@ -7,7 +7,6 @@ namespace RockEngine.Vulkan
 {
     public class VkQueue : VkObject<Queue>
     {
-        internal readonly Mutex _queueLock = new Mutex();
         private readonly VulkanContext _context;
         public uint FamilyIndex { get; private set; }
 
@@ -47,8 +46,33 @@ namespace RockEngine.Vulkan
                 }
             }
         }
+        public unsafe void Submit(VkCommandBuffer commandBuffer, ReadOnlySpan<Semaphore> singaleSemaphores, ReadOnlySpan<Semaphore> waitSemaphores, ReadOnlySpan<PipelineStageFlags> stageFlags, VkFence? fence = null)
+        {
+            var nativeCmd = commandBuffer.VkObjectNative;
+            fixed (Semaphore* vkSemaphores = singaleSemaphores)
+            {
+                fixed (PipelineStageFlags* pstageflags = stageFlags)
+                {
+                    fixed (Semaphore* pWaitSemaphores = waitSemaphores)
+                    {
+                        SubmitInfo si = new SubmitInfo()
+                        {
+                            SType = StructureType.SubmitInfo,
+                            CommandBufferCount = 1,
+                            PCommandBuffers = &nativeCmd,
+                            PSignalSemaphores = vkSemaphores,
+                            SignalSemaphoreCount = (uint)singaleSemaphores.Length,
+                            PWaitDstStageMask = pstageflags,
+                            PWaitSemaphores = pWaitSemaphores,
+                            WaitSemaphoreCount = (uint)waitSemaphores.Length
+                        };
+                        SubmitUnsafe(in si, fence);
+                    }
+                }
+            }
+        }
 
-            public unsafe void Submit(Span<CommandBuffer> commandBuffers, Span<Semaphore> singaleSemaphores, Span<Semaphore> waitSemaphores, PipelineStageFlags[] stageFlags, VkFence? fence = null)
+        public unsafe void Submit(Span<CommandBuffer> commandBuffers, Span<Semaphore> singaleSemaphores, Span<Semaphore> waitSemaphores, PipelineStageFlags[] stageFlags, VkFence? fence)
         {
             fixed (CommandBuffer* pCommandbuffers = commandBuffers)
             fixed (Semaphore* vkSemaphores = singaleSemaphores)
@@ -69,7 +93,7 @@ namespace RockEngine.Vulkan
                 SubmitUnsafe(in si, fence);
             }
         }
-        public unsafe void Submit(VkCommandBuffer commandBuffer, VkFence? fence = null)
+        public unsafe void Submit(VkCommandBuffer commandBuffer, VkFence fence)
         {
             var nativeCmd = commandBuffer.VkObjectNative;
             var submitInfo = new SubmitInfo
@@ -80,7 +104,7 @@ namespace RockEngine.Vulkan
             };
             SubmitUnsafe(in submitInfo, fence);
         }
-        public unsafe void Submit(VkFence? fence, params CommandBuffer[] commandBuffers)
+        public unsafe void Submit(VkFence fence, params CommandBuffer[] commandBuffers)
         {
             fixed (CommandBuffer* nativeCmd = commandBuffers.ToArray())
             {
@@ -95,24 +119,15 @@ namespace RockEngine.Vulkan
 
         }
 
-        internal void SubmitUnsafe(in SubmitInfo submitInfo, VkFence? fence)
+        internal void SubmitUnsafe(in SubmitInfo submitInfo, VkFence? fence = null)
         {
-            _queueLock.WaitOne();
-            try
-            {
-                fence ??= VkFence.CreateNotSignaled(_context);
-
-                VulkanContext.Vk.QueueSubmit(
-                    this,
-                    1,
-                    in submitInfo,
-                    fence.VkObjectNative
-                ).VkAssertResult("Failed to submit to queue");
-            }
-            finally
-            {
-                _queueLock.ReleaseMutex();
-            }
+            VulkanContext.Vk.QueueSubmit(
+            this,
+            1,
+            in submitInfo,
+            fence ?? default(Fence)
+             ).VkAssertResult("Failed to submit to queue");
+           
         }
 
         public void WaitIdle()

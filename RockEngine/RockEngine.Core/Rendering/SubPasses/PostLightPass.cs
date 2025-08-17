@@ -1,7 +1,6 @@
 ﻿using RockEngine.Core.Builders;
 using RockEngine.Core.ECS.Components;
 using RockEngine.Core.Rendering.Managers;
-using RockEngine.Core.Rendering.Passes;
 using RockEngine.Vulkan;
 
 using Silk.NET.Vulkan;
@@ -36,59 +35,95 @@ namespace RockEngine.Core.Rendering.SubPasses
         }
 
 
-        public Task Execute(VkCommandBuffer cmd, params object[] args)
+        public void Execute(VkCommandBuffer cmd, params object[] args)
         {
-            uint frameIndex = (uint)args[0];
-            var camera = args[1] as Camera ?? throw new ArgumentNullException(nameof(Camera));
-            var camIndex = (int)args[2];
-            cmd.SetViewport(camera.RenderTarget.Viewport);
-            cmd.SetScissor(camera.RenderTarget.Scissor);
-            var pipeline = default(VkPipeline);
-            foreach (var drawGroup in _indirectCommands.GetDrawGroups(RenderLayerType.Solid))
+            using (PerformanceTracer.BeginSection(nameof(PostLightPass)))
             {
-                if (drawGroup.Pipeline.SubPass != Order)
-                {
-                    continue;
-                }
-                if(drawGroup.Pipeline != pipeline)
-                {
-                    cmd.BindPipeline(drawGroup.Pipeline, PipelineBindPoint.Graphics);
-                    pipeline = drawGroup.Pipeline;
-                    var matrixBinding = _transformManager.GetCurrentBinding(frameIndex);
+                uint frameIndex = (uint)args[0];
+                var camera = args[1] as Camera ?? throw new ArgumentNullException(nameof(Camera));
+                var camIndex = (int)args[2];
 
-                    _bindingManager.BindResource(frameIndex, _globalUbo.GetBinding((uint)camIndex), cmd, drawGroup.Pipeline.Layout);
-                    _bindingManager.BindResource(frameIndex, matrixBinding, cmd, drawGroup.Pipeline.Layout);
-                }
+                cmd.SetViewport(camera.RenderTarget.Viewport);
+                cmd.SetScissor(camera.RenderTarget.Scissor);
 
-                _bindingManager.BindResourcesForMaterial(frameIndex,drawGroup.Mesh.Material, cmd);
+                var matrixBinding = _transformManager.GetCurrentBinding(frameIndex);
+                var globalUboBinding = _globalUbo.GetBinding((uint)camIndex);
 
-                drawGroup.Mesh.Material.CmdPushConstants(cmd);
+                // Get draw groups as span
+                var drawGroupsSpan = CollectionsMarshal.AsSpan(_indirectCommands.GetDrawGroups(RenderLayerType.Solid, Order));
 
-                drawGroup.Mesh.VertexBuffer.BindVertexBuffer(cmd);
-                drawGroup.Mesh.IndexBuffer.BindIndexBuffer(cmd, 0, IndexType.Uint32);
-                if (GetMultiDrawIndirectFeature())
+                // Cache last bound states
+                VkPipeline? lastPipeline = default;
+                Material? lastMaterial = default;
+                MeshRenderer? lastMesh = default;
+                bool multiDraw = GetMultiDrawIndirectFeature();
+                unsafe
                 {
-                    VulkanContext.Vk.CmdDrawIndexedIndirect(
-                        cmd,
-                        _indirectCommands.IndirectBuffer.Buffer,
-                        drawGroup.ByteOffset,
-                        drawGroup.Count,
-                        (uint)Marshal.SizeOf<DrawIndexedIndirectCommand>());
-                }
-                else
-                {
-                    for (uint i = 0; i < drawGroup.Count; i++)
+                    // Stackalloc for dynamic offsets
+                    uint* dynamicOffsets = stackalloc uint[2];
+                    dynamicOffsets[0] = 0;
+                    dynamicOffsets[1] = 0;
+
+                    for (int i = 0; i < drawGroupsSpan.Length; i++)
                     {
-                        VulkanContext.Vk.CmdDrawIndexedIndirect(
-                            cmd,
-                            _indirectCommands.IndirectBuffer.Buffer,
-                            drawGroup.ByteOffset + (ulong)(i * Marshal.SizeOf<DrawIndexedIndirectCommand>()),
-                            1,
-                            (uint)Marshal.SizeOf<DrawIndexedIndirectCommand>());
+                        ref readonly var drawGroup = ref drawGroupsSpan[i];
+
+                        if (lastPipeline != drawGroup.Pipeline)
+                        {
+                            cmd.BindPipeline(drawGroup.Pipeline, PipelineBindPoint.Graphics);
+                            lastPipeline = drawGroup.Pipeline;
+
+                            _bindingManager.BindResource(frameIndex, globalUboBinding, cmd, drawGroup.Pipeline.Layout);
+                            _bindingManager.BindResource(frameIndex, matrixBinding, cmd, drawGroup.Pipeline.Layout);
+                        }
+
+                        if (lastMaterial != drawGroup.Material)
+                        {
+                            _bindingManager.BindResourcesForMaterial(
+                                frameIndex,
+                                drawGroup.Material,
+                                cmd,
+                                false,
+                                [matrixBinding.SetLocation, globalUboBinding.SetLocation]
+                            );
+                            lastMaterial = drawGroup.Material;
+                        }
+
+                        lastMaterial?.CmdPushConstants(cmd);
+
+                        if (lastMesh != drawGroup.Mesh)
+                        {
+                            drawGroup.Mesh.Mesh.VertexBuffer.BindVertexBuffer(cmd);
+                            drawGroup.Mesh.Mesh.IndexBuffer.BindIndexBuffer(cmd, 0, IndexType.Uint32);
+                            lastMesh = drawGroup.Mesh;
+                        }
+
+                        if (multiDraw)
+                        {
+                            VulkanContext.Vk.CmdDrawIndexedIndirect(
+                                cmd,
+                                _indirectCommands.IndirectBuffer.Buffer,
+                                drawGroup.ByteOffset,
+                                drawGroup.Count,
+                                (uint)Marshal.SizeOf<DrawIndexedIndirectCommand>());
+                        }
+                        else
+                        {
+                            int stride = Marshal.SizeOf<DrawIndexedIndirectCommand>();
+                            for (uint j = 0; j < drawGroup.Count; j++)
+                            {
+                                VulkanContext.Vk.CmdDrawIndexedIndirect(
+                                    cmd,
+                                    _indirectCommands.IndirectBuffer.Buffer,
+                                    drawGroup.ByteOffset + (ulong)(j * stride),
+                                    1,
+                                    (uint)stride);
+                            }
+                        }
                     }
                 }
+               
             }
-            return Task.CompletedTask;
         }
 
 
