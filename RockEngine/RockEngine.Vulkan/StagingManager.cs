@@ -25,7 +25,7 @@ namespace RockEngine.Vulkan
 
         public VkBuffer StagingBuffer => _stagingBuffer;
 
-        public StagingManager(VulkanContext context, SubmitContext submitContext, ulong initialSize = 1024 * 1024)
+        public StagingManager(VulkanContext context, SubmitContext submitContext, ulong initialSize =  1024 * 1024)
         {
             _context = context;
             _submitContext = submitContext;

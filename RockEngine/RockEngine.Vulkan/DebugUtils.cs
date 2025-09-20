@@ -9,20 +9,22 @@ namespace RockEngine.Vulkan
     {
         private readonly Vk _vk;
         private readonly Device _device;
+        private readonly AppSettings _settings;
 
         // Объявляем делегаты для функций расширения
         internal delegate void vkCmdBeginDebugUtilsLabelEXTDelegate(CommandBuffer commandBuffer, DebugUtilsLabelEXT* pLabelInfo);
         internal delegate void vkCmdEndDebugUtilsLabelEXTDelegate(CommandBuffer commandBuffer);
         internal delegate Result vkSetDebugUtilsObjectNameEXTDelegate(Device device, DebugUtilsObjectNameInfoEXT* pNameInfo);
 
-        internal vkCmdBeginDebugUtilsLabelEXTDelegate _cmdBeginDebugUtilsLabel;
-        internal vkCmdEndDebugUtilsLabelEXTDelegate _cmdEndDebugUtilsLabel;
-        internal vkSetDebugUtilsObjectNameEXTDelegate _setDebugUtilsObjectName;
+        private vkCmdBeginDebugUtilsLabelEXTDelegate? _cmdBeginDebugUtilsLabel;
+        private vkCmdEndDebugUtilsLabelEXTDelegate? _cmdEndDebugUtilsLabel;
+        private vkSetDebugUtilsObjectNameEXTDelegate? _setDebugUtilsObjectName;
 
-        public DebugUtilsFunctions(Vk vk, Device device)
+        public DebugUtilsFunctions(Vk vk, Device device, AppSettings settings)
         {
             _vk = vk;
             _device = device;
+            _settings = settings;
             LoadFunctions();
         }
 
@@ -33,7 +35,7 @@ namespace RockEngine.Vulkan
             _setDebugUtilsObjectName = GetProcDelegate<vkSetDebugUtilsObjectNameEXTDelegate>("vkSetDebugUtilsObjectNameEXT");
         }
 
-        private T GetProcDelegate<T>(string name) where T : Delegate
+        private T? GetProcDelegate<T>(string name) where T : Delegate
         {
             var ptr = _vk.GetDeviceProcAddr(_device, name);
             return ptr != nint.Zero ? Marshal.GetDelegateForFunctionPointer<T>(ptr) : null;

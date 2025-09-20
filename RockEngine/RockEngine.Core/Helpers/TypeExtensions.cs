@@ -18,12 +18,21 @@ namespace RockEngine.Core.Helpers
         {
             return format switch
             {
-                Format.R8G8B8A8Unorm => 4,
-                Format.B8G8R8A8Unorm => 4,
-                Format.R8G8B8A8Srgb => 4,
                 Format.R8Unorm => 1,
+                Format.R8G8Unorm => 2,
+                Format.R8G8B8Unorm => 3,
+                Format.R8G8B8A8Unorm => 4,
+                Format.R16G16B16A16Sfloat => 8,
                 Format.R32G32B32A32Sfloat => 16,
-                _ => throw new NotSupportedException($"Unsupported format: {format}")
+                Format.BC1RgbUnormBlock => 8, // Block compressed formats have different sizing
+                Format.BC1RgbaUnormBlock => 8,
+                Format.BC2UnormBlock => 16,
+                Format.BC3UnormBlock => 16,
+                Format.BC4UnormBlock => 8,
+                Format.BC5UnormBlock => 16,
+                Format.BC6HUfloatBlock => 16,
+                Format.BC7UnormBlock => 16,
+                _ => 4 // Default to 4 bytes per pixel
             };
         }
     }

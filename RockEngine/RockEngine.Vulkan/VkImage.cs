@@ -144,7 +144,7 @@ namespace RockEngine.Vulkan
             {
                 targetLayout = ImageLayout.ColorAttachmentOptimal ;
             }
-            var batch = _context.SubmitContext.CreateBatch();
+            var batch = _context.GraphicsSubmitContext.CreateBatch();
             batch.CommandBuffer.LabelObject("VKImage.TransitionToDefaultLayout cmd");
             SetMipLayout(0, ImageLayout.Undefined);
             TransitionImageLayout(batch.CommandBuffer, targetLayout, 0,1);
@@ -500,7 +500,7 @@ namespace RockEngine.Vulkan
         public ImageLayout GetMipLayout(uint mipLevel, uint layer = 0)
             => _layerMipLayouts[mipLevel, layer];
 
-        public void SetMipLayout(uint mipLevel, ImageLayout layout, uint layer = 0)
+        internal void SetMipLayout(uint mipLevel, ImageLayout layout, uint layer = 0)
             => _layerMipLayouts[mipLevel, layer] = layout;
 
 

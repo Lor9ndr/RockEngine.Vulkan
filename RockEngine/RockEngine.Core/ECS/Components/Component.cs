@@ -1,4 +1,5 @@
-﻿using RockEngine.Core.Rendering;
+﻿using RockEngine.Core.Attributes;
+using RockEngine.Core.Rendering;
 
 namespace RockEngine.Core.ECS.Components
 {
@@ -8,6 +9,7 @@ namespace RockEngine.Core.ECS.Components
         {
         }
 
+        [SerializeIgnore]
         public Entity Entity { get; private set; }
 
 

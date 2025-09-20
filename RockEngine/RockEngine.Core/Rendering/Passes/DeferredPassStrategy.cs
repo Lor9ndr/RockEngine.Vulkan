@@ -5,175 +5,143 @@ using RockEngine.Vulkan;
 
 using Silk.NET.Vulkan;
 
-using System.Collections.Concurrent;
-
 namespace RockEngine.Core.Rendering.Passes
 {
     public class DeferredPassStrategy : PassStrategyBase
     {
         private readonly GlobalUbo _globalUbo;
-        private readonly ThreadLocal<CommandBufferPool> _commandBufferPool;
-        private readonly ConcurrentBag<VkCommandBuffer[]>[] _frameBufferArrays;
 
         public LightingPass LightingPass => SubPasses.OfType<LightingPass>().First();
         public override int Order => int.MinValue;
 
         public DeferredPassStrategy(
-            VulkanContext context,
-            IEnumerable<IRenderSubPass> subpasses,
-            GlobalUbo globalUbo)
-            : base(context, subpasses)
+             VulkanContext context,
+             IEnumerable<IRenderSubPass> subpasses,
+             GlobalUbo globalUbo)
+             : base(context, subpasses)
         {
             _globalUbo = globalUbo;
-            _commandBufferPool = new ThreadLocal<CommandBufferPool>(()=>
-            {
-                return new CommandBufferPool(
-                context,
-                CommandPoolCreateFlags.TransientBit | CommandPoolCreateFlags.ResetCommandBufferBit,
-                context.Device.GraphicsQueue.FamilyIndex
-            );
-
-            });
-
-            // Create per-frame buffer arrays
-            _frameBufferArrays = new ConcurrentBag<VkCommandBuffer[]>[_context.MaxFramesPerFlight];
-            for (int i = 0; i < _context.MaxFramesPerFlight; i++)
-            {
-                _frameBufferArrays[i] = new ConcurrentBag<VkCommandBuffer[]>();
-            }
         }
 
-        public override void Execute(UploadBatch recorder, CameraManager cameraManager, Renderer renderer)
+        public override Task Execute(SubmitContext submitContext, CameraManager cameraManager, Renderer renderer)
         {
-            int frameIndex = (int)renderer.FrameIndex;
-            //var tasks = new Task[cameraManager.ActiveCameras.Count];
+            uint frameIndex = renderer.FrameIndex;
+            var tasks = new Task[cameraManager.ActiveCameras.Count];
 
             for (int i = 0; i < cameraManager.ActiveCameras.Count; i++)
             {
                 Camera camera = cameraManager.ActiveCameras[i];
-                ExecuteCameraPass(recorder, camera, renderer, i, frameIndex);
+
+                tasks[i] = ExecuteCameraPass(submitContext, camera, renderer, i, frameIndex);
             }
+            return Task.WhenAll(tasks);
         }
 
-        private void ExecuteCameraPass(
-           UploadBatch recorder,
-           Camera camera,
-           Renderer renderer,
-           int camIndex,
-           int frameIndex)
+
+        private Task ExecuteCameraPass(SubmitContext submitContext, Camera camera, Renderer renderer, int camIndex, uint frameIndex)
         {
-            using (PerformanceTracer.BeginSection($"Camera {camIndex}"))
+            using (PerformanceTracer.BeginSection($"Camera - {camera.Entity.Name}"))
             {
-                var cmd = recorder.CommandBuffer;
-                camera.RenderTarget.PrepareForRender(cmd);
-                BeginRenderPass(camera, renderer, cmd);
+                var primaryBatch = submitContext.CreateBatch();
+                var cmd = primaryBatch.CommandBuffer;
 
-                // Get or create secondary buffers for this frame
-                if (!_frameBufferArrays[frameIndex].TryTake(out VkCommandBuffer[] subpassBuffers))
+                //using (PerformanceTracer.BeginSection($"Camera - {camera.Entity.Name}", cmd, frameIndex))
                 {
-                    subpassBuffers = new VkCommandBuffer[_subPasses.Length];
-                }
 
-                // Create tasks for parallel recording
-                var tasks = new Task[_subPasses.Length];
-                for (int i = 0; i < _subPasses.Length; i++)
-                {
-                    int subpassIndex = i;
-                    tasks[i] = Task.Run(() =>
+                    camera.RenderTarget.PrepareForRender(cmd);
+                    BeginRenderPass(camera, renderer, cmd);
+
+                    // Precompute inheritance info
+                    var inheritanceInfos = new CommandBufferInheritanceInfo[_subPasses.Length];
+                    for (int i = 0; i < _subPasses.Length; i++)
                     {
-                        ref VkCommandBuffer buffer = ref subpassBuffers[subpassIndex];
-                        RecordSubpassCommand(subpassIndex, camera, renderer, camIndex, ref buffer);
-                    });
-                }
-
-                // Wait for all recordings to complete
-                Task.WaitAll(tasks);
-
-                // Execute secondary buffers
-                for (int i = 0; i < subpassBuffers.Length; i++)
-                {
-                    cmd.ExecuteSecondary(subpassBuffers[i]);
-                    if (i < subpassBuffers.Length - 1)
-                    {
-                        cmd.NextSubpass(SubpassContents.SecondaryCommandBuffers);
-                    }
-                }
-
-                cmd.EndRenderPass();
-                camera.RenderTarget.TransitionToRead(cmd);
-
-
-                // Return buffers to pool after frame completes
-                recorder.AddDependency(() =>
-                {
-                    foreach (VkCommandBuffer buffer in subpassBuffers)
-                    {
-                        if (buffer != null && !buffer.IsDisposed)
+                        inheritanceInfos[i] = new CommandBufferInheritanceInfo
                         {
-                            _commandBufferPool.Value.Return(buffer);
+                            SType = StructureType.CommandBufferInheritanceInfo,
+                            RenderPass = camera.RenderTarget.RenderPass,
+                            Subpass = (uint)i,
+                            Framebuffer = camera.RenderTarget.Framebuffers[frameIndex],
+                            OcclusionQueryEnable = false,
+                            QueryFlags = QueryControlFlags.None,
+                            PipelineStatistics = QueryPipelineStatisticFlags.None
+                        };
+                    }
+
+                    // Record subpasses in parallel
+                    var secondaryBatches = new UploadBatch[_subPasses.Length];
+                    var recordingTasks = new Task[_subPasses.Length];
+
+                    for (int i = 0; i < _subPasses.Length; i++)
+                    {
+                        int subpassIndex = i;
+                        recordingTasks[subpassIndex] = Task.Run(() =>
+                        {
+                            var secondaryBatch = submitContext.CreateBatch(new BatchCreationParams
+                            {
+                                Level = CommandBufferLevel.Secondary,
+                                InheritanceInfo = inheritanceInfos[subpassIndex],
+                            });
+                            secondaryBatches[subpassIndex] = secondaryBatch;
+
+                            // Only record if the batch is invalid or one-time submit
+                            RecordSubpassCommand(secondaryBatch, subpassIndex, camera, renderer, camIndex);
+                        });
+                    }
+
+                    // Wait for all recordings to complete
+                    Task.WaitAll(recordingTasks);
+
+                    // Execute secondary command buffers
+                    for (int i = 0; i < secondaryBatches.Length; i++)
+                    {
+                        primaryBatch.ExecuteCommands(secondaryBatches[i]);
+                        if (i < _subPasses.Length - 1)
+                        {
+                            cmd.NextSubpass(SubpassContents.SecondaryCommandBuffers);
                         }
                     }
-                    // Store the array for reuse
-                    _frameBufferArrays[frameIndex].Add(subpassBuffers);
-                });
+
+                    cmd.EndRenderPass();
+                    camera.RenderTarget.TransitionToRead(cmd);
+                }
+                primaryBatch.Submit();
+                return Task.CompletedTask;
             }
         }
 
         private void RecordSubpassCommand(
+            UploadBatch batch,
             int subpassIndex,
             Camera camera,
             Renderer renderer,
-            int camIndex,
-            ref VkCommandBuffer buffer)
+            int camIndex)
         {
-            // Get a buffer from the pool if needed
-            if (buffer == null || buffer.IsDisposed)
-            {
-                buffer = _commandBufferPool.Value.Get(CommandBufferLevel.Secondary);
-            }
+            var cmd = batch.CommandBuffer;
 
-            var inheritanceInfo = new CommandBufferInheritanceInfo
-            {
-                SType = StructureType.CommandBufferInheritanceInfo,
-                RenderPass = camera.RenderTarget.RenderPass,
-                Subpass = (uint)subpassIndex,
-                Framebuffer = camera.RenderTarget.Framebuffers[renderer.FrameIndex]
-            };
+            // Execute the subpass
+            _subPasses[subpassIndex].Execute(cmd, renderer.FrameIndex, camera, camIndex);
 
-            buffer.Reset(CommandBufferResetFlags.ReleaseResourcesBit);
-            buffer.Begin(CommandBufferUsageFlags.RenderPassContinueBit, in inheritanceInfo);
-
-            // Execute subpass synchronously
-            _subPasses[subpassIndex].Execute(buffer, renderer.FrameIndex, camera, camIndex);
-
-            buffer.End();
+            // End the batch after recording
+            batch.End();
         }
 
-        private static void BeginRenderPass(Camera camera, Renderer renderer, VkCommandBuffer cmd)
+        private unsafe static void BeginRenderPass(Camera camera, Renderer renderer, VkCommandBuffer cmd)
         {
-            unsafe
+
+            fixed (ClearValue* pClearValue = camera.RenderTarget.ClearValues)
             {
-                fixed (ClearValue* pClearValue = camera.RenderTarget.ClearValues)
+                var renderPassBeginInfo = new RenderPassBeginInfo
                 {
-                    var renderPassBeginInfo = new RenderPassBeginInfo
-                    {
-                        SType = StructureType.RenderPassBeginInfo,
-                        RenderPass = camera.RenderTarget.RenderPass,
-                        Framebuffer = camera.RenderTarget.Framebuffers[renderer.FrameIndex],
-                        RenderArea = camera.RenderTarget.Scissor,
-                        ClearValueCount = (uint)camera.RenderTarget.ClearValues.Length,
-                        PClearValues = pClearValue
-                    };
+                    SType = StructureType.RenderPassBeginInfo,
+                    RenderPass = camera.RenderTarget.RenderPass,
+                    Framebuffer = camera.RenderTarget.Framebuffers[renderer.FrameIndex],
+                    RenderArea = camera.RenderTarget.Scissor,
+                    ClearValueCount = (uint)camera.RenderTarget.ClearValues.Length,
+                    PClearValues = pClearValue
+                };
 
-                    cmd.BeginRenderPass(in renderPassBeginInfo, SubpassContents.SecondaryCommandBuffers);
-                }
+                cmd.BeginRenderPass(in renderPassBeginInfo, SubpassContents.SecondaryCommandBuffers);
             }
-        }
-
-        public override void Dispose()
-        {
-            _commandBufferPool.Dispose();
-            base.Dispose();
         }
     }
 }

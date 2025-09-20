@@ -7,6 +7,7 @@ using RockEngine.Core.Rendering.Managers;
 using RockEngine.Vulkan;
 
 using Silk.NET.Input;
+using Silk.NET.Vulkan;
 using Silk.NET.Windowing;
 
 using SimpleInjector;
@@ -24,11 +25,13 @@ namespace RockEngine.Core
         protected GraphicsEngine _graphicsEngine;
         protected IInputContext _inputContext;
         protected Renderer _renderer;
-        private IShaderManager _shaderManager;
         protected World _world;
         protected PipelineManager _pipelineManager;
         protected AssimpLoader _assimpLoader;
         protected readonly AppSettings _appSettings;
+
+        private IShaderManager _shaderManager;
+        private Task[] _renderTasks;
 
         private readonly Container _container;
         private readonly Scope _applicationScope;
@@ -36,8 +39,6 @@ namespace RockEngine.Core
         public CancellationTokenSource CancellationTokenSource { get; set; }
         protected CancellationToken CancellationToken => CancellationTokenSource.Token;
         private static readonly Logger _logger = LogManager.GetCurrentClassLogger();
-        private readonly SemaphoreSlim _renderingLock = new SemaphoreSlim(1, 1);
-        private readonly SemaphoreSlim _updateLock = new SemaphoreSlim(1, 1);
 
 
 
@@ -51,14 +52,6 @@ namespace RockEngine.Core
             _applicationScope = AsyncScopedLifestyle.BeginScope(IoC.Container);
 
             _appSettings = IoC.Container.GetInstance<AppSettings>();
-            AppDomain.CurrentDomain.UnhandledException += AppDomain_UnhandledException;
-        }
-
-        private void AppDomain_UnhandledException(object sender, UnhandledExceptionEventArgs e)
-        {
-            Console.WriteLine(sender);
-            Console.WriteLine(e.ExceptionObject);
-            Console.WriteLine(Environment.StackTrace);
         }
 
         public void Run()
@@ -68,129 +61,158 @@ namespace RockEngine.Core
             _window = IoC.Container.GetInstance<IWindow>();
             _window.Title = _appSettings.Name;
             _window.Size = _appSettings.LoadSize;
+            _window.IsEventDriven = false;
 
             // Resolve other dependencies
             _world = IoC.Container.GetInstance<World>();
             _assimpLoader = IoC.Container.GetInstance<AssimpLoader>();
-            _window.Load += () => OnWindowLoad().GetAwaiter().GetResult();
+            _window.Load += () =>
+            {
+                try
+                {
+                    OnWindowLoad().GetAwaiter().GetResult();
+                }
+                catch (Exception ex)
+                {
+                    _logger.Error(ex, "Failed to load window.");
+                    throw;
+                }
+            };
 
             _window.Run();
         }
 
         private async Task OnWindowLoad()
         {
-            try
+            Stopwatch loadWatch = Stopwatch.StartNew();
+            _inputContext = IoC.Container.GetInstance<IInputContext>();
+
+            // Resolve window-dependent components
+            _context = IoC.Container.GetInstance<VulkanContext>();
+            _graphicsEngine = IoC.Container.GetInstance<GraphicsEngine>();
+            _pipelineManager = IoC.Container.GetInstance<PipelineManager>();
+            _renderer = IoC.Container.GetInstance<Renderer>();
+            _shaderManager = IoC.Container.GetInstance<IShaderManager>();
+            _renderTasks = new Task[2];
+
+           
+
+
+            await _shaderManager.CompileAllShadersAsync();
+
+            PerformanceTracer.Initialize(_context);
+            await _renderer.InitializeAsync().ConfigureAwait(false);
+            await _world.Start(_renderer).ConfigureAwait(false);
+
+            _logger.Info($"Core systems initialized in: {loadWatch.ElapsedMilliseconds} ms");
+
+            _layerStack = IoC.Container.GetInstance<LayerStack>();
+
+           
+            await Load().ConfigureAwait(false);
+            _window.Update += (s) =>
             {
-                Stopwatch loadWatch = Stopwatch.StartNew();
-                _inputContext = IoC.Container.GetInstance<IInputContext>();
-
-                // Resolve window-dependent components
-                _context = IoC.Container.GetInstance<VulkanContext>();
-                _graphicsEngine = IoC.Container.GetInstance<GraphicsEngine>();
-                _pipelineManager = IoC.Container.GetInstance<PipelineManager>();
-                _renderer = IoC.Container.GetInstance<Renderer>();
-                _shaderManager = IoC.Container.GetInstance<IShaderManager>();
-
-                await _shaderManager.CompileAllShadersAsync();
-
-                PerformanceTracer.Initialize(_context);
-
-                _logger.Info($"Core systems initialized in: {loadWatch.ElapsedMilliseconds} ms");
-                await _renderer.InitializeAsync().ConfigureAwait(false);
-                await _world.Start(_renderer).ConfigureAwait(false);
-                _layerStack = IoC.Container.GetInstance<LayerStack>();
-
-                foreach (var item in IoC.Container.GetAllInstances<ILayer>())
+                try
                 {
-                    await _layerStack.PushLayer(item);
+                    Update(s).GetAwaiter().GetResult();
                 }
-                await Load().ConfigureAwait(false);
-
-
-                _window.Render += Render;
-                _window.Update += (s) =>
+                catch (Exception ex)
                 {
-                    using (PerformanceTracer.BeginSection("Update"))
-                    {
-                        Update(s).GetAwaiter().GetResult();
-                    }
-                    PerformanceTracer.ProcessQueries(_context, _graphicsEngine.FrameIndex);
-                };
+                    _logger.Error(ex, "Unhandled exception in Update. Closing application. :{0}, \n {1}", ex.Message, ex.StackTrace);
+                    throw;
+                }
+            };
 
-                loadWatch.Stop();
-                _logger.Info($"Application loaded in: {loadWatch.ElapsedMilliseconds} ms");
-            }
-            catch (Exception ex)
+            _window.Render += (s) =>
             {
-                _logger.Error(ex);
-            }
+                try
+                {
+                    Render(s).GetAwaiter().GetResult();
+                }
+                catch (Exception ex)
+                {
+                    _logger.Error(ex, "Unhandled exception in Render. Closing application.");
+                    throw;
+                }
+            };
+
+            loadWatch.Stop();
+            _logger.Info($"Application loaded in: {loadWatch.ElapsedMilliseconds} ms");
 
         }
 
 
-        protected virtual Task Load() => Task.CompletedTask;
-
+        protected virtual async Task Load()
+        {
+            foreach (var item in IoC.Container.GetAllInstances<ILayer>())
+            {
+                await _layerStack.PushLayer(item);
+            }
+        }
 
         protected virtual async Task Update(double deltaTime)
         {
-            try
+            using (PerformanceTracer.BeginSection("Update"))
             {
                 Time.Update(_window.Time, deltaTime);
                 _layerStack.Update();
-                await _world.Update(_renderer);
-                await _renderer.UpdateFrameData();
-            }
-            catch (Exception ex)
-            {
-                _logger.Error(ex);
-                throw;
+                await _world.Update(_renderer).ConfigureAwait(false);
+                await _renderer.UpdateFrameData().ConfigureAwait(false);
             }
         }
 
-        protected virtual void Render(double time)
+        protected virtual async Task Render(double time)
         {
-            try
+            PerformanceTracer.ProcessQueries(_context, _graphicsEngine.FrameIndex);
+            using (PerformanceTracer.BeginSection("Whole Render"))
             {
-                using (PerformanceTracer.BeginSection("Whole Render"))
+                if (_layerStack.Count == 0) return;
+
+                 var batch = _graphicsEngine.Begin();
+                if (batch is null) return;
+
+                PerformanceTracer.BeginFrame(batch.CommandBuffer, _renderer.FrameIndex);
+
+                using (PerformanceTracer.BeginSection("_layerStack.RenderImGui"))
                 {
-                    if (_layerStack.Count == 0) return;
-
-                    var batch = _graphicsEngine.Begin();
-                    if (batch is null) return;
-                   // var gpuPerfSec = PerformanceTracer.BeginSection("Whole GPU Render", batch.CommandBuffer, _graphicsEngine.FrameIndex);
-
-                    using (PerformanceTracer.BeginSection("_layerStack.RenderImGui"))
+                    using (PerformanceTracer.BeginSection("RenderImGui", batch.CommandBuffer, _renderer.FrameIndex))
                     {
                         _layerStack.RenderImGui(batch.CommandBuffer);
                     }
+                }
 
+                // Use Vulkan context for parallel rendering
+                _renderTasks[0] = Task.Run(() => {
                     using (PerformanceTracer.BeginSection("_layerStack.Render"))
                     {
-                        _layerStack.Render(batch.CommandBuffer);
+                        var renderBatch = _context.GraphicsSubmitContext.CreateBatch();
+                        using (PerformanceTracer.BeginSection("_layerStack.Render", renderBatch.CommandBuffer, _renderer.FrameIndex))
+                        {
+                            _layerStack.Render(renderBatch.CommandBuffer);
+                        }
+                        renderBatch.Submit();
                     }
+                });
 
-                    using (PerformanceTracer.BeginSection("_renderer.Render"))
+                _renderTasks[1] = Task.Run(()=>
+                {
+                    using (PerformanceTracer.BeginSection("_renderer.Render()"))
                     {
-                        _renderer.Render(batch);
+                        return _renderer.Render();
                     }
+                });
 
-                    using (PerformanceTracer.BeginSection("_graphicsEngine.end & Submit"))
-                    {
-                        //gpuPerfSec.Dispose();
-                        _graphicsEngine.SubmitAndPresent(batch);
-                    }
+                using (PerformanceTracer.BeginSection("_graphicsEngine.end & Submit"))
+                {
+                    await Task.WhenAll(_renderTasks).ConfigureAwait(false);
+                    _graphicsEngine.SubmitAndPresent(batch);
                 }
             }
-            catch (Exception ex)
-            {
-                _logger.Error(ex);
-                throw;
-            }
-
         }
 
         public Task PushLayer(ILayer layer) => _layerStack.PushLayer(layer);
         public void PopLayer(ILayer layer) => _layerStack.PopLayer(layer);
+
 
         public virtual void Dispose()
         {

@@ -16,6 +16,11 @@
     <Configurations>Debug;Release</Configurations>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
+  
+  <PropertyGroup>
+    <DefineConstants Condition="'$(OS)' == 'Windows_NT'">$(DefineConstants);WINDOWS</DefineConstants>
+  </PropertyGroup>
+
 
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
     <DefineConstants>$(DefineConstants);EDITOR</DefineConstants>
@@ -42,6 +47,8 @@
     <Content Remove="Resources\Fonts\fa-regular-400.ttf" />
     <Content Remove="Resources\Fonts\Font Awesome 6 Free-Regular-400.otf" />
     <Content Remove="Resources\Fonts\forkawesome-webfont.ttf" />
+    <Content Remove="Resources\Fonts\OpenSans-VariableFont_wdth,wght.ttf" />
+    <Content Remove="Resources\Fonts\Roboto-VariableFont_wdth,wght.ttf" />
   </ItemGroup>
   
   
@@ -52,10 +59,13 @@
   
   <ItemGroup>
     <EmbeddedResource Include="Resources\Fonts\forkawesome-webfont.ttf" />
+    <EmbeddedResource Include="Resources\Fonts\OpenSans-VariableFont_wdth,wght.ttf" />
+    <EmbeddedResource Include="Resources\Fonts\Roboto-VariableFont_wdth,wght.ttf" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="FontAwesome" Version="4.7.0" />
+    <PackageReference Include="ImGui.NET.Branches.Docking" Version="1.88.0" />
     <PackageReference Include="System.Net.Http" Version="4.3.4" />
     <PackageReference Include="System.Text.RegularExpressions" Version="4.3.1" />
   </ItemGroup>

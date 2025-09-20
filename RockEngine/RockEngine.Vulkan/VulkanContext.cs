@@ -21,9 +21,10 @@ namespace RockEngine.Vulkan
         public ISurfaceHandler Surface { get; }
         public int MaxFramesPerFlight { get; internal set; }
         public SamplerCache SamplerCache { get; }
-        public SubmitContext SubmitContext { get; }
-        public SubmitContext SubmitComputeContext { get; }
-        public SubmitContext SubmitRenderContext { get; }
+        public SubmitContext GraphicsSubmitContext { get; }
+        public SubmitContext ComputeSubmitContext { get; }
+        public SubmitContext TransferSubmitContext { get; }
+        public SubmitContext PresentSubmitContext { get; }
 
         public DebugUtilsFunctions DebugUtils => _debugUtilsFunctions;
 
@@ -51,16 +52,21 @@ namespace RockEngine.Vulkan
             Instance = CreateInstance(window, _settings);
             Surface = CreateSurface(window);
             Device = CreateDevice(Surface, Instance, this);
-            _debugUtilsFunctions = new DebugUtilsFunctions(Vk, Device);
+            _debugUtilsFunctions = new DebugUtilsFunctions(Vk, Device, _settings);
             
             Device.NameQueues();
 
             MaxFramesPerFlight = _settings.MaxFramesPerFlight;
             _renderingContext = this;
             SamplerCache = new SamplerCache(this);
-            SubmitContext = new SubmitContext(this, Device.GraphicsQueue);
-            SubmitComputeContext = new SubmitContext(this, Device.ComputeQueue);
-            SubmitRenderContext = new SubmitContext(this, Device.PresentQueue);
+
+            // Create SubmitContexts with thread managers
+            GraphicsSubmitContext =  new SubmitContext(this, Device.GraphicsQueue);
+
+            ComputeSubmitContext = new SubmitContext(this, Device.ComputeQueue);
+            TransferSubmitContext = new SubmitContext(this, Device.TransferQueue);
+            PresentSubmitContext = new SubmitContext(this, Device.PresentQueue);
+
             _settings = settings;
         }
 
@@ -107,7 +113,7 @@ namespace RockEngine.Vulkan
             if (appSettings.EnableValidationLayers)
             {
                 instanceBuilder.UseValidationLayers(_validationLayers)
-                    .UseDebugUtilsMessenger(DebugUtilsMessageSeverityFlagsEXT.WarningBitExt | DebugUtilsMessageSeverityFlagsEXT.ErrorBitExt | DebugUtilsMessageSeverityFlagsEXT.VerboseBitExt | DebugUtilsMessageSeverityFlagsEXT.InfoBitExt,
+                    .UseDebugUtilsMessenger(DebugUtilsMessageSeverityFlagsEXT.WarningBitExt | DebugUtilsMessageSeverityFlagsEXT.ErrorBitExt | DebugUtilsMessageSeverityFlagsEXT.InfoBitExt,
                                         DebugUtilsMessageTypeFlagsEXT.GeneralBitExt | DebugUtilsMessageTypeFlagsEXT.PerformanceBitExt | DebugUtilsMessageTypeFlagsEXT.ValidationBitExt,
                                         dbcallback, (void*)nint.Zero);
             }
@@ -117,40 +123,40 @@ namespace RockEngine.Vulkan
             Marshal.FreeHGlobal((nint)appname);
             return instance;
         }
-        private static unsafe uint DebugUtilsMessengerCallbackFunctionEXT(DebugUtilsMessageSeverityFlagsEXT messageSeverity, DebugUtilsMessageTypeFlagsEXT messageTypes, DebugUtilsMessengerCallbackDataEXT* pCallbackData, void* pUserData)
+        private static unsafe uint DebugUtilsMessengerCallbackFunctionEXT(
+       DebugUtilsMessageSeverityFlagsEXT messageSeverity,
+       DebugUtilsMessageTypeFlagsEXT messageTypes,
+       DebugUtilsMessengerCallbackDataEXT* pCallbackData,
+       void* pUserData)
         {
             var message = Marshal.PtrToStringUTF8((nint)pCallbackData->PMessage);
             var logLevel = LogLevel.Trace;
-            // Change console color based on severity
+
             switch (messageSeverity)
             {
                 case DebugUtilsMessageSeverityFlagsEXT.ErrorBitExt:
                     logLevel = LogLevel.Error;
-                    break;
+                    _logger.Log(logLevel, $"{message}\n{Environment.StackTrace}");
+                    throw new VulkanException(messageSeverity, message);
+
                 case DebugUtilsMessageSeverityFlagsEXT.WarningBitExt:
                     logLevel = LogLevel.Warn;
+                    _logger.Log(logLevel, message);
                     break;
+
                 case DebugUtilsMessageSeverityFlagsEXT.InfoBitExt:
                     logLevel = LogLevel.Info;
+                    _logger.Log(logLevel, message);
                     break;
+
                 case DebugUtilsMessageSeverityFlagsEXT.VerboseBitExt:
+                    // Optionally skip verbose messages entirely
                     logLevel = LogLevel.Trace;
-                    break;
-                default:
+                    _logger.Log(logLevel, message);
                     break;
             }
 
-            _logger.Log(logLevel, $"{message}\n{Environment.StackTrace}");
-
-            // Reset console color to default
-
-            // Throw an exception if severity is ErrorBitEXT
-            if (messageSeverity == DebugUtilsMessageSeverityFlagsEXT.ErrorBitExt)
-            {
-               throw new VulkanException(messageSeverity, message);
-            }
-
-            return new Bool32(false);
+            return Vk.False;
         }
 
 

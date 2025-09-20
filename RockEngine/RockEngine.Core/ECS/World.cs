@@ -1,5 +1,4 @@
-﻿using RockEngine.Core.Assets.AssetData;
-using RockEngine.Core.ECS.Components;
+﻿using RockEngine.Core.ECS.Components;
 using RockEngine.Core.Rendering;
 
 using System.Collections.Concurrent;
@@ -15,7 +14,7 @@ namespace RockEngine.Core.ECS
         private enum WorldState { NotStarted, Starting, Started }
         private WorldState _state = WorldState.NotStarted;
         private readonly ConcurrentQueue<IComponent> _pendingStartComponents = new();
-        private readonly object _stateLock = new();
+        private readonly Lock _stateLock = new();
 
         internal static World GetCurrent()
         {
@@ -34,10 +33,15 @@ namespace RockEngine.Core.ECS
             }
         }
 
-        public Entity CreateEntity()
+        public Entity CreateEntity(string? name = null)
         {
             var entity = new Entity();
             _entities.Add(entity);
+            if (!string.IsNullOrEmpty(name))
+            {
+                entity.Name = name;
+            }
+            
             return entity;
         }
      
@@ -49,7 +53,7 @@ namespace RockEngine.Core.ECS
 
         public ValueEnumerable<ZLinq.Linq.FromList<Entity>, Entity> GetEntities()
         {
-            return  _entities.AsValueEnumerable();
+            return _entities.AsValueEnumerable();
         }
         public ValueEnumerable<ZLinq.Linq.ListWhere<Entity>, Entity> GetEntitiesWithComponent<T>() where T : IComponent
         {
@@ -73,6 +77,10 @@ namespace RockEngine.Core.ECS
             lock (_stateLock) _state = WorldState.Started;
             await ProcessPendingStarts(renderer);
         }
+        internal void AddEntity(Entity entity)
+        {
+            _entities.Add(entity);
+        }
 
         private async ValueTask ProcessEntityComponents(Entity entity, Renderer renderer)
         {
@@ -94,7 +102,7 @@ namespace RockEngine.Core.ECS
         {
             lock (_stateLock)
             {
-                if (_state == WorldState.Started)
+                if (_state == WorldState.Started && !_pendingStartComponents.Contains(component))
                 {
                     _pendingStartComponents.Enqueue(component);
                 }
@@ -118,6 +126,5 @@ namespace RockEngine.Core.ECS
                 item.Destroy();
             }
         }
-
     }
 }

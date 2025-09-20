@@ -51,12 +51,5 @@ namespace RockEngine.Core.Rendering.ResourceBindings
 
             VulkanContext.Vk.UpdateDescriptorSets(renderingContext.Device, 1, in writeDescriptorSet, 0, null);
         }
-        public override int GetResourceHash()
-        {
-            HashCode hash = new HashCode();
-            hash.Add(base.GetResourceHash());
-            hash.Add(Buffer.GetHashCode());
-            return hash.ToHashCode();
-        }
     }
 }

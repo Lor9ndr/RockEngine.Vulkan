@@ -95,7 +95,10 @@ namespace RockEngine.Vulkan.Builders
                 instanceWrapper.DebugMessenger = messenger;
             }
 
-            Marshal.FreeHGlobal((nint)instanceInfo.PpEnabledExtensionNames);
+           /* if(instanceInfo.EnabledExtensionCount > 0)
+            {
+                Marshal.FreeHGlobal((nint)instanceInfo.PpEnabledExtensionNames);
+            }*/
 
             return instanceWrapper;
         }

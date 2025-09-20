@@ -3,6 +3,7 @@
 using RockEngine.Core;
 using RockEngine.Core.DI;
 using RockEngine.Editor.EditorUI.Logging;
+using RockEngine.Editor.Layers;
 
 namespace RockEngine.Editor
 {
@@ -16,5 +17,13 @@ namespace RockEngine.Editor
             config.AddRuleForAllLevels(consoleTarget);
             LogManager.Configuration = config;
         }
+        protected override async Task Load()
+        {
+            var projectLayer = IoC.Container.GetInstance<ProjectSelectionLayer>();
+            var imGuiLayer = IoC.Container.GetInstance<ImGuiLayer>();
+            await _layerStack.PushLayer(imGuiLayer).ConfigureAwait(false);
+            await _layerStack.PushLayer(projectLayer).ConfigureAwait(false);
+        }
+        
     }
 }

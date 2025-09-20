@@ -10,7 +10,7 @@ namespace RockEngine.Core.Rendering.Passes
         int Order { get; }
         EngineRenderPass BuildRenderPass(GraphicsEngine graphicsEngine);
         void InitializeSubPasses();
-        void Execute(UploadBatch batch, CameraManager cameraManager, Renderer renderer);
+        Task Execute(SubmitContext submitContext,CameraManager cameraManager, Renderer renderer);
         ValueTask Update();
     }
 }

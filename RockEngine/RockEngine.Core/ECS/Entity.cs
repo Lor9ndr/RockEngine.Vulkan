@@ -1,4 +1,5 @@
-﻿using RockEngine.Core.ECS.Components;
+﻿using RockEngine.Core.DI;
+using RockEngine.Core.ECS.Components;
 using RockEngine.Core.Rendering;
 
 namespace RockEngine.Core.ECS
@@ -29,14 +30,25 @@ namespace RockEngine.Core.ECS
             Name = $"Entity_{ID}";
         }
 
-        public T AddComponent<T>() where T : Component, new()
+        public T AddComponent<T>() where T : Component
         {
-            var component = new T();
+            if (typeof(T) == typeof(Transform) && Transform is not null)
+                return (Transform as T)!;
+
+            var component = IoC.Container.GetInstance<T>();
+            AddComponent(component);
+
+            return component;
+        }
+
+        internal void AddComponent(IComponent component)
+        {
+            if (component is Transform && Transform is not null)
+                return;
+
             component.SetEntity(this);
             _components.Add(component);
-
             World.GetCurrent()?.EnqueueForStart(component);
-            return component;
         }
 
         public bool RemoveComponent<T>(T component) where T : IComponent
@@ -57,10 +69,7 @@ namespace RockEngine.Core.ECS
         public void AddChild(Entity child)
         {
             if (child.Parent == this) return;
-            if (child.Parent != null)
-            {
-                child.Parent.RemoveChild(child);
-            }
+            child.Parent?.RemoveChild(child);
             child.Parent = this;
             _children.Add(child);
             child.Transform.SetParent(this.Transform);

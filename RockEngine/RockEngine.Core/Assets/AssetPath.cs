@@ -44,12 +44,12 @@
             }
         }
 
-        public string FullPath => $"{Folder}\\{Name}{Extension}";
-        public string RelativePath => $"{Folder}\\{Name}";
+        public readonly string FullPath => $"{Folder}\\{Name}{Extension}";
+        public readonly string RelativePath => $"{Folder}\\{Name}";
 
         public static AssetPath Empty => new AssetPath();
 
-        public bool Equals(AssetPath other) =>
+        public readonly bool Equals(AssetPath other) =>
             Folder == other.Folder &&
             Name == other.Name &&
             Extension == other.Extension;
@@ -57,10 +57,10 @@
         public override bool Equals(object obj) =>
             obj is AssetPath other && Equals(other);
 
-        public override int GetHashCode() =>
+        public override readonly int GetHashCode() =>
             HashCode.Combine(Folder, Name, Extension);
 
-        public override string ToString() => FullPath;
+        public override readonly string ToString() => FullPath;
 
         public static bool operator ==(AssetPath left, AssetPath right) =>
             left.Equals(right);

@@ -1,15 +1,20 @@
 ﻿using RockEngine.Core.DI;
 
+using System.Text.Json.Serialization;
+
 namespace RockEngine.Core.Assets
 {
     public sealed class ModelAsset : Asset<ModelData>
     {
         public override string Type => "Model";
+
+        [JsonIgnore]
         public List<ModelPart> Parts { get; } = new List<ModelPart>();
 
 
         public void AddPart(ModelPart part)
         {
+            Data ??= new ModelData();
             Data.Parts.Add(new ModelPartData
             {
                 MeshAssetID = part.Mesh.ID,
@@ -25,7 +30,7 @@ namespace RockEngine.Core.Assets
             {
                 Parts.Clear();
 
-                var assetManager = IoC.Container.GetInstance<IAssetStorage>();
+                var assetManager = IoC.Container.GetInstance<AssetManager>();
                 foreach (var partData in modelData.Parts)
                 {
                     var mesh = assetManager.GetAsset<MeshAsset>(partData.MeshAssetID);

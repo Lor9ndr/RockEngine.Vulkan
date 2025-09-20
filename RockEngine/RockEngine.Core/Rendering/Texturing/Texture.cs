@@ -18,23 +18,11 @@ namespace RockEngine.Core.Rendering.Texturing
 
         // Vulkan image resources
         protected VkImage _image;
-        protected VkImageView _imageView;
         protected VkSampler _sampler;
 
         // Resource management flags
         private bool _disposed;
-        private static Texture? _emptyTexture;
         private uint _loadedMipLevels;
-
-        /// <summary>
-        /// Image view for texture sampling
-        /// </summary>
-        public VkImageView ImageView => _imageView;
-
-        /// <summary>
-        /// Texture sampler for filtering and addressing
-        /// </summary>
-        public VkSampler Sampler => _sampler;
 
         /// <summary>
         /// Vulkan image resource
@@ -52,14 +40,16 @@ namespace RockEngine.Core.Rendering.Texturing
         public uint TotalMipLevels => _image.MipLevels;
         public Guid ID { get; } = Guid.NewGuid();
         public string? SourcePath { get; }
+        public bool IsDisposed => _disposed;
+
+        public bool IsFullyLoaded => LoadedMipLevels >= TotalMipLevels;
 
         public event Action<Texture>? OnTextureUpdated;
 
-        protected Texture(VulkanContext context, VkImage image, VkImageView imageView, VkSampler sampler, string? sourcePath = null)
+        protected Texture(VulkanContext context, VkImage image, VkSampler sampler, string? sourcePath = null)
         {
             _context = context;
             _image = image;
-            _imageView = imageView;
             _sampler = sampler;
             SourcePath = sourcePath;
             LoadedMipLevels = 1;
@@ -93,26 +83,26 @@ namespace RockEngine.Core.Rendering.Texturing
                 layerCount: _image.ArrayLayers);
         }
 
-        protected static VkSampler CreateSampler(VulkanContext context, uint mipLevels)
+        public static VkSampler CreateSampler(VulkanContext context, uint mipLevels)
         {
             var samplerCreateInfo = new SamplerCreateInfo
             {
                 SType = StructureType.SamplerCreateInfo,
                 MagFilter = Filter.Linear,
-                MinFilter = Filter.Linear,
+                MinFilter = Filter.Linear, // Use linear for minification with mipmaps
+                MipmapMode = SamplerMipmapMode.Linear, // Linear interpolation between mip levels
                 AddressModeU = SamplerAddressMode.Repeat,
                 AddressModeV = SamplerAddressMode.Repeat,
                 AddressModeW = SamplerAddressMode.Repeat,
+                MipLodBias = 0.0f,
                 AnisotropyEnable = Vk.True,
-                MaxAnisotropy = 16,
-                BorderColor = BorderColor.IntOpaqueBlack,
-                UnnormalizedCoordinates = Vk.False,
+                MaxAnisotropy = context.Device.PhysicalDevice.Properties.Limits.MaxSamplerAnisotropy,
                 CompareEnable = Vk.False,
                 CompareOp = CompareOp.Always,
-                MipmapMode = SamplerMipmapMode.Linear,
-                MipLodBias = 0.0f,
                 MinLod = 0.0f,
-                MaxLod = mipLevels
+                MaxLod = mipLevels - 1, // Important: Set to actual available mip levels
+                BorderColor = BorderColor.IntOpaqueBlack,
+                UnnormalizedCoordinates = Vk.False
             };
 
             return context.SamplerCache.GetSampler(samplerCreateInfo);
@@ -146,7 +136,6 @@ namespace RockEngine.Core.Rendering.Texturing
         {
             if (!_disposed)
             {
-                _imageView?.Dispose();
                 _image?.Dispose();
                 _disposed = true;
             }

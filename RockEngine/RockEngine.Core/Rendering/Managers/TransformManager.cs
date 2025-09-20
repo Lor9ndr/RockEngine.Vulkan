@@ -95,7 +95,7 @@ namespace RockEngine.Core.Rendering.Managers
             }
 
             var buffer = _transformBuffers[currentFrameIndex];
-            var batch = _context.SubmitContext.CreateBatch();
+            var batch = _context.GraphicsSubmitContext.CreateBatch();
 
             // Барьер перед обновлением
             var preBarrier = new BufferMemoryBarrier

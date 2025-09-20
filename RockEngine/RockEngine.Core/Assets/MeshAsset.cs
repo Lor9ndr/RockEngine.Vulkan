@@ -1,35 +1,36 @@
-﻿
-using RockEngine.Core.Assets.AssetData;
+﻿using RockEngine.Core.Assets.AssetData;
+using RockEngine.Core.Attributes;
 using RockEngine.Core.DI;
 using RockEngine.Core.Rendering;
-using RockEngine.Vulkan;
-
-using Silk.NET.Vulkan;
-
-using System.Runtime.CompilerServices;
+using RockEngine.Core.Rendering.Buffers;
 
 namespace RockEngine.Core.Assets
 {
-
-    public sealed class MeshAsset : Asset<MeshData>, IGpuResource, IMeshProvider, IDisposable
+    public sealed class MeshAsset : Asset<MeshData>, IGpuResource, IMesh, IDisposable
     {
         public override string Type => "Mesh";
 
+        [SerializeIgnore]
         private Vertex[]? Vertices => Data?.Vertices;
+        [SerializeIgnore]
         private uint[]? Indices => Data?.Indices;
 
-        public bool GpuReady => VertexBuffer is not null;
+        [SerializeIgnore]
+        public bool GpuReady => _allocation is not null;
 
+        [SerializeIgnore]
         public bool HasIndices => IndicesCount > 0;
 
-        public uint? IndicesCount {get; private set;} 
+        [SerializeIgnore]
+        private GlobalGeometryBuffer.MeshAllocation? _allocation;
 
-        public uint VerticesCount {get; private set; }
+        [SerializeIgnore]
+        public uint? IndicesCount { get; private set; }
 
-        public VkBuffer? VertexBuffer { get; private set; }
-        public VkBuffer? IndexBuffer { get; private set; }
+        [SerializeIgnore]
+        public uint VerticesCount { get; private set; }
 
-        private readonly SemaphoreSlim _gpuLock = new SemaphoreSlim(1,1);
+        private readonly SemaphoreSlim _gpuLock = new SemaphoreSlim(1, 1);
         private bool _disposed;
 
 
@@ -45,111 +46,37 @@ namespace RockEngine.Core.Assets
         }
         public override void SetData(object data)
         {
-            if(data is MeshData meshData)
+            if (data is MeshData meshData)
             {
                 Data = meshData;
                 SetGeometry(Data.Vertices, Data.Indices);
             }
-
         }
-
 
         public async ValueTask LoadGpuResourcesAsync()
         {
             if (GpuReady) return;
 
-            if (!IsDataLoaded) await  LoadDataAsync().ConfigureAwait(true);
-            var renderer = IoC.Container.GetInstance<Renderer>();
-            var context = VulkanContext.GetCurrent();
+            if (!IsDataLoaded) await LoadDataAsync().ConfigureAwait(true);
             await _gpuLock.WaitAsync().ConfigureAwait(true);
             try
             {
                 if (GpuReady) return;
 
-                var batch = renderer.SubmitContext.CreateBatch();
+                // Get the global geometry buffer from the context or a service
+                var globalGeometryBuffer = IoC.Container.GetInstance<GlobalGeometryBuffer>();
 
-                if (Vertices!.Length == 0)
-                    throw new InvalidOperationException("Mesh has no vertices");
+                // Add mesh to global buffer
+                _allocation = await globalGeometryBuffer.AddMeshAsync(ID, Vertices!, Indices!);
 
-                if (Indices?.Length > 0 && Indices.Any(i => i >= Vertices.Length))
-                    throw new InvalidOperationException("Index out of vertex bounds");
-
-                // Create vertex buffer
-                VertexBuffer = VkBuffer.Create(
-                    context,
-                    (ulong)(Unsafe.SizeOf<Vertex>() * Vertices!.Length),
-                    BufferUsageFlags.VertexBufferBit | BufferUsageFlags.TransferDstBit,
-                    MemoryPropertyFlags.DeviceLocalBit
-                );
-
-                batch.StageToBuffer(
-                    Vertices.AsSpan(),
-                    VertexBuffer,
-                    0,
-                    (ulong)(Unsafe.SizeOf<Vertex>() * Vertices.Length)
-                );
-
-                var vertexBarrier = new BufferMemoryBarrier
-                {
-                    SType = StructureType.BufferMemoryBarrier,
-                    SrcAccessMask = AccessFlags.TransferWriteBit,
-                    DstAccessMask = AccessFlags.VertexAttributeReadBit,
-                    Buffer = VertexBuffer,
-                    Offset = 0,
-                    Size = VertexBuffer.Size
-                };
-
-                // Create index buffer if needed
-                if (Indices is { Length: > 0 })
-                {
-                    IndexBuffer = VkBuffer.Create(
-                        context,
-                        (ulong)(Unsafe.SizeOf<uint>() * Indices.Length),
-                        BufferUsageFlags.IndexBufferBit | BufferUsageFlags.TransferDstBit,
-                        MemoryPropertyFlags.DeviceLocalBit
-                    );
-
-                    batch.StageToBuffer(
-                        Indices.AsSpan(),
-                        IndexBuffer,
-                        0,
-                        (ulong)(Unsafe.SizeOf<uint>() * Indices.Length)
-                    );
-                    var indexBarrier = new BufferMemoryBarrier
-                    {
-                        SType = StructureType.BufferMemoryBarrier,
-                        SrcAccessMask = AccessFlags.TransferWriteBit,
-                        DstAccessMask = AccessFlags.IndexReadBit,
-                        Buffer = IndexBuffer,
-                        Offset = 0,
-                        Size = IndexBuffer.Size
-                    };
-
-                    batch.PipelineBarrier(
-                        srcStage: PipelineStageFlags.TransferBit,
-                        dstStage: PipelineStageFlags.VertexInputBit,
-                        bufferMemoryBarriers: [vertexBarrier, indexBarrier]
-                    );
-                }
-                else
-                {
-                    batch.PipelineBarrier(
-                        srcStage: PipelineStageFlags.TransferBit,
-                        dstStage: PipelineStageFlags.VertexInputBit,
-                        bufferMemoryBarriers: [vertexBarrier]
-                    );
-                }
                 IndicesCount = (uint?)Indices?.Length;
-                VerticesCount = (uint)Vertices.Length;
-                batch.Submit();
-                //await context.SubmitContext.FlushSingle(batch, VkFence.CreateNotSignaled(context));
+                VerticesCount = (uint)Vertices!.Length;
             }
             finally
             {
                 _gpuLock.Release();
             }
             UnloadData();
-
         }
 
         public override void UnloadData()
@@ -169,10 +96,9 @@ namespace RockEngine.Core.Assets
         {
             lock (_gpuLock)
             {
-                VertexBuffer?.Dispose();
-                VertexBuffer = null;
-                IndexBuffer?.Dispose();
-                IndexBuffer = null;
+                var globalGeometryBuffer = IoC.Container.GetInstance<GlobalGeometryBuffer>();
+                globalGeometryBuffer.RemoveMesh(ID);
+                _allocation = null;
             }
         }
 

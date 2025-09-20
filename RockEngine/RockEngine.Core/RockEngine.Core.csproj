@@ -10,6 +10,10 @@
     <Configurations>Debug;Release</Configurations>
     <EnableNETAnalyzers>true</EnableNETAnalyzers>
   </PropertyGroup>
+  
+  <PropertyGroup>
+    <DefineConstants Condition="'$(OS)' == 'Windows_NT'">$(DefineConstants);WINDOWS</DefineConstants>
+  </PropertyGroup>
 
   <ItemGroup>
     <Content Include="Shaders\**\*.vert" CopyToOutputDirectory="Always" LinkBase="Shaders" />
@@ -20,7 +24,7 @@
 
   <ItemGroup>
     <PackageReference Include="AssimpNet" Version="4.1.0" />
-    <PackageReference Include="ImGui.NET" Version="1.91.6.1" />
+    <PackageReference Include="ImGui.NET.Branches.Docking" Version="1.88.0" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
     <PackageReference Include="Newtonsoft.Json.Bson" Version="1.0.3" />
     <PackageReference Include="NLog" Version="6.0.3" />

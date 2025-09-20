@@ -71,15 +71,5 @@ namespace RockEngine.Core.Rendering.ResourceBindings
             );
         }
 
-        public override int GetResourceHash()
-        {
-            HashCode hash = new HashCode();
-            hash.Add(base.GetResourceHash());
-            foreach (var textures in _textures)
-            {
-                hash.Add(textures.GetHashCode());
-            }
-            return hash.ToHashCode();
-        }
     }
 }

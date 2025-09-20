@@ -23,7 +23,7 @@ namespace RockEngine.Core.Rendering.Managers
                     tasks.Add(CompileShader(file));
                 }
             }
-            await Task.WhenAll(tasks);
+            await Task.WhenAll(tasks).ConfigureAwait(false);
             DeleteShaderSource();
             foreach (var file in Directory.EnumerateFiles(_basePath, "*", SearchOption.AllDirectories))
             {

@@ -46,8 +46,11 @@ namespace RockEngine.Core.Rendering.SubPasses
             using (PerformanceTracer.BeginSection(nameof(ScreenPass)))
             {
                 var renderer = args[0] as Renderer ?? throw new ArgumentNullException(nameof(Renderer));
-                var camera = args[1] as Camera ?? throw new ArgumentNullException(nameof(Camera));
-            
+                if (args[1] is not Camera camera)
+                {
+                    return;
+                }
+
                 SetInputTexture(camera.RenderTarget.OutputTexture);
 
                 cmd.SetViewport(_renderer.SwapchainTarget.Viewport);
@@ -98,7 +101,7 @@ namespace RockEngine.Core.Rendering.SubPasses
         {
             if(!Bindings.TryGetValue(outputTexture, out var binding))
             {
-                binding = new TextureBinding(0, 0, ImageLayout.ShaderReadOnlyOptimal, outputTexture);
+                binding = new TextureBinding(0, 0, 0,1,outputTexture);
                 Bindings.Add(outputTexture, binding);
             }
             _screenMaterial.Bind(binding);

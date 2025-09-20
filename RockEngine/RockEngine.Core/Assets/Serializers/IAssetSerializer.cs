@@ -1,7 +1,10 @@
-﻿namespace RockEngine.Core.Assets.Serializers
+﻿using Newtonsoft.Json;
+
+namespace RockEngine.Core.Assets.Serializers
 {
     public interface IAssetSerializer
     {
+        JsonSerializer Serializer { get; }
 
         Task SerializeAsync(IAsset asset, Stream stream);
         Task<IAsset> DeserializeMetadataAsync(Stream stream);

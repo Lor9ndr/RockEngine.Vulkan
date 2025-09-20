@@ -1,10 +1,12 @@
 ﻿using Silk.NET.Vulkan;
 
+using System.Drawing;
+using System.Runtime.CompilerServices;
+
+using static RockEngine.Vulkan.SubmitContext;
+
 namespace RockEngine.Vulkan
 {
-    /// <summary>
-    /// Represents a batch of GPU upload commands with associated resources
-    /// </summary>
     public sealed class UploadBatch : IDisposable
     {
         private readonly StagingManager _stagingManager;
@@ -12,33 +14,71 @@ namespace RockEngine.Vulkan
         private readonly VkCommandBuffer _commandBuffer;
         private readonly List<Action> _disposables;
         private bool _isInUse;
+        private readonly CommandBufferLevel _level;
+        private CommandBufferInheritanceInfo? _inheritanceInfo;
+
+        private readonly List<UploadBatch> _secondaryBatches = new List<UploadBatch>();
 
         public List<VkSemaphore> SignalSemaphores { get; } = new List<VkSemaphore>(2);
         public Dictionary<VkSemaphore, PipelineStageFlags> WaitSemaphores { get; } = new Dictionary<VkSemaphore, PipelineStageFlags>(2);
         public VkCommandBuffer CommandBuffer => _commandBuffer;
         public IReadOnlyList<Action> Disposables => _disposables;
-
         public SubmitContext SubmitContext => _submitContext;
+        internal CommandPoolContext Context { get; }
+        public CommandBufferLevel Level => _level;
 
-
-        public UploadBatch(StagingManager stagingManager, SubmitContext submitContext, VkCommandBuffer commandBuffer)
+        public CommandBufferInheritanceInfo? InheritanceInfo
         {
+            get => _inheritanceInfo; 
+            set => _inheritanceInfo = value; 
+        }
+
+        internal UploadBatch(
+            CommandPoolContext context,
+            StagingManager stagingManager,
+            SubmitContext submitContext,
+            VkCommandBuffer commandBuffer,
+            CommandBufferLevel level,
+            CommandBufferInheritanceInfo? inheritanceInfo = null)
+        {
+            Context = context;
             _stagingManager = stagingManager;
             _submitContext = submitContext;
             _commandBuffer = commandBuffer;
+            _level = level;
+            _inheritanceInfo = inheritanceInfo;
             _disposables = new List<Action>(4);
-            BeginCommandBuffer();
         }
-        /// <summary>
-        /// Starts recording commands for this batch
-        /// </summary>
+
         public void BeginCommandBuffer()
         {
-            _commandBuffer.Begin(new CommandBufferBeginInfo
+            var beginInfo = new CommandBufferBeginInfo
             {
                 SType = StructureType.CommandBufferBeginInfo,
-                Flags = CommandBufferUsageFlags.OneTimeSubmitBit
-            });
+            };
+
+            if (_level == CommandBufferLevel.Secondary)
+            {
+                if (!_inheritanceInfo.HasValue)
+                    throw new InvalidOperationException("Secondary command buffers require inheritance info.");
+
+                // For secondary buffers, we always use SimultaneousUseBit for versioned batches
+                // and OneTimeSubmitBit for one-time batches
+                beginInfo.Flags =   CommandBufferUsageFlags.OneTimeSubmitBit | CommandBufferUsageFlags.RenderPassContinueBit;
+
+                unsafe
+                {
+                    var value = _inheritanceInfo.Value;
+                    beginInfo.PInheritanceInfo = (CommandBufferInheritanceInfo*)Unsafe.AsPointer(ref value);
+                }
+            }
+            else
+            {
+                // For primary buffers
+                beginInfo.Flags =  CommandBufferUsageFlags.OneTimeSubmitBit ;
+            }
+
+            _commandBuffer.Begin(beginInfo);
         }
 
         public void AddWaitSemaphore(VkSemaphore semaphore, PipelineStageFlags stage)
@@ -47,26 +87,25 @@ namespace RockEngine.Vulkan
         public void AddSignalSemaphore(VkSemaphore semaphore)
             => SignalSemaphores.Add(semaphore);
 
-        /// <summary>
-        /// Prepares the batch for reuse by resetting state and command buffer
-        /// </summary>
-        public void ResetForPool()
+        public void ResetLists()
         {
             if (!_isInUse) return;
 
-            // Reset command buffer and clear state
-            _commandBuffer.Reset(CommandBufferResetFlags.None);
             _disposables.Clear();
             SignalSemaphores.Clear();
             WaitSemaphores.Clear();
+            _secondaryBatches.Clear();
             _isInUse = false;
+        }
 
+
+        public void ResetCommandBuffer()
+        {
+            _commandBuffer.Reset(CommandBufferResetFlags.ReleaseResourcesBit);
             BeginCommandBuffer();
         }
 
-        /// <summary>
-        /// Stages data to a GPU buffer
-        /// </summary>
+
         public void StageToBuffer<T>(
             Span<T> data,
             VkBuffer destination,
@@ -86,51 +125,85 @@ namespace RockEngine.Vulkan
             );
         }
 
-        /// <summary>
-        /// Submits the batch for execution
-        /// </summary>
         public void Submit()
         {
             End();
             _submitContext.AddSubmission(this);
         }
+
+        
+        public void ExecuteCommands(UploadBatch secondaryBatch)
+        {
+            if (_level != CommandBufferLevel.Primary)
+                throw new InvalidOperationException("Only primary command buffers can execute secondary command buffers.");
+
+            if (secondaryBatch.Level != CommandBufferLevel.Secondary)
+                throw new InvalidOperationException("Only secondary command buffers can be executed.");
+
+            // Add the secondary batch as a dependency to ensure it's disposed properly
+            _secondaryBatches.Add(secondaryBatch);
+            AddDependency(secondaryBatch);
+
+            _commandBuffer.ExecuteSecondary(secondaryBatch.CommandBuffer);
+        }
+
         public void End()
         {
             _commandBuffer.End();
         }
 
-        /// <summary>
-        /// Adds a resource dependency that must be disposed after execution
-        /// </summary>
         public void AddDependency(IDisposable disposable)
             => _disposables.Add(disposable.Dispose);
+
         public void AddDependency(Action action)
            => _disposables.Add(action);
 
-        /// <summary>
-        /// Marks the batch as in-use before submission
-        /// </summary>
         public void MarkInUse()
         {
             _isInUse = true;
         }
 
-        /// <summary>
-        /// Returns the batch to its pool for reuse
-        /// </summary>
         public void Dispose()
         {
             _submitContext.ReturnBatchToPool(this);
         }
 
         public void PipelineBarrier(
-     PipelineStageFlags srcStage,
-     PipelineStageFlags dstStage,
-     MemoryBarrier[]? memoryBarriers = null,
-     BufferMemoryBarrier[]? bufferMemoryBarriers = null,
-     ImageMemoryBarrier[]? imageMemoryBarriers = null)
+            PipelineStageFlags srcStage,
+            PipelineStageFlags dstStage,
+            MemoryBarrier[]? memoryBarriers = null,
+            BufferMemoryBarrier[]? bufferMemoryBarriers = null,
+            ImageMemoryBarrier[]? imageMemoryBarriers = null)
         {
-            _commandBuffer.PipelineBarrier(srcStage, dstStage,DependencyFlags.None, (uint)(memoryBarriers?.Length ?? 0), memoryBarriers, (uint)(bufferMemoryBarriers?.Length ?? 0),bufferMemoryBarriers, (uint)(imageMemoryBarriers?.Length ?? 0), imageMemoryBarriers);
+            _commandBuffer.PipelineBarrier(
+                srcStage,
+                dstStage,
+                DependencyFlags.None,
+                (uint)(memoryBarriers?.Length ?? 0),
+                memoryBarriers,
+                (uint)(bufferMemoryBarriers?.Length ?? 0),
+                bufferMemoryBarriers,
+                (uint)(imageMemoryBarriers?.Length ?? 0),
+                imageMemoryBarriers
+            );
+        }
+
+        public void CopyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, ulong srcOffset, ulong dstOffset, ulong size)
+        {
+            var copyRegion = new BufferCopy
+            {
+                SrcOffset = srcOffset,
+                DstOffset = dstOffset,
+                Size = size
+            };
+
+            VulkanContext.Vk.CmdCopyBuffer(
+                _commandBuffer,
+                srcBuffer,
+                dstBuffer,
+                1,
+                in copyRegion
+            );
         }
     }
 }

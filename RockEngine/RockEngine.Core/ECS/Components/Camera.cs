@@ -2,8 +2,6 @@
 using RockEngine.Core.Rendering;
 using RockEngine.Core.Rendering.RenderTargets;
 
-using Silk.NET.Vulkan;
-
 using System.Numerics;
 
 namespace RockEngine.Core.ECS.Components

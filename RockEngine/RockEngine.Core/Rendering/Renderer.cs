@@ -19,7 +19,7 @@ namespace RockEngine.Core.Rendering
 
         public EngineRenderPass RenderPass { get; private set; }
 
-        private readonly IEnumerable<IRenderPassStrategy> _renderPassStrategies;
+        private readonly IRenderPassStrategy[] _renderPassStrategies;
         private readonly IBLManager _iblManager;
         private readonly LightManager _lightManager;
         private readonly TransformManager _transformManager;
@@ -47,7 +47,7 @@ namespace RockEngine.Core.Rendering
         public PipelineManager PipelineManager =>_pipelineManager;
 
         public BindingManager BindingManager => _bindingManager;
-        public SubmitContext SubmitContext => _context.SubmitContext;
+        public SubmitContext SubmitContext => _context.GraphicsSubmitContext;
 
         public Renderer(VulkanContext context,
                         GraphicsEngine graphicsEngine,
@@ -58,18 +58,18 @@ namespace RockEngine.Core.Rendering
                         IndirectCommandManager indirectCommandManager,
                         RenderPassManager renderPassManager,
                         LightManager lightManager,
-                        CameraManager cameraManager, GlobalUbo globalUbo)
+                        CameraManager cameraManager, 
+                        GlobalUbo globalUbo)
         {
             _context = context;
             _graphicsEngine = graphicsEngine;
             _pipelineManager = pipelineManager;
-            _renderPassStrategies = renderPassStrategies.OrderBy(s => s.Order);
+            _renderPassStrategies = renderPassStrategies.OrderBy(s => s.Order).ToArray();
             _cameraManager = cameraManager;
             GlobalUbo = globalUbo;
             _bindingManager = bindingManager;
             _transformManager = transformManager;
             _lightManager = lightManager;
-            _renderPassStrategies = renderPassStrategies;
             _indirectCommandManager = indirectCommandManager;
             _renderPassManager = renderPassManager;
             SwapchainTarget = new SwapchainRenderTarget(context, graphicsEngine.Swapchain);
@@ -132,41 +132,16 @@ namespace RockEngine.Core.Rendering
         }
 
        
-        public  void Render(UploadBatch uploadBatch)
+        public async Task Render()
         {
-            //CreateBarrier(uploadBatch.CommandBuffer);
 
             using (PerformanceTracer.BeginSection("Frame Render"))
             {
-                foreach (var item in _renderPassStrategies)
+                for (int i = 0; i < _renderPassStrategies.Length; i++)
                 {
-                    item.Execute(uploadBatch, _cameraManager, this);
+                    IRenderPassStrategy? item = _renderPassStrategies[i];
+                    await item.Execute(SubmitContext, _cameraManager, this);
                 }
-            }
-        }
-
-        private static void CreateBarrier(VkCommandBuffer primaryCmdBuffer)
-        {
-            var barrier = new MemoryBarrier
-            {
-                SType = StructureType.MemoryBarrier,
-                SrcAccessMask = AccessFlags.MemoryWriteBit,
-                DstAccessMask = AccessFlags.MemoryReadBit | AccessFlags.MemoryWriteBit
-            };
-            unsafe
-            {
-                VulkanContext.Vk.CmdPipelineBarrier(
-               primaryCmdBuffer,
-               PipelineStageFlags.AllCommandsBit,
-               PipelineStageFlags.AllCommandsBit,
-               0,
-               1,
-               &barrier,
-               0,
-               null,
-               0,
-               null
-           );
             }
         }
 
@@ -198,10 +173,11 @@ namespace RockEngine.Core.Rendering
                     ViewProjection = s.ViewProjectionMatrix,
                 }).ToArray()).ConfigureAwait(false);
             }
+
             _prevFrameIndex = FrameIndex;
         }
 
-      
+
 
         private unsafe VkPipeline CreateSkyboxPipeline()
         {

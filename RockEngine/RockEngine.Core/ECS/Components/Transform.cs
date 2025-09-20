@@ -106,6 +106,10 @@ namespace RockEngine.Core.ECS.Components
         {
             _isDirty = true;
             TransformChanged?.Invoke();
+            if(Entity is null)
+            {
+                return;
+            }
             foreach (var child in Entity.Children)
             {
                 child.Transform.SetDirty();

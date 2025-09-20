@@ -7,17 +7,19 @@ namespace RockEngine.Vulkan
     {
         private readonly VulkanContext _context;
         private readonly List<VkCommandBuffer> _commandBuffers = new List<VkCommandBuffer>();
+        public readonly uint QueueFamilyIndex;
 
-        public VkCommandPool(VulkanContext context, CommandPool commandPool)
+        public VkCommandPool(VulkanContext context, CommandPool commandPool, uint queueFamilyIndex)
             : base(commandPool)
         {
             _context = context;
+            QueueFamilyIndex = queueFamilyIndex;
         }
 
         public static unsafe VkCommandPool Create(VulkanContext context, in CommandPoolCreateInfo ci)
         {
             VulkanContext.Vk.CreateCommandPool(context.Device, in ci, in VulkanContext.CustomAllocator<VkCommandPool>(), out var commandPool);
-            return new VkCommandPool(context, commandPool);
+            return new VkCommandPool(context, commandPool,ci.QueueFamilyIndex);
         }
 
         public static unsafe VkCommandPool Create(VulkanContext context, CommandPoolCreateFlags flags, uint queueFamilyIndex)

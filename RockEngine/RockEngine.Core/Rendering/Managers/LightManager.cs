@@ -54,7 +54,7 @@ namespace RockEngine.Core.Rendering.Managers
                 lightData[i] = _activeLights[i].GetLightData();
             }
 
-            var batch = _context.SubmitContext.CreateBatch();
+            var batch = _context.GraphicsSubmitContext.CreateBatch();
             batch.CommandBuffer.LabelObject("Lightmanager cmd");
             frameBuffer.StageData(batch, lightData);
 

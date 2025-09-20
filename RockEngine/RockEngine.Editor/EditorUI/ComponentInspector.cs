@@ -71,7 +71,7 @@ namespace RockEngine.Editor.EditorUI
 
         private static void DrawColorField(string label, ref Vector3 value, FieldInfo field, Component component)
         {
-            System.Numerics.Vector3 color = new(value.X, value.Y, value.Z);
+            Vector3 color = new(value.X, value.Y, value.Z);
             if (ImGui.ColorEdit3(label, ref color))
             {
                 value = new Vector3(color.X, color.Y, color.Z);

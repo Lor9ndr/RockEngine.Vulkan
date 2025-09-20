@@ -15,15 +15,14 @@ namespace RockEngine.Core.Rendering.Passes
         {
         }
 
-      
-        public override void Execute(UploadBatch uploadBatch, CameraManager cameraManager, Renderer renderer)
+        public override Task Execute(SubmitContext submitContext, CameraManager cameraManager, Renderer renderer)
         {
-           
             using (PerformanceTracer.BeginSection(nameof(SwapchainPassStrategy)))
             {
-                var cmd = uploadBatch.CommandBuffer;
+                var primaryBatch = submitContext.CreateBatch();
+                var cmd = primaryBatch.CommandBuffer;
                 renderer.SwapchainTarget.PrepareForRender(cmd);
-                
+
                 using (cmd.NameAction("Screen composition", [0.7f, 0.7f, 0.7f, 1.0f]))
                 {
                     unsafe
@@ -44,9 +43,7 @@ namespace RockEngine.Core.Rendering.Passes
                         }
                     }
 
-
-                    // Subpass 0: Screen composition
-                    var childCmd = cmd.CommandPool.AllocateCommandBuffer(CommandBufferLevel.Secondary);
+                    // Create a secondary batch for screen composition
                     var inheritanceInfo = new CommandBufferInheritanceInfo()
                     {
                         SType = StructureType.CommandBufferInheritanceInfo,
@@ -55,26 +52,35 @@ namespace RockEngine.Core.Rendering.Passes
                         Framebuffer = renderer.SwapchainTarget.Framebuffers[renderer.FrameIndex]
                     };
 
-
-                    if(cameraManager.ActiveCameras.Count > 0)
+                    var secondaryBatch = submitContext.CreateBatch(new BatchCreationParams
                     {
-                        childCmd.Begin(CommandBufferUsageFlags.RenderPassContinueBit, in inheritanceInfo);
+                        Level = CommandBufferLevel.Secondary,
+                        InheritanceInfo = inheritanceInfo
+                    });
+
+                    var childCmd = secondaryBatch.CommandBuffer;
+                    using (childCmd.NameAction("Screen composition subpass", [0.7f, 0.7f, 0.7f, 1.0f]))
+                    {
                         foreach (var item in _subPasses)
                         {
                             using (childCmd.NameAction(item.GetType().Name, [0.7f, 0.7f, 0.7f, 1.0f]))
                             {
-                                item.Execute(childCmd, renderer, cameraManager.ActiveCameras[0]);
+                                item.Execute(childCmd, renderer, cameraManager.ActiveCameras.FirstOrDefault());
                             }
-
                         }
-
-                        childCmd.End();
-                        cmd.ExecuteSecondary(childCmd);
                     }
-                    
+
+                    // End the secondary batch after recording
+                    secondaryBatch.End();
+
+                    // Execute the secondary batch using the batch system
+                    primaryBatch.ExecuteCommands(secondaryBatch);
+
                     cmd.EndRenderPass();
-                    _context.SubmitContext.AddDependency(childCmd);
                 }
+
+                primaryBatch.Submit();
+                return Task.CompletedTask;
             }
         }
     }

@@ -1,9 +1,11 @@
-﻿using Silk.NET.Vulkan;
+﻿
+using Silk.NET.GLFW;
+using Silk.NET.Vulkan;
 
-using System;
 using System.Buffers;
 using System.Collections.Concurrent;
 using System.Runtime.InteropServices;
+using System.Threading.Tasks;
 
 using ZLinq;
 
@@ -11,10 +13,7 @@ using Semaphore = Silk.NET.Vulkan.Semaphore;
 
 namespace RockEngine.Vulkan
 {
-    /// <summary>
-    /// Manages submission of GPU commands and resource lifecycle
-    /// </summary>
-    public sealed class SubmitContext : IDisposable
+    public sealed partial class SubmitContext : IDisposable
     {
         private const int INITIAL_BATCHES_PER_POOL = 16;
 
@@ -22,17 +21,18 @@ namespace RockEngine.Vulkan
         private readonly VkQueue _targetQueue;
         private readonly StagingManager _stagingManager;
         private readonly Lock _submissionLock = new Lock();
+        private readonly int _ownerThreadId;
 
         // Double buffered queues for lock-free batch collection
         private readonly ConcurrentQueue<UploadBatch> _queueA = new();
         private readonly ConcurrentQueue<UploadBatch> _queueB = new();
-        private ConcurrentQueue<UploadBatch> _activeQueue = new();
-        private ConcurrentQueue<UploadBatch> _submissionQueue = new();
+        private ConcurrentQueue<UploadBatch> _activeQueue;
+        private ConcurrentQueue<UploadBatch> _submissionQueue;
 
-        // Async-local command buffer management
-        private readonly AsyncLocal<CommandPoolContext> _asyncCommandContext = new AsyncLocal<CommandPoolContext>();
-        private readonly ConcurrentDictionary<CommandPoolContext, object> _allContexts = new ConcurrentDictionary<CommandPoolContext, object>();
-        private readonly ConcurrentQueue<CommandPoolContext> _contextPool = new ConcurrentQueue<CommandPoolContext>();
+        // Thread-local command pools
+        private readonly ThreadLocal<CommandPoolContext> _threadCommandContext;
+        private readonly ConcurrentBag<CommandPoolContext> _allContexts = new ConcurrentBag<CommandPoolContext>();
+        private readonly ConcurrentDictionary<string, CommandPoolContext> _namedContexts = new();
 
         // Per-flush resource tracking
         private readonly ConcurrentBag<Action> _flushDisposables = new();
@@ -43,11 +43,6 @@ namespace RockEngine.Vulkan
         private readonly List<CommandBuffer> _commandBufferList = new(64);
         private readonly List<Action> _disposableList = new(64);
         private readonly List<UploadBatch> _batchList = new(64);
-
-
-        // Cross-thread batch returns
-        private readonly List<UploadBatch> _crossThreadReturns = new();
-        private readonly Lock _crossThreadLock = new Lock();
 
         private static readonly ArrayPool<CommandBuffer> _commandBufferPool = ArrayPool<CommandBuffer>.Shared;
 
@@ -61,11 +56,11 @@ namespace RockEngine.Vulkan
             _activeQueue = _queueA;
             _submissionQueue = _queueB;
 
-            // Pre-create some contexts to reuse
-            for (int i = 0; i < Environment.ProcessorCount; i++)
-            {
-                _contextPool.Enqueue(CreateCommandPoolContext());
-            }
+            _threadCommandContext = new ThreadLocal<CommandPoolContext>(() => {
+                var ctx = CreateCommandPoolContext();
+                _allContexts.Add(ctx);
+                return ctx;
+            }, trackAllValues: true);
         }
 
         private CommandPoolContext CreateCommandPoolContext()
@@ -76,137 +71,115 @@ namespace RockEngine.Vulkan
                 _targetQueue.FamilyIndex
             );
 
-            var batches = new Stack<UploadBatch>(INITIAL_BATCHES_PER_POOL);
-            for (int i = 0; i < INITIAL_BATCHES_PER_POOL; i++)
-            {
-                batches.Push(CreateNewBatch(cmdPool));
-            }
-
-            var context = new CommandPoolContext(cmdPool, batches);
-            _allContexts.TryAdd(context, null);
-            return context;
+            return new CommandPoolContext(cmdPool);
         }
 
-        private UploadBatch CreateNewBatch(VkCommandPool pool)
+        private CommandPoolContext CreateNamedCommandPoolContext(string name)
         {
-            var commandBuffer = pool.AllocateCommandBuffer(CommandBufferLevel.Primary);
-            return new UploadBatch(_stagingManager, this, commandBuffer);
+            var cmdPool = VkCommandPool.Create(
+                _context,
+                CommandPoolCreateFlags.TransientBit | CommandPoolCreateFlags.ResetCommandBufferBit,
+                _targetQueue.FamilyIndex
+            );
+
+            return new CommandPoolContext(cmdPool, name);
         }
 
-        public UploadBatch CreateBatch()
+        private UploadBatch CreateNewBatch(CommandPoolContext context, CommandBufferLevel level, CommandBufferInheritanceInfo? inheritanceInfo = null)
         {
-            // Try to get an existing context for this async flow
-            var context = _asyncCommandContext.Value;
+            var commandBuffer = context.Pool.AllocateCommandBuffer(level);
+            return new UploadBatch(context, _stagingManager, this, commandBuffer, level, inheritanceInfo);
+        }
 
-            // If no context exists for this async flow, try to reuse one
-            if (context == null)
+        public UploadBatch CreateBatch(BatchCreationParams? parameters = null)
+        {
+            parameters ??= new BatchCreationParams();
+            var context = GetOrCreateContext(parameters.Name);
+
+            UploadBatch batch;
+
+
+            // Versioned batch
+            if (!context.TryGetAvailableBatch(parameters.Level, out batch!))
             {
-                if (!_contextPool.TryDequeue(out context))
-                {
-                    context = CreateCommandPoolContext();
-                }
-                _asyncCommandContext.Value = context;
+                batch = CreateNewBatch(context, parameters.Level, parameters.InheritanceInfo);
             }
-
-            // Get a batch from the context
-            if (!context.Batches.TryPop(out var batch))
+            else
             {
-                batch = CreateNewBatch(context.Pool);
+                batch.InheritanceInfo = parameters.InheritanceInfo;
+                // Don't change the version - it should already be correct
             }
 
             batch.MarkInUse();
-            batch.ResetForPool();
+
+            batch.ResetCommandBuffer();
+
+            for (int i = 0; i < parameters.WaitSemaphores.Count; i++)
+            {
+                batch.AddWaitSemaphore(
+                    parameters.WaitSemaphores[i],
+                    i < parameters.WaitStages.Count ? parameters.WaitStages[i] : PipelineStageFlags.TopOfPipeBit
+                );
+            }
+
+            foreach (var semaphore in parameters.SignalSemaphores)
+            {
+                batch.AddSignalSemaphore(semaphore);
+            }
+
             return batch;
+        }
+
+        private CommandPoolContext GetOrCreateContext(string name)
+        {
+            if (string.IsNullOrEmpty(name))
+            {
+                return _threadCommandContext.Value!;
+            }
+
+            return _namedContexts.GetOrAdd(name, n => {
+                var ctx = CreateNamedCommandPoolContext(n);
+                _allContexts.Add(ctx);
+                return ctx;
+            });
         }
 
         internal void AddSubmission(UploadBatch batch)
         {
             _activeQueue.Enqueue(batch);
-            ReturnContextToPool();
         }
 
         internal void ReturnBatchToPool(UploadBatch batch)
         {
-            var currentContext = _asyncCommandContext.Value;
-            if (currentContext != null && batch.CommandBuffer.CommandPool == currentContext.Pool)
-            {
-                ReturnToLocalPool(batch, currentContext);
-            }
-            else
-            {
-                ReturnToForeignPool(batch);
-            }
+            batch.Context.ReturnBatch(batch);
         }
 
-        private void ReturnToLocalPool(UploadBatch batch, CommandPoolContext context)
+        public FlushOperation Flush(VkFence fence)
         {
-            batch.ResetForPool();
-            context.Batches.Push(batch);
+            return FlushInternal(fence);
         }
 
-        private void ReturnToForeignPool(UploadBatch batch)
+        public FlushOperation FlushAsync(VkFence fence)
         {
-            lock (_crossThreadLock)
-            {
-                _crossThreadReturns.Add(batch);
-            }
+            return FlushInternal(fence);
         }
 
-        private void ProcessCrossThreadReturns()
-        {
-            lock (_crossThreadLock)
-            {
-                foreach (var batch in _crossThreadReturns)
-                {
-                    batch.ResetForPool();
-
-                    // Find the context that owns this batch's command pool
-                    foreach (var context in _allContexts.Keys)
-                    {
-                        if (context.Pool == batch.CommandBuffer.CommandPool)
-                        {
-                            context.Batches.Push(batch);
-                            break;
-                        }
-                    }
-                }
-                _crossThreadReturns.Clear();
-            }
-        }
-
-        public void ReturnContextToPool()
-        {
-            var context = _asyncCommandContext.Value;
-            if (context != null)
-            {
-                _asyncCommandContext.Value = null;
-                _contextPool.Enqueue(context);
-            }
-        }
-
-
-        public FlushOperation Flush(VkFence fence) => FlushInternal(fence);
-        public FlushOperation FlushAsync(VkFence fence) => FlushInternal(fence);
         public FlushOperation FlushSingle(UploadBatch batch, VkFence fence)
         {
             batch.End();
             lock (_submissionLock)
             {
-                ProcessCrossThreadReturns();
-
-                // Prepare disposables
                 _disposableList.Clear();
                 _disposableList.AddRange(batch.Disposables);
 
-                // Prepare semaphores using reusable lists
                 Span<Semaphore> semaphores = stackalloc Semaphore[batch.SignalSemaphores.Count];
                 for (int i = 0; i < batch.SignalSemaphores.Count; i++)
                 {
                     semaphores[i] = batch.SignalSemaphores[i].VkObjectNative;
                 }
 
-                Span<Semaphore> waitSemaphores = stackalloc Semaphore[batch.SignalSemaphores.Count];
-                Span<PipelineStageFlags> stages = stackalloc PipelineStageFlags[batch.SignalSemaphores.Count];
+                Span<Semaphore> waitSemaphores = stackalloc Semaphore[batch.WaitSemaphores.Count];
+                Span<PipelineStageFlags> stages = stackalloc PipelineStageFlags[batch.WaitSemaphores.Count];
 
                 int j = 0;
                 foreach (var kvp in batch.WaitSemaphores)
@@ -216,9 +189,6 @@ namespace RockEngine.Vulkan
                     j++;
                 }
 
-                // Rent array for command buffers
-                var commandBuffers = _commandBufferPool.Rent(1);
-
                 _targetQueue.Submit(
                     batch.CommandBuffer,
                     semaphores,
@@ -226,8 +196,6 @@ namespace RockEngine.Vulkan
                     stages,
                     fence
                 );
-
-                _commandBufferPool.Return(commandBuffers);
 
                 return new FlushOperation(
                     this,
@@ -242,25 +210,20 @@ namespace RockEngine.Vulkan
         {
             lock (_submissionLock)
             {
-                ProcessCrossThreadReturns();
-
                 // Swap active and submission queues
                 (_submissionQueue, _activeQueue) = (_activeQueue, _submissionQueue);
 
-                // Check for empty submission
                 if (_submissionQueue.IsEmpty &&
                     _flushDisposables.IsEmpty &&
                     _signalSemaphores.IsEmpty &&
                     _waitSemaphores.IsEmpty)
                 {
-                    // Сигнализируем забор вручную для пустых операций
                     fence.Signal(_targetQueue);
                     var flushOp = new FlushOperation(this, fence, [], []);
                     flushOp.SetCompleted(true);
                     return flushOp;
                 }
 
-                //fence.Reset();
                 PrepareSubmissionData();
                 SubmitCommandBuffers(fence);
                 var operation = CreateFlushOperation(fence);
@@ -276,21 +239,18 @@ namespace RockEngine.Vulkan
             _disposableList.Clear();
             _batchList.Clear();
 
-            // Collect batches from submission queue
             while (_submissionQueue.TryDequeue(out var batch))
             {
                 _batchList.Add(batch);
-                _commandBufferList.Add(batch.CommandBuffer);
+                _commandBufferList.Add(batch.CommandBuffer.VkObjectNative);
                 _disposableList.AddRange(batch.Disposables);
             }
 
-            // Add global resources
             _disposableList.AddRange(_flushDisposables);
         }
 
         private void SubmitCommandBuffers(VkFence fence)
         {
-            // Build semaphore arrays
             var signalSemaphores = _signalSemaphores
                 .AsValueEnumerable()
                 .Union(_batchList.SelectMany(b => b.SignalSemaphores))
@@ -323,8 +283,8 @@ namespace RockEngine.Vulkan
             return new FlushOperation(
                 this,
                 fence,
-                new List<UploadBatch>(_batchList),
-                new List<Action>(_disposableList)
+                [.. _batchList],
+                [.. _disposableList]
             );
         }
 
@@ -333,7 +293,6 @@ namespace RockEngine.Vulkan
             _flushDisposables.Clear();
             _signalSemaphores.Clear();
             _waitSemaphores.Clear();
-            _stagingManager.Reset();
         }
 
         public void AddDependency(IDisposable disposable) => _flushDisposables.Add(disposable.Dispose);
@@ -341,30 +300,53 @@ namespace RockEngine.Vulkan
         public void AddWaitSemaphore(VkSemaphore semaphore, PipelineStageFlags stage) => _waitSemaphores[semaphore] = stage;
         public void AddSignalSemaphore(VkSemaphore semaphore) => _signalSemaphores.Add(semaphore);
 
+
         public void Dispose()
         {
             _stagingManager.Dispose();
 
-            // Dispose all command pools
-            foreach (var context in _allContexts.Keys)
+            foreach (var context in _allContexts)
             {
                 context.Pool.Dispose();
             }
             _allContexts.Clear();
-            _contextPool.Clear();
+            _namedContexts.Clear();
 
             GC.SuppressFinalize(this);
         }
 
-        private sealed class CommandPoolContext
+        internal sealed class CommandPoolContext
         {
-            public VkCommandPool Pool { get; }
-            public Stack<UploadBatch> Batches { get; }
+            private readonly ConcurrentDictionary<CommandBufferLevel, ConcurrentQueue<UploadBatch>> _oneTimeBatches = new ConcurrentDictionary<CommandBufferLevel, ConcurrentQueue<UploadBatch>>();
 
-            public CommandPoolContext(VkCommandPool pool, Stack<UploadBatch> batches)
+            public VkCommandPool Pool { get; }
+            public string? Name { get; }
+
+            public CommandPoolContext(VkCommandPool pool, string? name = null)
             {
                 Pool = pool;
-                Batches = batches;
+                Name = name;
+            }
+
+            public bool TryGetAvailableBatch(CommandBufferLevel level, out UploadBatch? batch)
+            {
+                if(!_oneTimeBatches.TryGetValue(level, out var batchQueue))
+                {
+                    batch = null;
+                    return false;
+                }
+                else
+                {
+                    return batchQueue.TryDequeue(out batch);
+                }
+            }
+
+            public void ReturnBatch(UploadBatch batch)
+            {
+                batch.ResetLists();
+                var queue = _oneTimeBatches.GetOrAdd(batch.Level, _ => new ConcurrentQueue<UploadBatch>());
+                batch.ResetLists();
+                queue.Enqueue(batch);
             }
         }
     }

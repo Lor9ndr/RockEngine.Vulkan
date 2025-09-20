@@ -1,10 +1,12 @@
 ﻿using NLog;
 
+using RockEngine.Core.Assets.AssetData;
 using RockEngine.Core.DI;
 using RockEngine.Core.ECS.Components;
 using RockEngine.Core.Rendering;
 using RockEngine.Core.Rendering.Managers;
 using RockEngine.Core.Rendering.Texturing;
+using RockEngine.Vulkan;
 
 namespace RockEngine.Core.Assets
 {
@@ -28,9 +30,9 @@ namespace RockEngine.Core.Assets
 
             var textures = new List<Texture>();
 
-            foreach (var textureId in Data.TextureAssetIDs)
+            foreach (var texture in Data.TextureAssetIDs)
             {
-                var textureAsset = assetManager.GetAsset<TextureAsset>(textureId);
+                var textureAsset = await assetManager.LoadAssetByIdAsync<TextureAsset>(texture.AssetID);
                 if(textureAsset != null)
                 {
                     await textureAsset.LoadGpuResourcesAsync();
@@ -38,8 +40,8 @@ namespace RockEngine.Core.Assets
                 }
                 else
                 {
-                    _logger.Warn("Failed to find texture {0}", textureId);
-                    throw new Exception($"Failed to find texture {textureId}");
+                    _logger.Warn("Failed to find texture {0}", texture);
+                    textures.Add(Texture2D.GetEmptyTexture(VulkanContext.GetCurrent()));
                 }
             }
             MaterialInstance = new Material(pipeline, textures);

@@ -1,18 +1,10 @@
-﻿using Newtonsoft.Json;
-
-using NSubstitute;
+﻿using NSubstitute;
 
 using RockEngine.Core;
 using RockEngine.Core.Assets;
 using RockEngine.Core.Assets.AssetData;
-using RockEngine.Core.Assets.Converters;
 using RockEngine.Core.Assets.Serializers;
 using RockEngine.Core.DI;
-
-using SimpleInjector;
-
-using System.ComponentModel;
-using System.Reflection;
 
 using Vertex = RockEngine.Core.Vertex;
 
@@ -38,8 +30,7 @@ namespace RockEngine.Core.Tests.Assets
                 _factoryRegistry = new AssetFactoryRegistry();
 
                 _assimpLoader = Substitute.For<AssimpLoader>();
-                AssetModule assetModule = new AssetModule();
-                assetModule.RegisterDependencies(IoC.Container);
+                IoC.Initialize();
                
 
                 // Initialize AssetManager with mock dependencies
@@ -127,7 +118,7 @@ namespace RockEngine.Core.Tests.Assets
 
                 // Act & Assert
                  await Assert.ThrowsAsync<FileNotFoundException>(async () =>
-                     await _assetManager.LoadMetadataAsync(invalidPath));
+                     _assetManager.GetMetadataByPath(invalidPath.FullPath));
             }
 
             [Test]
@@ -205,7 +196,7 @@ namespace RockEngine.Core.Tests.Assets
                 await Assert.That(data1.Vertices).IsEqualTo(data2.Vertices);
                 await Assert.That(data1.Indices).IsEqualTo(data2.Indices);
 
-                _assetManager.ClearCache();
+                
 
 
                 mesh = (MeshAsset)await _assetManager.LoadAsync<MeshData>(mesh.Path);

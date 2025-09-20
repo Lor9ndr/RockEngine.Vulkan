@@ -114,7 +114,7 @@ namespace RockEngine.Core.Rendering.SubPasses
 
         internal void SetIBLTextures(Texture irradiance, Texture prefilter, Texture brdfLUT)
         {
-            _iblBinding =  new TextureBinding(3, 0, default,irradiance, prefilter, brdfLUT);
+            _iblBinding =  new TextureBinding(3, 0,  0, 1, irradiance, prefilter, brdfLUT);
         }
 
         public void SetupAttachmentDescriptions(RenderPassBuilder builder)

@@ -1,4 +1,6 @@
-﻿using RockEngine.Core.Rendering.Texturing;
+﻿using NLog.Layouts;
+
+using RockEngine.Core.Rendering.Texturing;
 using RockEngine.Vulkan;
 
 using Silk.NET.Vulkan;
@@ -7,15 +9,21 @@ namespace RockEngine.Core.Rendering.ResourceBindings
 {
     public class TextureBinding : ResourceBinding, IDisposable
     {
-        private readonly ImageLayout _imageLayout;
         public Texture[] Textures { get; private set; }
+        public uint BaseMipLevel { get; private set; }
+        public uint LevelCount { get; private set; }
 
         protected override DescriptorType DescriptorType => DescriptorType.CombinedImageSampler;
 
-        public TextureBinding(uint setLocation, uint bindingLocation, ImageLayout imageLayout = default, params Texture[] textures) : base(setLocation, bindingLocation)
+        public TextureBinding(uint setLocation, uint bindingLocation,
+                            uint baseMipLevel = 0, uint levelCount = 1,
+                            params Texture[] textures)
+            : base(setLocation, bindingLocation)
         {
-            _imageLayout = imageLayout;
+            BaseMipLevel = baseMipLevel;
+            LevelCount = levelCount;
             Textures = textures;
+
             foreach (var texture in textures)
             {
                 texture.OnTextureUpdated += MarkAsDirty;
@@ -26,46 +34,47 @@ namespace RockEngine.Core.Rendering.ResourceBindings
         {
             foreach (var item in DescriptorSets)
             {
-                if(item is null)
-                {
-                    continue;
-                }
+                if (item is null) continue;
                 item.IsDirty = true;
             }
         }
 
-
-        public override unsafe void UpdateDescriptorSet(VulkanContext renderingContext, uint frameIndex)
+        public override unsafe void UpdateDescriptorSet(VulkanContext context, uint frameIndex)
         {
             WriteDescriptorSet* writeDescriptorSets = stackalloc WriteDescriptorSet[Textures.Length];
             DescriptorImageInfo* imageInfos = stackalloc DescriptorImageInfo[Textures.Length];
+
             var descriptor = DescriptorSets[frameIndex];
             for (int i = 0; i < Textures.Length; i++)
             {
-                var item = Textures[i];
-                if (item is StreamableTexture streamableTexture)
+                writeDescriptorSets[i] = new WriteDescriptorSet
                 {
-                    imageInfos[i] = new DescriptorImageInfo
-                    {
-                        ImageLayout = item.Image.GetMipLayout(streamableTexture.LoadedMipLevels),
-                        ImageView = item.ImageView,
-                        Sampler = item.Sampler,
-                    };
-                }
-                else
+                    SType = StructureType.WriteDescriptorSet
+                };
+                var texture = Textures[i];
+
+                // Get the appropriate image view for the requested mip range
+                var imageView = texture.Image.GetMipView(BaseMipLevel);
+                var layout = texture.Image.GetMipLayout(BaseMipLevel);
+
+                imageInfos[i] = new DescriptorImageInfo
                 {
-                    imageInfos[i] = new DescriptorImageInfo
-                    {
-                        ImageLayout =  _imageLayout == default ? item.Image.GetMipLayout(0) : _imageLayout,
-                        ImageView = item.ImageView,
-                        Sampler = item.Sampler,
-                    };
-                    if (imageInfos[i].ImageLayout != ImageLayout.ShaderReadOnlyOptimal && imageInfos[i].ImageLayout != ImageLayout.General)
-                    {
-                        throw new InvalidOperationException("Invalid layout");
-                    }
+                    ImageLayout = layout,
+                    ImageView = imageView,
+                    Sampler = Texture.CreateSampler(context, BaseMipLevel),
+                };
+
+                // Validate layout
+                if (layout != ImageLayout.ShaderReadOnlyOptimal &&
+                    layout != ImageLayout.General)
+                {
+                    layout = ImageLayout.ShaderReadOnlyOptimal;
+                   /* var batch = context.GraphicsSubmitContext.CreateBatch();
+                    texture.PrepareForFragmentShader(batch.CommandBuffer);
+                    batch.Submit();*/
 
                 }
+
                 writeDescriptorSets[i] = new WriteDescriptorSet
                 {
                     SType = StructureType.WriteDescriptorSet,
@@ -78,17 +87,7 @@ namespace RockEngine.Core.Rendering.ResourceBindings
                 };
             }
 
-            VulkanContext.Vk.UpdateDescriptorSets(renderingContext.Device, (uint)Textures.Length, writeDescriptorSets, 0, null);
-        }
-        public override int GetResourceHash()
-        {
-            HashCode hash = new HashCode();
-            hash.Add(base.GetResourceHash());
-            foreach (var textures in Textures)
-            {
-                hash.Add(textures.GetHashCode());
-            }
-            return hash.ToHashCode();
+            VulkanContext.Vk.UpdateDescriptorSets(context.Device, (uint)Textures.Length, writeDescriptorSets, 0, null);
         }
 
         public void Dispose()
@@ -97,13 +96,14 @@ namespace RockEngine.Core.Rendering.ResourceBindings
             {
                 texture.OnTextureUpdated -= MarkAsDirty;
             }
+            DescriptorSets = Array.Empty<VkDescriptorSet>();
             Textures = Array.Empty<Texture>();
             GC.SuppressFinalize(this);
         }
+
         ~TextureBinding()
         {
             Dispose();
-
         }
     }
 }

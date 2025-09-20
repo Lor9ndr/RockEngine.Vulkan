@@ -60,7 +60,7 @@ namespace RockEngine.Core.Rendering.Passes
         {
         }
 
-        public abstract void Execute(UploadBatch batch, CameraManager cameraManager, Renderer renderer);
+        public abstract Task Execute(SubmitContext submitContext, CameraManager cameraManager, Renderer renderer);
 
         public void InitializeSubPasses()
         {

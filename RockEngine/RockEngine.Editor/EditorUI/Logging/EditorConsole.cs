@@ -65,7 +65,7 @@ namespace RockEngine.Editor.EditorUI.Logging
                 ImGui.Separator();
 
                 // Display logs
-                ImGui.BeginChild("ScrollingRegion", new Vector2(0, -ImGui.GetFrameHeightWithSpacing()), ImGuiChildFlags.None,  ImGuiWindowFlags.HorizontalScrollbar);
+                ImGui.BeginChild("ScrollingRegion", new Vector2(0, -ImGui.GetFrameHeightWithSpacing()), true,  ImGuiWindowFlags.HorizontalScrollbar);
 
                 List<LogEntry> entries;
                 lock (_lock)
@@ -91,8 +91,8 @@ namespace RockEngine.Editor.EditorUI.Logging
                 }
 
                 ImGui.EndChild();
-                ImGui.End();
             }
+            ImGui.End();
         }
 
         private bool ShouldShow(LogEntry entry)

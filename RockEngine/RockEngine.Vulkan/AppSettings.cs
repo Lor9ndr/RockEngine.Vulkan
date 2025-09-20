@@ -13,5 +13,7 @@ namespace RockEngine.Vulkan
         public int MaxFramesPerFlight { get; set; } = 3;
         public bool EnableValidationLayers { get;set; }
         public uint MaxCamerasSupported { get; set; }
+        public ulong InitialVertexSize { get; set; }
+        public ulong InitialIndexSize { get; set; }
     }
 }

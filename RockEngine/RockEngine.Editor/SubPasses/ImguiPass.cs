@@ -1,6 +1,5 @@
 ﻿using RockEngine.Core;
 using RockEngine.Core.Builders;
-using RockEngine.Core.ECS.Components;
 using RockEngine.Core.Rendering;
 using RockEngine.Core.Rendering.Commands;
 using RockEngine.Core.Rendering.Managers;
@@ -17,8 +16,8 @@ namespace RockEngine.Editor.SubPasses
         private readonly IndirectCommandManager _commandManager;
 
         public ImGuiPass(
-            VulkanContext context,
-            GraphicsEngine graphicsEngine, IndirectCommandManager commandManager)
+            GraphicsEngine graphicsEngine, 
+            IndirectCommandManager commandManager)
         {
             _graphicsEngine = graphicsEngine;
             _commandManager = commandManager;
@@ -30,12 +29,22 @@ namespace RockEngine.Editor.SubPasses
 
         public void Execute(VkCommandBuffer cmd, params object[] args)
         {
+            var renderer = (Renderer)args[0];
             using (PerformanceTracer.BeginSection(nameof(ImGuiPass)))
             {
-                while (_commandManager.OtherCommands.TryPeek(out var command) && command is ImguiRenderCommand imguiCmd)
+
+                while (_commandManager.TryDequeue(out var command))
                 {
-                    imguiCmd.RenderCommand(cmd, _graphicsEngine.Swapchain.Extent);
-                    while (!_commandManager.OtherCommands.TryDequeue(out _)) { }
+                    if (command is ImguiRenderCommand imguiCmd)
+                    {
+                        imguiCmd.RenderCommand(cmd, _graphicsEngine.FrameIndex);
+                    }
+                    else
+                    {
+                        // If it's not an ImGui command, put it back in the queue
+                        _commandManager.AddCommand(command);
+                        break;
+                    }
                 }
             }
         }

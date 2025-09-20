@@ -1,7 +1,10 @@
 ﻿
 using Silk.NET.Vulkan;
 
+using System.Drawing;
 using System.Runtime.InteropServices;
+
+using static System.Runtime.InteropServices.JavaScript.JSType;
 
 using Buffer = Silk.NET.Vulkan.Buffer;
 
@@ -162,8 +165,6 @@ namespace RockEngine.Vulkan
             );
         }
 
-
-
         public unsafe void WriteToBuffer(void* data, void* destination, ulong size = Vk.WholeSize, ulong offset = 0)
         {
             switch (size)
@@ -188,9 +189,97 @@ namespace RockEngine.Vulkan
 
         public ValueTask WriteToBufferAsync<T>(T[] data, ulong size = Vk.WholeSize, ulong offset = 0) where T : unmanaged
         {
-            if (data == null || data.Length == 0)
+            WriteToBuffer<T>(data,size,offset);
+            return default;
+
+        }
+
+        public unsafe ValueTask WriteToBufferAsync<T>(in T data, ulong size = Vk.WholeSize, ulong offset = 0) where T : unmanaged
+        {
+            ulong dataSize = (ulong)(Marshal.SizeOf<T>());
+            ulong actualSize = size;
+            if (size == Vk.WholeSize)
             {
-               throw new ArgumentException("Data array is null or empty", nameof(data));
+                actualSize = dataSize;
+            }
+            else if (actualSize > dataSize)
+            {
+                throw new ArgumentException("Specified size is larger than the data array size", nameof(size));
+            }
+
+            if (offset + actualSize > Size)
+            {
+                throw new ArgumentException("Data exceeds buffer size", nameof(size));
+            }
+
+            if (!_deviceMemory.IsMapped)
+            {
+                Map(size, offset);
+                fixed (T* pData = &data)
+                {
+                    WriteToBuffer(pData, _deviceMemory.MappedData!.Value.ToPointer(), actualSize, 0);
+                }
+                Flush(size, offset);
+                Unmap();
+            }
+            else
+            {
+                fixed (T* pData = &data)
+                {
+                    WriteToBuffer(pData, _deviceMemory.MappedData!.Value.ToPointer(), actualSize, 0);
+                }
+                Flush(size, offset);
+                Unmap();
+            }
+
+            return default;
+        }
+
+        public unsafe ValueTask WriteToBufferAsync<T>(void* data, ulong dataSize, ulong size = Vk.WholeSize, ulong offset = 0) where T : unmanaged
+        {
+            WriteToBuffer<T>(data, dataSize, size,offset);
+            return default;
+        }
+        public unsafe void WriteToBuffer<T>(void* data, ulong dataSize, ulong size = Vk.WholeSize, ulong offset = 0) where T : unmanaged
+        {
+            ulong actualSize = size;
+            if (size == Vk.WholeSize)
+            {
+                actualSize = dataSize;
+            }
+            else if (actualSize > dataSize)
+            {
+                throw new ArgumentException("Specified size is larger than the data array size", nameof(size));
+            }
+
+            if (offset + actualSize > Size)
+            {
+                throw new ArgumentException("Data exceeds buffer size", nameof(size));
+            }
+
+            unsafe
+            {
+                if (!_deviceMemory.IsMapped)
+                {
+                    Map(size, offset);
+                    WriteToBuffer(&data, _deviceMemory.MappedData!.Value.ToPointer(), actualSize, 0);
+                    Flush(size, offset);
+                    Unmap();
+                }
+                else
+                {
+                    WriteToBuffer(&data, _deviceMemory.MappedData!.Value.ToPointer(), actualSize, 0);
+                    Flush(size, offset);
+                    Unmap();
+                }
+
+            }
+        }
+        public void WriteToBuffer<T>(Span<T> data,ulong size = Vk.WholeSize, ulong offset = 0) where T:unmanaged
+        {
+            if (data.IsEmpty || data.Length == 0)
+            {
+                throw new ArgumentException("Data array is null or empty", nameof(data));
             }
             ulong dataSize = (ulong)(data.Length * Marshal.SizeOf<T>());
             ulong actualSize = size;
@@ -241,91 +330,7 @@ namespace RockEngine.Vulkan
                     }
                 }
             }
-            return default;
-
         }
-
-        public ValueTask WriteToBufferAsync<T>(in T data, ulong size = Vk.WholeSize, ulong offset = 0) where T : unmanaged
-        {
-            ulong dataSize = (ulong)(Marshal.SizeOf<T>());
-            ulong actualSize = size;
-            if (size == Vk.WholeSize)
-            {
-                actualSize = dataSize;
-            }
-            else if (actualSize > dataSize)
-            {
-                throw new ArgumentException("Specified size is larger than the data array size", nameof(size));
-            }
-
-            if (offset + actualSize > Size)
-            {
-                throw new ArgumentException("Data exceeds buffer size", nameof(size));
-            }
-
-            unsafe
-            {
-                if (!_deviceMemory.IsMapped)
-                {
-                    Map(size, offset);
-                    fixed(T* pData = &data)
-                    {
-                        WriteToBuffer(pData, _deviceMemory.MappedData!.Value.ToPointer(), actualSize, 0);
-                    }
-                    Flush(size, offset);
-                    Unmap();
-                }
-                else
-                {
-                    fixed(T* pData = &data)
-                    {
-                        WriteToBuffer(pData, _deviceMemory.MappedData!.Value.ToPointer(), actualSize, 0);
-                    }
-                    Flush(size, offset);
-                    Unmap();
-                }
-
-            }
-            return default;
-        }
-        public unsafe ValueTask WriteToBufferAsync<T>(void* data, ulong dataSize, ulong size = Vk.WholeSize, ulong offset = 0) where T : unmanaged
-        {
-            ulong actualSize = size;
-            if (size == Vk.WholeSize)
-            {
-                actualSize = dataSize;
-            }
-            else if (actualSize > dataSize)
-            {
-                throw new ArgumentException("Specified size is larger than the data array size", nameof(size));
-            }
-
-            if (offset + actualSize > Size)
-            {
-                throw new ArgumentException("Data exceeds buffer size", nameof(size));
-            }
-
-            unsafe
-            {
-                if (!_deviceMemory.IsMapped)
-                {
-                    Map(size, offset);
-                    WriteToBuffer(&data, _deviceMemory.MappedData!.Value.ToPointer(), actualSize, 0);
-                    Flush(size, offset);
-                    Unmap();
-                }
-                else
-                {
-                    WriteToBuffer(&data, _deviceMemory.MappedData!.Value.ToPointer(), actualSize, 0);
-                    Flush(size, offset);
-                    Unmap();
-                }
-
-            }
-            return default;
-        }
-
-
 
         public static ulong GetAlignment(ulong bufferSize, ulong minOffsetAlignment)
         {
@@ -382,6 +387,6 @@ namespace RockEngine.Vulkan
             }
         }
 
-
+       
     }
 }

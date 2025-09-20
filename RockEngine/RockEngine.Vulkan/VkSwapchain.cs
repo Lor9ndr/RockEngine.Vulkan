@@ -226,7 +226,7 @@ namespace RockEngine.Vulkan
                 }
             }
         }
-        public unsafe Result AcquireNextImage(int frameIndex)
+        public unsafe Result AcquireNextImage(uint frameIndex)
         {
             var currentFrame = _frameData[frameIndex];
             uint imageIndex = 0;
@@ -244,12 +244,12 @@ namespace RockEngine.Vulkan
         }
 
 
-        public SwapchainFrameData GetFrameData(int frameIndex)
+        public SwapchainFrameData GetFrameData(uint frameIndex)
         {
             return _frameData[frameIndex];
         }
 
-        public unsafe Result Present(int frameIndex, FlushOperation flushOperation)
+        public unsafe Result Present(uint frameIndex, FlushOperation flushOperation)
         {
             var currentFrame = _frameData[frameIndex];
             var swapchains = _vkObject;
@@ -381,7 +381,7 @@ namespace RockEngine.Vulkan
 
         public unsafe void CreateDepthResources()
         {
-            var batch = _context.SubmitContext.CreateBatch();
+            var batch = _context.GraphicsSubmitContext.CreateBatch();
             
             using var fence = VkFence.CreateNotSignaled(_context);
 
@@ -406,7 +406,7 @@ namespace RockEngine.Vulkan
             _depthImage = VkImage.Create(_context, in imageCi, MemoryPropertyFlags.DeviceLocalBit, aspectMask);
 
             _depthImage.TransitionImageLayout(batch.CommandBuffer, ImageLayout.DepthStencilAttachmentOptimal, PipelineStageFlags.TopOfPipeBit, PipelineStageFlags.EarlyFragmentTestsBit, 0, 1);
-            _context.SubmitContext.FlushSingle(batch, fence).Wait();
+            _context.GraphicsSubmitContext.FlushSingle(batch, fence).Wait();
 
             fence.Wait();
 

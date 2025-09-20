@@ -78,7 +78,7 @@ namespace RockEngine.Core.Rendering.RenderTargets
 
             for (int i = 0; i < Framebuffers.Length; i++)
             {
-                var attachments = _gBuffer.ColorAttachments.Concat([_gBuffer.DepthAttachment, OutputTexture.ImageView]).ToArray();
+                var attachments = _gBuffer.ColorAttachments.Concat([_gBuffer.DepthAttachment, OutputTexture.Image.GetMipView(0)]).ToArray();
 
                 Framebuffers[i] = VkFrameBuffer.Create(
                     _context,
@@ -121,7 +121,7 @@ namespace RockEngine.Core.Rendering.RenderTargets
         }
         protected override void DisposeResources()
         {
-            _context.SubmitContext.AddDependency(OutputTexture);
+            _context.GraphicsSubmitContext.AddDependency(OutputTexture);
         }
 
         

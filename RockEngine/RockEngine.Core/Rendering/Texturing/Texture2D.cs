@@ -1,5 +1,4 @@
-﻿using RockEngine.Core.DI;
-using RockEngine.Core.Helpers;
+﻿using RockEngine.Core.Helpers;
 using RockEngine.Vulkan;
 
 using Silk.NET.Maths;
@@ -11,7 +10,6 @@ using SixLabors.ImageSharp.PixelFormats;
 using SkiaSharp;
 
 using System.Runtime.InteropServices;
-using System.Threading.Tasks;
 
 namespace RockEngine.Core.Rendering.Texturing
 {
@@ -22,15 +20,33 @@ namespace RockEngine.Core.Rendering.Texturing
         public uint Width => _image.Extent.Width;
         public uint Height => _image.Extent.Height;
 
-        public Texture2D(VulkanContext context, VkImage image, VkImageView imageView,
+        public Texture2D(VulkanContext context, VkImage image,
                         VkSampler sampler, string? sourcePath = null)
-            : base(context, image, imageView, sampler, sourcePath) { }
+            : base(context, image,  sampler, sourcePath) { }
+        public static async Task<Texture2D> CreateAsync(VulkanContext context, byte[] data, string name, CancellationToken cancellationToken = default)
+        {
+            return await CreateFromBytesAsync(context, data, name, cancellationToken);
+        }
 
-        public static async Task<Texture2D> CreateAsync(VulkanContext context, string filePath,
-                                                       CancellationToken cancellationToken = default)
+        public static async Task<Texture2D> CreateAsync(VulkanContext context, Stream stream, string name, CancellationToken cancellationToken = default)
+        {
+            using var memoryStream = new MemoryStream();
+            await stream.CopyToAsync(memoryStream, cancellationToken);
+            var bytes = memoryStream.ToArray();
+
+            return await CreateFromBytesAsync(context, bytes, name,  cancellationToken);
+        }
+
+        public static async Task<Texture2D> CreateAsync(VulkanContext context, string filePath, CancellationToken cancellationToken = default)
         {
             var bytes = await File.ReadAllBytesAsync(filePath, cancellationToken);
-            var extension = Path.GetExtension(filePath);
+            return await CreateFromBytesAsync(context, bytes, filePath, cancellationToken);
+        }
+
+        private static async Task<Texture2D> CreateFromBytesAsync(VulkanContext context,
+            byte[] bytes, string name, CancellationToken cancellationToken = default)
+        {
+            var extension = Path.GetExtension(name)?.ToLower();
             SKBitmap skBitmap;
 
             if (extension == ".tga")
@@ -53,45 +69,106 @@ namespace RockEngine.Core.Rendering.Texturing
             {
                 skBitmap = SKBitmap.Decode(bytes);
             }
-            using (skBitmap)
+
+            var texture = await CreateFromSkBitmapAsync(context, skBitmap, name, cancellationToken);
+            skBitmap.Dispose(); // Always dispose original bitmap
+            return texture;
+        }
+
+        // Use GPU mipmap generation whenever possible
+        public static async Task<Texture2D> CreateFromSkBitmapAsync(VulkanContext context,
+            SKBitmap skBitmap, string name, CancellationToken cancellationToken = default)
+        {
+            var width = (uint)skBitmap.Width;
+            var height = (uint)skBitmap.Height;
+            var format = GetVulkanFormat(skBitmap.Info.ColorType, context);
+            uint totalMipLevels = CalculateMipLevels(width, height);
+
+
+            var image = CreateVulkanImage(context, width, height, format, totalMipLevels);
+
+            // Upload and generate mips in a single operation
+            var transferComplete = VkSemaphore.Create(context);
+            var graphicsComplete = VkSemaphore.Create(context);
+
+
+            // Upload base level
+            var transferBatch = context.TransferSubmitContext.CreateBatch();
+            CopyImageData(context, transferBatch, skBitmap, image);
+            transferBatch.AddSignalSemaphore(transferComplete);
+
+            await context.TransferSubmitContext.FlushSingle(transferBatch,
+                VkFence.CreateNotSignaled(context));
+
+            // Generate all mip levels on GPU
+            var graphicsBatch = context.GraphicsSubmitContext.CreateBatch();
+            graphicsBatch.AddWaitSemaphore(transferComplete, PipelineStageFlags.TransferBit);
+
+            if (totalMipLevels > 1)
             {
-                var width = (uint)skBitmap.Width;
-                var height = (uint)skBitmap.Height;
-                var format = GetVulkanFormat(skBitmap.Info.ColorType, context);
-                uint mipLevels = CalculateMipLevels(width, height);
-
-                var image = CreateVulkanImage(context, width, height, format, mipLevels);
-                var imageView = image.GetOrCreateView(ImageAspectFlags.ColorBit);
-                UploadBatch batch = context.SubmitContext.CreateBatch();
-
-                CopyImageData(context, batch, skBitmap, image, mipLevels > 1);
-
-                if (mipLevels > 1)
-                {
-                    image.GenerateMipmaps(batch.CommandBuffer);
-                }
-                batch.Submit();
-                //await context.SubmitContext.FlushSingle(batch, VkFence.CreateNotSignaled(context));
-
-                image.LabelObject(Path.GetFileName(filePath));
-                var sampler = CreateSampler(context, mipLevels);
-                return new Texture2D(context, image, imageView, sampler, filePath);
+                image.GenerateMipmaps(graphicsBatch.CommandBuffer);
             }
+            else
+            {
+                // Transition single level
+                image.TransitionImageLayout(
+                    graphicsBatch.CommandBuffer,
+                    ImageLayout.ShaderReadOnlyOptimal,
+                    baseMipLevel: 0,
+                    levelCount: 1
+                );
+            }
+
+            graphicsBatch.AddSignalSemaphore(graphicsComplete);
+            graphicsBatch.Submit();
+
+
+            image.LabelObject(name);
+            var sampler = CreateSampler(context, totalMipLevels);
+
+            return new Texture2D(context, image, sampler, name);
+
         }
 
         public static Texture2D Create(VulkanContext context, int width, int height,
                                       Format format, Span<byte> data)
         {
             var vkImage = CreateVulkanImage(context, (uint)width, (uint)height, format);
-            var imageView = vkImage.GetOrCreateView(ImageAspectFlags.ColorBit);
 
-            var batch = context.SubmitContext.CreateBatch();
-            CopyImageDataFromPointer(context, batch, vkImage, data, (uint)width, (uint)height, format);
-            batch.Submit();
+            // Create semaphores for queue synchronization
+            var transferComplete = VkSemaphore.Create(context);
+            var graphicsComplete = VkSemaphore.Create(context);
+
+            // Transfer queue operations
+            var transferBatch = context.TransferSubmitContext.CreateBatch();
+            CopyImageDataFromPointer(context, transferBatch, vkImage, data, (uint)width, (uint)height, format);
+            transferBatch.AddSignalSemaphore(transferComplete);
+            using (var transferOp = context.TransferSubmitContext.FlushSingle(transferBatch, VkFence.CreateNotSignaled(context)))
+            {
+                transferOp.Wait();
+            }
+
+            // Graphics queue operations
+            var graphicsBatch = context.GraphicsSubmitContext.CreateBatch();
+            graphicsBatch.AddWaitSemaphore(transferComplete, PipelineStageFlags.TransferBit);
+            vkImage.TransitionImageLayout(
+                graphicsBatch.CommandBuffer,
+                ImageLayout.ShaderReadOnlyOptimal,
+                PipelineStageFlags.TransferBit,
+                PipelineStageFlags.FragmentShaderBit
+            );
+            graphicsBatch.AddSignalSemaphore(graphicsComplete);
+            graphicsBatch.Submit();
+           /* using (var graphicsOp = context.GraphicsSubmitContext.FlushSingle(graphicsBatch, VkFence.CreateNotSignaled(context)))
+            {
+                graphicsOp.Wait();
+            }*/
+
             var sampler = CreateSampler(context, vkImage.MipLevels);
-            return new Texture2D(context, vkImage, imageView, sampler);
+            return new Texture2D(context, vkImage,  sampler);
         }
 
+      
         private static VkImage CreateVulkanImage(
             VulkanContext context,
             uint width,
@@ -130,28 +207,25 @@ namespace RockEngine.Core.Rendering.Texturing
         }
 
         private static unsafe void CopyImageData(VulkanContext context, UploadBatch batch,
-                                               SKBitmap skBitmap, VkImage vkImage,
-                                               bool keepTransferLayout = false)
+                                             SKBitmap skBitmap, VkImage vkImage)
         {
             CopyImageDataFromPointer(context, batch, vkImage, skBitmap.GetPixelSpan(),
                                     (uint)skBitmap.Width, (uint)skBitmap.Height,
-                                    GetVulkanFormat(skBitmap.ColorType, context),
-                                    keepTransferLayout);
+                                    GetVulkanFormat(skBitmap.ColorType, context));
         }
 
         private static unsafe void CopyImageDataFromPointer(
-            VulkanContext context,
-            UploadBatch batch,
-            VkImage vkImage,
-            Span<byte> data,
-            uint width,
-            uint height,
-            Format format,
-            bool keepTransferLayout = false)
+             VulkanContext context,
+             UploadBatch batch,
+             VkImage vkImage,
+             Span<byte> data,
+             uint width,
+             uint height,
+             Format format)
         {
             var imageSize = (ulong)(width * height * format.GetBytesPerPixel());
 
-            // 1. Переход в DST_OPTIMAL для копирования
+            // Transition to DST_OPTIMAL for copying
             var preCopyBarrier = new ImageMemoryBarrier
             {
                 SType = StructureType.ImageMemoryBarrier,
@@ -176,8 +250,8 @@ namespace RockEngine.Core.Rendering.Texturing
                 imageMemoryBarriers: new[] { preCopyBarrier }
             );
 
-            // 2. Копирование данных
-            if (!context.SubmitContext.StagingManager.TryStage(batch, data, out var offset, out var size))
+            // Copy data
+            if (!batch.SubmitContext.StagingManager.TryStage(batch, data, out var offset, out var size))
             {
                 throw new Exception("Failed to stage data from image");
             }
@@ -187,7 +261,7 @@ namespace RockEngine.Core.Rendering.Texturing
                 SType = StructureType.BufferMemoryBarrier,
                 SrcAccessMask = AccessFlags.HostWriteBit,
                 DstAccessMask = AccessFlags.TransferReadBit,
-                Buffer = context.SubmitContext.StagingManager.StagingBuffer,
+                Buffer = batch.SubmitContext.StagingManager.StagingBuffer,
                 Offset = offset,
                 Size = size
             };
@@ -212,41 +286,14 @@ namespace RockEngine.Core.Rendering.Texturing
             };
 
             batch.CommandBuffer.CopyBufferToImage(
-                srcBuffer: context.SubmitContext.StagingManager.StagingBuffer,
+                srcBuffer: batch.SubmitContext.StagingManager.StagingBuffer,
                 dstImage: vkImage,
                 dstImageLayout: ImageLayout.TransferDstOptimal,
                 regionCount: 1,
                 pRegions: &copyRegion
             );
-
-            // 3. Переход в FINAL_LAYOUT (если не нужно сохранять DST)
-            if (!keepTransferLayout)
-            {
-                var postCopyBarrier = new ImageMemoryBarrier
-                {
-                    SType = StructureType.ImageMemoryBarrier,
-                    OldLayout = ImageLayout.TransferDstOptimal,
-                    NewLayout = ImageLayout.ShaderReadOnlyOptimal,
-                    Image = vkImage,
-                    SubresourceRange = new ImageSubresourceRange
-                    {
-                        AspectMask = vkImage.AspectFlags,
-                        BaseMipLevel = 0,
-                        LevelCount = vkImage.MipLevels,
-                        BaseArrayLayer = 0,
-                        LayerCount = 1
-                    },
-                    SrcAccessMask = AccessFlags.TransferWriteBit,
-                    DstAccessMask = AccessFlags.ShaderReadBit
-                };
-
-                batch.PipelineBarrier(
-                    srcStage: PipelineStageFlags.TransferBit,
-                    dstStage: PipelineStageFlags.FragmentShaderBit,
-                    imageMemoryBarriers: new[] { postCopyBarrier }
-                );
-            }
         }
+
 
         public static Texture2D GetEmptyTexture(VulkanContext context)
         {
@@ -269,11 +316,33 @@ namespace RockEngine.Core.Rendering.Texturing
             var height = (uint)skImage.Height;
             var format = GetVulkanFormat(skImage.Info.ColorType, context);
             var vkImage = CreateVulkanImage(context, width, height, format);
-            var imageView = vkImage.GetOrCreateView(ImageAspectFlags.ColorBit);
-            var batch = context.SubmitContext.CreateBatch();
-            batch.CommandBuffer.LabelObject("LoadFromSKImage cmd");
-            CopyImageDataFromPointer(context, batch, vkImage, skImage.GetPixelSpan(),
+
+            // Create semaphores for queue synchronization
+            var transferComplete = VkSemaphore.Create(context);
+            var graphicsComplete = VkSemaphore.Create(context);
+
+            // Upload data via transfer queue
+            var transferBatch = context.TransferSubmitContext.CreateBatch();
+            CopyImageDataFromPointer(context, transferBatch, vkImage, skImage.GetPixelSpan(),
                                     width, height, format);
+            transferBatch.AddSignalSemaphore(transferComplete);
+            using (var transferOp = context.TransferSubmitContext.FlushSingle(transferBatch, VkFence.CreateNotSignaled(context)))
+            {
+                transferOp.Wait();
+            }
+
+            // Transition in graphics queue
+            var graphicsBatch = context.GraphicsSubmitContext.CreateBatch();
+            graphicsBatch.AddWaitSemaphore(transferComplete, PipelineStageFlags.TransferBit);
+            vkImage.TransitionImageLayout(
+                graphicsBatch.CommandBuffer,
+                ImageLayout.ShaderReadOnlyOptimal,
+                PipelineStageFlags.TransferBit,
+                PipelineStageFlags.FragmentShaderBit
+            );
+            graphicsBatch.AddSignalSemaphore(graphicsComplete);
+            graphicsBatch.Submit();
+          
 
             var samplerCreateInfo = new SamplerCreateInfo
             {
@@ -296,12 +365,10 @@ namespace RockEngine.Core.Rendering.Texturing
             };
 
             var sampler = context.SamplerCache.GetSampler(samplerCreateInfo);
-            skImage.Dispose();
-            var texture =  new Texture2D(context, vkImage, imageView, sampler);
-            texture.PrepareForFragmentShader(batch.CommandBuffer);
-            batch.Submit();
-            return texture;
+            var texture = new Texture2D(context, vkImage, sampler);
 
+            skImage.Dispose();
+            return texture;
         }
     }
 }

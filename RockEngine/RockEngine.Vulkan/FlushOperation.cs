@@ -12,13 +12,11 @@ namespace RockEngine.Vulkan
         private readonly VkFence _fence;
         private readonly List<UploadBatch> _batches;
         private readonly List<Action> _disposables;
-        private readonly Task _task;
         private bool _completed;
 
         public VkFence Fence => _fence;
         public bool IsCompleted => _completed;
 
-        public Task Task => _task;
 
         internal FlushOperation(
             SubmitContext context,
@@ -30,7 +28,6 @@ namespace RockEngine.Vulkan
             _fence = fence;
             _batches = batches;
             _disposables = disposables;
-            //_task = WaitAsync();
         }
 
         public void Wait()

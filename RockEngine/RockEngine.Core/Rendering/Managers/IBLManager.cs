@@ -49,7 +49,7 @@ namespace RockEngine.Core.Rendering.Managers
         public async Task<Texture> GenerateIrradianceMap(Texture envMap, uint size = 128)
         {
             var output = await CreateCubeTexture(size, Format.R16G16B16A16Sfloat, "Irradiance");
-            var batch = _context.SubmitComputeContext.CreateBatch();
+            var batch = _context.ComputeSubmitContext.CreateBatch();
 
             var cmd = batch.CommandBuffer;
             cmd.LabelObject("Irradiance cmd");
@@ -59,7 +59,7 @@ namespace RockEngine.Core.Rendering.Managers
 
             // Create material with required bindings
             var material = new Material(_irradiancePipeline, envMap);
-            material.Bind(new TextureBinding(0, 0,  ImageLayout.General, envMap));
+            material.Bind(new TextureBinding(0, 0,  0, 6, envMap));
             material.Bind(new StorageImageBinding([output], 0, 1));
 
             // Set push constants
@@ -83,7 +83,7 @@ namespace RockEngine.Core.Rendering.Managers
             envMap.Image.TransitionImageLayout(cmd, ImageLayout.ShaderReadOnlyOptimal, 0, envMap.Image.MipLevels, 0, 6);
 
 
-            await _context.SubmitComputeContext.FlushSingle(batch, VkFence.CreateNotSignaled(_context));
+            await _context.ComputeSubmitContext.FlushSingle(batch, VkFence.CreateNotSignaled(_context));
 
             return output;
         }
@@ -92,7 +92,7 @@ namespace RockEngine.Core.Rendering.Managers
         {
             var output = await CreateCubeTexture(size, Format.R16G16B16A16Sfloat, "PreFilter", true);
             uint mipLevels = output.Image.MipLevels;
-            var batch = _context.SubmitComputeContext.CreateBatch();
+            var batch = _context.ComputeSubmitContext.CreateBatch();
             var cmd = batch.CommandBuffer;
             cmd.LabelObject("Prefilter cmd");
             // Transition base mip of input/output images
@@ -147,7 +147,7 @@ namespace RockEngine.Core.Rendering.Managers
 
                 // Create per-mip material
                 var material = new Material(_prefilterPipeline);
-                material.Bind(new TextureBinding(0, 0, default, envMap));
+                material.Bind(new TextureBinding(0, 0,  0,6,envMap));
                 material.Bind(new StorageImageBinding(output, 0, 1, mip));
 
                 // Set push constants
@@ -176,13 +176,13 @@ namespace RockEngine.Core.Rendering.Managers
             );
             envMap.Image.TransitionImageLayout(cmd, ImageLayout.ShaderReadOnlyOptimal, 0, envMap.Image.MipLevels, 0, 6);
 
-            await _context.SubmitComputeContext.FlushSingle(batch, VkFence.CreateNotSignaled(_context));
+            await _context.ComputeSubmitContext.FlushSingle(batch, VkFence.CreateNotSignaled(_context));
 
             return output;
         }
         public async Task<Texture> GenerateBRDFLUT(uint size = 512)
         {
-            var batch = _context.SubmitComputeContext.CreateBatch();
+            var batch = _context.ComputeSubmitContext.CreateBatch();
             var cmd = batch.CommandBuffer;
             cmd.LabelObject("BRDFLUT cmd");
 
@@ -209,7 +209,7 @@ namespace RockEngine.Core.Rendering.Managers
             semaphore.LabelObject("BRDFLUT SEMAPHORE");
 
             var fence = VkFence.CreateSignaled(_context);
-            await _context.SubmitComputeContext.FlushSingle(batch, VkFence.CreateNotSignaled(_context));
+            await _context.ComputeSubmitContext.FlushSingle(batch, VkFence.CreateNotSignaled(_context));
 
 
             return output;

@@ -1,13 +1,13 @@
-﻿using NLog;
-
-using RockEngine.Core.Internal;
+﻿using RockEngine.Core.Internal;
 using RockEngine.Core.Rendering.ResourceBindings;
 using RockEngine.Core.Rendering.Texturing;
 using RockEngine.Vulkan;
 
 using Silk.NET.Vulkan;
 
+using System.Numerics;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 
 using static RockEngine.Vulkan.ShaderReflectionData;
 
@@ -48,8 +48,6 @@ namespace RockEngine.Core.ECS.Components
                
             PushConstants = dict;
 
-          
-
             foreach (var set in Pipeline.Layout.DescriptorSetLayouts)
             {
                 if (set.Value.Bindings.Any(b => b.DescriptorType == DescriptorType.CombinedImageSampler))
@@ -72,7 +70,7 @@ namespace RockEngine.Core.ECS.Components
                 }
                 Textures = textures.ToArray();
 
-                Bind(new TextureBinding((uint)_textureSetLocation, 0, default, Textures.Take(setLayout.Bindings.Length).ToArray()));
+                Bind(new TextureBinding((uint)_textureSetLocation, 0, 0, 1, Textures.Take(setLayout.Bindings.Length).ToArray()));
             }
         }
 
@@ -83,7 +81,7 @@ namespace RockEngine.Core.ECS.Components
         }
         public void Bind(Texture binding, int bindingLocation)
         {
-            Bindings.Add(new TextureBinding((uint)_textureSetLocation, (uint)bindingLocation, ImageLayout.ShaderReadOnlyOptimal, binding));
+            Bindings.Add(new TextureBinding((uint)_textureSetLocation, (uint)bindingLocation,  0,1,binding));
         }
 
         public bool Unbind(ResourceBinding binding)
@@ -93,7 +91,9 @@ namespace RockEngine.Core.ECS.Components
         public void PushConstant<T>(string name, T value) where T : unmanaged
         {
             if (!PushConstants.TryGetValue(name, out var constant))
-                throw new ArgumentException($"Push constant '{name}' not found.");
+            {
+                //throw new ArgumentException($"Push constant '{name}' not found.");
+            }
 
             uint size = (uint)Unsafe.SizeOf<T>();
             /*if (size != constant.Size)
@@ -133,10 +133,26 @@ namespace RockEngine.Core.ECS.Components
             }
         }
 
+
         public void Dispose()
         {
             _pushConstantValues.Clear();
             Bindings.Clear();
         }
+    }
+    [StructLayout(LayoutKind.Sequential)]
+    public struct MaterialProperties
+    {
+        public Vector4 BaseColorFactor;
+        public float RoughnessFactor;
+        public float MetallicFactor;
+        public float NormalScale;
+        public float OcclusionStrength;
+        public float MipLodBias;
+        public float MinLod;
+        public float MaxLod;
+        public Vector2 Padding;
+
+        public static uint Size => (uint)Marshal.SizeOf<MaterialProperties>();
     }
 }

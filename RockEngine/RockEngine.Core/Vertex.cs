@@ -5,6 +5,7 @@ using System.Runtime.InteropServices;
 
 namespace RockEngine.Core
 {
+    [StructLayout(LayoutKind.Sequential)]
     public struct Vertex
     {
         public Vector3 Position;

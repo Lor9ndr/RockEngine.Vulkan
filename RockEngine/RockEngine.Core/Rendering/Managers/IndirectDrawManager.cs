@@ -1,15 +1,12 @@
-﻿using RockEngine.Core.Assets;
+﻿using RockEngine.Core.DI;
 using RockEngine.Core.ECS.Components;
 using RockEngine.Core.Rendering.Buffers;
 using RockEngine.Core.Rendering.Commands;
 using RockEngine.Vulkan;
 
+using Silk.NET.Core;
 using Silk.NET.Vulkan;
 
-using System;
-using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.Reflection.Emit;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
@@ -23,16 +20,18 @@ namespace RockEngine.Core.Rendering.Managers
     {
         private readonly VulkanContext _context;
         private readonly IndirectBuffer _indirectBuffer;
+        private readonly Bool32 _supportsMultiDraw;
         private readonly List<MeshRenderCommand> _commands = new List<MeshRenderCommand>();
-        private readonly ConcurrentQueue<IRenderCommand> _otherCommands = new ConcurrentQueue<IRenderCommand>();
+        private readonly Queue<IRenderCommand> _otherCommands = new Queue<IRenderCommand>();
         private readonly Dictionary<(RenderLayerType Layer, uint Subpass), List<DrawGroup>> _drawGroupsByLayerAndSubpass = new();
+        private readonly Lock _otherCommandsLock = new Lock();
         private readonly uint _transformBufferCapacity;
         private bool _isDirty;
         private static readonly ulong _commandStride = (ulong)Marshal.SizeOf<DrawIndexedIndirectCommand>();
         private readonly List<DrawIndexedIndirectCommand> _indirectCommandsList = new List<DrawIndexedIndirectCommand>();
 
         public IndirectBuffer IndirectBuffer => _indirectBuffer;
-        public ConcurrentQueue<IRenderCommand> OtherCommands => _otherCommands;
+        public Queue<IRenderCommand> OtherCommands => _otherCommands;
 
         /// <summary>
         /// Инициализирует менеджер команд с указанным контекстом Vulkan
@@ -44,6 +43,7 @@ namespace RockEngine.Core.Rendering.Managers
             _context = context;
             _transformBufferCapacity = transformBufferCapacity;
             _indirectBuffer = new IndirectBuffer(context, 10_000 * _commandStride);
+            _supportsMultiDraw = context.Device.PhysicalDevice.Features2.Features.MultiDrawIndirect;
         }
 
         /// <summary>
@@ -94,7 +94,7 @@ namespace RockEngine.Core.Rendering.Managers
             }
             AddGroup(commandsSpan[groupStartIndex..]);
 
-            var batch = _context.SubmitContext.CreateBatch();
+            var batch = _context.GraphicsSubmitContext.CreateBatch();
             batch.CommandBuffer.LabelObject("IndirectDrawManager cmd");
             _indirectBuffer.StageCommands(batch, CollectionsMarshal.AsSpan(_indirectCommandsList));
 
@@ -127,8 +127,8 @@ namespace RockEngine.Core.Rendering.Managers
         private bool IsNewGroup(in MeshRenderCommand a, in MeshRenderCommand b)
         {
             return a.Layer != b.Layer ||
-                   !ReferenceEquals(a.Mesh.Material.MaterialInstance.Pipeline, b.Mesh.Material.MaterialInstance.Pipeline) ||
-                   !ReferenceEquals(a.Mesh.Material.MaterialInstance, b.Mesh.Material.MaterialInstance) ||
+                   !ReferenceEquals(a.Mesh.Material.Asset.MaterialInstance.Pipeline, b.Mesh.Material.Asset.MaterialInstance.Pipeline) ||
+                   !ReferenceEquals(a.Mesh.Material.Asset.MaterialInstance, b.Mesh.Material.Asset.MaterialInstance) ||
                    !ReferenceEquals(a.Mesh, b.Mesh);
         }
 
@@ -139,11 +139,11 @@ namespace RockEngine.Core.Rendering.Managers
         /// <param name="indirectCommands">Целевой список команд</param>
         private void AddGroup(Span<MeshRenderCommand> groupSpan)
         {
+            // Sort by transform index for better memory locality
             groupSpan.Sort((a, b) => a.TransformIndex.CompareTo(b.TransformIndex));
-            ref readonly MeshRenderCommand firstCmd = ref groupSpan[0];
 
-            var pipeline = firstCmd.Mesh.Material.MaterialInstance.Pipeline;
-            var key = (firstCmd.Layer, pipeline.SubPass);
+            ref readonly var firstCmd = ref groupSpan[0];
+            var key = (firstCmd.Layer, firstCmd.Mesh.Material.Asset.MaterialInstance.Pipeline.SubPass);
 
             if (!_drawGroupsByLayerAndSubpass.TryGetValue(key, out var groups))
             {
@@ -151,22 +151,55 @@ namespace RockEngine.Core.Rendering.Managers
                 _drawGroupsByLayerAndSubpass[key] = groups;
             }
 
-            groups.Add(new DrawGroup(
-                pipeline,
-                firstCmd.Mesh.Material.MaterialInstance,
-                firstCmd.Mesh,
-                (uint)groupSpan.Length,
-                (ulong)(_indirectCommandsList.Count) * _commandStride
-            ));
-
-            _indirectCommandsList.Add(new DrawIndexedIndirectCommand
+            var globalGeometryBuffer = IoC.Container.GetInstance<GlobalGeometryBuffer>();
+            if (_supportsMultiDraw)
             {
-                IndexCount = firstCmd.Mesh.IndicesCount.Value,
-                InstanceCount = (uint)groupSpan.Length,
-                FirstIndex = 0,
-                VertexOffset = 0,
-                FirstInstance = firstCmd.TransformIndex
-            });
+                // Get mesh offsets from global geometry buffer
+                var allocation = globalGeometryBuffer.GetMeshAllocation(firstCmd.Mesh.Mesh.ID);
+
+                groups.Add(new DrawGroup(
+                    firstCmd.Mesh.Material.Asset.MaterialInstance.Pipeline,
+                    firstCmd.Mesh.Material.Asset.MaterialInstance,
+                    firstCmd.Mesh,
+                    (uint)groupSpan.Length,
+                    (ulong)_indirectCommandsList.Count * _commandStride
+                ));
+
+                _indirectCommandsList.Add(new DrawIndexedIndirectCommand
+                {
+                    IndexCount = allocation.IndexCount,
+                    InstanceCount = (uint)groupSpan.Length,
+                    FirstIndex = (uint)(allocation.IndexOffset / sizeof(uint)),
+                    VertexOffset = (int)(allocation.VertexOffset / (ulong)Unsafe.SizeOf<Vertex>()),
+                    FirstInstance = groupSpan[0].TransformIndex
+                });
+            }
+            else
+            {
+                // Individual commands for each instance
+                ulong byteOffset = (ulong)_indirectCommandsList.Count * _commandStride;
+                groups.Add(new DrawGroup(
+                    firstCmd.Mesh.Material.Asset.MaterialInstance.Pipeline,
+                    firstCmd.Mesh.Material.Asset.MaterialInstance,
+                    firstCmd.Mesh,
+                    (uint)groupSpan.Length,
+                    byteOffset
+                ));
+
+                foreach (ref readonly var cmd in groupSpan)
+                {
+                    var allocation = globalGeometryBuffer.GetMeshAllocation(cmd.Mesh.Mesh.ID);
+
+                    _indirectCommandsList.Add(new DrawIndexedIndirectCommand
+                    {
+                        IndexCount = allocation.IndexCount,
+                        InstanceCount = 1,
+                        FirstIndex = (uint)(allocation.IndexOffset / sizeof(uint)),
+                        VertexOffset = (int)(allocation.VertexOffset / (ulong)Unsafe.SizeOf<Vertex>()),
+                        FirstInstance = cmd.TransformIndex
+                    });
+                }
+            }
         }
 
         /// <summary>
@@ -190,7 +223,16 @@ namespace RockEngine.Core.Rendering.Managers
         /// <summary>
         /// Добавляет произвольную команду рендеринга (потокобезопасно)
         /// </summary>
-        internal void AddCommand(IRenderCommand command) => _otherCommands.Enqueue(command);
+        public void AddCommand(IRenderCommand command)
+        {
+            _otherCommands.Enqueue(command);
+        }
+
+        public bool TryDequeue(out IRenderCommand command)
+        {
+            return _otherCommands.TryDequeue(out command);
+        }
+
 
         #region Inner components
         // Внутренние структуры ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -233,18 +275,18 @@ namespace RockEngine.Core.Rendering.Managers
                 if (layerCompare != 0) return layerCompare;
 
                 // Сортировка по subpass пайплайна
-                int subPassCompare = x.Mesh.Material.MaterialInstance.Pipeline.SubPass
-                    .CompareTo(y.Mesh.Material.MaterialInstance.Pipeline.SubPass);
+                int subPassCompare = x.Mesh.Material.Asset.MaterialInstance.Pipeline.SubPass
+                    .CompareTo(y.Mesh.Material.Asset.MaterialInstance.Pipeline.SubPass);
                 if (subPassCompare != 0) return subPassCompare;
 
                 // Сравнение пайплайнов по ID
-                int pipelineCompare = x.Mesh.Material.MaterialInstance.Pipeline.VkObjectNative.Handle
-                    .CompareTo(y.Mesh.Material.MaterialInstance.Pipeline.VkObjectNative.Handle);
+                int pipelineCompare = x.Mesh.Material.Asset.MaterialInstance.Pipeline.VkObjectNative.Handle
+                    .CompareTo(y.Mesh.Material.Asset.MaterialInstance.Pipeline.VkObjectNative.Handle);
                 if (pipelineCompare != 0) return pipelineCompare;
 
                 // Сравнение материалов по ID
-                int materialCompare = x.Mesh.Material.ID
-                    .CompareTo(y.Mesh.Material.ID);
+                int materialCompare = x.Mesh.Material.AssetID
+                    .CompareTo(y.Mesh.Material.AssetID);
                 if (materialCompare != 0) return materialCompare;
 
                 // Сравнение мешей по ID
@@ -257,13 +299,13 @@ namespace RockEngine.Core.Rendering.Managers
         /// </summary>
         /// <param name="Pipeline">Vulkan пайплайн</param>
         /// <param name="Material">Материал</param>
-        /// <param name="Mesh">Геометрия</param>
+        /// <param name="MeshRenderer">Геометрия</param>
         /// <param name="Count">Количество инстансов</param>
         /// <param name="ByteOffset">Смещение в командном буфере</param>
         public readonly record struct DrawGroup(
             VkPipeline Pipeline,
             Material Material,
-            MeshRenderer Mesh,
+            MeshRenderer MeshRenderer,
             uint Count,
             ulong ByteOffset
         );

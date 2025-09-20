@@ -1,5 +1,5 @@
 #version 460
-
+#extension GL_KHR_vulkan_glsl:enable
 
 layout(location = 0) in vec3 inPosition;
 layout(location = 1) in vec3 aNormal;
@@ -17,11 +17,9 @@ layout(set = 1, binding = 0) readonly buffer ModelData {
     mat4 models[];
 };
 
-
-
 void main() 
 {
-    mat4 model = models[gl_BaseInstance];
+    mat4 model = models[gl_InstanceIndex];
     vec4 worldPos =  model * vec4(inPosition, 1.0);
     gl_Position = ubo.viewProj * worldPos;
 }

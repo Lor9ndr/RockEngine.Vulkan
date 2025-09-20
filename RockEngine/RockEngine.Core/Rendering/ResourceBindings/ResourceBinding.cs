@@ -13,15 +13,5 @@ namespace RockEngine.Core.Rendering.ResourceBindings
         protected abstract DescriptorType DescriptorType { get; }
 
         public abstract void UpdateDescriptorSet(VulkanContext renderingContext, uint frameIndex);
-
-        public virtual int GetResourceHash()
-        {
-            HashCode hash = new HashCode();
-            hash.Add(SetLocation);
-            hash.Add(BindingLocation);
-            hash.Add(DescriptorType);
-            return hash.ToHashCode();
-        }
-
     }
 }

@@ -4,6 +4,8 @@ using Silk.NET.Vulkan;
 
 using SkiaSharp;
 
+using System.Threading.Tasks;
+
 namespace RockEngine.Core.Rendering.Texturing
 {
     public sealed class Texture3D : Texture
@@ -12,9 +14,9 @@ namespace RockEngine.Core.Rendering.Texturing
         public uint Height => _image.Extent.Height;
         public uint Depth => _image.Extent.Depth;
 
-        public Texture3D(VulkanContext context, VkImage image, VkImageView imageView,
+        public Texture3D(VulkanContext context, VkImage image,
                         VkSampler sampler, string? sourcePath = null)
-            : base(context, image, imageView, sampler, sourcePath) { }
+            : base(context, image,  sampler, sourcePath) { }
 
         public static async Task<Texture3D> CreateCubeMapAsync(VulkanContext context, string[] facePaths,
                                                               bool generateMipMaps = false,
@@ -23,10 +25,11 @@ namespace RockEngine.Core.Rendering.Texturing
             if (facePaths.Length != 6)
                 throw new ArgumentException("Cube map requires exactly 6 face paths.");
 
+            // Load face bitmaps
             var faceBitmaps = new SKBitmap[6];
             for (int i = 0; i < 6; i++)
             {
-                var bytes =  await File.ReadAllBytesAsync(facePaths[i], cancellationToken);
+                var bytes = await File.ReadAllBytesAsync(facePaths[i], cancellationToken);
                 faceBitmaps[i] = SKBitmap.Decode(bytes);
                 if (faceBitmaps[i].Width != faceBitmaps[0].Width ||
                     faceBitmaps[i].Height != faceBitmaps[0].Height)
@@ -40,50 +43,56 @@ namespace RockEngine.Core.Rendering.Texturing
             var format = GetVulkanFormat(faceBitmaps[0].ColorType, context);
             uint mipLevels = generateMipMaps ? CalculateMipLevels(width, height) : 1;
 
-            var image = CreateVulkanImage(
-                context,
-                width,
-                height,
-                format,
-                mipLevels);
+            // Create image with initial layout as TransferDstOptimal
+            var image = CreateVulkanImage(context, width, height, format, mipLevels);
 
-            var uploadBatch = context.SubmitContext.CreateBatch();
-            uploadBatch.CommandBuffer.LabelObject("CreateCubeMapAsync cmd");
+            // Create semaphores for queue synchronization
+            var transferComplete = VkSemaphore.Create(context);
+            var graphicsComplete = VkSemaphore.Create(context);
 
+            // Transfer queue operations
+            var transferBatch = context.TransferSubmitContext.CreateBatch();
+            transferBatch.CommandBuffer.LabelObject("CubeMap Transfer");
+
+            // Transition to TransferDstOptimal (even though we created it with this layout, this ensures tracking)
             image.TransitionImageLayout(
-                uploadBatch.CommandBuffer,
+                transferBatch.CommandBuffer,
                 ImageLayout.TransferDstOptimal,
                 baseMipLevel: 0,
                 levelCount: 1,
                 baseArrayLayer: 0,
-                layerCount: 6);
+                layerCount: 6
+            );
 
+            // Upload each face
             for (int i = 0; i < 6; i++)
             {
                 var pixelData = faceBitmaps[i].GetPixelSpan();
-                if (!context.SubmitContext.StagingManager.TryStage(uploadBatch, pixelData,
+                if (!transferBatch.SubmitContext.StagingManager.TryStage(transferBatch, pixelData,
                                                                   out ulong bufferOffset,
                                                                   out ulong stagedSize))
                 {
                     throw new InvalidOperationException("Staging buffer overflow");
                 }
 
+                // Barrier for staging buffer
                 var bufferBarrier = new BufferMemoryBarrier
                 {
                     SType = StructureType.BufferMemoryBarrier,
                     SrcAccessMask = AccessFlags.HostWriteBit,
                     DstAccessMask = AccessFlags.TransferReadBit,
-                    Buffer = context.SubmitContext.StagingManager.StagingBuffer,
+                    Buffer = transferBatch.SubmitContext.StagingManager.StagingBuffer,
                     Offset = bufferOffset,
                     Size = stagedSize
                 };
 
-                uploadBatch.PipelineBarrier(
+                transferBatch.PipelineBarrier(
                     srcStage: PipelineStageFlags.HostBit,
                     dstStage: PipelineStageFlags.TransferBit,
                     bufferMemoryBarriers: new[] { bufferBarrier }
                 );
 
+                // Copy to image
                 var copyRegion = new BufferImageCopy
                 {
                     BufferOffset = bufferOffset,
@@ -97,94 +106,66 @@ namespace RockEngine.Core.Rendering.Texturing
                     ImageExtent = new Extent3D(width, height, 1)
                 };
 
-                VulkanContext.Vk.CmdCopyBufferToImage(
-                    uploadBatch.CommandBuffer,
-                    context.SubmitContext.StagingManager.StagingBuffer,
-                    image,
-                    ImageLayout.TransferDstOptimal,
-                    1,
-                    in copyRegion);
+                transferBatch.CommandBuffer.CopyBufferToImage(
+                    srcBuffer: transferBatch.SubmitContext.StagingManager.StagingBuffer,
+                    dstImage: image,
+                    dstImageLayout: ImageLayout.TransferDstOptimal,
+                    regionCount: 1,
+                    pRegions: in copyRegion
+                );
             }
+
+            transferBatch.AddSignalSemaphore(transferComplete);
+            using (var transferOp =  context.TransferSubmitContext.FlushSingle(transferBatch, VkFence.CreateNotSignaled(context)))
+            {
+                await transferOp.WaitAsync();
+            }
+
+            // Graphics queue operations
+            var graphicsBatch = context.GraphicsSubmitContext.CreateBatch();
+            graphicsBatch.CommandBuffer.LabelObject("CubeMap Graphics");
+            graphicsBatch.AddWaitSemaphore(transferComplete, PipelineStageFlags.TransferBit);
 
             if (generateMipMaps)
             {
-                // Барьер перед генерацией мипмапов
-                var barrier = new ImageMemoryBarrier
-                {
-                    SType = StructureType.ImageMemoryBarrier,
-                    Image = image,
-                    OldLayout = ImageLayout.TransferDstOptimal,
-                    NewLayout = ImageLayout.TransferSrcOptimal,
-                    SubresourceRange = new ImageSubresourceRange
-                    {
-                        AspectMask = ImageAspectFlags.ColorBit,
-                        BaseMipLevel = 0,
-                        LevelCount = 1,
-                        BaseArrayLayer = 0,
-                        LayerCount = 6
-                    },
-                    SrcAccessMask = AccessFlags.TransferWriteBit,
-                    DstAccessMask = AccessFlags.TransferReadBit
-                };
-
-                uploadBatch.PipelineBarrier(
-                    srcStage: PipelineStageFlags.TransferBit,
-                    dstStage: PipelineStageFlags.TransferBit,
-                    imageMemoryBarriers: new[] { barrier }
+                // Prepare base level for mipmap generation
+                image.TransitionImageLayout(
+                    graphicsBatch.CommandBuffer,
+                    ImageLayout.TransferSrcOptimal,
+                    baseMipLevel: 0,
+                    levelCount: 1,
+                    baseArrayLayer: 0,
+                    layerCount: 6
                 );
 
-                // Генерация мипмапов
-                image.GenerateMipmaps(uploadBatch.CommandBuffer);
-
-                // Барьер после генерации мипмапов
-                var finalBarrier = new ImageMemoryBarrier
-                {
-                    SType = StructureType.ImageMemoryBarrier,
-                    Image = image,
-                    OldLayout = ImageLayout.TransferSrcOptimal,
-                    NewLayout = ImageLayout.ShaderReadOnlyOptimal,
-                    SubresourceRange = new ImageSubresourceRange
-                    {
-                        AspectMask = ImageAspectFlags.ColorBit,
-                        BaseMipLevel = 0,
-                        LevelCount = mipLevels,
-                        BaseArrayLayer = 0,
-                        LayerCount = 6
-                    },
-                    SrcAccessMask = AccessFlags.TransferWriteBit,
-                    DstAccessMask = AccessFlags.ShaderReadBit
-                };
-
-                uploadBatch.PipelineBarrier(
-                    srcStage: PipelineStageFlags.TransferBit,
-                    dstStage: PipelineStageFlags.FragmentShaderBit,
-                    imageMemoryBarriers: new[] { finalBarrier }
-                );
+                // Generate mipmaps
+                image.GenerateMipmaps(graphicsBatch.CommandBuffer);
             }
             else
             {
+                // Transition directly to shader read layout
                 image.TransitionImageLayout(
-                        uploadBatch.CommandBuffer,
-                        ImageLayout.ShaderReadOnlyOptimal,
-                        baseMipLevel: 0,
-                        levelCount: 1,
-                        baseArrayLayer: 0,
-                        layerCount: 6);
+                    graphicsBatch.CommandBuffer,
+                    ImageLayout.ShaderReadOnlyOptimal,
+                    baseMipLevel: 0,
+                    levelCount: 1,
+                    baseArrayLayer: 0,
+                    layerCount: 6
+                );
             }
 
-            await context.SubmitContext.FlushSingle(uploadBatch,VkFence.CreateNotSignaled(context) );
+            graphicsBatch.AddSignalSemaphore(graphicsComplete);
+            await context.GraphicsSubmitContext.FlushSingle(graphicsBatch, VkFence.CreateNotSignaled(context)).WaitAsync(cancellationToken);
 
-
-            var imageView = CreateCubeMapImageView(context, image, format);
+            // Create image view and sampler
             var sampler = CreateSampler(context, mipLevels);
 
-            foreach (var item in faceBitmaps)
+            // Cleanup
+            foreach (var bitmap in faceBitmaps)
             {
-                item.Dispose();
+                bitmap.Dispose();
             }
-
-
-            return new Texture3D(context, image, imageView, sampler);
+            return new Texture3D(context, image, sampler);
         }
 
         private static VkImage CreateVulkanImage(
@@ -192,7 +173,8 @@ namespace RockEngine.Core.Rendering.Texturing
             uint width,
             uint height,
             Format format,
-            uint mipLevels = 1)
+            uint mipLevels,
+            ImageLayout initialLayout = ImageLayout.Undefined)
         {
             var imageInfo = new ImageCreateInfo
             {
@@ -208,37 +190,11 @@ namespace RockEngine.Core.Rendering.Texturing
                         ImageUsageFlags.TransferSrcBit |
                         ImageUsageFlags.SampledBit,
                 SharingMode = SharingMode.Exclusive,
-                InitialLayout = ImageLayout.Undefined,
+                InitialLayout = initialLayout,
                 Flags = ImageCreateFlags.CreateCubeCompatibleBit
             };
 
             return VkImage.Create(context, imageInfo, MemoryPropertyFlags.DeviceLocalBit, ImageAspectFlags.ColorBit);
-        }
-
-        private static VkImageView CreateCubeMapImageView(VulkanContext context, VkImage image, Format format)
-        {
-            var viewInfo = new ImageViewCreateInfo
-            {
-                SType = StructureType.ImageViewCreateInfo,
-                Image = image,
-                ViewType = ImageViewType.TypeCube,
-                Format = format,
-                SubresourceRange = new ImageSubresourceRange
-                {
-                    AspectMask = ImageAspectFlags.ColorBit,
-                    BaseMipLevel = 0,
-                    LevelCount = image.MipLevels,
-                    BaseArrayLayer = 0,
-                    LayerCount = 6
-                }
-            };
-
-            if (image.GetMipLayout(0, 0) != ImageLayout.ShaderReadOnlyOptimal)
-            {
-                throw new InvalidOperationException("Cubemap image must be in SHADER_READ_ONLY layout");
-            }
-
-            return VkImageView.Create(context, image, viewInfo);
         }
     }
 }

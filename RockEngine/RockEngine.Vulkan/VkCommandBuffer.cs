@@ -15,8 +15,10 @@ namespace RockEngine.Vulkan
 
         public bool IsInRecordingState => _isInRecordingState;
         public bool IsSecondary => _isSecondary;
+
+
         private static uint _id = 0;
-        private uint _cmdID;
+        private readonly uint _cmdID;
 
         public VkCommandBuffer(VulkanContext context, in CommandBuffer commandBuffer, VkCommandPool commandPool, bool isSecondary = false)
             : base(in commandBuffer)
@@ -26,10 +28,6 @@ namespace RockEngine.Vulkan
             _isSecondary = isSecondary;
             _cmdID = _id++;
             LabelObject($"Cmd ({_cmdID})");
-            if(_cmdID == 1153)
-            {
-
-            }
         }
 
         public void Begin(in CommandBufferBeginInfo beginInfo)

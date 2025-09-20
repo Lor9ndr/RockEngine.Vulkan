@@ -10,26 +10,17 @@
             _debugUtils = debugUtils;
             _commandBuffer = commandBuffer;
 
-            if (_debugUtils._cmdBeginDebugUtilsLabel != null)
+            if (color.Length < 4)
             {
-                if (color.Length < 4)
-                {
-                    throw new ArgumentException("Color array must contain at least 4 elements", nameof(color));
-                }
-                //lock (_commandBuffer.CommandPool._lock)
-                {
-                    _debugUtils.CmdBeginDebugUtilsLabel(_commandBuffer, labelName, color);
-                }
-
+                throw new ArgumentException("Color array must contain at least 4 elements", nameof(color));
             }
+            _debugUtils.CmdBeginDebugUtilsLabel(_commandBuffer, labelName, color);
+
         }
 
         public void Dispose()
         {
-            //lock (_commandBuffer.CommandPool._lock)
-            {
-                _debugUtils._cmdEndDebugUtilsLabel(_commandBuffer);
-            }
+            _debugUtils.CmdEndDebugUtilsLabel(_commandBuffer);
         }
     }
 }

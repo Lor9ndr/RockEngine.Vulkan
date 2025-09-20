@@ -1,7 +1,8 @@
 ﻿using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
 
 using NLog;
+
+using RockEngine.Core.Assets.Json;
 
 using System.Text;
 
@@ -9,18 +10,22 @@ namespace RockEngine.Core.Assets.Serializers
 {
     public sealed class JsonAssetSerializer : IAssetSerializer
     {
-        private readonly JsonSerializerSettings _settings;
+        private readonly JsonSerializer _serializer;
         private static readonly Logger _logger = LogManager.GetCurrentClassLogger();
+
+        public JsonSerializer Serializer => _serializer;
 
         public JsonAssetSerializer(IEnumerable<JsonConverter> converters)
         {
-            _settings = new JsonSerializerSettings
+            _serializer = JsonSerializer.Create(new JsonSerializerSettings
             {
                 Formatting = Formatting.Indented,
                 TypeNameHandling = TypeNameHandling.Objects,
-                ReferenceLoopHandling = ReferenceLoopHandling.Ignore,
-                Converters = converters.ToList()
-            };
+                ReferenceLoopHandling = ReferenceLoopHandling.Error,
+                NullValueHandling = NullValueHandling.Include,
+                Converters = converters.ToList(),
+                ContractResolver = new JsonContractResolver()
+            });
         }
 
         public async Task SerializeAsync(IAsset asset, Stream stream)
@@ -34,9 +39,11 @@ namespace RockEngine.Core.Assets.Serializers
                     Data = asset.GetData()
                 };
 
-                await using var writer = new StreamWriter(stream, leaveOpen: true);
-                var json = JsonConvert.SerializeObject(wrapper, _settings);
-                await writer.WriteAsync(json);
+                using var writer = new StreamWriter(stream, Encoding.UTF8, 1024, true);
+                using var jsonWriter = new JsonTextWriter(writer);
+
+                _serializer.Serialize(jsonWriter, wrapper);
+                await jsonWriter.FlushAsync().ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -49,11 +56,20 @@ namespace RockEngine.Core.Assets.Serializers
         {
             try
             {
-                using var reader = new StreamReader(stream, leaveOpen: true);
-                var json = await reader.ReadToEndAsync();
-                var jObject = JObject.Parse(json);
+                using var reader = new StreamReader(stream, Encoding.UTF8, true, 1024, true);
+                using var jsonReader = new JsonTextReader(reader);
 
-                return jObject["Metadata"]!.ToObject<IAsset>(JsonSerializer.Create(_settings));
+                while (await jsonReader.ReadAsync().ConfigureAwait(false))
+                {
+                    if (jsonReader.TokenType == JsonToken.PropertyName &&
+                        jsonReader.Value?.ToString() == "Metadata")
+                    {
+                        await jsonReader.ReadAsync().ConfigureAwait(false);
+                        return _serializer.Deserialize<IAsset>(jsonReader);
+                    }
+                }
+
+                throw new AssetSerializationException("Metadata property not found in asset file");
             }
             catch (Exception ex)
             {
@@ -66,11 +82,20 @@ namespace RockEngine.Core.Assets.Serializers
         {
             try
             {
-                using var reader = new StreamReader(stream, leaveOpen: true);
-                var json = await reader.ReadToEndAsync();
-                var jObject = JObject.Parse(json);
+                using var reader = new StreamReader(stream, Encoding.UTF8, true, 1024, true);
+                using var jsonReader = new JsonTextReader(reader);
 
-                return jObject["Data"]!.ToObject(dataType, JsonSerializer.Create(_settings));
+                while (await jsonReader.ReadAsync().ConfigureAwait(false))
+                {
+                    if (jsonReader.TokenType == JsonToken.PropertyName &&
+                        jsonReader.Value?.ToString() == "Data")
+                    {
+                        await jsonReader.ReadAsync().ConfigureAwait(false);
+                        return _serializer.Deserialize(jsonReader, dataType);
+                    }
+                }
+
+                throw new AssetSerializationException("Data property not found in asset file");
             }
             catch (Exception ex)
             {
@@ -84,5 +109,8 @@ namespace RockEngine.Core.Assets.Serializers
     {
         public AssetSerializationException(string message, Exception inner)
             : base(message, inner) { }
+
+        public AssetSerializationException(string message)
+            : base(message) { }
     }
 }

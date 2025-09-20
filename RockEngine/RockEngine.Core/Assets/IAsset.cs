@@ -2,8 +2,6 @@
 
 using RockEngine.Core.DI;
 
-using System.Reflection;
-
 namespace RockEngine.Core.Assets
 {
     public interface IAsset
@@ -11,9 +9,12 @@ namespace RockEngine.Core.Assets
         Guid ID { get; }
         string Name { get; set; }
         string Type { get; }
-        AssetPath Path { get; set; }
         DateTime Created { get; }
         DateTime Modified { get; }
+        AssetPath Path { get; set; }
+
+
+        [JsonIgnore] 
         bool IsDataLoaded { get; }
         IEnumerable<IAsset> Dependencies { get; }
         void AddDependency(IAsset asset);
@@ -29,36 +30,42 @@ namespace RockEngine.Core.Assets
     {
         [JsonIgnore] // Data comes later
         TData? Data { get;}
+
+        /// <summary>
+        /// Method is being called before saving <typeparamref name="TData"/> 
+        /// </summary>
+        void BeforeSaving();
+
+        /// <summary>
+        /// Method is being called after saving <typeparamref name="TData"/> 
+        /// </summary>
+        void AfterSaving();
     }
 
     public class Asset<T> :  IAsset<T> where T : class, new()
     {
-        public T? Data { get; protected set;} = new T();
+        [JsonIgnore]
+        public T? Data { get; protected set;}
 
         private readonly HashSet<IAsset> _dependencies = new HashSet<IAsset>();
         protected readonly SemaphoreSlim _loadSemaphore = new(1, 1);
-
-
        
         [JsonConstructor]
-        protected Asset() { }
+        protected Asset()
+        {
+            Data = null;
+        }
 
-        [JsonProperty(Order = -20)] // Ensure this comes first in serialization
         public Guid ID { get; set; } = Guid.NewGuid();
 
-        [JsonProperty(Order = -19)]
         public string Name { get; set; } = string.Empty;
 
-        [JsonProperty(Order = -18)]
         public virtual string Type { get; } = "EMPTY ASSET";
-
-        [JsonProperty(Order = -17)]
         public AssetPath Path { get; set; } = AssetPath.Empty;
 
-        [JsonProperty(Order = -16)]
+
         public DateTime Created { get; set; } = DateTime.UtcNow;
 
-        [JsonProperty(Order = -15)]
         public DateTime Modified { get; set; } = DateTime.UtcNow;
 
         public bool IsDataLoaded => Data != null;
@@ -76,9 +83,6 @@ namespace RockEngine.Core.Assets
 
         public void UpdateModified() => Modified = DateTime.UtcNow;
 
-     
-
-
         public virtual async Task LoadDataAsync()
         {
             if (!IsDataLoaded)
@@ -89,7 +93,7 @@ namespace RockEngine.Core.Assets
                     if (!IsDataLoaded)
                     {
                         var assetManager = IoC.Container.GetInstance<AssetManager>();
-                        await assetManager.LoadFullAsync<T>(this.Path);
+                        await assetManager.LoadAsync<T>(Path);
                    }
                 }
                 finally
@@ -97,6 +101,18 @@ namespace RockEngine.Core.Assets
                     _loadSemaphore.Release();
                 }
             }
+        }
+     
+
+
+        public virtual void BeforeSaving()
+        {
+        }
+
+     
+        public virtual void AfterSaving()
+        {
+
         }
 
         public virtual void UnloadData()

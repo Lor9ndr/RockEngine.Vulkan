@@ -2,17 +2,15 @@
 
 using Silk.NET.Vulkan;
 
-using System;
-
 namespace RockEngine.Core.Rendering
 {
     public class GraphicsEngine : IDisposable
     {
         private readonly VulkanContext _context;
         private readonly VkSwapchain _swapchain;
-        private int _frameCount = 0;
+        private uint _frameCount = 0;
 
-        public int FrameIndex => _frameCount % _swapchain.SwapChainImagesCount;
+        public uint FrameIndex => (uint)(_frameCount % _swapchain.SwapChainImagesCount);
         public VkSwapchain Swapchain => _swapchain;
 
         public GraphicsEngine(VulkanContext context)
@@ -37,12 +35,13 @@ namespace RockEngine.Core.Rendering
                 return null;
             }
 
-            var batch = _context.SubmitContext.CreateBatch();
+            var batch = _context.GraphicsSubmitContext.CreateBatch();
             return batch;
         }
 
         public void SubmitAndPresent(UploadBatch batch)
         {
+            
             var frameData = _swapchain.GetFrameData(FrameIndex);
 
             batch.AddWaitSemaphore(frameData.ImageAvailableSemaphore, PipelineStageFlags.ColorAttachmentOutputBit);
@@ -53,7 +52,7 @@ namespace RockEngine.Core.Rendering
             frameData.InFlightFence.Reset();
 
             // Отправляем команды и ждем завершения
-            var operation = _context.SubmitContext.FlushAsync(frameData.InFlightFence);
+            var operation = _context.GraphicsSubmitContext.FlushAsync(frameData.InFlightFence);
 
             // Представляем кадр
             var result = _swapchain.Present(FrameIndex, operation);

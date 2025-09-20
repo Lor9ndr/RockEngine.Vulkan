@@ -25,7 +25,6 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
         private readonly VulkanContext _vkContext;
         private readonly GraphicsEngine _graphicsEngine;
         private readonly IInputContext _input;
-        private VkDescriptorPool _descriptorPool;
         private VkPipelineLayout _pipelineLayout;
         private VkDescriptorSetLayout _descriptorSetLayout;
         private readonly VkBuffer?[] _vertexBuffers;
@@ -37,12 +36,17 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
         private readonly Queue<char> _pressedChars = new Queue<char>();
         private readonly ulong _bufferMemoryAlignment;
         private Texture _fontTexture;
-        private VkDescriptorSet _fontTextureDescriptorSet;
-        private Dictionary<Texture, (GCHandle, TextureBinding)> _textures = new Dictionary<Texture, (GCHandle, TextureBinding)>();
-        private RenderTarget _uiRenderTarget;
-        private VkFrameBuffer[] _framebuffers;
+        private readonly Dictionary<Texture, TextureBinding> _textureBindings = new Dictionary<Texture, TextureBinding>();
+        private readonly List<Texture> _texturesToRemove = new List<Texture>();
+        private readonly Lock _textureCacheLock = new Lock();
+        private bool _disposed;
+        private readonly RenderTarget _uiRenderTarget;
         private ImFontPtr _iconFont;
-        private bool _fontsMerged;
+        private bool _initialized;
+        private TextureBinding _fontTextureBinding;
+
+        private uint _currentFrame = 0;
+        private bool _texturesInitialized = false;
 
         public ImFontPtr IconFont { get => _iconFont; set => _iconFont = value; }
 
@@ -54,12 +58,19 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
             _input = inputContext;
             _uiRenderTarget = renderer.SwapchainTarget;
             _renderPass = _uiRenderTarget.RenderPass;
-            ImGui.CreateContext();
+            
+            ImGui.SetCurrentContext(ImGui.CreateContext());
             var io = ImGui.GetIO();
             _vertexBuffers = new VkBuffer[_vkContext.MaxFramesPerFlight];
             _indexBuffers = new VkBuffer[_vkContext.MaxFramesPerFlight];
            
             _input.Keyboards[0].KeyChar += (s, c) => PressChar(c);
+
+            for (int i = 0; i < _vkContext.MaxFramesPerFlight; i++)
+            {
+                _vertexBuffers[i] = VkBuffer.Create(_vkContext, 1024 * 1024, BufferUsageFlags.VertexBufferBit, MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit);
+                _indexBuffers[i] = VkBuffer.Create(_vkContext, 512 * 1024, BufferUsageFlags.IndexBufferBit, MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit);
+            }
 
 
             io.ConfigFlags |= ImGuiConfigFlags.DockingEnable;
@@ -71,13 +82,17 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
         }
         public void Init()
         {
-            CreateDescriptorPool();
+            if (_initialized)
+            {
+                return;
+            }
             CreateDeviceObjects();
             CreateFontResources();
             CreateDescriptorSet();
             ApplyModernDarkTheme();
             ImGui.NewFrame();
-
+            _frameBegun = true;
+            _initialized = true;
         }
         private void UpdateImGuiInput(IInputContext input)
         {
@@ -202,76 +217,95 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
 
         public void Update()
         {
+            // Clean up texture cache every frame
+            CleanupTextureCache();
+
             if (_frameBegun)
             {
                 ImGui.Render();
+                _frameBegun = false;
             }
 
             SetPerFrameImGuiData(Time.DeltaTime);
             UpdateImGuiInput(_input);
-            _frameBegun = true;
-            ImGui.EndFrame();
-
             ImGui.NewFrame();
+            _frameBegun = true;
+            _currentFrame++;
         }
 
-        public unsafe void Render(VkCommandBuffer commandBuffer, Extent2D swapChainExtent)
+        public unsafe void Render(VkCommandBuffer commandBuffer, uint frameIndex)
         {
-            if (!_frameBegun)
+            if (!_frameBegun || !_initialized)
             {
                 return;
             }
 
-            _frameBegun = false;
+            // Ensure we're using a valid frame index
+            frameIndex %= (uint)_vkContext.MaxFramesPerFlight;
+
             ImGui.Render();
-            RenderImDrawData(ImGui.GetDrawData(), commandBuffer, swapChainExtent);
+            RenderImDrawData(ImGui.GetDrawData(), commandBuffer, frameIndex);
         }
 
-        private unsafe void RenderImDrawData(ImDrawDataPtr drawData, VkCommandBuffer commandBuffer, Extent2D swapChainExtent)
+
+         private unsafe void RenderImDrawData(ImDrawDataPtr drawData, VkCommandBuffer commandBuffer, uint frameIndex)
         {
-
-            ref var vertexBuffer = ref _vertexBuffers[_graphicsEngine.FrameIndex];
-            ref var indexBuffer = ref _indexBuffers![_graphicsEngine.FrameIndex];
-            if (drawData.TotalVtxCount > 0)
+            if (drawData.CmdListsCount == 0)
             {
-                // Calculate required buffer sizes
-                ulong requiredVertexSize = (ulong)drawData.TotalVtxCount * (ulong)Unsafe.SizeOf<ImDrawVert>();
-                ulong requiredIndexSize = (ulong)drawData.TotalIdxCount * sizeof(ushort);
-
-                // Create or resize the vertex/index buffers
-                CreateOrResizeBuffer(ref vertexBuffer, requiredVertexSize, BufferUsageFlags.VertexBufferBit);
-                CreateOrResizeBuffer(ref indexBuffer, requiredIndexSize, BufferUsageFlags.IndexBufferBit);
-                // Upload vertex/index data into a single contiguous GPU buffer
-                vertexBuffer!.Map(out var pvtx_dst);
-                indexBuffer!.Map(out var pidx_dst);
-                ImDrawVert* vtx_dst = (ImDrawVert*)pvtx_dst;
-                ushort* idx_dst = (ushort*)pidx_dst;
-
-                for (int n = 0; n < drawData.CmdListsCount; n++)
-                {
-                    var cmd_list = drawData.CmdLists[n];
-                    Unsafe.CopyBlock(vtx_dst, cmd_list.VtxBuffer.Data.ToPointer(), (uint)cmd_list.VtxBuffer.Size * (uint)sizeof(ImDrawVert));
-                    Unsafe.CopyBlock(idx_dst, cmd_list.IdxBuffer.Data.ToPointer(), (uint)cmd_list.IdxBuffer.Size * sizeof(ushort));
-                    vtx_dst += cmd_list.VtxBuffer.Size;
-                    idx_dst += cmd_list.IdxBuffer.Size;
-                }
-                vertexBuffer.Flush();
-                indexBuffer.Flush();
-                vertexBuffer.Unmap();
-                indexBuffer.Unmap();
+                return;
             }
 
-            // Setup desired Vulkan state
+            ref var vertexBuffer = ref _vertexBuffers[frameIndex];
+            ref var indexBuffer = ref _indexBuffers[frameIndex];
+            
+            // Calculate required buffer sizes with some padding
+            ulong requiredVertexSize = (ulong)(drawData.TotalVtxCount + 5000) * (ulong)Unsafe.SizeOf<ImDrawVert>();
+            ulong requiredIndexSize = (ulong)(drawData.TotalIdxCount + 10000) * sizeof(ushort);
+
+            // Ensure buffers are large enough
+            if (vertexBuffer.Size < requiredVertexSize)
+            {
+                vertexBuffer?.Dispose();
+                vertexBuffer = VkBuffer.Create(_vkContext, requiredVertexSize, BufferUsageFlags.VertexBufferBit, MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit);
+            }
+
+            if (indexBuffer.Size < requiredIndexSize)
+            {
+                indexBuffer?.Dispose();
+                indexBuffer = VkBuffer.Create(_vkContext, requiredIndexSize, BufferUsageFlags.IndexBufferBit, MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit);
+            }
+
+            // Upload vertex/index data
+            vertexBuffer.Map(out var pvtx_dst);
+            indexBuffer.Map(out var pidx_dst);
+            
+            ImDrawVert* vtx_dst = (ImDrawVert*)pvtx_dst;
+            ushort* idx_dst = (ushort*)pidx_dst;
+
+            for (int n = 0; n < drawData.CmdListsCount; n++)
+            {
+                var cmd_list = drawData.CmdListsRange[n];
+                Unsafe.CopyBlock(vtx_dst, cmd_list.VtxBuffer.Data.ToPointer(), (uint)(cmd_list.VtxBuffer.Size * Unsafe.SizeOf<ImDrawVert>()));
+                Unsafe.CopyBlock(idx_dst, cmd_list.IdxBuffer.Data.ToPointer(), (uint)(cmd_list.IdxBuffer.Size * sizeof(ushort)));
+                vtx_dst += cmd_list.VtxBuffer.Size;
+                idx_dst += cmd_list.IdxBuffer.Size;
+            }
+            
+            vertexBuffer.Flush();
+            indexBuffer.Flush();
+            vertexBuffer.Unmap();
+            indexBuffer.Unmap();
+
+            // Setup render state
             VulkanContext.Vk.CmdBindPipeline(commandBuffer, PipelineBindPoint.Graphics, _pipeline);
-            // Bind Vertex And Index Buffer:
+            
             if (drawData.TotalVtxCount > 0)
             {
-                ulong vertex_offset = 0;
-                vertexBuffer!.BindVertexBuffer(commandBuffer, vertex_offset);
-                indexBuffer!.BindIndexBuffer(commandBuffer, 0, sizeof(ushort) == 2 ? IndexType.Uint16 : IndexType.Uint32);
+                vertexBuffer.BindVertexBuffer(commandBuffer, 0);
+                indexBuffer.BindIndexBuffer(commandBuffer, 0, IndexType.Uint16);
             }
 
-            // Setup viewport:
+            // Setup viewport
             Viewport viewport;
             viewport.X = 0;
             viewport.Y = 0;
@@ -281,98 +315,70 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
             viewport.MaxDepth = 1.0f;
             commandBuffer.SetViewport(in viewport);
 
-            // Setup scale and translation:
-            // Our visible imgui space lies from draw_data.DisplayPps (top left) to draw_data.DisplayPos+data_data.DisplaySize (bottom right). DisplayPos is (0,0) for single viewport apps.
-            Span<float> scale = stackalloc float[2];
-            scale[0] = 2.0f / drawData.DisplaySize.X;
-            scale[1] = 2.0f / drawData.DisplaySize.Y;
-            Span<float> translate = stackalloc float[2];
-            translate[0] = -1.0f - drawData.DisplayPos.X * scale[0];
-            translate[1] = -1.0f - drawData.DisplayPos.Y * scale[1];
+            // Setup scale and translation
+            Span<float> scale = [2.0f / drawData.DisplaySize.X, 2.0f / drawData.DisplaySize.Y];
+            Span<float> translate = [-1.0f - drawData.DisplayPos.X * scale[0], -1.0f - drawData.DisplayPos.Y * scale[1]];
+
             VulkanContext.Vk.CmdPushConstants(commandBuffer, _pipelineLayout, ShaderStageFlags.VertexBit, sizeof(float) * 0, sizeof(float) * 2, scale);
             VulkanContext.Vk.CmdPushConstants(commandBuffer, _pipelineLayout, ShaderStageFlags.VertexBit, sizeof(float) * 2, sizeof(float) * 2, translate);
 
-            var fontSet = _fontTextureDescriptorSet.VkObjectNative;
-            VulkanContext.Vk.CmdBindDescriptorSets(
-                commandBuffer,
-                PipelineBindPoint.Graphics,
-                _pipelineLayout,
-                0, // First set
-                1, // Descriptor set count
-                in fontSet, // Pointer to descriptor set
-                0,
-                null
-            );
-            // Will project scissor/clipping rectangles into framebuffer space
-            Vector2 clipOff = drawData.DisplayPos;         // (0,0) unless using multi-viewports
-            Vector2 clipScale = drawData.FramebufferScale; // (1,1) unless using retina display which are often (2,2)
+            // Bind font texture
+            _bindingManager.BindResource(frameIndex, _fontTextureBinding, commandBuffer, _pipelineLayout);
 
             // Render command lists
-            // (Because we merged all buffers into a single one, we maintain our own offset into them)
-            int vertexOffset = 0;
-            int indexOffset = 0;
+            Vector2 clipOff = drawData.DisplayPos;
+            Vector2 clipScale = drawData.FramebufferScale;
+            
+            int global_vtx_offset = 0;
+            int global_idx_offset = 0;
+            
             for (int n = 0; n < drawData.CmdListsCount; n++)
             {
-                var cmd_list = drawData.CmdLists[n];
+                var cmd_list = drawData.CmdListsRange[n];
                 for (int cmd_i = 0; cmd_i < cmd_list.CmdBuffer.Size; cmd_i++)
                 {
                     ImDrawCmdPtr pcmd = cmd_list.CmdBuffer[cmd_i];
-                    if (pcmd.ElemCount == 0) continue;
-
-                    // Get the descriptor set from the pinned handle
-                    VkDescriptorSet? descriptor = default;
-                    var handle = GCHandle.FromIntPtr(pcmd.TextureId);
-                    descriptor = (VkDescriptorSet)handle.Target;
-                    if (descriptor is null)
+                    if (pcmd.UserCallback != IntPtr.Zero)
                     {
-                        continue;
+                        // Handle user callbacks if needed
                     }
-                    var descriptorHandle = descriptor.VkObjectNative;
-
-                    VulkanContext.Vk.CmdBindDescriptorSets(
-                        commandBuffer,
-                        PipelineBindPoint.Graphics,
-                        _pipelineLayout,
-                        0, // First set
-                        1, // Descriptor set count
-                        in descriptorHandle, // Pointer to descriptor set
-                        0,
-                        null
-                    );
-
-
-                    // Project scissor/clipping rectangles into framebuffer space
-                    Vector4 clipRect;
-                    clipRect.X = (pcmd.ClipRect.X - clipOff.X) * clipScale.X;
-                    clipRect.Y = (pcmd.ClipRect.Y - clipOff.Y) * clipScale.Y;
-                    clipRect.Z = (pcmd.ClipRect.Z - clipOff.X) * clipScale.X;
-                    clipRect.W = (pcmd.ClipRect.W - clipOff.Y) * clipScale.Y;
-
-                    if (clipRect.X < _graphicsEngine.Swapchain.Extent.Width && clipRect.Y < _graphicsEngine.Swapchain.Extent.Height && clipRect.Z >= 0.0f && clipRect.W >= 0.0f)
+                    else
                     {
-                        // Negative offsets are illegal for vkCmdSetScissor
-                        if (clipRect.X < 0.0f)
-                            clipRect.X = 0.0f;
-                        if (clipRect.Y < 0.0f)
-                            clipRect.Y = 0.0f;
+                        if (pcmd.ElemCount == 0) continue;
+
+                        // Get texture binding
+                        var textureBinding = GetTextureBindingFromId(pcmd.TextureId);
+                        if (textureBinding != null)
+                        {
+                            _bindingManager.BindResource(frameIndex, textureBinding, commandBuffer, _pipelineLayout);
+                        }
 
                         // Apply scissor/clipping rectangle
-                        Rect2D scissor = new Rect2D();
-                        scissor.Offset.X = (int)clipRect.X;
-                        scissor.Offset.Y = (int)clipRect.Y;
-                        scissor.Extent.Width = (uint)(clipRect.Z - clipRect.X);
-                        scissor.Extent.Height = (uint)(clipRect.W - clipRect.Y);
-                        VulkanContext.Vk.CmdSetScissor(commandBuffer, 0, 1, &scissor);
+                        Vector4 clipRect;
+                        clipRect.X = (pcmd.ClipRect.X - clipOff.X) * clipScale.X;
+                        clipRect.Y = (pcmd.ClipRect.Y - clipOff.Y) * clipScale.Y;
+                        clipRect.Z = (pcmd.ClipRect.Z - clipOff.X) * clipScale.X;
+                        clipRect.W = (pcmd.ClipRect.W - clipOff.Y) * clipScale.Y;
 
-                        // Draw
-                        VulkanContext.Vk.CmdDrawIndexed(commandBuffer, pcmd.ElemCount, 1, pcmd.IdxOffset + (uint)indexOffset, (int)pcmd.VtxOffset + vertexOffset, 0);
+                        if (clipRect.X < _graphicsEngine.Swapchain.Extent.Width && clipRect.Y < _graphicsEngine.Swapchain.Extent.Height && clipRect.Z >= 0.0f && clipRect.W >= 0.0f)
+                        {
+                            if (clipRect.X < 0.0f) clipRect.X = 0.0f;
+                            if (clipRect.Y < 0.0f) clipRect.Y = 0.0f;
+
+                            Rect2D scissor = new Rect2D
+                            {
+                                Offset = { X = (int)clipRect.X, Y = (int)clipRect.Y },
+                                Extent = { Width = (uint)(clipRect.Z - clipRect.X), Height = (uint)(clipRect.W - clipRect.Y) }
+                            };
+                            
+                            VulkanContext.Vk.CmdSetScissor(commandBuffer, 0, 1, &scissor);
+                            VulkanContext.Vk.CmdDrawIndexed(commandBuffer, pcmd.ElemCount, 1, pcmd.IdxOffset + (uint)global_idx_offset, (int)pcmd.VtxOffset + global_vtx_offset, 0);
+                        }
                     }
                 }
-                indexOffset += cmd_list.IdxBuffer.Size;
-                vertexOffset += cmd_list.VtxBuffer.Size;
+                global_idx_offset += cmd_list.IdxBuffer.Size;
+                global_vtx_offset += cmd_list.VtxBuffer.Size;
             }
-
-
         }
 
         private void CreateOrResizeBuffer(ref VkBuffer? buffer, ulong size, BufferUsageFlags usage)
@@ -391,48 +397,10 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
             }
         }
 
-        private unsafe void CreateDescriptorPool()
-        {
-            var poolSizes = new[]
-            {
-                new DescriptorPoolSize { Type = DescriptorType.CombinedImageSampler, DescriptorCount = 1000 }
-            };
-
-            var poolInfo = new DescriptorPoolCreateInfo
-            {
-                SType = StructureType.DescriptorPoolCreateInfo,
-                PoolSizeCount = (uint)poolSizes.Length,
-                PPoolSizes = (DescriptorPoolSize*)Unsafe.AsPointer(ref poolSizes[0]),
-                MaxSets = 100,
-                Flags = DescriptorPoolCreateFlags.FreeDescriptorSetBit
-            };
-
-            _descriptorPool = VkDescriptorPool.Create(_vkContext, in poolInfo);
-        }
-
-
         private unsafe void CreateDescriptorSet()
         {
-            var layout = _descriptorSetLayout.DescriptorSetLayout;
-            var set = _descriptorPool.AllocateDescriptorSet(layout);
-            _fontTextureDescriptorSet = set;
-            var imageInfo = new DescriptorImageInfo
-            {
-                Sampler = _fontTexture.Sampler,
-                ImageView = _fontTexture.ImageView,
-                ImageLayout = ImageLayout.ShaderReadOnlyOptimal
-            };
-
-            var descriptorWrite = new WriteDescriptorSet
-            {
-                SType = StructureType.WriteDescriptorSet,
-                DstSet = _fontTextureDescriptorSet,
-                DescriptorCount = 1,
-                DescriptorType = DescriptorType.CombinedImageSampler,
-                PImageInfo = &imageInfo
-            };
-
-            VulkanContext.Vk.UpdateDescriptorSets(_vkContext.Device, 1, &descriptorWrite, 0, null);
+            _fontTextureBinding = new TextureBinding(0, 0, 0, 1, _fontTexture);
+            _bindingManager.AllocateAndUpdateDescriptorSet(0, _fontTextureBinding, _pipelineLayout);
         }
 
         private unsafe void CreateFontResources()
@@ -440,86 +408,136 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
             var io = ImGui.GetIO();
             io.BackendFlags |= ImGuiBackendFlags.RendererHasVtxOffset;
 
-            // 1. Load default font
-            var baseFont = io.Fonts.AddFontDefault();
+            // Load Roboto as main font
+            byte[] robotoData = GetEmbeddedResourceBytes("RockEngine.Editor.Resources.Fonts.OpenSans-VariableFont_wdth,wght.ttf");
 
-            // 2. Configure icon font merging
-            var cfgNative = ImGuiNative.ImFontConfig_ImFontConfig(); ;
-            var config = new ImFontConfigPtr(cfgNative);
-            config.MergeMode = true;
-            config.PixelSnapH = true;
-            // 3. Define the specific icons we want to use
-            var glyphRanges = new ushort[] { 0xe000, 0xf8ff, 0 };
+            // Keep font data alive until after Build()
+            GCHandle robotoHandle = GCHandle.Alloc(robotoData, GCHandleType.Pinned);
 
-            // 4. Load icon font
-            byte[] fontData = GetEmbeddedResourceBytes("RockEngine.Editor.Resources.Fonts.forkawesome-webfont.ttf");
-            fixed (byte* pFontData = fontData)
-            fixed (ushort* rangesPtr = glyphRanges)
+            try
             {
-                _iconFont = io.Fonts.AddFontFromMemoryTTF(
-                    (IntPtr)pFontData,
-                    fontData.Length,
+                // Main font - Roboto at 16px
+                var fontConfig = new ImFontConfigPtr(ImGuiNative.ImFontConfig_ImFontConfig());
+                fontConfig.FontDataOwnedByAtlas = false; // We'll manage the memory
+
+                io.Fonts.AddFontFromMemoryTTF(
+                    robotoHandle.AddrOfPinnedObject(),
+                    robotoData.Length,
                     16.0f,
-                    config,
-                    (IntPtr)rangesPtr
+                    fontConfig
                 );
+                fontConfig.Destroy();
+            }
+            finally
+            {
+                // Don't free the handle yet - wait until after Build()
             }
 
-            // 5. Build font atlas only once
-            io.Fonts.Build();
-          
-
-                // 6. Retrieve texture data
-            io.Fonts.GetTexDataAsRGBA32(out nint pixels, out int width, out int height, out int bytes_per_pixel);
-            Span<byte> bytes = new Span<byte>((void*)pixels, width * height * bytes_per_pixel);
-            _fontTexture = Texture2D.Create(_vkContext, width, height, Format.R8G8B8A8Srgb, bytes);
-
-            // 7. Store texture identifier
-            io.Fonts.SetTexID(GetTextureID(_fontTexture));
-            io.Fonts.ClearTexData();
-        }
-   
-        private unsafe void LoadIconFont(ImGuiIOPtr io, string resourcePath, float size)
-        {
-            // Load font data from embedded resources
-            byte[] fontData = GetEmbeddedResourceBytes(resourcePath);
-
-            // Configure font merging
-            ImFontConfig fontConfigNative = new ImFontConfig();
-            var config = new ImFontConfigPtr(&fontConfigNative);
+            // Configure icon font merging
+            var config = new ImFontConfigPtr(ImGuiNative.ImFontConfig_ImFontConfig());
             config.MergeMode = true;
             config.PixelSnapH = true;
             config.GlyphOffset = new Vector2(0, 2);
-            config.FontDataOwnedByAtlas = false; 
-            size = size * 2.0f / 3.0f;
+            config.FontDataOwnedByAtlas = false;
 
-            // Define icon ranges (Font Awesome range)
+            // Load Fork Awesome for icons
+            byte[] iconFontData = GetEmbeddedResourceBytes("RockEngine.Editor.Resources.Fonts.forkawesome-webfont.ttf");
+            GCHandle iconFontHandle = GCHandle.Alloc(iconFontData, GCHandleType.Pinned);
 
-            var builder = new ImFontGlyphRangesBuilderPtr(ImGuiNative.ImFontGlyphRangesBuilder_ImFontGlyphRangesBuilder());
-            builder.BuildRanges(out ImVector ranges);
-            fixed (byte* pFontData = fontData)
-                _iconFont = io.Fonts.AddFontFromMemoryTTF(
-                    (IntPtr)pFontData,
-                    fontData.Length,
-                    size,
-                    config,
-                    ranges.Data
-                );
-
-            _fontsMerged = true;
-            builder.Destroy();
-        }
-        private ushort[] CreateGlyphRanges(string glyphs)
-        {
-            List<ushort> ranges = new List<ushort>();
-            foreach (char c in glyphs)
+            try
             {
-                ranges.Add((ushort)c);
+                // Define icon ranges (Fork Awesome range: 0xf000-0xf2e0)
+                ushort[] iconRanges = [0xf000, 0xf2e0, 0];
+                fixed (ushort* rangesPtr = iconRanges)
+                {
+                    _iconFont = io.Fonts.AddFontFromMemoryTTF(
+                        iconFontHandle.AddrOfPinnedObject(),
+                        iconFontData.Length,
+                        14.0f, // Slightly smaller than main font
+                        config,
+                        (IntPtr)rangesPtr
+                    );
+                }
             }
-            ranges.Add(0); // Null-terminator
-            return ranges.ToArray();
+            finally
+            {
+                iconFontHandle.Free();
+                config.Destroy();
+            }
+
+            // Build font atlas
+            io.Fonts.Build();
+
+            // Now we can free the main font handle
+            robotoHandle.Free();
+
+            // Get texture data
+            io.Fonts.GetTexDataAsRGBA32(out nint pixels, out int width, out int height, out int bytesPerPixel);
+
+            // Create texture with Unorm format instead of Srgb
+            Span<byte> bytes = new Span<byte>((void*)pixels, width * height * bytesPerPixel);
+            _fontTexture = Texture2D.Create(_vkContext, width, height, Format.R8G8B8A8Unorm, bytes);
+
+            // Store texture identifier
+            io.Fonts.SetTexID(GetTextureID(_fontTexture));
+            io.Fonts.ClearTexData();
         }
 
+        private unsafe ImFontPtr LoadFontFromResources(string resourcePath, float size, bool mergeMode = false, ushort[] glyphRanges = null)
+        {
+            var io = ImGui.GetIO();
+
+            byte[] fontData = GetEmbeddedResourceBytes(resourcePath);
+            GCHandle fontDataHandle = GCHandle.Alloc(fontData, GCHandleType.Pinned);
+
+            try
+            {
+                if (mergeMode)
+                {
+                    var config = new ImFontConfigPtr(ImGuiNative.ImFontConfig_ImFontConfig());
+                    config.MergeMode = true;
+                    config.PixelSnapH = true;
+                    config.GlyphOffset = new Vector2(0, 2);
+                    config.FontDataOwnedByAtlas = false;
+
+                    if (glyphRanges != null)
+                    {
+                        fixed (ushort* rangesPtr = glyphRanges)
+                        {
+                            return io.Fonts.AddFontFromMemoryTTF(
+                                fontDataHandle.AddrOfPinnedObject(),
+                                fontData.Length,
+                                size,
+                                config,
+                                (IntPtr)rangesPtr
+                            );
+                        }
+                    }
+                    else
+                    {
+
+                        return io.Fonts.AddFontFromMemoryTTF(
+                            fontDataHandle.AddrOfPinnedObject(),
+                            fontData.Length,
+                            size,
+                            config
+                        );
+                    }
+                }
+                else
+                {
+                    return io.Fonts.AddFontFromMemoryTTF(
+                        fontDataHandle.AddrOfPinnedObject(),
+                        fontData.Length,
+                        size
+                    );
+                }
+            }
+            finally
+            {
+                fontDataHandle.Free();
+            }
+        }
 
         private static byte[] GetEmbeddedResourceBytes(string resourcePath)
         {
@@ -529,29 +547,84 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
             stream.ReadExactly(data);
             return data;
         }
-
-        public unsafe nint GetTextureID(Texture texture)
+        private TextureBinding GetTextureBindingFromId(IntPtr textureId)
         {
-            if (_textures.TryGetValue(texture, out var value))
+            if (textureId == IntPtr.Zero) return null;
+
+            // The texture ID is the address of the Texture object
+            // We need to find the corresponding TextureBinding
+            var texture = GetTextureFromId(textureId);
+            if (texture == null) return null;
+
+            lock (_textureCacheLock)
             {
-                var desc = value.Item2.DescriptorSets[_graphicsEngine.FrameIndex];
-                if (desc is null || desc.IsDirty)
+                if (_textureBindings.TryGetValue(texture, out var binding))
                 {
-                    value.Item1.Free();
-                    _bindingManager.AllocateAndUpdateDescriptorSet((uint)_graphicsEngine.FrameIndex, value.Item2, _pipelineLayout);
-                    value.Item2.DescriptorSets[_graphicsEngine.FrameIndex].IsDirty = false;
-                    var newHandle = GCHandle.Alloc(value.Item2.DescriptorSets[_graphicsEngine.FrameIndex]);
-                    _textures[texture] = (newHandle, value.Item2);
-                    return GCHandle.ToIntPtr(newHandle);
+                    return binding;
                 }
-                return GCHandle.ToIntPtr(value.Item1);
             }
-            var binding = new TextureBinding(0, 0, ImageLayout.ShaderReadOnlyOptimal, texture);
-            _bindingManager.AllocateAndUpdateDescriptorSet((uint)_graphicsEngine.FrameIndex, binding, _pipelineLayout);
-            var handle = GCHandle.Alloc(binding.DescriptorSets[_graphicsEngine.FrameIndex]);
-            _textures[texture] = (handle, binding);
-            return GCHandle.ToIntPtr(handle);
+            return null;
         }
+
+        // Helper method to get Texture from ID
+        private unsafe Texture GetTextureFromId(IntPtr textureId)
+        {
+            // This assumes textureId is the address of the Texture object
+            // You might need to adjust this based on how you're storing textures
+            GCHandle handle = GCHandle.FromIntPtr(textureId);
+            return handle.Target as Texture;
+        }
+
+
+        // Modify GetTextureID to return texture address instead of descriptor set handle
+        public unsafe IntPtr GetTextureID(Texture texture)
+        {
+            if (texture == null || texture.IsDisposed)
+                return IntPtr.Zero;
+
+            lock (_textureCacheLock)
+            {
+                if (!_textureBindings.TryGetValue(texture, out var binding))
+                {
+                    // Create new texture binding
+                    binding = new TextureBinding(0, 0, 0, 1, texture);
+                    _textureBindings[texture] = binding;
+
+                    // Allocate descriptor sets for all frames
+                    for (int i = 0; i < _vkContext.MaxFramesPerFlight; i++)
+                    {
+                        _bindingManager.AllocateDescriptorSet((uint)i, binding, _pipelineLayout);
+                    }
+                }
+
+                // Return the address of the texture as the ID
+                GCHandle handle = GCHandle.Alloc(texture, GCHandleType.Weak);
+                return GCHandle.ToIntPtr(handle);
+            }
+        }
+
+        // Modify CleanupTextureCache to handle texture bindings
+        public void CleanupTextureCache()
+        {
+            lock (_textureCacheLock)
+            {
+                var texturesToRemove = new List<Texture>();
+
+                foreach (var kvp in _textureBindings)
+                {
+                    if (kvp.Key.IsDisposed)
+                    {
+                        texturesToRemove.Add(kvp.Key);
+                    }
+                }
+
+                foreach (var texture in texturesToRemove)
+                {
+                    _textureBindings.Remove(texture);
+                }
+            }
+        }
+
 
         private void CreateDeviceObjects()
         {
@@ -563,18 +636,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
             SetPipeline(vertShaderModule, fragShaderModule);
 
         }
-        private void CreateFramebuffers()
-        {
-            _framebuffers = new VkFrameBuffer[1]; // Single framebuffer for UI
-            var attachments = new[] { _uiRenderTarget.OutputTexture.ImageView };
-            _framebuffers[0] = VkFrameBuffer.Create(
-                _vkContext,
-                _renderPass,
-                attachments,
-                _uiRenderTarget.Size.Width,
-                _uiRenderTarget.Size.Height
-            );
-        }
+      
 
         private unsafe void SetPipeline(VkShaderModule vertShaderModule, VkShaderModule fragShaderModule)
         {
@@ -706,9 +768,9 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
             // Tabs
             colors[(int)ImGuiCol.Tab] = darkColor;
             colors[(int)ImGuiCol.TabHovered] = accentColor;
-            /* colors[(int)ImGuiCol.TabActive] = accentHoverColor;
-             colors[(int)ImGuiCol.TabUnfocused] = darkColor;
-             colors[(int)ImGuiCol.TabUnfocusedActive] = darkColor;*/
+            colors[(int)ImGuiCol.TabActive] = accentHoverColor;
+            colors[(int)ImGuiCol.TabUnfocused] = darkColor;
+            colors[(int)ImGuiCol.TabUnfocusedActive] = darkColor;
 
             // Docking
             colors[(int)ImGuiCol.DockingPreview] = accentColor * new Vector4(1.0f, 1.0f, 1.0f, 0.7f);
@@ -748,6 +810,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
 
         public void Dispose()
         {
+            _initialized = false;
 
         }
 

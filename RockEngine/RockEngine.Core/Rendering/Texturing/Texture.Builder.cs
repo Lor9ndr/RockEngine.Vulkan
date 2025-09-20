@@ -106,23 +106,23 @@ namespace RockEngine.Core.Rendering.Texturing
                 if (_waitCompute)
                 {
                     var semaphore = VkSemaphore.Create(_context);
-                    _context.SubmitComputeContext.AddWaitSemaphore(semaphore, PipelineStageFlags.ComputeShaderBit);
-                    _context.SubmitContext.AddSignalSemaphore(semaphore);
+                    _context.ComputeSubmitContext.AddWaitSemaphore(semaphore, PipelineStageFlags.ComputeShaderBit);
+                    _context.GraphicsSubmitContext.AddSignalSemaphore(semaphore);
                 }
                 if (_generateMipmaps)
                 {
-                    var batch = _context.SubmitContext.CreateBatch();
+                    var batch = _context.GraphicsSubmitContext.CreateBatch();
                     image.GenerateMipmaps(batch.CommandBuffer);
                     batch.CommandBuffer.LabelObject("GenerateMipmap cmd");
-                    _context.SubmitContext.FlushSingle(batch, VkFence.CreateNotSignaled(_context)).Wait();
+                    _context.GraphicsSubmitContext.FlushSingle(batch, VkFence.CreateNotSignaled(_context)).Wait();
                 }
                 if (_isCubeMap)
                 {
-                    return new Texture3D(_context, image,imageView,sampler);
+                    return new Texture3D(_context, image,sampler);
                 }
                 else
                 {
-                    return new Texture2D(_context, image, imageView, sampler);
+                    return new Texture2D(_context, image, sampler);
                 }
 
             }

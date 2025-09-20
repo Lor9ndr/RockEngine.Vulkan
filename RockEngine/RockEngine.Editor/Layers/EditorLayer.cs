@@ -1,7 +1,10 @@
 ﻿using ImGuiNET;
 
+using NLog;
+
 using RockEngine.Core;
 using RockEngine.Core.Assets;
+using RockEngine.Core.Assets.AssetData;
 using RockEngine.Core.Assets.RockEngine.Core.Assets;
 using RockEngine.Core.Builders;
 using RockEngine.Core.DI;
@@ -23,6 +26,7 @@ using Silk.NET.Vulkan;
 using System.Numerics;
 using System.Reflection;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 
 using ZLinq;
 
@@ -38,8 +42,7 @@ namespace RockEngine.Editor.Layers
         private readonly AssetManager _assetManager;
         private readonly EditorConsole _editorConsole;
         private readonly EditorStateManager _stateManager;
-        private readonly TextureStreamer _textureStreamer;
-        private ImGuiController _imGuiController;
+        private readonly ImGuiController _imGuiController;
         private VkPipelineLayout _pipelineLayout;
         private VkPipeline _pipeline;
         private IBLParams _iblParams = new IBLParams();
@@ -56,8 +59,17 @@ namespace RockEngine.Editor.Layers
         private Entity _selectedEntity;
         private Vector2 _currentContentSize;
         private Vector2 _currentGameSize;
+        private static readonly Logger _logger = LogManager.GetCurrentClassLogger();
 
-        public EditorLayer(World world, VulkanContext context, GraphicsEngine graphicsEngine, Renderer renderer, IInputContext inputContext, AssetManager assetManager, EditorConsole editorConsole, ImGuiController imGuiController)
+        public EditorLayer(World world,
+            VulkanContext context,
+            GraphicsEngine graphicsEngine,
+            Renderer renderer,
+            IInputContext inputContext,
+            AssetManager assetManager,
+            EditorConsole editorConsole,
+            ImGuiController imGuiController
+            )
         {
             _world = world;
             _context = context;
@@ -66,140 +78,169 @@ namespace RockEngine.Editor.Layers
             _inputContext = inputContext;
             _assetManager = assetManager;
             _editorConsole = editorConsole;
-            _imGuiController = imGuiController; 
+            _imGuiController = imGuiController;
             _stateManager = new EditorStateManager();
+
+
+            DefaultMeshes.Initalize(_assetManager);
         }
 
-        public async Task OnAttach()
+        private async Task LoadAssetsFromProject(string projectPath)
         {
-            _imGuiController.Init();
-            CretePipeline();
-            CreateSolidPipeline();
-            var proj =  await _assetManager.CreateProjectAsync("TestAssetSystem", "Project\\");
-           await _assetManager.SaveProjectAsync(proj);
-
-            var revoulier = await _assetManager.LoadModelAsync("Resources\\Models\\Revoulier\\Cerberus_LP.FBX", "Revolier");
-            var sponza = await _assetManager.LoadModelAsync("Resources\\Models\\SponzaAtrium\\scene.gltf", "Sponza");
-
-            var skybox = _world.CreateEntity();
-            var skyboxAsset = _assetManager.Create<TextureAsset>(new AssetPath("Skybox", "skybox"));
-            skyboxAsset.SetData(new TextureData()
+            try
             {
-                FilePaths = [                
-                "Resources/skybox/right.jpg",    // +X
-                "Resources/skybox/left.jpg",     // -X
-                "Resources/skybox/top.jpg",      // +Y (Vulkan's Y points down)
-                "Resources/skybox/bottom.jpg",   // -Y
-                "Resources/skybox/front.jpg",    // +Z
-                "Resources/skybox/back.jpg"      // -Z
-                ], 
-                GenerateMipmaps = false,
-                Type = TextureType.TextureCube
-            });
-            skybox.AddComponent<Skybox>().Cubemap = skyboxAsset;
-            skybox.Transform.Scale = new Vector3(100, 100, 100);
+                _logger.Info($"Loading assets from project: {projectPath}");
 
+                // Load the project
+                await _assetManager.LoadProjectAsync(projectPath);
 
+                // Load the main scene
+                var scene = await _assetManager.LoadAsync<SceneData>(new AssetPath("Scenes", "DebugScene"));
+                await scene.LoadDataAsync();
+                ((SceneAsset)scene).InstantiateEntities();
 
-            var gameCam = _world.CreateEntity();
-            gameCam.AddComponent<Camera>();
-
-            var cam = _world.CreateEntity();
-            var debugCam = cam.AddComponent<DebugCamera>();
-            debugCam.SetInputContext(_inputContext);
-            CreateModelEntities(sponza, new Vector3(0), new Vector3(0.1f));
-            CreateModelEntities(revoulier, new Vector3(0, 10, 0), new Vector3(0.1f),
-                Quaternion.CreateFromRotationMatrix(Matrix4x4.CreateRotationZ(90)));
-
-
-            for (int i = 0; i < 100; i++)
+                _logger.Info("Project assets loaded successfully");
+            }
+            catch (Exception ex)
             {
-                var lightEntity = _world.CreateEntity();
-                var light = lightEntity.AddComponent<Light>();
-                var transform = lightEntity.Transform;
+                _logger.Error(ex, "Failed to load assets from project");
+                throw;
+            }
+        }
 
-                var tmpAsset = _assetManager.Create<MeshAsset>(new AssetPath("tmp", "tmpMesh"));
-                var tmpMatAsset = _assetManager.Create<MaterialAsset>(new AssetPath("tmp", "tmpMesh"));
-                tmpMatAsset.SetData(new MaterialData()
+        private async Task CreateAssetsProgrammatically()
+        {
+            try
+            {
+                _logger.Info("Creating assets programmatically");
+
+                // Create a new project
+                var project = await _assetManager.CreateProjectAsync("DebugProject", "X:\\RockEngine.Vulkan\\RockEngine\\RockEngine.Editor\\bin\\Debug\\net9.0\\Project\\TestAssetSystem");
+
+                // Create a scene
+                var scene = _assetManager.Create<SceneAsset>(new AssetPath("Scenes", "DebugScene"));
+                scene.SetData(new SceneData());
+
+                // Create a skybox texture
+                var skyboxAsset = _assetManager.Create<TextureAsset>(new AssetPath("Skybox", "debug_skybox"));
+                skyboxAsset.SetData(new TextureData()
                 {
-                    PipelineName = "Solid",
+                    FilePaths = [
+                    "Resources/skybox/right.jpg",
+                    "Resources/skybox/left.jpg",
+                    "Resources/skybox/top.jpg",
+                    "Resources/skybox/bottom.jpg",
+                    "Resources/skybox/front.jpg",
+                    "Resources/skybox/back.jpg"
+                    ],
+                    GenerateMipmaps = false,
+                    Type = TextureType.TextureCube
+                });
+
+                // Create a default material
+                var geomMaterial = _assetManager.Create<MaterialAsset>(new AssetPath("Materials", "geometry"));
+                geomMaterial.SetData(new MaterialData()
+                {
+                    PipelineName = "Geometry",
                     TextureAssetIDs = []
                 });
-                tmpAsset.SetGeometry(DefaultMeshes.Cube.Vertices, DefaultMeshes.Cube.Indices);
-                var mesh = lightEntity.AddComponent<MeshRenderer>();
 
-                mesh.SetAssets(tmpAsset, tmpMatAsset);
-                lightEntity.Layer = RenderLayerType.Solid;
-                // Random position within 200X200X200 cube centered at origin
-                transform.Position = new Vector3(
-                    (Random.Shared.NextSingle() * 200) - 100,
-                    (Random.Shared.NextSingle() * 200) ,
-                    (Random.Shared.NextSingle() * 200) - 100
-                );
-                light.Intensity = Random.Shared.NextSingle()*500;
+               
 
-                // Random light type distribution
-                float typeRand = Random.Shared.NextSingle();
-                if (typeRand < 0.7f) // 70% Point lights
+                // Create a cube mesh
+                var cubeMesh = _assetManager.GetAsset<MeshAsset>(DefaultMeshes.CubeAssetID);
+
+                // Create entities
+                var skybox = scene.CreateEntity();
+                skybox.AddComponent<Skybox>().Cubemap = skyboxAsset;
+                skybox.Transform.Scale = new Vector3(100, 100, 100);
+
+                var camera = scene.CreateEntity();
+                camera.AddComponent<Camera>();
+                camera.Name = "Camera";
+                for (int i = 0; i < 100; i++)
                 {
-                    light.Type = LightType.Point;
-                    light.Color = new Vector3(
-                        Random.Shared.NextSingle(),
-                        Random.Shared.NextSingle(),
-                        Random.Shared.NextSingle()
-                    );
-                    light.Radius = Random.Shared.NextSingle() * 1000 + 5;
-                    // Store movement parameters
-                    _lightCenters.Add(transform.Position);
-                    _lightSpeeds.Add(Random.Shared.NextSingle() * 2 + 0.5f);
-                    _lightRadii.Add(Random.Shared.NextSingle() * 5 + 2);
-                }
-                else if (typeRand < 0.9f) // 20% Spot lights
-                {
-                    light.Type = LightType.Spot;
-                    light.Color = new Vector3(
-                        Random.Shared.NextSingle(),
-                        Random.Shared.NextSingle(),
-                        Random.Shared.NextSingle()
-                    );
-                    light.Radius = Random.Shared.NextSingle() * 1000 + 5;
-                    light.InnerCutoff = 0.85f;
-                    light.OuterCutoff = 0.6f;
-
-                    // Store movement parameters
-                    _lightCenters.Add(transform.Position);
-                    _lightSpeeds.Add(Random.Shared.NextSingle() * 1.5f + 0.5f);
-                    _lightRadii.Add(Random.Shared.NextSingle() * 3 + 1);
-                    //cam.AddChild(lightEntity);
+                    var solidMaterial = _assetManager.Create<MaterialAsset>(new AssetPath("Materials", $"solid{i}"));
+                    solidMaterial.SetData(new MaterialData()
+                    {
+                        PipelineName = "Solid",
+                        TextureAssetIDs = []
+                    });
+                    var light = scene.CreateEntity();
+                    light.Layer = RenderLayerType.Solid;
+                    light.Name = $"light ({i})";
+                    light.Transform.Scale *= 0.5f;
+                    var lightComponent = light.AddComponent<Light>();
+                    lightComponent.Type = LightType.Point;
+                    light.Transform.Position = new Vector3(Random.Shared.NextSingle()*100, 20 + Random.Shared.NextSingle()*100, Random.Shared.NextSingle()*100);
+                    var lightMeshRenderer = light.AddComponent<MeshRenderer>();
+                    lightMeshRenderer.SetAssets(cubeMesh, solidMaterial);
+                    lightComponent.Intensity = 100;
+                    lightComponent.Radius = 100;
+                    lightComponent.Color = new Vector3(Random.Shared.NextSingle(), Random.Shared.NextSingle(), Random.Shared.NextSingle());
+                    await _assetManager.SaveAsync(solidMaterial);
 
                 }
-                /* else // 10% Directional lights
-                 {
-                     light.Type = LightType.Directional;
-                     light.Color = new Vector3(1, 1, 0.8f);
-                     light.Intensity = 0.3f;
-                     light.Direction = Vector3.Normalize(new Vector3(
-                         Random.Shared.NextSingle() - 0.5f,
-                         -1.0f,
-                         Random.Shared.NextSingle() - 0.5f
-                     ));
-                 }*/
 
-                
+                var cube = scene.CreateEntity();
+                cube.Name = "CUBE";
+                var meshRenderer = cube.AddComponent<MeshRenderer>();
+                meshRenderer.SetAssets(cubeMesh, geomMaterial);
+                cube.Transform.Position = new Vector3(0, 0, 5);
+
+                var sponza = await _assetManager.LoadModelAsync("Resources\\Models\\SponzaAtrium\\scene.gltf", "Sponza");
+                CreateModelEntities(scene, sponza, new Vector3(0), new Vector3(0.1f));
+
+                // Save all assets
+                await _assetManager.SaveAsync(sponza);
+                await _assetManager.SaveAsync(skyboxAsset);
+                await _assetManager.SaveAsync(geomMaterial);
+                await _assetManager.SaveAsync(scene);
+
+
+                // Instantiate the scene
+                //scene.InstantiateEntities();
+
+                _logger.Info("Programmatic assets created successfully");
             }
-
+            catch (Exception ex)
+            {
+                _logger.Error(ex, "Failed to create assets programmatically");
+                throw;
+            }
         }
-        private void CreateModelEntities(ModelAsset model, Vector3 position,
+
+        // Modify the OnAttach method to use these methods
+        public async Task OnAttach()
+        {
+            CretePipeline();
+            CreateSolidPipeline();
+
+            // Choose between loading from project or creating programmatically
+           /* bool loadFromProject = false;
+
+            if (loadFromProject)
+            {
+                await LoadAssetsFromProject(
+                    @"X:\RockEngine.Vulkan\RockEngine\RockEngine.Editor\bin\Debug\net9.0\Project\TestAssetSystem\DebugProject\DebugProject.rockproj");
+            }
+            else
+            {
+                await CreateAssetsProgrammatically();
+            }*/
+        }
+        private void CreateModelEntities(SceneAsset scene,ModelAsset model, Vector3 position,
                                Vector3 scale, Quaternion? rotation = null)
         {
-            var parent = _world.CreateEntity();
+            var parent = scene.CreateEntity();
+            parent.Name = model.Name;
             parent.Transform.Position = position;
             parent.Transform.Scale = scale;
             if (rotation.HasValue) parent.Transform.Rotation = rotation.Value;
 
             foreach (var part in model.Parts)
             {
-                var entity = _world.CreateEntity();
+                var entity = scene.CreateEntity();
                 var renderer = entity.AddComponent<MeshRenderer>();
                 renderer.SetAssets(part.Mesh, part.Material);
                 parent.AddChild(entity);
@@ -327,9 +368,8 @@ namespace RockEngine.Editor.Layers
 
         public void OnImGuiRender(VkCommandBuffer vkCommandBuffer)
         {
-            ImGui.DockSpaceOverViewport(1, ImGui.GetMainViewport(), ImGuiDockNodeFlags.PassthruCentralNode);
             ImGui.ShowDemoWindow();
-            DrawToolbar();
+           // DrawToolbar();
             DrawFps();
             DrawAllocationStats();
             DrawPerformanceMetrics();
@@ -375,9 +415,9 @@ namespace RockEngine.Editor.Layers
                         _currentContentSize = availableSize;
                     }
                 }
-
-                ImGui.End();
             }
+            ImGui.End();
+
             if (ImGui.Begin("Game##GameScreen"))
             {
                 var camera = _world.GetEntities()
@@ -400,8 +440,9 @@ namespace RockEngine.Editor.Layers
                     }
                 }
 
-                ImGui.End();
             }
+            ImGui.End();
+
 
             var cameras = _world.GetEntities().Where(s => s.GetComponent<Camera>() is not null);
             int i = 0;
@@ -445,9 +486,7 @@ namespace RockEngine.Editor.Layers
             Vector4 disabledColor = new Vector4(0.3f, 0.3f, 0.3f, 0.4f);
 
             // Create toolbar background
-            ImGui.BeginChild("##toolbar", new Vector2(0, buttonSize + padding * 2),
-                ImGuiChildFlags.None,
-                ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse);
+            ImGui.BeginChild("##toolbar", new Vector2(0, buttonSize + padding * 2), true, ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse);
 
             // Draw subtle background
             var drawList = ImGui.GetWindowDrawList();
@@ -543,7 +582,6 @@ namespace RockEngine.Editor.Layers
         }
         public void OnRender(VkCommandBuffer vkCommandBuffer)
         {
-            _renderer.AddCommand(new ImguiRenderCommand(_imGuiController.Render));
         }
 
         public void OnUpdate()
@@ -560,7 +598,6 @@ namespace RockEngine.Editor.Layers
             _currentGameSize.Y = Math.Max(_currentGameSize.Y, 1);
             debugCam?.RenderTarget?.Resize(new Extent2D((uint)_currentContentSize.X, (uint)_currentContentSize.Y));
             cam?.RenderTarget?.Resize(new Extent2D((uint)_currentGameSize.X, (uint)_currentGameSize.Y));
-            _imGuiController.Update();
             float time = (float)Time.TotalTime;
             var lightEntities = _world.GetEntities()
                 .Where(s => s.GetComponent<Light>() != null).
@@ -573,58 +610,7 @@ namespace RockEngine.Editor.Layers
                 Entity entity = lightEntities[i];
                 var light = entity.GetComponent<Light>();
                 var transform = entity.Transform;
-                entity.GetComponent<MeshRenderer>()?.Material.MaterialInstance?.PushConstant("color", light.Color);
-
-
-                switch (light.Type)
-                {
-                    case LightType.Point when i < _lightCenters.Count:
-                        // Orbital movement around initial position
-                        Vector3 center = _lightCenters[i];
-                        float speed = _lightSpeeds[i];
-                        float radius = _lightRadii[i];
-
-                        transform.Position = center + new Vector3(
-                            MathF.Sin(time * speed) * radius,
-                            MathF.Sin(time * speed * 0.8f) * radius * 0.5f,
-                            MathF.Cos(time * speed) * radius
-                        );
-                        break;
-
-                    case LightType.Spot when i < _lightCenters.Count:
-                        // Vertical circular movement
-                        /* if (i % 10 == 0) // Every 10th spot light follows camera
-                         {
-                             if (camEntity != null)
-                             {
-                                 //transform.Position = camEntity.Transform.Position;
-                                 light.Direction = camEntity.GetComponent<Camera>().Front;
-                             }
-                         }
-                         else
-                         {*/
-                        center = _lightCenters[i];
-                        speed = _lightSpeeds[i];
-                        radius = _lightRadii[i];
-
-                        transform.Position = center + new Vector3(
-                            MathF.Cos(time * speed) * radius,
-                            MathF.Sin(time * speed * 2) * radius,
-                            MathF.Sin(time * speed) * radius
-                        );
-                        light.Direction = Vector3.Normalize(center - transform.Position);
-                        //}
-                        break;
-
-                    case LightType.Directional:
-                        // Slow directional rotation
-                        Quaternion rot = Quaternion.CreateFromAxisAngle(
-                            Vector3.Normalize(light.Direction),
-                            (float)Time.DeltaTime * 0.3f
-                        );
-                        light.Direction = Vector3.Transform(light.Direction, rot);
-                        break;
-                }
+                entity.GetComponent<MeshRenderer>()?.Material.Asset.MaterialInstance?.PushConstant("color", light.Color);
             }
         }
 
@@ -699,7 +685,7 @@ namespace RockEngine.Editor.Layers
             if (isSelected)
                 flags |= ImGuiTreeNodeFlags.Selected;
 
-            bool isOpen = ImGui.TreeNodeEx(entity.Name, flags);
+            bool isOpen = ImGui.TreeNodeEx(entity.Name + $"##{entity.ID}", flags);
             if (ImGui.IsItemClicked())
                 _selectedEntity = entity;
 
@@ -717,15 +703,27 @@ namespace RockEngine.Editor.Layers
             foreach (var property in properties)
             {
                 var uiAttr = property.GetCustomAttribute<UIEditableAttribute>();
-                //if (uiAttr == null) continue;
-
                 string label = !string.IsNullOrEmpty(uiAttr?.DisplayName) ? uiAttr.DisplayName : property.Name;
+
                 if (!property.CanWrite)
                 {
                     ImGui.BeginDisabled();
                 }
 
-                if (property.PropertyType == typeof(float))
+                // Handle different property types with drag and drop support
+                if (property.PropertyType == typeof(AssetReference<TextureAsset>))
+                {
+                    HandleTexturePropertyWithDragDrop(component, property, label);
+                }
+                else if (property.PropertyType == typeof(AssetReference<MaterialAsset>))
+                {
+                    HandleMaterialPropertyWithDragDrop(component, property, label);
+                }
+                else if (property.PropertyType == typeof(AssetReference<MeshAsset>))
+                {
+                    HandleMeshPropertyWithDragDrop(component, property, label);
+                }
+                else if (property.PropertyType == typeof(float))
                 {
                     HandleFloatProperty(component, property, label);
                 }
@@ -741,20 +739,40 @@ namespace RockEngine.Editor.Layers
                 {
                     HandleBoolProperty(component, property, label);
                 }
-                else if (property.PropertyType == typeof(Material))
-                {
-                    HandleMaterialProperty(component, property, label);
-                }
-                else if (property.PropertyType == typeof(Texture))
-                {
-                    HandleTextureProperty(component, property, label);
-                }
-                // Add more type handlers as needed
 
                 if (!property.CanWrite)
                 {
                     ImGui.EndDisabled();
                 }
+            }
+        }
+        private void HandleTexturePropertyWithDragDrop(IComponent component, PropertyInfo property, string label)
+        {
+            var textureRef = (AssetReference<TextureAsset>)property.GetValue(component);
+            string currentName = textureRef?.Asset?.Name ?? "None";
+
+            ImGui.Button($"{label}: {currentName}", new Vector2(ImGui.GetContentRegionAvail().X, 0));
+
+            if (AssetDragDrop.AcceptAssetDrop(out var assetID))
+            {
+                var textureAsset = _assetManager.GetAsset<TextureAsset>(assetID);
+                if (textureAsset != null)
+                {
+                    property.SetValue(component, new AssetReference<TextureAsset>(textureAsset));
+                }
+            }
+
+            // Handle drag source if we have a texture
+            if (textureRef?.Asset != null && AssetDragDrop.BeginDragDropSource(textureRef.Asset.ID, textureRef.Asset.Name))
+            {
+            }
+
+            // Show preview on hover
+            if (textureRef?.Asset?.Texture is Texture2D texture2D && ImGui.IsItemHovered())
+            {
+                ImGui.BeginTooltip();
+                HandleTexturePreview(texture2D);
+                ImGui.EndTooltip();
             }
         }
 
@@ -782,7 +800,7 @@ namespace RockEngine.Editor.Layers
 
         private void HandleTextureProperty(IComponent component, PropertyInfo property, string label)
         {
-            var texture = (Texture)property.GetValue(component);
+            var texture = (AssetReference<TextureAsset>)property.GetValue(component);
             if (texture == null)
             {
                 ImGui.Text($"{label}: None");
@@ -791,86 +809,50 @@ namespace RockEngine.Editor.Layers
 
             if (ImGui.TreeNodeEx(label, ImGuiTreeNodeFlags.DefaultOpen))
             {
-                if(texture is Texture2D texture2d)
-                {
-                    HandleTexturePreview(texture2d);
-                }
+                if(texture.Asset.Texture != null && texture.Asset.Texture is Texture2D texture2D)
+                HandleTexturePreview(texture2D);
                 ImGui.TreePop();
             }
         }
 
-        private void HandleMaterialProperty(IComponent component, PropertyInfo property, string label)
+        private void HandleMaterialPropertyWithDragDrop(IComponent component, PropertyInfo property, string label)
         {
-            var material = (Material)property.GetValue(component);
-            if (material == null) return;
+            var materialRef = (AssetReference<MaterialAsset>)property.GetValue(component);
+            string currentName = materialRef?.Asset?.Name ?? "None";
 
-            if (ImGui.TreeNodeEx(label, ImGuiTreeNodeFlags.DefaultOpen))
+            ImGui.Button($"{label}: {currentName}", new Vector2(ImGui.GetContentRegionAvail().X, 0));
+
+            if (AssetDragDrop.AcceptAssetDrop(out var assetID))
             {
-                // Display pipeline information
-                ImGui.Text($"Pipeline: {material.Pipeline.Name}");
-
-                // Texture bindings section
-                if (ImGui.CollapsingHeader("Texture Bindings", ImGuiTreeNodeFlags.DefaultOpen))
+                var materialAsset = _assetManager.GetAsset<MaterialAsset>(assetID);
+                if (materialAsset != null)
                 {
-                    for (int i = 0; i < material.Textures?.Length; i++)
-                    {
-                        var texture = material.Textures[i];
-                        ImGui.PushID(i);
-
-                        if (texture != null)
-                        {
-                            if (ImGui.TreeNodeEx($"Binding {i}", ImGuiTreeNodeFlags.Leaf))
-                            {
-                                // Display texture preview and info
-                                if (texture is Texture2D texture2d)
-                                {
-                                    HandleTexturePreview(texture2d);
-                                }
-                                ImGui.TreePop();
-                            }
-                        }
-                        else
-                        {
-                            ImGui.TextDisabled($"Binding {i}: Empty");
-                        }
-
-                        ImGui.PopID();
-                    }
+                    property.SetValue(component, new AssetReference<MaterialAsset>(materialAsset));
                 }
+            }
 
-                // Push constants section
-                if (material.PushConstants.Count > 0 && ImGui.CollapsingHeader("Material Properties"))
+            if (materialRef?.Asset != null && AssetDragDrop.BeginDragDropSource(materialRef.AssetID, materialRef.Asset.Name))
+            {
+            }
+        }
+        private void HandleMeshPropertyWithDragDrop(IComponent component, PropertyInfo property, string label)
+        {
+            var meshRef = (AssetReference<MeshAsset>)property.GetValue(component);
+            string currentName = meshRef?.Asset?.Name ?? "None";
+
+            ImGui.Button($"{label}: {currentName}", new Vector2(ImGui.GetContentRegionAvail().X, 0));
+
+            if (AssetDragDrop.AcceptAssetDrop(out Guid assetId))
+            {
+                var meshAsset = _assetManager.GetAsset<MeshAsset>(assetId);
+                if (meshAsset != null)
                 {
-                    foreach (var constant in material.PushConstants.Values)
-                    {
-                        // Example implementation for Vector4 push constants
-                        if (constant.Size == Unsafe.SizeOf<Vector4>())
-                        {
-                            Vector4 value = default;
-                            unsafe
-                            {
-                                fixed (byte* ptr = material.PushConstantValues[constant.Name])
-                                {
-                                    value = *(Vector4*)ptr;
-                                }
-                            }
-
-                            if (ImGui.ColorEdit4(constant.Name, ref value))
-                            {
-                                unsafe
-                                {
-                                    fixed (byte* ptr = material.PushConstantValues[constant.Name])
-                                    {
-                                        *(Vector4*)ptr = value;
-                                    }
-                                }
-                            }
-                        }
-                        // Add other type handlers as needed
-                    }
+                    property.SetValue(component, new AssetReference<MeshAsset>(meshAsset));
                 }
+            }
 
-                ImGui.TreePop();
+            if (meshRef?.Asset != null && AssetDragDrop.BeginDragDropSource(meshRef.AssetID, meshRef.Asset.Name))
+            {
             }
         }
 

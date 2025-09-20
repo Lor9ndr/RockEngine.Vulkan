@@ -66,7 +66,7 @@ namespace RockEngine.Core.Rendering.Buffers
 
             VulkanContext.Vk.CmdCopyBuffer(
                 batch.CommandBuffer,
-                _context.SubmitContext.StagingManager.StagingBuffer,
+                _context.GraphicsSubmitContext.StagingManager.StagingBuffer,
                 _deviceBuffer,
                 1,
                 in copyRegion

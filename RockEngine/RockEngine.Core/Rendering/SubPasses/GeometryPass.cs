@@ -1,8 +1,10 @@
 ﻿using RockEngine.Core.Builders;
 using RockEngine.Core.ECS.Components;
+using RockEngine.Core.Rendering.Buffers;
 using RockEngine.Core.Rendering.Managers;
 using RockEngine.Vulkan;
 
+using Silk.NET.Core;
 using Silk.NET.Vulkan;
 
 using System.Runtime.CompilerServices;
@@ -10,20 +12,36 @@ using System.Runtime.InteropServices;
 
 namespace RockEngine.Core.Rendering.SubPasses
 {
-    public class GeometryPass(
-        VulkanContext context,
-        GraphicsEngine graphicsEngine,
-        BindingManager bindingManager,
-        TransformManager transformManager,
-        IndirectCommandManager indirectCommands,
-        GlobalUbo globalUbo) : IRenderSubPass
+    public class GeometryPass : IRenderSubPass
     {
-        private readonly VulkanContext _context = context;
-        private readonly GraphicsEngine _graphicsEngine = graphicsEngine;
-        private readonly BindingManager _bindingManager = bindingManager;
-        private readonly TransformManager _transformManager = transformManager;
-        private readonly IndirectCommandManager _indirectCommands = indirectCommands;
-        private readonly GlobalUbo _globalUbo = globalUbo;
+        private readonly VulkanContext _context;
+        private readonly GraphicsEngine _graphicsEngine;
+        private readonly BindingManager _bindingManager;
+        private readonly TransformManager _transformManager;
+        private readonly IndirectCommandManager _indirectCommands;
+        private readonly GlobalUbo _globalUbo;
+        private readonly GlobalGeometryBuffer _globalGeometryBuffer;
+        private readonly Bool32 _supportsMultiDraw;
+        private readonly int _indirectCommandStride;
+
+        public GeometryPass(
+            VulkanContext context,
+            GraphicsEngine graphicsEngine,
+            BindingManager bindingManager,
+            TransformManager transformManager,
+            IndirectCommandManager indirectCommands,
+            GlobalUbo globalUbo, GlobalGeometryBuffer globalGeometryBuffer)
+        {
+            _context = context;
+            _graphicsEngine = graphicsEngine;
+            _bindingManager = bindingManager;
+            _transformManager = transformManager;
+            _indirectCommands = indirectCommands;
+            _globalUbo = globalUbo;
+            _globalGeometryBuffer = globalGeometryBuffer;
+            _supportsMultiDraw = GetMultiDrawIndirectFeature();
+            _indirectCommandStride = Marshal.SizeOf<DrawIndexedIndirectCommand>();
+        }
 
         public uint Order => 0;
 
@@ -40,26 +58,31 @@ namespace RockEngine.Core.Rendering.SubPasses
                 cmd.SetScissor(camera.RenderTarget.Scissor);
 
                 var matrixBinding = _transformManager.GetCurrentBinding(frameIndex);
-                var globalUbo = _globalUbo.GetBinding((uint)camIndex);
+                var globalUboBinding = _globalUbo.GetBinding((uint)camIndex);
 
-                // Get draw groups as span for zero-allocation iteration
-                var drawGroupsSpan = CollectionsMarshal.AsSpan(
-                    _indirectCommands.GetDrawGroups(RenderLayerType.Opaque, Order));
 
-                // Cache last bound states to minimize state changes
-                VkPipeline? lastPipeline = default;
-                Material? lastMaterial = default;
-                MeshRenderer? lastMesh = default;
-                bool multiDraw = GetMultiDrawIndirectFeature();
+                var drawGroups = _indirectCommands.GetDrawGroups(RenderLayerType.Opaque, Order);
+                if (drawGroups.Count == 0) return;
+
+                // Get the span of draw groups
+                var drawGroupsSpan = CollectionsMarshal.AsSpan(drawGroups);
+
+                // Pre-calculate common values
+                var indirectBuffer = _indirectCommands.IndirectBuffer.Buffer;
+
+                // Track state
+                VkPipeline? lastPipeline = null;
+                Material? lastMaterial = null;
+                _globalGeometryBuffer.BindVertexBuffer(cmd);
+                _globalGeometryBuffer.BindIndexBuffer(cmd);
 
                 unsafe
                 {
-                    // Use stackalloc for small arrays to avoid heap allocations
+                    // Use stackalloc for dynamic offsets
                     uint* dynamicOffsets = stackalloc uint[2];
                     dynamicOffsets[0] = 0;
                     dynamicOffsets[1] = 0;
 
-                    // Iterate using for loop with ref local to avoid struct copies
                     for (int i = 0; i < drawGroupsSpan.Length; i++)
                     {
                         ref readonly var drawGroup = ref drawGroupsSpan[i];
@@ -70,8 +93,8 @@ namespace RockEngine.Core.Rendering.SubPasses
                             cmd.BindPipeline(drawGroup.Pipeline);
                             lastPipeline = drawGroup.Pipeline;
 
-                            // Bind global resources
-                            _bindingManager.BindResource(frameIndex, globalUbo, cmd, drawGroup.Pipeline.Layout);
+                            // Bind global resources using the binding manager
+                            _bindingManager.BindResource(frameIndex, globalUboBinding, cmd, drawGroup.Pipeline.Layout);
                             _bindingManager.BindResource(frameIndex, matrixBinding, cmd, drawGroup.Pipeline.Layout);
                         }
 
@@ -83,47 +106,36 @@ namespace RockEngine.Core.Rendering.SubPasses
                                 drawGroup.Material,
                                 cmd,
                                 false,
-                                [matrixBinding.SetLocation, globalUbo.SetLocation]
+                                [matrixBinding.SetLocation, globalUboBinding.SetLocation]
                             );
                             lastMaterial = drawGroup.Material;
-                        }
-
-                        // Mesh change
-                        if (lastMesh != drawGroup.Mesh)
-                        {
-                            drawGroup.Mesh.Mesh.VertexBuffer.BindVertexBuffer(cmd);
-                            drawGroup.Mesh.Mesh.IndexBuffer.BindIndexBuffer(cmd, 0, IndexType.Uint32);
-                            lastMesh = drawGroup.Mesh;
+                            lastMaterial.CmdPushConstants(cmd);
                         }
 
                         // Issue draw command
-                        if (multiDraw)
+                        if (_supportsMultiDraw)
                         {
                             VulkanContext.Vk.CmdDrawIndexedIndirect(
                                 cmd,
-                                _indirectCommands.IndirectBuffer.Buffer,
+                                indirectBuffer,
                                 drawGroup.ByteOffset,
                                 drawGroup.Count,
-                                (uint)Marshal.SizeOf<DrawIndexedIndirectCommand>());
+                                (uint)_indirectCommandStride);
                         }
                         else
                         {
-                            // Pre-calculate stride
-                            int stride = Marshal.SizeOf<DrawIndexedIndirectCommand>();
-
                             for (uint j = 0; j < drawGroup.Count; j++)
                             {
                                 VulkanContext.Vk.CmdDrawIndexedIndirect(
                                     cmd,
-                                    _indirectCommands.IndirectBuffer.Buffer,
-                                    drawGroup.ByteOffset + (ulong)(j * stride),
+                                    indirectBuffer,
+                                    drawGroup.ByteOffset + (ulong)(j * _indirectCommandStride),
                                     1,
-                                    (uint)stride);
+                                    (uint)_indirectCommandStride);
                             }
                         }
                     }
                 }
-               
             }
         }
 

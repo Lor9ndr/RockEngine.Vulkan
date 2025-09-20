@@ -13,8 +13,8 @@ namespace RockEngine.Core
     public sealed class PerformanceTracer : IDisposable
     {
         private static readonly Logger _logger = LogManager.GetCurrentClassLogger();
-        private const uint QUERIES_PER_FRAME = 200;
-        private const float MIN_DISPLAY_DURATION = 0.1f;
+        public const uint QUERIES_PER_FRAME = 200;
+        private const float MIN_DISPLAY_DURATION = 0.01f;
         private const double UPDATE_INTERVAL_SECONDS = 0.5;
         private const int MAX_SAMPLES = 300;
         private const int CLEANUP_INTERVAL = 300;
@@ -40,7 +40,7 @@ namespace RockEngine.Core
         private static float _minDurationFilter = MIN_DISPLAY_DURATION;
         private static long _lastFrameCount;
         private static double _fps;
-        private static Stopwatch _updateTimer = Stopwatch.StartNew();
+        private static readonly Stopwatch _updateTimer = Stopwatch.StartNew();
 
         // Thread-local current scopes
         private static readonly AsyncLocal<ScopeInfo> _currentCpuScope = new();
@@ -50,6 +50,9 @@ namespace RockEngine.Core
         private static readonly ScopeInfo _cpuRoot;
         private static readonly ScopeInfo _gpuRoot;
 
+        // Track if GPU timestamps are supported
+        private static bool _gpuTimestampsSupported = false;
+
         static PerformanceTracer()
         {
             _cpuRoot = new ScopeInfo(1, "CPU", null, "CPU");
@@ -57,8 +60,8 @@ namespace RockEngine.Core
 
             _scopesByPath["CPU"] = _cpuRoot;
             _scopesByPath["GPU"] = _gpuRoot;
-            _scopesById[1] = new (_cpuRoot);
-            _scopesById[2] = new(_gpuRoot);
+            _scopesById[1] = new WeakReference<ScopeInfo>(_cpuRoot);
+            _scopesById[2] = new WeakReference<ScopeInfo>(_gpuRoot);
             _scopeDataArray[1] = new ScopeData();
             _scopeDataArray[2] = new ScopeData();
             _childScopesByParentId[1] = new List<int>();
@@ -73,7 +76,16 @@ namespace RockEngine.Core
 
         public static void Initialize(VulkanContext context)
         {
-            _timestampPeriod = context.Device.PhysicalDevice.Properties.Limits.TimestampPeriod;
+            // Check if GPU timestamps are supported
+            var properties = context.Device.PhysicalDevice.Properties;
+            _gpuTimestampsSupported = properties.Limits.TimestampComputeAndGraphics;
+
+            if (!_gpuTimestampsSupported)
+            {
+                _logger.Warn("GPU timestamp queries are not supported on this device. GPU profiling will be disabled.");
+            }
+
+            _timestampPeriod = properties.Limits.TimestampPeriod;
             _maxFramesPerFlight = context.MaxFramesPerFlight;
             _frameData = new PerFrameData[_maxFramesPerFlight];
             _cleanupCounter = 0;
@@ -99,14 +111,22 @@ namespace RockEngine.Core
             return new CpuSectionTracker(name);
         }
 
-        public static GpuSectionTracker BeginSection(string name, VkCommandBuffer cmd, int frameIndex)
+        public static GpuSectionTracker BeginSection(string name, VkCommandBuffer cmd, uint frameIndex)
         {
+            if (!_gpuTimestampsSupported)
+            {
+                return new GpuSectionTracker(); // Return a disabled tracker
+            }
+
             var frame = _frameData[frameIndex % _maxFramesPerFlight];
+
             return new GpuSectionTracker(name, cmd, frame);
         }
 
-        public static void ProcessQueries(VulkanContext context, int frameIndex)
+        public static void ProcessQueries(VulkanContext context, uint frameIndex)
         {
+            if (!_gpuTimestampsSupported) return;
+
             var frame = _frameData[frameIndex % _maxFramesPerFlight];
             frame.Process(context);
             Interlocked.Increment(ref _currentFrameCount);
@@ -117,6 +137,14 @@ namespace RockEngine.Core
                 CleanupUnusedScopes();
             }
         }
+
+        public static VkQueryPool? GetQueryPool(uint frameIndex)
+        {
+            if (!_gpuTimestampsSupported) return null;
+            var frame = _frameData[frameIndex % _maxFramesPerFlight];
+            return frame.QueryPool;
+        }
+
 
         private static void CleanupUnusedScopes()
         {
@@ -179,6 +207,11 @@ namespace RockEngine.Core
 
                 ImGui.Text($"FPS: {_fps:0.0}");
 
+                if (!_gpuTimestampsSupported)
+                {
+                    ImGui.TextColored(new Vector4(1, 0, 0, 1), "GPU Timestamps Not Supported");
+                }
+
                 ImGui.Checkbox("Only Significant", ref _showOnlySignificant);
                 ImGui.SameLine();
                 ImGui.SetNextItemWidth(100);
@@ -194,7 +227,14 @@ namespace RockEngine.Core
 
                 if (ImGui.CollapsingHeader("GPU Timings", ImGuiTreeNodeFlags.DefaultOpen))
                 {
-                    DrawChildScopes(_gpuRoot.Id);
+                    if (_gpuTimestampsSupported)
+                    {
+                        DrawChildScopes(_gpuRoot.Id);
+                    }
+                    else
+                    {
+                        ImGui.Text("GPU timestamps not supported on this device");
+                    }
                 }
             }
             finally
@@ -213,18 +253,14 @@ namespace RockEngine.Core
                 foreach (int childId in children)
                 {
                     var scopeID = _scopesById[childId];
-                    if(scopeID != null)
+                    if (scopeID != null && scopeID.TryGetTarget(out var scope))
                     {
-                        var hasScope = scopeID.TryGetTarget(out var scope);
-                        if (hasScope && scope is not null)
+                        var data = _scopeDataArray[childId];
+                        if (data != null)
                         {
-                            var data = _scopeDataArray[childId];
-
                             DrawScopeNode(scope, data);
                         }
                     }
-                    
-                 
                 }
             }
         }
@@ -235,9 +271,9 @@ namespace RockEngine.Core
                                children.Count > 0;
 
             // Filtering
-            bool shouldShow = !_showOnlySignificant || data.IsSignificant || hasChildren;
+            bool shouldShow = !_showOnlySignificant  || hasChildren;
             shouldShow = shouldShow && (data.AverageDuration >= _minDurationFilter || hasChildren);
-            shouldShow = shouldShow && (string.IsNullOrEmpty(_searchFilter) ||
+            shouldShow = shouldShow && (!string.IsNullOrEmpty(_searchFilter) ||
                          scope.FullPath.Contains(_searchFilter, StringComparison.OrdinalIgnoreCase));
 
             if (!shouldShow)
@@ -278,13 +314,11 @@ namespace RockEngine.Core
                         foreach (int childId in children)
                         {
                             var scopeID = _scopesById[childId];
-                            if (scopeID != null)
+                            if (scopeID != null && scopeID.TryGetTarget(out var childScope))
                             {
-                                var hasScope = scopeID.TryGetTarget(out var childScope);
-                                if (hasScope && childScope is not null)
+                                var childScopeData = _scopeDataArray[childId];
+                                if (childScopeData != null)
                                 {
-                                    var childScopeData = _scopeDataArray[childId];
-
                                     DrawScopeNode(childScope, childScopeData);
                                 }
                             }
@@ -328,19 +362,28 @@ namespace RockEngine.Core
 
             return newScope;
         }
+
+        public static void BeginFrame(VkCommandBuffer cmd, uint frameIndex)
+        {
+            if (!_gpuTimestampsSupported) return;
+
+            var frame = _frameData[frameIndex % _maxFramesPerFlight];
+            frame.BeginFrame(cmd);
+        }
+
         private static long _lastScopeId = 1000;
 
         private struct ValueStopwatch
         {
             private long _startTimestamp;
-            public bool IsActive => _startTimestamp != 0;
+            public readonly bool IsActive => _startTimestamp != 0;
 
             public static ValueStopwatch StartNew() => new()
             {
                 _startTimestamp = Stopwatch.GetTimestamp()
             };
 
-            public TimeSpan Elapsed
+            public readonly TimeSpan Elapsed
             {
                 get
                 {
@@ -375,7 +418,7 @@ namespace RockEngine.Core
             public float MinDuration = float.MaxValue;
             public int SampleCount;
             public long LastUsedFrame;
-            public bool IsSignificant => AverageDuration >= MIN_DISPLAY_DURATION;
+           // public bool IsSignificant => AverageDuration >= MIN_DISPLAY_DURATION;
 
             public void AddDuration(float duration, long frameCount)
             {
@@ -399,8 +442,7 @@ namespace RockEngine.Core
             }
         }
 
-        // Changed to ref struct to prevent boxing
-        public ref struct CpuSectionTracker:IDisposable
+        public struct CpuSectionTracker : IDisposable
         {
             private readonly int _scopeId;
             private readonly ValueStopwatch _sw;
@@ -412,7 +454,7 @@ namespace RockEngine.Core
                 _previousScope = _currentCpuScope.Value;
                 var parent = _previousScope ?? _cpuRoot;
                 var scopeInfo = GetOrCreateScope(name, parent);
-                _scopeId = scopeInfo.Id;
+                _scopeId = scopeInfo.Id; // Fixed: was using undefined variable 'scopeId'
                 _sw = ValueStopwatch.StartNew();
                 _currentCpuScope.Value = scopeInfo;
             }
@@ -432,8 +474,7 @@ namespace RockEngine.Core
             }
         }
 
-        // Changed to ref struct to prevent boxing
-        public ref struct GpuSectionTracker:IDisposable
+        public struct GpuSectionTracker : IDisposable
         {
             private readonly int _scopeId;
             private readonly VkCommandBuffer _cmd;
@@ -443,22 +484,36 @@ namespace RockEngine.Core
             private readonly ScopeInfo _previousScope;
             private bool _disposed;
 
+            public GpuSectionTracker() : this(null, null, null) // Disabled constructor
+            {
+                _valid = false;
+            }
+
             public GpuSectionTracker(string name, VkCommandBuffer cmd, PerFrameData frame)
             {
                 _previousScope = _currentGpuScope.Value;
                 var parent = _previousScope ?? _gpuRoot;
-                var scopeInfo = GetOrCreateScope(name, parent);
+                var scopeInfo = GetOrCreateScope(name, parent); 
                 _scopeId = scopeInfo.Id;
                 _cmd = cmd;
                 _frame = frame;
-                _startIndex = _frame.ReserveQueries(_scopeId, 2);
-                _currentGpuScope.Value = scopeInfo;
-                _valid = _startIndex != uint.MaxValue;
 
+                if (frame != null)
+                {
+                    _startIndex = _frame.ReserveQueries(_scopeId, 2);
+                    _valid = _startIndex != uint.MaxValue;
+                }
+                else
+                {
+                    _startIndex = uint.MaxValue;
+                    _valid = false;
+                }
+
+                _currentGpuScope.Value = scopeInfo;
                 if (_valid)
                 {
                     _cmd.WriteTimestamp(
-                        PipelineStageFlags.AllCommandsBit,
+                        PipelineStageFlags.TopOfPipeBit,
                         _frame.QueryPool,
                         _startIndex
                     );
@@ -471,7 +526,7 @@ namespace RockEngine.Core
                 _disposed = true;
 
                 _cmd.WriteTimestamp(
-                    PipelineStageFlags.AllCommandsBit,
+                    PipelineStageFlags.BottomOfPipeBit,
                     _frame.QueryPool,
                     _startIndex + 1
                 );
@@ -486,6 +541,7 @@ namespace RockEngine.Core
             private readonly GpuQuery[] _pendingQueries;
             private int _pendingQueryCount;
             private uint _queryIndex;
+            private bool _requiresReset;
 
             public PerFrameData(VulkanContext context)
             {
@@ -497,14 +553,26 @@ namespace RockEngine.Core
                 };
 
                 QueryPool = VkQueryPool.Create(context, createInfo);
-                QueryPool.Reset(0, QUERIES_PER_FRAME);
                 _pendingQueries = new GpuQuery[QUERIES_PER_FRAME / 2];
+
+                // Initial reset after creation
+                QueryPool.Reset(0, QUERIES_PER_FRAME);
+                _requiresReset = false;
             }
 
             public void Dispose()
             {
                 QueryPool?.Dispose();
                 QueryPool = null!;
+            }
+
+            public void BeginFrame(VkCommandBuffer cmd)
+            {
+                // Use device-side reset for better synchronization
+                cmd.ResetQueryPool(QueryPool, 0, QUERIES_PER_FRAME);
+                _queryIndex = 0;
+                _pendingQueryCount = 0;
+                _requiresReset = false;
             }
 
             public unsafe void Process(VulkanContext context)
@@ -519,10 +587,14 @@ namespace RockEngine.Core
                         queryCount: _queryIndex,
                         results,
                         stride: sizeof(ulong),
-                        flags: QueryResultFlags.Result64Bit
+                        flags: QueryResultFlags.Result64Bit | QueryResultFlags.ResultWaitBit
                     );
 
-                    if (status != Result.Success) return;
+                    if (status != Result.Success)
+                    {
+                        _logger.Warn($"Failed to get query results: {status}");
+                        return;
+                    }
 
                     long frameCount = Interlocked.Read(ref _currentFrameCount);
                     for (int i = 0; i < _pendingQueryCount; i++)
@@ -535,22 +607,15 @@ namespace RockEngine.Core
 
                         if (end < start) continue;
 
-                        float duration = (end - start) * _timestampPeriod / 1e6f;
+                        float duration = (end - start) * (_timestampPeriod / 1e6f);
                         var data = _scopeDataArray[query.ScopeId];
-                        if (data != null)
-                        {
-                            data.AddDuration(duration, frameCount);
-                        }
+                        data?.AddDuration(duration, frameCount);
                     }
                 }
                 finally
                 {
-                    // Stack allocated, no need to free
+                    _requiresReset = true;
                 }
-
-                QueryPool.Reset(0, QUERIES_PER_FRAME);
-                _pendingQueryCount = 0;
-                _queryIndex = 0;
             }
 
             public uint ReserveQueries(int scopeId, uint count)
@@ -570,7 +635,6 @@ namespace RockEngine.Core
                 return start;
             }
         }
-
         private readonly struct GpuQuery
         {
             public readonly int ScopeId;

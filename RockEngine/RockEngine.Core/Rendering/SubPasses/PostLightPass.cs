@@ -1,8 +1,10 @@
 ﻿using RockEngine.Core.Builders;
 using RockEngine.Core.ECS.Components;
+using RockEngine.Core.Rendering.Buffers;
 using RockEngine.Core.Rendering.Managers;
 using RockEngine.Vulkan;
 
+using Silk.NET.Core;
 using Silk.NET.Vulkan;
 
 using System.Runtime.InteropServices;
@@ -16,19 +18,27 @@ namespace RockEngine.Core.Rendering.SubPasses
         private readonly TransformManager _transformManager;
         private readonly IndirectCommandManager _indirectCommands;
         private readonly GlobalUbo _globalUbo;
+        private readonly GlobalGeometryBuffer _geometryBufferManager;
+        private readonly Bool32 _supportsMultiDraw;
+        private readonly int _indirectCommandStride;
+
         public uint Order => 2;
 
         public PostLightPass(VulkanContext context,
             BindingManager bindingManager,
             TransformManager transformManager,
             IndirectCommandManager indirectCommands,
-            GlobalUbo globalUbo)
+            GlobalUbo globalUbo,
+            GlobalGeometryBuffer geometryBufferManager)
         {
             _context = context;
             _bindingManager = bindingManager;
             _transformManager = transformManager;
             _indirectCommands = indirectCommands;
             _globalUbo = globalUbo;
+            _geometryBufferManager = geometryBufferManager;
+            _supportsMultiDraw = GetMultiDrawIndirectFeature();
+            _indirectCommandStride = Marshal.SizeOf<DrawIndexedIndirectCommand>();
         }
         public void Initilize()
         {
@@ -46,83 +56,81 @@ namespace RockEngine.Core.Rendering.SubPasses
                 cmd.SetViewport(camera.RenderTarget.Viewport);
                 cmd.SetScissor(camera.RenderTarget.Scissor);
 
+              
+
                 var matrixBinding = _transformManager.GetCurrentBinding(frameIndex);
                 var globalUboBinding = _globalUbo.GetBinding((uint)camIndex);
 
-                // Get draw groups as span
-                var drawGroupsSpan = CollectionsMarshal.AsSpan(_indirectCommands.GetDrawGroups(RenderLayerType.Solid, Order));
+                var drawGroups = _indirectCommands.GetDrawGroups(RenderLayerType.Solid, Order);
+                if (drawGroups.Count == 0) return;
 
-                // Cache last bound states
-                VkPipeline? lastPipeline = default;
-                Material? lastMaterial = default;
-                MeshRenderer? lastMesh = default;
-                bool multiDraw = GetMultiDrawIndirectFeature();
-                unsafe
+                // Get the span of draw groups
+                var drawGroupsSpan = CollectionsMarshal.AsSpan(drawGroups);
+
+                // Pre-calculate common values
+                var indirectBuffer = _indirectCommands.IndirectBuffer.Buffer;
+
+                // Track state
+                VkPipeline? lastPipeline = null;
+                Material? lastMaterial = null;
+
+                // Привязываем общие буферы вершин и индексов
+                _geometryBufferManager.BindVertexBuffer(cmd);
+                _geometryBufferManager.BindIndexBuffer(cmd);
+
+                for (int i = 0; i < drawGroupsSpan.Length; i++)
                 {
-                    // Stackalloc for dynamic offsets
-                    uint* dynamicOffsets = stackalloc uint[2];
-                    dynamicOffsets[0] = 0;
-                    dynamicOffsets[1] = 0;
+                    ref readonly var drawGroup = ref drawGroupsSpan[i];
 
-                    for (int i = 0; i < drawGroupsSpan.Length; i++)
+                    // Pipeline state change
+                    if (lastPipeline != drawGroup.Pipeline)
                     {
-                        ref readonly var drawGroup = ref drawGroupsSpan[i];
+                        cmd.BindPipeline(drawGroup.Pipeline);
+                        lastPipeline = drawGroup.Pipeline;
 
-                        if (lastPipeline != drawGroup.Pipeline)
-                        {
-                            cmd.BindPipeline(drawGroup.Pipeline, PipelineBindPoint.Graphics);
-                            lastPipeline = drawGroup.Pipeline;
+                        // Bind global resources using the binding manager
+                        _bindingManager.BindResource(frameIndex, globalUboBinding, cmd, drawGroup.Pipeline.Layout);
+                        _bindingManager.BindResource(frameIndex, matrixBinding, cmd, drawGroup.Pipeline.Layout);
+                    }
 
-                            _bindingManager.BindResource(frameIndex, globalUboBinding, cmd, drawGroup.Pipeline.Layout);
-                            _bindingManager.BindResource(frameIndex, matrixBinding, cmd, drawGroup.Pipeline.Layout);
-                        }
+                    // Material change
+                    if (lastMaterial != drawGroup.Material)
+                    {
+                        _bindingManager.BindResourcesForMaterial(
+                            frameIndex,
+                            drawGroup.Material,
+                            cmd,
+                            false,
+                            [matrixBinding.SetLocation, globalUboBinding.SetLocation]
+                        );
+                        lastMaterial = drawGroup.Material;
+                        lastMaterial.CmdPushConstants(cmd);
+                    }
 
-                        if (lastMaterial != drawGroup.Material)
-                        {
-                            _bindingManager.BindResourcesForMaterial(
-                                frameIndex,
-                                drawGroup.Material,
-                                cmd,
-                                false,
-                                [matrixBinding.SetLocation, globalUboBinding.SetLocation]
-                            );
-                            lastMaterial = drawGroup.Material;
-                        }
-
-                        lastMaterial?.CmdPushConstants(cmd);
-
-                        if (lastMesh != drawGroup.Mesh)
-                        {
-                            drawGroup.Mesh.Mesh.VertexBuffer.BindVertexBuffer(cmd);
-                            drawGroup.Mesh.Mesh.IndexBuffer.BindIndexBuffer(cmd, 0, IndexType.Uint32);
-                            lastMesh = drawGroup.Mesh;
-                        }
-
-                        if (multiDraw)
+                    // Issue draw command
+                    if (_supportsMultiDraw)
+                    {
+                        VulkanContext.Vk.CmdDrawIndexedIndirect(
+                            cmd,
+                            indirectBuffer,
+                            drawGroup.ByteOffset,
+                            drawGroup.Count,
+                            (uint)_indirectCommandStride);
+                    }
+                    else
+                    {
+                        for (uint j = 0; j < drawGroup.Count; j++)
                         {
                             VulkanContext.Vk.CmdDrawIndexedIndirect(
                                 cmd,
-                                _indirectCommands.IndirectBuffer.Buffer,
-                                drawGroup.ByteOffset,
-                                drawGroup.Count,
-                                (uint)Marshal.SizeOf<DrawIndexedIndirectCommand>());
-                        }
-                        else
-                        {
-                            int stride = Marshal.SizeOf<DrawIndexedIndirectCommand>();
-                            for (uint j = 0; j < drawGroup.Count; j++)
-                            {
-                                VulkanContext.Vk.CmdDrawIndexedIndirect(
-                                    cmd,
-                                    _indirectCommands.IndirectBuffer.Buffer,
-                                    drawGroup.ByteOffset + (ulong)(j * stride),
-                                    1,
-                                    (uint)stride);
-                            }
+                                indirectBuffer,
+                                drawGroup.ByteOffset + (ulong)(j * _indirectCommandStride),
+                                1,
+                                (uint)_indirectCommandStride);
                         }
                     }
                 }
-               
+
             }
         }
 

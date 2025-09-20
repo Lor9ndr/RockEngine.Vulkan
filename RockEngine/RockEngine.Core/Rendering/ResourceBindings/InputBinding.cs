@@ -63,16 +63,6 @@ namespace RockEngine.Core.Rendering.ResourceBindings
 
             VulkanContext.Vk.UpdateDescriptorSets(context.Device, (uint)Attachments.Length, writes, 0, null);
         }
-        public override int GetResourceHash()
-        {
-            HashCode hash = new HashCode();
-            hash.Add(base.GetResourceHash());
-            foreach (var attachments in _attachments)
-            {
-                hash.Add(attachments.GetHashCode());
-            }
-            return hash.ToHashCode();
-        }
 
         public void Dispose()
         {
