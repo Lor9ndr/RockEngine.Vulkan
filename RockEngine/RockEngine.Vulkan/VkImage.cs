@@ -1,4 +1,6 @@
-﻿using Silk.NET.Vulkan;
+﻿using NLog;
+
+using Silk.NET.Vulkan;
 
 using System.Diagnostics;
 
@@ -23,6 +25,7 @@ namespace RockEngine.Vulkan
         public event Action<VkImage>? OnImageResized;
         private readonly Dictionary<(uint, uint, uint, uint), VkImageView> _viewsCache = new();
         private static uint _id = 0;
+        private readonly static Logger _logger = LogManager.GetCurrentClassLogger();
 
         public VkImage(
             VulkanContext context,
@@ -213,6 +216,7 @@ namespace RockEngine.Vulkan
             ImageLayout oldLayout = GetMipLayout(baseMipLevel, baseArrayLayer);
             if (oldLayout == newLayout)
             {
+                _logger.Warn("Attempt to transition to same layout as it was");
                 return;
             }
             var barrier = new ImageMemoryBarrier

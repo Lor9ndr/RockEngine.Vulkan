@@ -270,7 +270,7 @@ namespace RockEngine.Core.Assets
                 materialAsset.SetData(new MaterialData
                 {
                     PipelineName = "Geometry",
-                    TextureAssetIDs = [.. textureIDs.Select(s => new AssetReference<TextureAsset>(s))]
+                    Textures = [.. textureIDs.Select(s => new AssetReference<TextureAsset>(s))]
                 });
 
                 modelAsset.AddPart(new ModelPart { Mesh = meshAsset, Material = materialAsset });
@@ -286,6 +286,24 @@ namespace RockEngine.Core.Assets
             await Task.WhenAll(saveTasks);
 
             return modelAsset;
+        }
+        public MaterialAsset CreateMaterial(string name, string template, List<AssetReference<TextureAsset>>? textures = null, Dictionary<string, object>? parameters = null)
+        {
+            var material = Create<MaterialAsset>(new AssetPath("Materials", name));
+            material.SetData(new MaterialData
+            {
+                PipelineName = template,
+                Textures = textures ?? new List<AssetReference<TextureAsset>>(),
+                Parameters = parameters
+            });
+            return material;
+        }
+
+        public async Task<MaterialAsset> CreateAndSaveMaterial(string name, string template, List<AssetReference<TextureAsset>>? textures = null, Dictionary<string, object>? parameters = null)
+        {
+            var material = CreateMaterial(name, template, textures, parameters);
+            await SaveAsync(material);
+            return material;
         }
 
         public T Create<T>(AssetPath path, string? name = null) where T : IAsset
@@ -332,7 +350,7 @@ namespace RockEngine.Core.Assets
             }
         }
 
-        public async Task SaveAsync<T>(IAsset<T> asset) where T : class
+        public async Task SaveAsync(IAsset asset) 
         {
             asset.BeforeSaving();
             await SaveAsync(asset, GetFullPath(asset.Path));
@@ -340,7 +358,7 @@ namespace RockEngine.Core.Assets
             await SaveMetadataAsync(asset);
         }
 
-        private async Task SaveAsync<T>(IAsset<T> asset, string fullPath) where T : class
+        private async Task SaveAsync(IAsset asset, string fullPath) 
         {
             var assetLock = _assetLocks.GetOrAdd(fullPath, _ => new SemaphoreSlim(1, 1));
             await assetLock.WaitAsync();

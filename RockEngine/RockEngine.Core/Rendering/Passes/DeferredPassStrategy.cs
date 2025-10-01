@@ -1,9 +1,11 @@
 ﻿using RockEngine.Core.ECS.Components;
 using RockEngine.Core.Rendering.Managers;
-using RockEngine.Core.Rendering.SubPasses;
+using RockEngine.Core.Rendering.Passes.SubPasses;
 using RockEngine.Vulkan;
 
 using Silk.NET.Vulkan;
+
+using ZLinq;
 
 namespace RockEngine.Core.Rendering.Passes
 {
@@ -26,11 +28,12 @@ namespace RockEngine.Core.Rendering.Passes
         public override Task Execute(SubmitContext submitContext, CameraManager cameraManager, Renderer renderer)
         {
             uint frameIndex = renderer.FrameIndex;
-            var tasks = new Task[cameraManager.ActiveCameras.Count];
+            var cams = cameraManager.ActiveCameras.ToList();
+            var tasks = new Task[cams.Count];
 
-            for (int i = 0; i < cameraManager.ActiveCameras.Count; i++)
+            for (int i = 0; i < tasks.Length; i++)
             {
-                Camera camera = cameraManager.ActiveCameras[i];
+                Camera camera = cams[i];
 
                 tasks[i] = ExecuteCameraPass(submitContext, camera, renderer, i, frameIndex);
             }

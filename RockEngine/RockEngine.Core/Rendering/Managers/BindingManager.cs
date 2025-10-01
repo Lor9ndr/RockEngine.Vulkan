@@ -1,5 +1,6 @@
 ﻿using RockEngine.Core.ECS.Components;
 using RockEngine.Core.Internal;
+using RockEngine.Core.Rendering.Materials;
 using RockEngine.Core.Rendering.ResourceBindings;
 using RockEngine.Vulkan;
 
@@ -25,21 +26,21 @@ namespace RockEngine.Core.Rendering.Managers
 
         public unsafe void BindResourcesForMaterial(
              uint frameIndex,
-             Material material,
+             MaterialPass materialPass,
              VkCommandBuffer batch,
              bool isCompute = false,
              Span<uint> skipSets = default)
         {
-            Span<DescriptorSet> setsToBind =  stackalloc DescriptorSet[material.Bindings.Count];
+            Span<DescriptorSet> setsToBind =  stackalloc DescriptorSet[materialPass.Bindings.Count];
             int index = 0;
 
-            foreach(var(setLocation, perSetBindings) in material.Bindings)
+            foreach(var(setLocation, perSetBindings) in materialPass.Bindings)
             {
-                if (skipSets.Contains(setLocation) || material.Pipeline.Layout.GetSetLayout(setLocation) == default)
+                if (skipSets.Contains(setLocation) || materialPass.Pipeline.Layout.GetSetLayout(setLocation) == default)
                 {
                     continue;
                 }
-                ProcessSet(frameIndex, material.Pipeline.Layout, setLocation, perSetBindings, setsToBind, ref index);
+                ProcessSet(frameIndex, materialPass.Pipeline.Layout, setLocation, perSetBindings, setsToBind, ref index);
                 /*batch.AddDependency(() =>
                 {
                     var copy = perSetBindings;
@@ -52,10 +53,10 @@ namespace RockEngine.Core.Rendering.Managers
 
             BindDescriptorSetsToCommandBuffer(
                 batch,//batch.CommandBuffer,
-                material.Pipeline.Layout,
+                materialPass.Pipeline.Layout,
                 setsToBind,
-                CollectionsMarshal.AsSpan(material.Bindings.DynamicOffsets),
-                material.Bindings.MinSetLocation,
+                CollectionsMarshal.AsSpan(materialPass.Bindings.DynamicOffsets),
+                materialPass.Bindings.MinSetLocation,
                 isCompute
             );
         }

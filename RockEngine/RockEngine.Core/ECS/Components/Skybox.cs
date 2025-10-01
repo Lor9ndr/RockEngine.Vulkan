@@ -20,7 +20,7 @@ namespace RockEngine.Core.ECS.Components
             tmpMatAsset.SetData(new MaterialData()
             {
                 PipelineName = "Skybox",
-                TextureAssetIDs = [Cubemap]
+                Textures = [Cubemap]
             });
             tmpAsset.SetGeometry(DefaultMeshes.Cube.Vertices, DefaultMeshes.Cube.Indices);
             await assetManager.SaveAsync(tmpAsset);

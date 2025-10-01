@@ -1,4 +1,9 @@
-﻿using RockEngine.Vulkan;
+﻿using RockEngine.Core.DI;
+using RockEngine.Core.Rendering.Managers;
+using RockEngine.Core.Rendering.Objects;
+using RockEngine.Core.Rendering.Passes;
+using RockEngine.Core.Rendering.Passes.SubPasses;
+using RockEngine.Vulkan;
 using RockEngine.Vulkan.Builders;
 
 using Silk.NET.Vulkan;
@@ -13,7 +18,7 @@ namespace RockEngine.Core.Builders
         private MemoryHandle _entryPoint;
         private readonly VulkanContext _context;
         private readonly string _name;
-        private VkRenderPass _renderPass;
+        private RckRenderPass _renderPass;
         private VkPipelineLayout _pipelineLayout;
         private readonly PipelineStageBuilder _pipelineStageBuilder = new PipelineStageBuilder();
         private VulkanPipelineVertexInputStateBuilder _vertexInputStateBuilder;
@@ -24,7 +29,7 @@ namespace RockEngine.Core.Builders
         private VulkanColorBlendStateBuilder _colorBlendStateBuilder;
         private PipelineDynamicStateBuilder _dynamicStateBuilder;
         private PipelineDepthStencilStateCreateInfo _depthStencilState;
-        private uint _subpass;
+        private SubPassMetadata _subpassMetadata;
 
         public GraphicsPipelineBuilder(VulkanContext context, string name)
         {
@@ -33,9 +38,8 @@ namespace RockEngine.Core.Builders
             _name = name;
         }
 
-        public static GraphicsPipelineBuilder CreateDefault(VulkanContext context, string name,params VkShaderModule[] shaders)
+        public static GraphicsPipelineBuilder CreateDefault(VulkanContext context, string name, params VkShaderModule[] shaders)
         {
-              
             return new GraphicsPipelineBuilder(context, name)
                 .WithShaderModule(shaders)
                 .WithVertexInputState(new VulkanPipelineVertexInputStateBuilder())
@@ -46,26 +50,43 @@ namespace RockEngine.Core.Builders
                 .WithRasterizer(new VulkanRasterizerBuilder().CullFace(CullModeFlags.None))
                 .WithMultisampleState(new VulkanMultisampleStateInfoBuilder().Configure(false, SampleCountFlags.Count1Bit))
                 .WithPipelineLayout(VkPipelineLayout.Create(context, shaders))
-                 .AddDepthStencilState(new PipelineDepthStencilStateCreateInfo()
-                 {
-                     SType = StructureType.PipelineDepthStencilStateCreateInfo,
-                     DepthTestEnable = false,
-                     DepthWriteEnable = false,
-                     DepthCompareOp = CompareOp.Always,
-                     DepthBoundsTestEnable = false,
-                     MinDepthBounds = 0.0f,
-                     MaxDepthBounds = 1.0f,
-                     StencilTestEnable = false,
-                 })
+                .AddDepthStencilState(new PipelineDepthStencilStateCreateInfo()
+                {
+                    SType = StructureType.PipelineDepthStencilStateCreateInfo,
+                    DepthTestEnable = false,
+                    DepthWriteEnable = false,
+                    DepthCompareOp = CompareOp.Always,
+                    DepthBoundsTestEnable = false,
+                    MinDepthBounds = 0.0f,
+                    MaxDepthBounds = 1.0f,
+                    StencilTestEnable = false,
+                })
                 .WithDynamicState(new PipelineDynamicStateBuilder()
                     .AddState(DynamicState.Viewport)
                     .AddState(DynamicState.Scissor));
         }
 
-
-        public GraphicsPipelineBuilder AddRenderPass(VkRenderPass renderPass)
+        public GraphicsPipelineBuilder AddRenderPass(RckRenderPass renderPass)
         {
             _renderPass = renderPass;
+            return this;
+        }
+
+        public GraphicsPipelineBuilder WithSubpass(uint subpassIndex, string subpassName)
+        {
+            _subpassMetadata = new SubPassMetadata(subpassIndex, subpassName);
+            return this;
+        }
+
+        public GraphicsPipelineBuilder WithSubpass<T>() where T : IRenderSubPass
+        {
+            _subpassMetadata = new SubPassMetadata(T.Order, T.Name);
+            return this;
+        }
+
+        public GraphicsPipelineBuilder WithSubpass(SubPassMetadata metadata)
+        {
+            _subpassMetadata = metadata;
             return this;
         }
 
@@ -138,13 +159,21 @@ namespace RockEngine.Core.Builders
             return this;
         }
 
-        public GraphicsPipelineBuilder WithSubpass(uint subpass)
+        public GraphicsPipelineBuilder AddRenderPass<T>(RenderPassManager renderPassManager) where T : class, IRenderPassStrategy
         {
-            _subpass = subpass;
+            _renderPass = renderPassManager.GetRenderPass<T>();
             return this;
         }
 
-        public unsafe VkPipeline Build()
+        public RckPipeline Build()
+        {
+            ValidateRequiredComponents();
+
+            var vkPipeline = BuildVkPipeline();
+            return new RckPipeline(vkPipeline, _name, _renderPass, _subpassMetadata, _pipelineLayout);
+        }
+
+        private void ValidateRequiredComponents()
         {
             ArgumentNullException.ThrowIfNull(_pipelineLayout, nameof(_pipelineLayout));
             ArgumentNullException.ThrowIfNull(_pipelineStageBuilder, nameof(_pipelineStageBuilder));
@@ -155,7 +184,16 @@ namespace RockEngine.Core.Builders
             ArgumentNullException.ThrowIfNull(_multisampleStateBuilder, nameof(_multisampleStateBuilder));
             ArgumentNullException.ThrowIfNull(_rasterizerBuilder, nameof(_rasterizerBuilder));
             ArgumentNullException.ThrowIfNull(_viewportStateBuilder, nameof(_viewportStateBuilder));
+            ArgumentNullException.ThrowIfNull(_renderPass, nameof(_renderPass));
 
+            if (_subpassMetadata.Equals(default(SubPassMetadata)))
+            {
+                throw new InvalidOperationException("Subpass metadata must be set before building the pipeline");
+            }
+        }
+
+        private unsafe VkPipeline BuildVkPipeline()
+        {
             using var pstages = _pipelineStageBuilder.Build();
             using var pInputState = _vertexInputStateBuilder.Build();
             using var pColorBlend = _colorBlendStateBuilder.Build();
@@ -169,6 +207,7 @@ namespace RockEngine.Core.Builders
             _depthStencilState.SType = StructureType.PipelineDepthStencilStateCreateInfo;
 
             var pDepthState = CreateMemoryHandle(_depthStencilState);
+
             GraphicsPipelineCreateInfo ci = new GraphicsPipelineCreateInfo()
             {
                 SType = StructureType.GraphicsPipelineCreateInfo,
@@ -184,11 +223,18 @@ namespace RockEngine.Core.Builders
                 PDepthStencilState = (PipelineDepthStencilStateCreateInfo*)pDepthState.Pointer,
                 Layout = _pipelineLayout,
                 RenderPass = _renderPass,
-                Subpass = _subpass,
+                Subpass = _subpassMetadata.Order,
             };
-            return VkPipeline.Create(_context, _name, ref ci, _renderPass, _pipelineLayout);
+
+            return VkPipeline.Create(_context, _name, ref ci, (VkRenderPass)_renderPass, _pipelineLayout);
         }
 
-
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                _entryPoint.Dispose();
+            }
+        }
     }
 }

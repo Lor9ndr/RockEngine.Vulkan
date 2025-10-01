@@ -1,11 +1,19 @@
-﻿namespace RockEngine.Core.Assets.AssetData;
+﻿using Newtonsoft.Json;
 
-public class MaterialData
+namespace RockEngine.Core.Assets.AssetData
 {
-    public MaterialData()
+    public class MaterialData
     {
-    }
+        public MaterialData()
+        {
+        }
 
-    public string PipelineName { get; set; } = "Default";
-    public List<AssetReference<TextureAsset>> TextureAssetIDs { get; set; } = new List<AssetReference<TextureAsset>>();
+        public string PipelineName { get; set; } = "Geometry"; 
+        public string MaterialName { get; set; }
+
+        public List<AssetReference<TextureAsset>> Textures { get; set; } = new List<AssetReference<TextureAsset>>();
+
+        [JsonProperty(DefaultValueHandling = DefaultValueHandling.Ignore)]
+        public Dictionary<string, object>? Parameters { get; set; }
+    }
 }

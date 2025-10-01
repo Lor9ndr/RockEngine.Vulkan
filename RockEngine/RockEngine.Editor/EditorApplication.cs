@@ -19,6 +19,7 @@ namespace RockEngine.Editor
         }
         protected override async Task Load()
         {
+            //await base.Load();
             var projectLayer = IoC.Container.GetInstance<ProjectSelectionLayer>();
             var imGuiLayer = IoC.Container.GetInstance<ImGuiLayer>();
             await _layerStack.PushLayer(imGuiLayer).ConfigureAwait(false);

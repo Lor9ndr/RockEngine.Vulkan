@@ -17,11 +17,11 @@ namespace RockEngine.Editor.Layers
         {
             _controller = controller;
             _renderer = renderer;
+            _controller.Init();
         }
 
         public Task OnAttach()
         {
-            _controller.Init();
 
             return Task.CompletedTask;
         }

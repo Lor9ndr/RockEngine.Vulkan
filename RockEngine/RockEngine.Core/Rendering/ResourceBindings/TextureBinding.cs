@@ -1,5 +1,4 @@
-﻿using NLog.Layouts;
-
+﻿using RockEngine.Core.Internal;
 using RockEngine.Core.Rendering.Texturing;
 using RockEngine.Vulkan;
 
@@ -13,12 +12,12 @@ namespace RockEngine.Core.Rendering.ResourceBindings
         public uint BaseMipLevel { get; private set; }
         public uint LevelCount { get; private set; }
 
-        protected override DescriptorType DescriptorType => DescriptorType.CombinedImageSampler;
+        public override DescriptorType DescriptorType => DescriptorType.CombinedImageSampler;
 
         public TextureBinding(uint setLocation, uint bindingLocation,
                             uint baseMipLevel = 0, uint levelCount = 1,
                             params Texture[] textures)
-            : base(setLocation, bindingLocation)
+            : base(setLocation, new UIntRange(bindingLocation, (uint)(bindingLocation + textures.Length -1)))
         {
             BaseMipLevel = baseMipLevel;
             LevelCount = levelCount;
@@ -57,6 +56,18 @@ namespace RockEngine.Core.Rendering.ResourceBindings
                 var imageView = texture.Image.GetMipView(BaseMipLevel);
                 var layout = texture.Image.GetMipLayout(BaseMipLevel);
 
+                
+
+                // Validate layout
+                if (layout != ImageLayout.ShaderReadOnlyOptimal &&
+                    layout != ImageLayout.General)
+                {
+                    var batch = context.GraphicsSubmitContext.CreateBatch();
+                    texture.PrepareForFragmentShader(batch.CommandBuffer);
+                    batch.Submit();
+                    //context.GraphicsSubmitContext.FlushSingle(batch,VkFence.CreateNotSignaled(context)).Wait();
+                    layout = ImageLayout.ShaderReadOnlyOptimal;
+                }
                 imageInfos[i] = new DescriptorImageInfo
                 {
                     ImageLayout = layout,
@@ -64,22 +75,11 @@ namespace RockEngine.Core.Rendering.ResourceBindings
                     Sampler = Texture.CreateSampler(context, BaseMipLevel),
                 };
 
-                // Validate layout
-                if (layout != ImageLayout.ShaderReadOnlyOptimal &&
-                    layout != ImageLayout.General)
-                {
-                    layout = ImageLayout.ShaderReadOnlyOptimal;
-                   /* var batch = context.GraphicsSubmitContext.CreateBatch();
-                    texture.PrepareForFragmentShader(batch.CommandBuffer);
-                    batch.Submit();*/
-
-                }
-
                 writeDescriptorSets[i] = new WriteDescriptorSet
                 {
                     SType = StructureType.WriteDescriptorSet,
                     DstSet = descriptor,
-                    DstBinding = (uint)(BindingLocation + i),
+                    DstBinding = (uint)(BindingLocation.Start + i),
                     DstArrayElement = 0,
                     DescriptorType = DescriptorType,
                     DescriptorCount = 1,
@@ -99,6 +99,11 @@ namespace RockEngine.Core.Rendering.ResourceBindings
             DescriptorSets = Array.Empty<VkDescriptorSet>();
             Textures = Array.Empty<Texture>();
             GC.SuppressFinalize(this);
+        }
+
+        public override TextureBinding Clone()
+        {
+            return new TextureBinding(SetLocation, BindingLocation.Start, BaseMipLevel, LevelCount, (Texture[])Textures.Clone());
         }
 
         ~TextureBinding()

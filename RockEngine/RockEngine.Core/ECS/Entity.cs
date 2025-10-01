@@ -66,6 +66,8 @@ namespace RockEngine.Core.ECS
         }
         public IEnumerable<IComponent> Components => _components;
 
+        public bool IsActive { get; private set; }
+
         public void AddChild(Entity child)
         {
             if (child.Parent == this) return;
@@ -119,6 +121,15 @@ namespace RockEngine.Core.ECS
             foreach (var item in _components)
             {
                 item.Destroy();
+            }
+        }
+
+        public void SetActive(bool isActive = true)
+        {
+            IsActive = isActive;
+            foreach (var item in Components)
+            {
+                item.SetActive(IsActive);
             }
         }
     }

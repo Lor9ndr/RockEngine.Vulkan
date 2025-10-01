@@ -1,4 +1,6 @@
 ﻿using RockEngine.Core.ECS.Components;
+using RockEngine.Core.Rendering.Materials;
+using RockEngine.Core.Rendering.Objects;
 using RockEngine.Core.Rendering.ResourceBindings;
 using RockEngine.Core.Rendering.Texturing;
 using RockEngine.Vulkan;
@@ -16,9 +18,9 @@ namespace RockEngine.Core.Rendering.Managers
         private readonly ComputeShaderManager _computeManager;
         private readonly BindingManager _bindingManager;
         
-        private VkPipeline _irradiancePipeline;
-        private VkPipeline _prefilterPipeline;
-        private VkPipeline _brdfPipeline;
+        private RckPipeline _irradiancePipeline;
+        private RckPipeline _prefilterPipeline;
+        private RckPipeline _brdfPipeline;
 
         public IBLManager(
             VulkanContext context,
@@ -58,24 +60,24 @@ namespace RockEngine.Core.Rendering.Managers
             output.Image.TransitionImageLayout(cmd, ImageLayout.General, 0, 1, 0, 6);
 
             // Create material with required bindings
-            var material = new Material(_irradiancePipeline, envMap);
-            material.Bind(new TextureBinding(0, 0,  0, 6, envMap));
-            material.Bind(new StorageImageBinding([output], 0, 1));
+            MaterialPass matPass = new MaterialPass(_irradiancePipeline);
+            matPass.BindResource(new TextureBinding(0, 0,  0, 6, envMap));
+            matPass.BindResource(new StorageImageBinding([output], 0, 1));
 
             // Set push constants
             const uint sampleCount = 1024u;
-            material.PushConstant("pc", new IrradiancePushConstants()
+            matPass.PushConstant("pc", new IrradiancePushConstants()
             {
                 OutputSize = new Vector2D<int>((int)size),
                 DeltaPhi = (2f * MathF.PI) / sampleCount,
                 DeltaTheta = (0.5f * MathF.PI) / sampleCount
             });
-            material.CmdPushConstants(cmd);
+            matPass.CmdPushConstants(cmd);
 
             // Dispatch compute
             uint groupsX = (size + 31) / 32;
             uint groupsY = (size + 31) / 32;
-            _bindingManager.BindResourcesForMaterial(0,material, cmd, true);
+            _bindingManager.BindResourcesForMaterial(0, matPass, cmd, true);
             cmd.BindPipeline(_irradiancePipeline, PipelineBindPoint.Compute);
             _computeManager.Dispatch(cmd, groupsX, groupsY, 6);
             // Transition and return
@@ -146,9 +148,9 @@ namespace RockEngine.Core.Rendering.Managers
                 );
 
                 // Create per-mip material
-                var material = new Material(_prefilterPipeline);
-                material.Bind(new TextureBinding(0, 0,  0,6,envMap));
-                material.Bind(new StorageImageBinding(output, 0, 1, mip));
+                var material = new MaterialPass(_prefilterPipeline);
+                material.BindResource(new TextureBinding(0, 0,  0,6,envMap));
+                material.BindResource(new StorageImageBinding(output, 0, 1, mip));
 
                 // Set push constants
                 material.PushConstant("pc", new PrefilterPushConstants()
@@ -195,8 +197,8 @@ namespace RockEngine.Core.Rendering.Managers
             output.Image.TransitionImageLayout(cmd, ImageLayout.General);
             cmd.BindPipeline(_brdfPipeline, PipelineBindPoint.Compute);
 
-            var material = new Material(_brdfPipeline);
-            material.Bind(new StorageImageBinding(output, 0, 0));
+            var material = new MaterialPass(_brdfPipeline);
+            material.BindResource(new StorageImageBinding(output, 0, 0));
 
             // Ensure proper descriptor set binding
             _bindingManager.BindResourcesForMaterial(0, material, cmd, true);

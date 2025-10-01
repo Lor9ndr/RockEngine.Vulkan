@@ -1,4 +1,5 @@
 ﻿using RockEngine.Core.Rendering.Managers;
+using RockEngine.Core.Rendering.Objects;
 using RockEngine.Core.Rendering.Texturing;
 using RockEngine.Vulkan;
 
@@ -11,7 +12,7 @@ namespace RockEngine.Core.Rendering.RenderTargets
         Extent2D Size { get;  }
         Format Format { get;  }
         VkFrameBuffer[] Framebuffers { get; }
-        VkRenderPass RenderPass { get; }
+        RckRenderPass RenderPass { get; }
 
         void PrepareForRender(VkCommandBuffer cmd);
         void TransitionToRead(VkCommandBuffer cmd);

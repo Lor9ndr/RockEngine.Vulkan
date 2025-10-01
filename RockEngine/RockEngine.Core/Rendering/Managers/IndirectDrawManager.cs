@@ -1,7 +1,10 @@
-﻿using RockEngine.Core.DI;
+﻿using NLog;
+
+using RockEngine.Core.DI;
 using RockEngine.Core.ECS.Components;
 using RockEngine.Core.Rendering.Buffers;
 using RockEngine.Core.Rendering.Commands;
+using RockEngine.Core.Rendering.Materials;
 using RockEngine.Vulkan;
 
 using Silk.NET.Core;
@@ -12,10 +15,6 @@ using System.Runtime.InteropServices;
 
 namespace RockEngine.Core.Rendering.Managers
 {
-    /// <summary>
-    /// Управляет косвенными командами отрисовки для Vulkan рендерера.
-    /// Оптимизирует группировку объектов по слоям, пайплайнам и материалам.
-    /// </summary>
     public sealed class IndirectCommandManager : IDisposable
     {
         private readonly VulkanContext _context;
@@ -23,7 +22,7 @@ namespace RockEngine.Core.Rendering.Managers
         private readonly Bool32 _supportsMultiDraw;
         private readonly List<MeshRenderCommand> _commands = new List<MeshRenderCommand>();
         private readonly Queue<IRenderCommand> _otherCommands = new Queue<IRenderCommand>();
-        private readonly Dictionary<(RenderLayerType Layer, uint Subpass), List<DrawGroup>> _drawGroupsByLayerAndSubpass = new();
+        private readonly Dictionary<string, List<DrawGroup>> _drawGroupsBySubpass = new();
         private readonly Lock _otherCommandsLock = new Lock();
         private readonly uint _transformBufferCapacity;
         private bool _isDirty;
@@ -32,12 +31,8 @@ namespace RockEngine.Core.Rendering.Managers
 
         public IndirectBuffer IndirectBuffer => _indirectBuffer;
         public Queue<IRenderCommand> OtherCommands => _otherCommands;
+        private readonly Logger _logger = LogManager.GetCurrentClassLogger();
 
-        /// <summary>
-        /// Инициализирует менеджер команд с указанным контекстом Vulkan
-        /// </summary>
-        /// <param name="context">Контекст Vulkan</param>
-        /// <param name="transformBufferCapacity">Максимальное количество трансформ</param>
         public IndirectCommandManager(VulkanContext context, uint transformBufferCapacity)
         {
             _context = context;
@@ -46,33 +41,31 @@ namespace RockEngine.Core.Rendering.Managers
             _supportsMultiDraw = context.Device.PhysicalDevice.Features2.Features.MultiDrawIndirect;
         }
 
-        /// <summary>
-        /// Добавляет меш для отрисовки с указанным индексом трансформации
-        /// </summary>
-        /// <exception cref="ArgumentOutOfRangeException">При невалидном индексе трансформации</exception>
         public void AddMesh(MeshRenderer mesh, int transformIndex)
         {
             if (transformIndex < 0 || transformIndex >= _transformBufferCapacity)
                 throw new ArgumentOutOfRangeException(nameof(transformIndex), "Transform index exceeds buffer capacity");
 
-            _commands.Add(new MeshRenderCommand(mesh, (uint)transformIndex, mesh.Entity.Layer));
+            // Check which subpasses this mesh's material participates in
+            var material = mesh.Material.Asset.MaterialInstance;
+            foreach (var subpassName in material.Passes.Keys)
+            {
+                _commands.Add(new MeshRenderCommand(mesh, (uint)transformIndex, subpassName));
+            }
+
             _isDirty = true;
         }
 
-
-        /// <summary>
-        /// Обновляет команды отрисовки. Должен вызываться перед рендерингом.
-        /// </summary>
         public ValueTask UpdateAsync()
         {
-            if (!_isDirty)
-                return ValueTask.CompletedTask;
+           if (!_isDirty)
+               return ValueTask.CompletedTask;
 
             _commands.Sort(MeshRenderCommandComparer.Default);
             Span<MeshRenderCommand> commandsSpan = CollectionsMarshal.AsSpan(_commands);
 
             _indirectCommandsList.Clear();
-            _drawGroupsByLayerAndSubpass.Clear();
+            _drawGroupsBySubpass.Clear();
 
             if (commandsSpan.Length == 0)
             {
@@ -80,7 +73,6 @@ namespace RockEngine.Core.Rendering.Managers
                 return ValueTask.CompletedTask;
             }
 
-            // Устанавливаем достаточную емкость для списка команд
             _indirectCommandsList.Capacity = Math.Max(_indirectCommandsList.Capacity, commandsSpan.Length);
 
             int groupStartIndex = 0;
@@ -88,7 +80,7 @@ namespace RockEngine.Core.Rendering.Managers
             {
                 if (IsNewGroup(in commandsSpan[i - 1], in commandsSpan[i]))
                 {
-                    AddGroup(commandsSpan.Slice(groupStartIndex, i - groupStartIndex));
+                    AddGroup(commandsSpan[groupStartIndex..i]);
                     groupStartIndex = i;
                 }
             }
@@ -98,7 +90,6 @@ namespace RockEngine.Core.Rendering.Managers
             batch.CommandBuffer.LabelObject("IndirectDrawManager cmd");
             _indirectBuffer.StageCommands(batch, CollectionsMarshal.AsSpan(_indirectCommandsList));
 
-            // Добавлен барьер после обновления буфера
             var bufferBarrier = new BufferMemoryBarrier
             {
                 SType = StructureType.BufferMemoryBarrier,
@@ -117,7 +108,6 @@ namespace RockEngine.Core.Rendering.Managers
 
             batch.Submit();
 
-
             _commands.Clear();
             _isDirty = false;
             return ValueTask.CompletedTask;
@@ -126,143 +116,137 @@ namespace RockEngine.Core.Rendering.Managers
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool IsNewGroup(in MeshRenderCommand a, in MeshRenderCommand b)
         {
-            return a.Layer != b.Layer ||
-                   !ReferenceEquals(a.Mesh.Material.Asset.MaterialInstance.Pipeline, b.Mesh.Material.Asset.MaterialInstance.Pipeline) ||
+            return a.SubpassName != b.SubpassName ||
                    !ReferenceEquals(a.Mesh.Material.Asset.MaterialInstance, b.Mesh.Material.Asset.MaterialInstance) ||
-                   !ReferenceEquals(a.Mesh, b.Mesh);
+                   !ReferenceEquals(a.Mesh.Mesh, b.Mesh.Mesh); // Compare the actual mesh, not the renderer
         }
 
-        /// <summary>
-        /// Добавляет группу команд в буфер и регистрирует DrawGroup
-        /// </summary>
-        /// <param name="groupSpan">Срез команд для группы</param>
-        /// <param name="indirectCommands">Целевой список команд</param>
         private void AddGroup(Span<MeshRenderCommand> groupSpan)
         {
-            // Sort by transform index for better memory locality
             groupSpan.Sort((a, b) => a.TransformIndex.CompareTo(b.TransformIndex));
 
             ref readonly var firstCmd = ref groupSpan[0];
-            var key = (firstCmd.Layer, firstCmd.Mesh.Material.Asset.MaterialInstance.Pipeline.SubPass);
+            var subpassName = firstCmd.SubpassName;
 
-            if (!_drawGroupsByLayerAndSubpass.TryGetValue(key, out var groups))
+            // Group by material AND mesh to ensure correct geometry
+            var meshGroups = new Dictionary<(Material, IMesh), List<MeshRenderCommand>>();
+
+            foreach (ref readonly var cmd in groupSpan)
             {
-                groups = new List<DrawGroup>();
-                _drawGroupsByLayerAndSubpass[key] = groups;
+                var key = (cmd.Mesh.Material.Asset.MaterialInstance, cmd.Mesh.Mesh);
+                if (!meshGroups.TryGetValue(key, out var meshGroup))
+                {
+                    meshGroup = new List<MeshRenderCommand>();
+                    meshGroups[key] = meshGroup;
+                }
+                meshGroup.Add(cmd);
+            }
+
+            if (!_drawGroupsBySubpass.TryGetValue(subpassName, out var drawGroups))
+            {
+                drawGroups = new List<DrawGroup>();
+                _drawGroupsBySubpass[subpassName] = drawGroups;
             }
 
             var globalGeometryBuffer = IoC.Container.GetInstance<GlobalGeometryBuffer>();
-            if (_supportsMultiDraw)
+
+            foreach (var (key, meshGroup) in meshGroups)
             {
-                // Get mesh offsets from global geometry buffer
-                var allocation = globalGeometryBuffer.GetMeshAllocation(firstCmd.Mesh.Mesh.ID);
+                var (material, mesh) = key;
+                var materialPass = material.GetPass(subpassName);
 
-                groups.Add(new DrawGroup(
-                    firstCmd.Mesh.Material.Asset.MaterialInstance.Pipeline,
-                    firstCmd.Mesh.Material.Asset.MaterialInstance,
-                    firstCmd.Mesh,
-                    (uint)groupSpan.Length,
-                    (ulong)_indirectCommandsList.Count * _commandStride
-                ));
-
-                _indirectCommandsList.Add(new DrawIndexedIndirectCommand
+                // Ensure we have a valid material pass
+                if (materialPass == null)
                 {
-                    IndexCount = allocation.IndexCount,
-                    InstanceCount = (uint)groupSpan.Length,
-                    FirstIndex = (uint)(allocation.IndexOffset / sizeof(uint)),
-                    VertexOffset = (int)(allocation.VertexOffset / (ulong)Unsafe.SizeOf<Vertex>()),
-                    FirstInstance = groupSpan[0].TransformIndex
-                });
-            }
-            else
-            {
-                // Individual commands for each instance
-                ulong byteOffset = (ulong)_indirectCommandsList.Count * _commandStride;
-                groups.Add(new DrawGroup(
-                    firstCmd.Mesh.Material.Asset.MaterialInstance.Pipeline,
-                    firstCmd.Mesh.Material.Asset.MaterialInstance,
-                    firstCmd.Mesh,
-                    (uint)groupSpan.Length,
-                    byteOffset
-                ));
+                    _logger.Warn($"Material '{material.Name}' has no pass for subpass '{subpassName}'");
+                    continue;
+                }
 
-                foreach (ref readonly var cmd in groupSpan)
+                var allocation = globalGeometryBuffer.GetMeshAllocation(mesh.ID);
+
+                if (_supportsMultiDraw)
                 {
-                    var allocation = globalGeometryBuffer.GetMeshAllocation(cmd.Mesh.Mesh.ID);
+                    drawGroups.Add(new DrawGroup(
+                        materialPass,
+                        meshGroup[0].Mesh,
+                        (uint)meshGroup.Count,
+                        (ulong)_indirectCommandsList.Count * _commandStride
+                    ));
 
                     _indirectCommandsList.Add(new DrawIndexedIndirectCommand
                     {
                         IndexCount = allocation.IndexCount,
-                        InstanceCount = 1,
+                        InstanceCount = (uint)meshGroup.Count,
                         FirstIndex = (uint)(allocation.IndexOffset / sizeof(uint)),
                         VertexOffset = (int)(allocation.VertexOffset / (ulong)Unsafe.SizeOf<Vertex>()),
-                        FirstInstance = cmd.TransformIndex
+                        FirstInstance = meshGroup[0].TransformIndex
                     });
+                }
+                else
+                {
+                    ulong byteOffset = (ulong)_indirectCommandsList.Count * _commandStride;
+                    drawGroups.Add(new DrawGroup(
+                        materialPass,
+                        meshGroup[0].Mesh,
+                        (uint)meshGroup.Count,
+                        byteOffset
+                    ));
+
+                    foreach (var cmd in meshGroup)
+                    {
+                        _indirectCommandsList.Add(new DrawIndexedIndirectCommand
+                        {
+                            IndexCount = allocation.IndexCount,
+                            InstanceCount = 1,
+                            FirstIndex = (uint)(allocation.IndexOffset / sizeof(uint)),
+                            VertexOffset = (int)(allocation.VertexOffset / (ulong)Unsafe.SizeOf<Vertex>()),
+                            FirstInstance = cmd.TransformIndex
+                        });
+                    }
                 }
             }
         }
 
-        /// <summary>
-        /// Возвращает группы отрисовки для указанного слоя
-        /// </summary>
-        public List<DrawGroup> GetDrawGroups(RenderLayerType layer, uint subpass)
+        public List<DrawGroup> GetDrawGroups(string subpassName)
         {
-            var key = (layer, subpass);
-            return _drawGroupsByLayerAndSubpass.TryGetValue(key, out var groups)
+            return _drawGroupsBySubpass.TryGetValue(subpassName, out var groups)
                 ? groups
-                : [];
-           
+                : new List<DrawGroup>();
         }
 
-
-        /// <summary>
-        /// Освобождает ресурсы Vulkan
-        /// </summary>
         public void Dispose() => _indirectBuffer.Dispose();
 
-        /// <summary>
-        /// Добавляет произвольную команду рендеринга (потокобезопасно)
-        /// </summary>
         public void AddCommand(IRenderCommand command)
         {
-            _otherCommands.Enqueue(command);
+            lock (_otherCommandsLock)
+            {
+                _otherCommands.Enqueue(command);
+            }
         }
 
         public bool TryDequeue(out IRenderCommand command)
         {
-            return _otherCommands.TryDequeue(out command);
-        }
-
-
-        #region Inner components
-        // Внутренние структуры ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-        /// <summary>
-        /// Команда рендеринга меша (readonly для безопасности)
-        /// </summary>
-        private readonly struct MeshRenderCommand
-        {
-            public readonly MeshRenderer Mesh;             // Ссылка на меш
-            public readonly uint TransformIndex;   // Индекс в трансформ-буфере
-            public readonly RenderLayerType Layer; // Слой рендеринга
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public MeshRenderCommand(MeshRenderer mesh, uint transformIndex, RenderLayerType layer)
+            lock (_otherCommandsLock)
             {
-                Mesh = mesh;
-                TransformIndex = transformIndex;
-                Layer = layer;
+                return _otherCommands.TryDequeue(out command);
             }
         }
 
-        /// <summary>
-        /// Компаратор для сортировки команд по критериям:
-        /// 1. Слой рендеринга
-        /// 2. Subpass пайплайна
-        /// 3. Пайплайн (по хешу)
-        /// 4. Материал (по хешу)
-        /// 5. Меш (по хешу)
-        /// </summary>
+        private readonly struct MeshRenderCommand
+        {
+            public readonly MeshRenderer Mesh;
+            public readonly uint TransformIndex;
+            public readonly string SubpassName;
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public MeshRenderCommand(MeshRenderer mesh, uint transformIndex, string subpassName)
+            {
+                Mesh = mesh;
+                TransformIndex = transformIndex;
+                SubpassName = subpassName;
+            }
+        }
+
         private sealed class MeshRenderCommandComparer : IComparer<MeshRenderCommand>
         {
             public static readonly MeshRenderCommandComparer Default = new();
@@ -270,45 +254,33 @@ namespace RockEngine.Core.Rendering.Managers
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public int Compare(MeshRenderCommand x, MeshRenderCommand y)
             {
-                // Сортировка по слою
-                int layerCompare = x.Layer.CompareTo(y.Layer);
-                if (layerCompare != 0) return layerCompare;
+                // Sort by subpass name first
+                int subpassCompare = string.Compare(x.SubpassName, y.SubpassName, StringComparison.Ordinal);
+                if (subpassCompare != 0) return subpassCompare;
 
-                // Сортировка по subpass пайплайна
-                int subPassCompare = x.Mesh.Material.Asset.MaterialInstance.Pipeline.SubPass
-                    .CompareTo(y.Mesh.Material.Asset.MaterialInstance.Pipeline.SubPass);
-                if (subPassCompare != 0) return subPassCompare;
+                // Then by pipeline within the subpass
+                var xPass = x.Mesh.Material.Asset.MaterialInstance.GetPass(x.SubpassName);
+                var yPass = y.Mesh.Material.Asset.MaterialInstance.GetPass(y.SubpassName);
 
-                // Сравнение пайплайнов по ID
-                int pipelineCompare = x.Mesh.Material.Asset.MaterialInstance.Pipeline.VkObjectNative.Handle
-                    .CompareTo(y.Mesh.Material.Asset.MaterialInstance.Pipeline.VkObjectNative.Handle);
+                int pipelineCompare = xPass.Pipeline.VkPipeline.VkObjectNative.Handle
+                    .CompareTo(yPass.Pipeline.VkPipeline.VkObjectNative.Handle);
                 if (pipelineCompare != 0) return pipelineCompare;
 
-                // Сравнение материалов по ID
+                // Then by material
                 int materialCompare = x.Mesh.Material.AssetID
                     .CompareTo(y.Mesh.Material.AssetID);
                 if (materialCompare != 0) return materialCompare;
 
-                // Сравнение мешей по ID
+                // Finally by mesh
                 return x.Mesh.Mesh.ID.CompareTo(y.Mesh.Mesh.ID);
             }
         }
 
-        /// <summary>
-        /// Группа объектов для отрисовки
-        /// </summary>
-        /// <param name="Pipeline">Vulkan пайплайн</param>
-        /// <param name="Material">Материал</param>
-        /// <param name="MeshRenderer">Геометрия</param>
-        /// <param name="Count">Количество инстансов</param>
-        /// <param name="ByteOffset">Смещение в командном буфере</param>
         public readonly record struct DrawGroup(
-            VkPipeline Pipeline,
-            Material Material,
+            MaterialPass MaterialPass,
             MeshRenderer MeshRenderer,
             uint Count,
             ulong ByteOffset
         );
-        #endregion
     }
 }

@@ -68,5 +68,11 @@ namespace RockEngine.Vulkan
                 _disposed = true;
             }
         }
+
+        internal void FreeDescriptorSet(VkDescriptorSet vkDescriptorSet)
+        {
+            var native = vkDescriptorSet.VkObjectNative;
+            _context.GraphicsSubmitContext.AddDependency(()=> Vk.FreeDescriptorSets(_context.Device,this, 1, in native));
+        }
     }
 }

@@ -1,11 +1,14 @@
 ﻿using RockEngine.Core.Builders;
 using RockEngine.Vulkan;
 
-namespace RockEngine.Core.Rendering.SubPasses
+namespace RockEngine.Core.Rendering.Passes.SubPasses
 {
     public interface IRenderSubPass
     {
-        uint Order { get; }
+        static virtual uint Order { get; } = 0;
+        static virtual string Name { get; } = "UNDEFINED";
+
+        SubPassMetadata GetMetadata();
 
         void Execute(VkCommandBuffer cmd, params object[] args);
         void Dispose();
@@ -18,4 +21,5 @@ namespace RockEngine.Core.Rendering.SubPasses
         void SetupSubpassDescription(RenderPassBuilder.SubpassConfigurer subpass);
         void SetupDependencies(RenderPassBuilder builder, uint subpassIndex);
     }
+    public readonly record struct SubPassMetadata(uint Order, string Name);
 }

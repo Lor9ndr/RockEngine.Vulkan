@@ -2,6 +2,8 @@
 using RockEngine.Core.ECS.Components;
 using RockEngine.Core.Rendering.Buffers;
 using RockEngine.Core.Rendering.Managers;
+using RockEngine.Core.Rendering.Materials;
+using RockEngine.Core.Rendering.Objects;
 using RockEngine.Vulkan;
 
 using Silk.NET.Core;
@@ -9,9 +11,9 @@ using Silk.NET.Vulkan;
 
 using System.Runtime.InteropServices;
 
-namespace RockEngine.Core.Rendering.SubPasses
+namespace RockEngine.Core.Rendering.Passes.SubPasses
 {
-    internal class PostLightPass : IRenderSubPass
+    public class PostLightPass : IRenderSubPass
     {
         private readonly VulkanContext _context;
         private readonly BindingManager _bindingManager;
@@ -22,7 +24,9 @@ namespace RockEngine.Core.Rendering.SubPasses
         private readonly Bool32 _supportsMultiDraw;
         private readonly int _indirectCommandStride;
 
-        public uint Order => 2;
+        public static uint Order => 2;
+
+        public static string Name => "forward";
 
         public PostLightPass(VulkanContext context,
             BindingManager bindingManager,
@@ -44,7 +48,10 @@ namespace RockEngine.Core.Rendering.SubPasses
         {
         }
 
-
+        public SubPassMetadata GetMetadata()
+        {
+            return new(Order, Name);
+        }
         public void Execute(VkCommandBuffer cmd, params object[] args)
         {
             using (PerformanceTracer.BeginSection(nameof(PostLightPass)))
@@ -61,7 +68,7 @@ namespace RockEngine.Core.Rendering.SubPasses
                 var matrixBinding = _transformManager.GetCurrentBinding(frameIndex);
                 var globalUboBinding = _globalUbo.GetBinding((uint)camIndex);
 
-                var drawGroups = _indirectCommands.GetDrawGroups(RenderLayerType.Solid, Order);
+                var drawGroups = _indirectCommands.GetDrawGroups(Name);
                 if (drawGroups.Count == 0) return;
 
                 // Get the span of draw groups
@@ -71,8 +78,8 @@ namespace RockEngine.Core.Rendering.SubPasses
                 var indirectBuffer = _indirectCommands.IndirectBuffer.Buffer;
 
                 // Track state
-                VkPipeline? lastPipeline = null;
-                Material? lastMaterial = null;
+                RckPipeline? lastPipeline = null;
+                MaterialPass? lastMaterialPass = null;
 
                 // Привязываем общие буферы вершин и индексов
                 _geometryBufferManager.BindVertexBuffer(cmd);
@@ -83,28 +90,28 @@ namespace RockEngine.Core.Rendering.SubPasses
                     ref readonly var drawGroup = ref drawGroupsSpan[i];
 
                     // Pipeline state change
-                    if (lastPipeline != drawGroup.Pipeline)
+                    if (lastPipeline != drawGroup.MaterialPass.Pipeline)
                     {
-                        cmd.BindPipeline(drawGroup.Pipeline);
-                        lastPipeline = drawGroup.Pipeline;
+                        cmd.BindPipeline(drawGroup.MaterialPass.Pipeline);
+                        lastPipeline = drawGroup.MaterialPass.Pipeline;
 
                         // Bind global resources using the binding manager
-                        _bindingManager.BindResource(frameIndex, globalUboBinding, cmd, drawGroup.Pipeline.Layout);
-                        _bindingManager.BindResource(frameIndex, matrixBinding, cmd, drawGroup.Pipeline.Layout);
+                        _bindingManager.BindResource(frameIndex, globalUboBinding, cmd, drawGroup.MaterialPass.Pipeline.Layout);
+                        _bindingManager.BindResource(frameIndex, matrixBinding, cmd, drawGroup.MaterialPass.Pipeline.Layout);
                     }
 
                     // Material change
-                    if (lastMaterial != drawGroup.Material)
+                    //if (lastMaterialPass != drawGroup.MaterialPass)
                     {
                         _bindingManager.BindResourcesForMaterial(
                             frameIndex,
-                            drawGroup.Material,
+                            drawGroup.MaterialPass,
                             cmd,
                             false,
                             [matrixBinding.SetLocation, globalUboBinding.SetLocation]
                         );
-                        lastMaterial = drawGroup.Material;
-                        lastMaterial.CmdPushConstants(cmd);
+                        lastMaterialPass = drawGroup.MaterialPass;
+                        lastMaterialPass.CmdPushConstants(cmd);
                     }
 
                     // Issue draw command
@@ -135,7 +142,7 @@ namespace RockEngine.Core.Rendering.SubPasses
         }
 
 
-        private Silk.NET.Core.Bool32 GetMultiDrawIndirectFeature()
+        private Bool32 GetMultiDrawIndirectFeature()
         {
             return _context.Device.PhysicalDevice.Features2.Features.MultiDrawIndirect;
         }

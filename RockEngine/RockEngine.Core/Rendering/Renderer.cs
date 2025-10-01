@@ -2,7 +2,9 @@
 using RockEngine.Core.ECS.Components;
 using RockEngine.Core.Rendering.Commands;
 using RockEngine.Core.Rendering.Managers;
+using RockEngine.Core.Rendering.Objects;
 using RockEngine.Core.Rendering.Passes;
+using RockEngine.Core.Rendering.Passes.SubPasses;
 using RockEngine.Core.Rendering.RenderTargets;
 using RockEngine.Core.Rendering.Texturing;
 using RockEngine.Vulkan;
@@ -17,7 +19,7 @@ namespace RockEngine.Core.Rendering
     {
         private readonly VulkanContext _context;
 
-        public EngineRenderPass RenderPass { get; private set; }
+        public RckRenderPass RenderPass { get; private set; }
 
         private readonly IRenderPassStrategy[] _renderPassStrategies;
         private readonly IBLManager _iblManager;
@@ -76,7 +78,7 @@ namespace RockEngine.Core.Rendering
           
             _iblManager = new IBLManager(
            context,
-           new ComputeShaderManager(context, _bindingManager, _pipelineManager),
+           new ComputeShaderManager(context,  _pipelineManager),
            _bindingManager
             );
         }
@@ -87,12 +89,12 @@ namespace RockEngine.Core.Rendering
 
             foreach (var item in _renderPassStrategies)
             {
-                _renderPassManager.CreateRenderPass(item.BuildRenderPass(_graphicsEngine), item.GetType());
+                _renderPassManager.Register(item.BuildRenderPass(), item.GetType());
 
                 item.InitializeSubPasses();
             }
             RenderPass = _renderPassManager.GetRenderPass<DeferredPassStrategy>();
-            SwapchainTarget.Initialize(_renderPassManager.GetRenderPass<SwapchainPassStrategy>().RenderPass);
+            SwapchainTarget.Initialize(_renderPassManager.GetRenderPass<SwapchainPassStrategy>());
 
             _skyboxPipeline = CreateSkyboxPipeline();
 
@@ -154,7 +156,8 @@ namespace RockEngine.Core.Rendering
             }
 
             // Update all frame data first
-            await _lightManager.UpdateAsync(_cameraManager.ActiveCameras).ConfigureAwait(false);
+            var cameras = _cameraManager.ActiveCameras.ToList();
+            await _lightManager.UpdateAsync(cameras).ConfigureAwait(false);
             await _transformManager.UpdateAsync(FrameIndex).ConfigureAwait(false);
             await _indirectCommandManager.UpdateAsync().ConfigureAwait(false);
 
@@ -163,9 +166,9 @@ namespace RockEngine.Core.Rendering
                 await item.Update().ConfigureAwait(false);
             }
 
-            if(_cameraManager.ActiveCameras.Count > 0)
+            if(cameras.Count > 0)
             {
-               await GlobalUbo.UpdateAsync(_cameraManager.ActiveCameras
+               await GlobalUbo.UpdateAsync(cameras
                    .AsValueEnumerable()
                    .Select(s => new GlobalUbo.GlobalUboData()
                 {
@@ -173,8 +176,8 @@ namespace RockEngine.Core.Rendering
                     ViewProjection = s.ViewProjectionMatrix,
                 }).ToArray()).ConfigureAwait(false);
             }
-
             _prevFrameIndex = FrameIndex;
+
         }
 
 
@@ -200,7 +203,7 @@ namespace RockEngine.Core.Rendering
                 .WithVertexInputState(new VulkanPipelineVertexInputStateBuilder()
                      .Add(Vertex.GetBindingDescription(), Vertex.GetAttributeDescriptions()))
                 .AddRenderPass(RenderPass)
-                .WithSubpass(2)
+                .WithSubpass<PostLightPass>()
                 .AddDepthStencilState(new PipelineDepthStencilStateCreateInfo
                 {
                     SType = StructureType.PipelineDepthStencilStateCreateInfo,
@@ -229,7 +232,11 @@ namespace RockEngine.Core.Rendering
             _indirectCommandManager.AddCommand(command);
         }
 
-        public void RegisterCamera(Camera camera) => _cameraManager.Register(camera,this);
+        public void RegisterCamera(Camera camera)
+        {
+            _cameraManager.Register(camera, this);
+        }
+
         public void Dispose()
         {
             foreach (var item in _renderPassStrategies)
@@ -237,6 +244,11 @@ namespace RockEngine.Core.Rendering
                 item.Dispose();
 
             }
+        }
+
+        internal void UnRegisterCamera(Camera camera)
+        {
+            _cameraManager.Unregister(camera);
         }
     }
 }

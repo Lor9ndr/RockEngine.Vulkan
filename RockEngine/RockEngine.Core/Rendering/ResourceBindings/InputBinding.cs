@@ -10,10 +10,10 @@ namespace RockEngine.Core.Rendering.ResourceBindings
 
         public VkImageView[] Attachments => _attachments;
 
-        protected override DescriptorType DescriptorType =>  DescriptorType.InputAttachment;
+        public override DescriptorType DescriptorType =>  DescriptorType.InputAttachment;
 
         public InputAttachmentBinding(uint setLocation, uint bindingLocation, params VkImageView[] attachments)
-            : base(setLocation, bindingLocation)
+            : base(setLocation, new Internal.UIntRange(bindingLocation, (uint)(bindingLocation + attachments.Length -1)))
         {
             _attachments = attachments;
             foreach (var attachment in _attachments)
@@ -53,7 +53,7 @@ namespace RockEngine.Core.Rendering.ResourceBindings
                 {
                     SType = StructureType.WriteDescriptorSet,
                     DstSet = descriptor,
-                    DstBinding = BindingLocation + (uint)i,
+                    DstBinding = BindingLocation.Start + (uint)i,
                     DstArrayElement = 0,
                     DescriptorCount = 1,
                     DescriptorType = DescriptorType,
@@ -72,6 +72,11 @@ namespace RockEngine.Core.Rendering.ResourceBindings
             }
             _attachments = [];
             GC.SuppressFinalize(this);
+        }
+
+        public override InputAttachmentBinding Clone()
+        {
+            return new InputAttachmentBinding(SetLocation, BindingLocation.Start, Attachments);
         }
     }
 }

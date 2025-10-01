@@ -1,8 +1,10 @@
 ﻿using RockEngine.Core.Rendering.Managers;
-using RockEngine.Core.Rendering.SubPasses;
+using RockEngine.Core.Rendering.Passes.SubPasses;
 using RockEngine.Vulkan;
 
 using Silk.NET.Vulkan;
+
+using ZLinq;
 
 namespace RockEngine.Core.Rendering.Passes
 {
@@ -65,7 +67,7 @@ namespace RockEngine.Core.Rendering.Passes
                         {
                             using (childCmd.NameAction(item.GetType().Name, [0.7f, 0.7f, 0.7f, 1.0f]))
                             {
-                                item.Execute(childCmd, renderer, cameraManager.ActiveCameras.FirstOrDefault());
+                                item.Execute(childCmd, renderer, cameraManager.ActiveCameras.ToList());
                             }
                         }
                     }

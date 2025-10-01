@@ -1,6 +1,8 @@
 ﻿using RockEngine.Core.Builders;
 using RockEngine.Core.ECS.Components;
 using RockEngine.Core.Rendering.Managers;
+using RockEngine.Core.Rendering.Materials;
+using RockEngine.Core.Rendering.Objects;
 using RockEngine.Core.Rendering.Passes;
 using RockEngine.Core.Rendering.ResourceBindings;
 using RockEngine.Core.Rendering.Texturing;
@@ -8,7 +10,7 @@ using RockEngine.Vulkan;
 
 using Silk.NET.Vulkan;
 
-namespace RockEngine.Core.Rendering.SubPasses
+namespace RockEngine.Core.Rendering.Passes.SubPasses
 {
     public class ScreenPass : IRenderSubPass
     {
@@ -18,11 +20,15 @@ namespace RockEngine.Core.Rendering.SubPasses
         private readonly RenderPassManager _renderPassManager;
         private readonly GraphicsEngine _graphicsEngine;
         private readonly Renderer _renderer;
-        private Material _screenMaterial;
+        private MaterialPass _screenMaterialPass;
         protected Dictionary<Texture, TextureBinding> Bindings = new Dictionary<Texture, TextureBinding>();
-        private VkPipeline _screenPipeline;
+        private RckPipeline _screenPipeline;
 
-        public uint Order => 0;
+        public static uint Order => 0;
+
+        public static string Name => "screen";
+
+
 
         public ScreenPass(
             VulkanContext context,
@@ -40,7 +46,10 @@ namespace RockEngine.Core.Rendering.SubPasses
             _renderer = renderer;
         }
 
-     
+        public SubPassMetadata GetMetadata()
+        {
+            return new(Order, Name);
+        }
         public void Execute(VkCommandBuffer cmd, params object[] args)
         {
             using (PerformanceTracer.BeginSection(nameof(ScreenPass)))
@@ -57,17 +66,18 @@ namespace RockEngine.Core.Rendering.SubPasses
                 cmd.SetScissor(_renderer.SwapchainTarget.Scissor);
 
                 cmd.BindPipeline(_screenPipeline, PipelineBindPoint.Graphics);
-                if(!_screenMaterial.IsComplete)
+               /* if(!_screenMaterial.AddSharedBinding)
                 {
                     return;
-                }
-                _bindingManager.BindResourcesForMaterial(renderer.FrameIndex, _screenMaterial, cmd);
+                }*/
+                _bindingManager.BindResourcesForMaterial(renderer.FrameIndex, _screenMaterialPass, cmd);
                 cmd.Draw(3, 1, 0, 0);
             }
         }
         public void Initilize()
         {
             var renderPass = _renderPassManager.GetRenderPass<SwapchainPassStrategy>() ?? throw new Exception($"Unable to get renderPass of {nameof(SwapchainPassStrategy)}");
+
             var vertShader = VkShaderModule.Create(_context, "Shaders/screen.vert.spv", ShaderStageFlags.VertexBit);
             var fragShader = VkShaderModule.Create(_context, "Shaders/screen.frag.spv", ShaderStageFlags.FragmentBit);
 
@@ -89,12 +99,12 @@ namespace RockEngine.Core.Rendering.SubPasses
                 .WithMultisampleState(new VulkanMultisampleStateInfoBuilder().Configure(false, SampleCountFlags.Count1Bit))
                 .WithColorBlendState(new VulkanColorBlendStateBuilder().AddDefaultAttachment())
                 .AddRenderPass(renderPass)
-                .WithSubpass(0)
+                .WithSubpass<ScreenPass>()
                 .WithPipelineLayout(pipelineLayout);
 
             
             _screenPipeline = _pipelineManager.Create(pipelineBuilder);
-            _screenMaterial = new Material(_screenPipeline);
+            _screenMaterialPass = new MaterialPass(_screenPipeline);
         }
 
         internal void SetInputTexture(Texture outputTexture)
@@ -104,7 +114,7 @@ namespace RockEngine.Core.Rendering.SubPasses
                 binding = new TextureBinding(0, 0, 0,1,outputTexture);
                 Bindings.Add(outputTexture, binding);
             }
-            _screenMaterial.Bind(binding);
+            _screenMaterialPass.BindResource(binding);
         }
         public void SetupAttachmentDescriptions(RenderPassBuilder builder)
         {

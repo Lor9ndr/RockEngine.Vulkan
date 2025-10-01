@@ -3,7 +3,7 @@ using RockEngine.Core.Builders;
 using RockEngine.Core.Rendering;
 using RockEngine.Core.Rendering.Commands;
 using RockEngine.Core.Rendering.Managers;
-using RockEngine.Core.Rendering.SubPasses;
+using RockEngine.Core.Rendering.Passes.SubPasses;
 using RockEngine.Vulkan;
 
 using Silk.NET.Vulkan;
@@ -23,9 +23,13 @@ namespace RockEngine.Editor.SubPasses
             _commandManager = commandManager;
         }
 
-        public uint Order => 0;
+        public static uint Order => 0;
+        public static string Name => "imgui";
 
-       
+        public SubPassMetadata GetMetadata()
+        {
+            return new(Order, Name);
+        }
 
         public void Execute(VkCommandBuffer cmd, params object[] args)
         {

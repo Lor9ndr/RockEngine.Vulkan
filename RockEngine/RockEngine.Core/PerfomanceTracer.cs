@@ -188,11 +188,6 @@ namespace RockEngine.Core
 
         public static void DrawMetrics()
         {
-            if (!ImGui.Begin("Performance Metrics##PerformanceMetrics"))
-            {
-                ImGui.End();
-                return;
-            }
 
             try
             {

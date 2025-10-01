@@ -24,6 +24,16 @@ namespace RockEngine.Core.Assets
         Type GetDataType();
         object GetData();
         void SetData(object data);
+
+        /// <summary>
+        /// Method is being called before saving data /> 
+        /// </summary>
+        void BeforeSaving();
+
+        /// <summary>
+        /// Method is being called after saving data/> 
+        /// </summary>
+        void AfterSaving();
     }
 
     public interface IAsset<TData> : IAsset where TData : class
@@ -31,15 +41,7 @@ namespace RockEngine.Core.Assets
         [JsonIgnore] // Data comes later
         TData? Data { get;}
 
-        /// <summary>
-        /// Method is being called before saving <typeparamref name="TData"/> 
-        /// </summary>
-        void BeforeSaving();
-
-        /// <summary>
-        /// Method is being called after saving <typeparamref name="TData"/> 
-        /// </summary>
-        void AfterSaving();
+       
     }
 
     public class Asset<T> :  IAsset<T> where T : class, new()

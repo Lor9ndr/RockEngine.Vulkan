@@ -1,4 +1,6 @@
-﻿using RockEngine.Core.ECS.Components;
+﻿using RockEngine.Core.Rendering.Materials;
+using RockEngine.Core.Rendering.Objects;
+using RockEngine.Core.Rendering.Passes.SubPasses;
 using RockEngine.Core.Rendering.ResourceBindings;
 using RockEngine.Core.Rendering.Texturing;
 using RockEngine.Vulkan;
@@ -12,7 +14,7 @@ namespace RockEngine.Core.Rendering
         private readonly VulkanContext _context;
         private InputAttachmentBinding _attachmentBinding;
         private readonly Format _depthFormat;
-        private VkPipeline? _pipeline;
+        private RckPipeline? _pipeline;
         private Extent2D _size;
 
         public VkImageView[] ColorAttachments { get; private set; }
@@ -47,12 +49,13 @@ namespace RockEngine.Core.Rendering
            
         }
 
-        public void CreateLightingDescriptorSets(VkPipeline pipeline)
+        public void CreateLightingDescriptorSets(RckPipeline pipeline)
         {
             if (_pipeline != pipeline)
             {
                 _pipeline = pipeline;
-                Material = new Material(_pipeline, ColorTextures.ToList());
+                Material = new Material("GBuffer");
+                Material.AddPass(LightingPass.Name, new MaterialPass(pipeline));
             }
 
             _attachmentBinding = new InputAttachmentBinding(
@@ -60,7 +63,7 @@ namespace RockEngine.Core.Rendering
                 bindingLocation: 0,
                 ColorAttachments  // Position + Normal + Albedo
             );
-            Material.Bind(_attachmentBinding);
+            Material.BindResource(_attachmentBinding);
         }
 
         private void CreateAttachments()

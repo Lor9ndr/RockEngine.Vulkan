@@ -57,8 +57,8 @@ namespace RockEngine.Editor.EditorUI
             ImGui.PushID($"TextureSlot_{slotIndex}");
 
             // Get current texture or null
-            var textureRef = _editingMaterial.Data.TextureAssetIDs.Count > slotIndex ?
-                _editingMaterial.Data.TextureAssetIDs[slotIndex] : null;
+            var textureRef = _editingMaterial.Data.Textures.Count > slotIndex ?
+                _editingMaterial.Data.Textures[slotIndex] : null;
             string textureName = textureRef?.Asset?.Name ?? "None";
 
             // Draw texture slot
@@ -77,12 +77,12 @@ namespace RockEngine.Editor.EditorUI
                 if (textureAsset != null)
                 {
                     // Ensure we have enough slots
-                    while (_editingMaterial.Data.TextureAssetIDs.Count <= slotIndex)
+                    while (_editingMaterial.Data.Textures.Count <= slotIndex)
                     {
-                        _editingMaterial.Data.TextureAssetIDs.Add(null);
+                        _editingMaterial.Data.Textures.Add(null);
                     }
 
-                    _editingMaterial.Data.TextureAssetIDs[slotIndex] = new AssetReference<TextureAsset>(textureAsset);
+                    _editingMaterial.Data.Textures[slotIndex] = new AssetReference<TextureAsset>(textureAsset);
                     //_editingMaterial.MarkDirty();
                 }
             }
@@ -91,9 +91,9 @@ namespace RockEngine.Editor.EditorUI
             ImGui.SameLine();
             if (ImGui.Button("X##ClearTexture"))
             {
-                if (_editingMaterial.Data.TextureAssetIDs.Count > slotIndex)
+                if (_editingMaterial.Data.Textures.Count > slotIndex)
                 {
-                    _editingMaterial.Data.TextureAssetIDs[slotIndex] = null;
+                    _editingMaterial.Data.Textures[slotIndex] = null;
                     //_editingMaterial.MarkDirty();
                 }
             }

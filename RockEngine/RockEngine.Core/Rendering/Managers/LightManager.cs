@@ -73,8 +73,8 @@ namespace RockEngine.Core.Rendering.Managers
             // Update camera materials
             foreach (var camera in cameras)
             {
-                camera.RenderTarget.GBuffer.Material.Bindings.Add(_countLightBinding);
-                camera.RenderTarget.GBuffer.Material.Bindings.Add(_lightBindings[_currentFrameIndex]);
+                camera.RenderTarget.GBuffer.Material.BindResource(_countLightBinding);
+                camera.RenderTarget.GBuffer.Material.BindResource(_lightBindings[_currentFrameIndex]);
             }
 
             _currentFrameIndex = (_currentFrameIndex + 1) % _lightBuffers.Length;

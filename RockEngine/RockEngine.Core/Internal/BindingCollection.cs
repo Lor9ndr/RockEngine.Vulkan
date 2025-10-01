@@ -24,7 +24,7 @@ namespace RockEngine.Core.Internal
                 _setBindings[binding.SetLocation] = setBindings;
             }
 
-            setBindings.Add(binding);
+             setBindings.Add(binding);
 
             if (binding is UniformBufferBinding ubo && ubo.Buffer.IsDynamic)
             {

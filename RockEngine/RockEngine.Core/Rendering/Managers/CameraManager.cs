@@ -4,6 +4,8 @@ using RockEngine.Core.Rendering.RenderTargets;
 using RockEngine.Core.Rendering.ResourceBindings;
 using RockEngine.Vulkan;
 
+using ZLinq;
+
 namespace RockEngine.Core.Rendering.Managers
 {
     public class CameraManager
@@ -13,8 +15,9 @@ namespace RockEngine.Core.Rendering.Managers
         private readonly RenderPassManager _renderPassManager;
         private readonly PipelineManager _pipelineManager;
         private readonly List<Camera> _activeCameras = new List<Camera>();
-
-        public IReadOnlyList<Camera> ActiveCameras => _activeCameras;
+        
+        //TODO: OPTIMIZE THAT
+        public ValueEnumerable<ZLinq.Linq.ListWhere<Camera>, Camera> ActiveCameras => _activeCameras.AsValueEnumerable().Where(s=>s.IsActive);
 
         public CameraManager(VulkanContext context, GraphicsEngine engine, RenderPassManager renderPassManager, PipelineManager pipelineManager)
         {
@@ -44,15 +47,26 @@ namespace RockEngine.Core.Rendering.Managers
         {
             
             gbuffer.CreateLightingDescriptorSets(_pipelineManager.GetPipelineByName("DeferredLighting"));
-            gbuffer.Material.Bindings.Add(renderer.GlobalUbo.GetBinding((uint)_activeCameras.Count));
+            gbuffer.Material.BindResource(renderer.GlobalUbo.GetBinding((uint)_activeCameras.Count));
 
-            gbuffer.Material.Bindings.Add(new UniformBufferBinding(renderer.LightManager.CountLightUbo, 1, 1));
+            gbuffer.Material.BindResource(new UniformBufferBinding(renderer.LightManager.CountLightUbo, 1, 1));
+            gbuffer.Material.PushConstant("iblParams", new IBLParams());
         }
 
         public void Unregister(Camera camera)
         {
             _activeCameras.Remove(camera);
             camera.RenderTarget?.Dispose();
+        }
+        public struct IBLParams
+        {
+            public float exposure = 1.0f;     // [0.1 - 4.0] Typical HDR exposure range
+            public float envIntensity = 1.0f; // [0.0 - 2.0] Environment map multiplier
+            public float aoStrength = 1.0f;    // [0.0 - 2.0] Ambient occlusion effect strength
+
+            public IBLParams()
+            {
+            }
         }
     }
 

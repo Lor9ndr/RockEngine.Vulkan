@@ -2,16 +2,13 @@
 using RockEngine.Core.DI;
 using RockEngine.Core.ECS.Components;
 using RockEngine.Core.Rendering.Managers;
-using RockEngine.Core.Rendering.Passes;
 using RockEngine.Core.Rendering.ResourceBindings;
 using RockEngine.Core.Rendering.Texturing;
 using RockEngine.Vulkan;
 
 using Silk.NET.Vulkan;
 
-using System.ComponentModel;
-
-namespace RockEngine.Core.Rendering.SubPasses
+namespace RockEngine.Core.Rendering.Passes.SubPasses
 {
     public class LightingPass : IRenderSubPass
     {
@@ -37,7 +34,14 @@ namespace RockEngine.Core.Rendering.SubPasses
             _pipelineManager = pipelineManager;
         }
 
-        public uint Order => 1;
+        public static uint Order => 1;
+
+        public static string Name => "light";
+
+        public SubPassMetadata GetMetadata()
+        {
+            return new(Order, Name);
+        }
 
         public void Initilize()
         {
@@ -67,8 +71,8 @@ namespace RockEngine.Core.Rendering.SubPasses
                 .WithRasterizer(new VulkanRasterizerBuilder().CullFace(CullModeFlags.None))
                 .WithMultisampleState(new VulkanMultisampleStateInfoBuilder().Configure(false, SampleCountFlags.Count1Bit))
                 .WithColorBlendState(new VulkanColorBlendStateBuilder().AddAttachment(colorBlendAttachments))
-                .AddRenderPass(IoC.Container.GetInstance<DeferredPassStrategy>().BuildRenderPass(_graphicsEngine))
-                .WithSubpass(1)
+                .AddRenderPass<DeferredPassStrategy>(IoC.Container.GetInstance<RenderPassManager>())
+                .WithSubpass<LightingPass>()
                 .WithPipelineLayout(pipelineLayout)
                  .AddDepthStencilState(new PipelineDepthStencilStateCreateInfo()
                  {
@@ -96,18 +100,19 @@ namespace RockEngine.Core.Rendering.SubPasses
 
                 cmd.SetViewport(camera.RenderTarget.Viewport);
                 cmd.SetScissor(camera.RenderTarget.Scissor);
-                camera.RenderTarget.GBuffer.Material.Bind(_lightManager.GetCurrentLightBufferBinding());
+                var materialPass = camera.RenderTarget.GBuffer.Material.GetPass(Name);
+                materialPass.BindResource(_lightManager.GetCurrentLightBufferBinding());
 
                 if (_iblBinding != null)
                 {
-                    camera.RenderTarget.GBuffer.Material.Bind(_iblBinding);
+                    camera.RenderTarget.GBuffer.Material.GetPass(Name).BindResource(_iblBinding);
                 }
                 //camera.RenderTarget.GBuffer.Material.Bind(_binding);
                 cmd.BindPipeline(_lightingPipeline, PipelineBindPoint.Graphics);
 
-                camera.RenderTarget.GBuffer.Material.CmdPushConstants(cmd);
+                materialPass.CmdPushConstants(cmd);
 
-                _bindingManager.BindResourcesForMaterial(frameIndex, camera.RenderTarget.GBuffer.Material, cmd);
+                _bindingManager.BindResourcesForMaterial(frameIndex, materialPass, cmd);
                 cmd.Draw(3, 1, 0, 0);
             }
         }

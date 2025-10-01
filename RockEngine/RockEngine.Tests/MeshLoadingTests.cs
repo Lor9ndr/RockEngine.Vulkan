@@ -19,7 +19,6 @@ namespace RockEngine.Core.Tests.Assets
             private static AssetManager _assetManager;
             private static ProjectAsset _project;
             private static IAssetSerializer _serializer;
-            private static AssetFactoryRegistry _factoryRegistry;
             private static AssimpLoader _assimpLoader;
 
             [Before(Class)]
@@ -27,7 +26,6 @@ namespace RockEngine.Core.Tests.Assets
             {
                 // Create mock dependencies
                 _serializer = Substitute.For<IAssetSerializer>();
-                _factoryRegistry = new AssetFactoryRegistry();
 
                 _assimpLoader = Substitute.For<AssimpLoader>();
                 IoC.Initialize();

@@ -1,4 +1,5 @@
-﻿using RockEngine.Core.Helpers;
+﻿using RockEngine.Core.DI;
+using RockEngine.Core.Helpers;
 using RockEngine.Core.Rendering;
 using RockEngine.Core.Rendering.RenderTargets;
 
@@ -158,6 +159,14 @@ namespace RockEngine.Core.ECS.Components
         {
             UpdateVectors();
             return default;
+        }
+        public override void SetActive(bool isActive = true)
+        {
+            if(isActive == IsActive)
+            {
+                return;
+            }
+            IsActive = isActive;
         }
 
     }

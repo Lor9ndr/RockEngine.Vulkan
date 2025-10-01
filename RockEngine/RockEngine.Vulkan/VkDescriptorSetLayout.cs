@@ -74,7 +74,7 @@ namespace RockEngine.Vulkan
                     hash = hash * 23 + binding.DescriptorType.GetHashCode();
                     hash = hash * 23 + binding.DescriptorCount.GetHashCode();
                     hash = hash * 23 + binding.StageFlags.GetHashCode();
-                    hash = hash * 23 + (binding.PImmutableSamplers != null ? binding.PImmutableSamplers->GetHashCode() : 0);
+                    hash = hash * 23 + (binding.PImmutableSamplers != null ? binding.PImmutableSamplers.GetHashCode() : 0);
                 }
                 return hash;
             }

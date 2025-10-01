@@ -150,6 +150,10 @@ namespace RockEngine.Editor.EditorUI
 
             SaveRecentProjects();
         }
+        public void RemoveRecentProject(ProjectInfo projectInfo)
+        {
+
+        }
     }
 
     public class ProjectInfo

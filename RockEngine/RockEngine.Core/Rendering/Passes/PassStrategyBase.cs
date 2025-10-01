@@ -1,6 +1,7 @@
 ﻿using RockEngine.Core.Builders;
 using RockEngine.Core.Rendering.Managers;
-using RockEngine.Core.Rendering.SubPasses;
+using RockEngine.Core.Rendering.Objects;
+using RockEngine.Core.Rendering.Passes.SubPasses;
 using RockEngine.Vulkan;
 
 namespace RockEngine.Core.Rendering.Passes
@@ -13,7 +14,7 @@ namespace RockEngine.Core.Rendering.Passes
         /// <summary>
         /// Builded renderpass
         /// </summary>
-        protected EngineRenderPass _renderPass;
+        protected RckRenderPass _renderPass;
 
         public abstract int Order { get; }
 
@@ -24,7 +25,7 @@ namespace RockEngine.Core.Rendering.Passes
             _subPasses = subPasses.ToArray();
         }
 
-        public EngineRenderPass BuildRenderPass(GraphicsEngine graphicsEngine)
+        public RckRenderPass BuildRenderPass()
         {
             if (_renderPass is not null)
             {
@@ -33,7 +34,7 @@ namespace RockEngine.Core.Rendering.Passes
             var builder = new RenderPassBuilder(_context);
 
             // Collect all attachment descriptions
-            foreach (var pass in _subPasses.OrderBy(p => p.Order))
+            foreach (var pass in _subPasses)
             {
                 pass.SetupAttachmentDescriptions(builder);
             }
@@ -51,8 +52,8 @@ namespace RockEngine.Core.Rendering.Passes
             {
                 _subPasses[i].SetupDependencies(builder, i);
             }
-
-            _renderPass = new EngineRenderPass(builder.Build());
+           
+            _renderPass = new RckRenderPass(builder.Build(),  _subPasses);
             return _renderPass;
         }
 

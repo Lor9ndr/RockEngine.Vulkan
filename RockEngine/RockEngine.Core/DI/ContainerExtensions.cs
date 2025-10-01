@@ -1,5 +1,5 @@
 ﻿using RockEngine.Core.Rendering.Passes;
-using RockEngine.Core.Rendering.SubPasses;
+using RockEngine.Core.Rendering.Passes.SubPasses;
 
 using SimpleInjector;
 
@@ -229,7 +229,7 @@ namespace RockEngine.Core.DI
             {
                 _resolvedSubPasses ??= _strategySubPassMap.TryGetValue(typeof(TStrategy), out var types)
                     ? types.Select(t => (IRenderSubPass)_container.GetInstance(t))
-                           .OrderBy(p => p.Order)
+                           .OrderBy(p => p.GetMetadata().Order)
                            .ToList()
                     : new List<IRenderSubPass>();
                 return _resolvedSubPasses.GetEnumerator();

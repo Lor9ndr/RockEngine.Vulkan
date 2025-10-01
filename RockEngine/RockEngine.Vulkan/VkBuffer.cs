@@ -387,6 +387,17 @@ namespace RockEngine.Vulkan
             }
         }
 
-       
+        /// <summary>
+        /// Maps the buffer memory and returns a disposable mapped memory object
+        /// </summary>
+        /// <param name="size">Size to map</param>
+        /// <param name="offset">Offset to map from</param>
+        /// <returns>Disposable mapped memory object</returns>
+        public MappedMemory MapMemory(ulong size = Vk.WholeSize, ulong offset = 0)
+        {
+            Map(out nint mappedPtr, size, offset);
+            return new MappedMemory(this, mappedPtr, size, offset);
+        }
+
     }
 }

@@ -1,5 +1,6 @@
 ﻿using RockEngine.Core.Rendering.Managers;
-using RockEngine.Core.Rendering.SubPasses;
+using RockEngine.Core.Rendering.Objects;
+using RockEngine.Core.Rendering.Passes.SubPasses;
 using RockEngine.Vulkan;
 
 namespace RockEngine.Core.Rendering.Passes
@@ -8,7 +9,7 @@ namespace RockEngine.Core.Rendering.Passes
     {
         IReadOnlyCollection<IRenderSubPass> SubPasses { get; }
         int Order { get; }
-        EngineRenderPass BuildRenderPass(GraphicsEngine graphicsEngine);
+        RckRenderPass BuildRenderPass();
         void InitializeSubPasses();
         Task Execute(SubmitContext submitContext,CameraManager cameraManager, Renderer renderer);
         ValueTask Update();

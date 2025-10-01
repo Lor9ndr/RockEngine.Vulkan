@@ -89,79 +89,83 @@ namespace RockEngine.Editor.Layers
             ImGui.SetNextWindowPos(ImGui.GetMainViewport().GetCenter(), ImGuiCond.Always, new System.Numerics.Vector2(0.5f, 0.5f));
             ImGui.SetNextWindowSize(new System.Numerics.Vector2(600, 400), ImGuiCond.Always);
 
-            if (ImGui.Begin("Project Selection", ImGuiWindowFlags.NoResize | ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.NoMove))
+            if (!_isOperationInProgress)
             {
-                ImGui.Text("Select a project to open or create a new one:");
-
-                // Recent projects list
-                ImGui.Separator();
-                ImGui.Text("Recent Projects:");
-
-                if (_projectManager.RecentProjects.Count == 0)
+                if (ImGui.Begin("Project Selection", ImGuiWindowFlags.NoResize | ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.NoMove))
                 {
-                    ImGui.TextDisabled("No recent projects found");
-                }
-                else
-                {
-                    foreach (var project in _projectManager.RecentProjects)
+                    ImGui.Text("Select a project to open or create a new one:");
+
+                    // Recent projects list
+                    ImGui.Separator();
+                    ImGui.Text("Recent Projects:");
+
+                    if (_projectManager.RecentProjects.Count == 0)
                     {
-                        if (ImGui.Selectable($"{project.Name}##{project.Path}", false) && !_isOperationInProgress)
-                        {
-                            _ = OpenProjectAsync(project.Path);
-                        }
-
-                        // Show tooltip with full path
-                        if (ImGui.IsItemHovered())
-                        {
-                            ImGui.SetTooltip(project.Path);
-                        }
-                    }
-                }
-
-                ImGui.Separator();
-
-                // Browse for project button
-                if (ImGui.Button("Browse...") && !_isOperationInProgress)
-                {
-                    var path = PlatformFileDialog.OpenFile("RockEngine Project|*.rockproj", "Open Project");
-                    if (!string.IsNullOrEmpty(path) && File.Exists(path))
-                    {
-                        _ = OpenProjectAsync(path);
-                    }
-                    else if (!string.IsNullOrEmpty(path))
-                    {
-                        // Show error message if file doesn't exist
-                        _statusMessage = "File does not exist";
-                        _statusError = true;
-                    }
-                }
-
-                ImGui.SameLine();
-
-                // Create new project button
-                if (ImGui.Button("Create New Project") && !_isOperationInProgress)
-                {
-                    _showCreateProjectModal = true;
-                    _newProjectName = "New Project";
-                    _newProjectPath = "";
-                    _statusMessage = "";
-                }
-
-                // Show status message if any
-                if (!string.IsNullOrEmpty(_statusMessage))
-                {
-                    if (_statusError)
-                    {
-                        ImGui.TextColored(new System.Numerics.Vector4(1, 0, 0, 1), _statusMessage);
+                        ImGui.TextDisabled("No recent projects found");
                     }
                     else
                     {
-                        ImGui.TextColored(new System.Numerics.Vector4(0, 1, 0, 1), _statusMessage);
-                    }
-                }
+                        foreach (var project in _projectManager.RecentProjects)
+                        {
+                            if (ImGui.Selectable($"{project.Name}##{project.Path}", false) && !_isOperationInProgress)
+                            {
+                                _ = OpenProjectAsync(project.Path);
+                            }
 
-                ImGui.End();
+                            // Show tooltip with full path
+                            if (ImGui.IsItemHovered())
+                            {
+                                ImGui.SetTooltip(project.Path);
+                            }
+                        }
+                    }
+
+                    ImGui.Separator();
+
+                    // Browse for project button
+                    if (ImGui.Button("Browse...") && !_isOperationInProgress)
+                    {
+                        var path = PlatformFileDialog.OpenFile("RockEngine Project|*.rockproj", "Open Project");
+                        if (!string.IsNullOrEmpty(path) && File.Exists(path))
+                        {
+                            _ = OpenProjectAsync(path);
+                        }
+                        else if (!string.IsNullOrEmpty(path))
+                        {
+                            // Show error message if file doesn't exist
+                            _statusMessage = "File does not exist";
+                            _statusError = true;
+                        }
+                    }
+
+                    ImGui.SameLine();
+
+                    // Create new project button
+                    if (ImGui.Button("Create New Project") && !_isOperationInProgress)
+                    {
+                        _showCreateProjectModal = true;
+                        _newProjectName = "New Project";
+                        _newProjectPath = "";
+                        _statusMessage = "";
+                    }
+
+                    // Show status message if any
+                    if (!string.IsNullOrEmpty(_statusMessage))
+                    {
+                        if (_statusError)
+                        {
+                            ImGui.TextColored(new System.Numerics.Vector4(1, 0, 0, 1), _statusMessage);
+                        }
+                        else
+                        {
+                            ImGui.TextColored(new System.Numerics.Vector4(0, 1, 0, 1), _statusMessage);
+                        }
+                    }
+
+                    ImGui.End();
+                }
             }
+           
 
             // Create project modal
             if (_showCreateProjectModal && !_isOperationInProgress)

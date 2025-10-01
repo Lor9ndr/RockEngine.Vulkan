@@ -1,4 +1,5 @@
-﻿using Silk.NET.Vulkan;
+﻿using Silk.NET.GLFW;
+using Silk.NET.Vulkan;
 
 namespace RockEngine.Vulkan
 {
@@ -21,7 +22,7 @@ namespace RockEngine.Vulkan
 
         protected override void Dispose(bool disposing)
         {
-            VulkanContext.Vk.FreeDescriptorSets(_context.Device, _pool,  1, in _vkObject);
+            _pool.FreeDescriptorSet(this);
         }
     }
 }

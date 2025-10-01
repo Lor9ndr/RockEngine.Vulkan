@@ -1,4 +1,5 @@
 ﻿using RockEngine.Core.Builders;
+using RockEngine.Core.Rendering.Objects;
 using RockEngine.Vulkan;
 
 using Silk.NET.Vulkan;
@@ -28,7 +29,7 @@ namespace RockEngine.Core.Rendering.RenderTargets
 
             UpdateViewportAndScissor();
         }
-        public override void Initialize(VkRenderPass renderPass)
+        public override void Initialize(RckRenderPass renderPass)
         {
             RenderPass = renderPass;
             InitializeResources();
@@ -94,7 +95,7 @@ namespace RockEngine.Core.Rendering.RenderTargets
 
                 Framebuffers[i] = VkFrameBuffer.Create(
                     Context,
-                    RenderPass,
+                    RenderPass.RenderPass,
                     attachments,
                     Size.Width,
                     Size.Height

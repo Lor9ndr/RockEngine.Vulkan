@@ -10,7 +10,7 @@ namespace RockEngine.Editor.EditorComponents
 {
     internal class DebugCamera : Camera
     {
-        private IInputContext _inputContext;
+        private readonly IInputContext _inputContext;
         private float _movementSpeed = 5.0f; // Speed of movement
         private readonly float _mouseSensitivity = 0.1f; // Sensitivity for mouse movement
         private Vector2 _lastMousePosition;

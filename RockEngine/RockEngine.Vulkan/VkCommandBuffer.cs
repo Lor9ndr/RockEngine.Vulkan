@@ -263,5 +263,10 @@ namespace RockEngine.Vulkan
         {
             Vk.ResetQueryPool(_context.Device, queryPool, 0, queryCount);
         }
+
+        public void Dispatch(uint groupCountX, uint groupCountY, uint groupCountZ)
+        {
+            Vk.CmdDispatch(this, groupCountX, groupCountY, groupCountZ);
+        }
     }
 }

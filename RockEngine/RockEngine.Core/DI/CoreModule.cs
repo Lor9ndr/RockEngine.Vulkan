@@ -4,8 +4,9 @@ using RockEngine.Core.Registries;
 using RockEngine.Core.Rendering;
 using RockEngine.Core.Rendering.Buffers;
 using RockEngine.Core.Rendering.Managers;
+using RockEngine.Core.Rendering.Objects;
 using RockEngine.Core.Rendering.Passes;
-using RockEngine.Core.Rendering.SubPasses;
+using RockEngine.Core.Rendering.Passes.SubPasses;
 using RockEngine.Vulkan;
 
 using Silk.NET.Input;
@@ -59,8 +60,10 @@ namespace RockEngine.Core.DI
 
             container.RegisterRenderPassStrategy<DeferredPassStrategy>()
                 .Before<SwapchainPassStrategy>();
+
             container.RegisterRenderPassStrategy<SwapchainPassStrategy>()
                 .AfterAll();
+
             container.RegisterRenderSubPass<GeometryPass, DeferredPassStrategy>();
             container.RegisterRenderSubPass<LightingPass, DeferredPassStrategy>();
             container.RegisterRenderSubPass<PostLightPass, DeferredPassStrategy>();
@@ -103,8 +106,8 @@ namespace RockEngine.Core.DI
                 return new IndirectCommandManager(vkContext, TransformManager.INITIAL_CAPACITY);
             },Lifestyle.Scoped);
 
-            container.Register<IRegistry<VkPipeline, string>, PipelineRegistry>(Lifestyle.Scoped);
-            container.Register<IRegistry<EngineRenderPass, Type>, RenderPassRegistry>(Lifestyle.Scoped);
+            container.Register<IRegistry<RckPipeline, string>, PipelineRegistry>(Lifestyle.Scoped);
+            container.Register<IRegistry<RckRenderPass, Type>, RenderPassRegistry>(Lifestyle.Scoped);
             container.Register<GlobalGeometryBuffer>(() =>
             {
                 var settings = container.GetInstance<AppSettings>();

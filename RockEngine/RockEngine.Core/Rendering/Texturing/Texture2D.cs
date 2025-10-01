@@ -297,7 +297,7 @@ namespace RockEngine.Core.Rendering.Texturing
 
         public static Texture2D GetEmptyTexture(VulkanContext context)
         {
-            _emptyTexture ??=  CreateColorTexture(context, new Vector4D<byte>(0, 0, 0, 1));
+            _emptyTexture ??= CreateColorTexture(context, new Vector4D<byte>(211, 211, 211, 1));
             return _emptyTexture;
         }
 
@@ -369,6 +369,27 @@ namespace RockEngine.Core.Rendering.Texturing
 
             skImage.Dispose();
             return texture;
+        }
+
+        internal static Texture GetDefaultAlbedoTexture(VulkanContext context)
+        {
+            return Texture2D.GetEmptyTexture(context);
+        }
+
+        internal static Texture GetDefaultNormalTexture(VulkanContext context)
+        {
+            return Texture2D.GetEmptyTexture(context);
+        }
+
+        internal static Texture GetDefaultMRATexture(VulkanContext context)
+        {
+            return Texture2D.GetEmptyTexture(context);
+
+        }
+
+        internal static Texture2D GetDefaultLUTTexture(VulkanContext context)
+        {
+            return Texture2D.GetEmptyTexture(context);
         }
     }
 }
