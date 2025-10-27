@@ -11,7 +11,7 @@ namespace RockEngine.Vulkan
         private readonly SubmitContext _context;
         private readonly VkFence _fence;
         private readonly List<UploadBatch> _batches;
-        private readonly List<Action> _disposables;
+        private readonly List<IDisposable> _disposables;
         private bool _completed;
 
         public VkFence Fence => _fence;
@@ -22,7 +22,7 @@ namespace RockEngine.Vulkan
             SubmitContext context,
             VkFence fence,
             List<UploadBatch> batches,
-            List<Action> disposables)
+            List<IDisposable> disposables)
         {
             _context = context;
             _fence = fence;
@@ -32,7 +32,11 @@ namespace RockEngine.Vulkan
 
         public void Wait()
         {
-            if (_completed) return;
+            if (_completed)
+            {
+                return;
+            }
+
             if (_fence is not null && !Fence.IsDisposed)
             {
                 _fence?.Wait();
@@ -42,7 +46,11 @@ namespace RockEngine.Vulkan
 
         public async Task WaitAsync(CancellationToken cancellationToken = default)
         {
-            if (_completed) return;
+            if (_completed)
+            {
+                return;
+            }
+
             if (_fence is not null && !Fence.IsDisposed)
             {
                 await _fence.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -54,10 +62,14 @@ namespace RockEngine.Vulkan
 
         private void Complete()
         {
-            if (_completed) return;
+            if (_completed)
+            {
+                return;
+            }
+
             foreach (var disposable in _disposables)
             {
-                disposable();
+                disposable.Dispose();
             }
 
             foreach (var batch in _batches)
@@ -80,7 +92,11 @@ namespace RockEngine.Vulkan
 
         public async ValueTask DisposeAsync()
         {
-            if (!_completed) await WaitAsync();
+            if (!_completed)
+            {
+                await WaitAsync();
+            }
+
             _batches.Clear();
             _disposables.Clear();
 

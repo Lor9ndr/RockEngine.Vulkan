@@ -63,13 +63,14 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
                 cmd.SetViewport(camera.RenderTarget.Viewport);
                 cmd.SetScissor(camera.RenderTarget.Scissor);
 
-              
-
                 var matrixBinding = _transformManager.GetCurrentBinding(frameIndex);
                 var globalUboBinding = _globalUbo.GetBinding((uint)camIndex);
 
                 var drawGroups = _indirectCommands.GetDrawGroups(Name);
-                if (drawGroups.Count == 0) return;
+                if (drawGroups.Count == 0)
+                {
+                    return;
+                }
 
                 // Get the span of draw groups
                 var drawGroupsSpan = CollectionsMarshal.AsSpan(drawGroups);
@@ -82,12 +83,15 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
                 MaterialPass? lastMaterialPass = null;
 
                 // Привязываем общие буферы вершин и индексов
-                _geometryBufferManager.BindVertexBuffer(cmd);
-                _geometryBufferManager.BindIndexBuffer(cmd);
+                _geometryBufferManager.Bind(cmd);
 
                 for (int i = 0; i < drawGroupsSpan.Length; i++)
                 {
                     ref readonly var drawGroup = ref drawGroupsSpan[i];
+                    if (!camera.CanRender(drawGroup.MeshRenderer.Entity))
+                    {
+                        continue;
+                    }
 
                     // Pipeline state change
                     if (lastPipeline != drawGroup.MaterialPass.Pipeline)
@@ -101,7 +105,7 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
                     }
 
                     // Material change
-                    //if (lastMaterialPass != drawGroup.MaterialPass)
+                    if (lastMaterialPass != drawGroup.MaterialPass)
                     {
                         _bindingManager.BindResourcesForMaterial(
                             frameIndex,

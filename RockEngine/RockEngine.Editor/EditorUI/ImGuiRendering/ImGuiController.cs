@@ -81,9 +81,10 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
             io.BackendFlags |= ImGuiBackendFlags.HasSetMousePos;
             io.BackendFlags |= ImGuiBackendFlags.RendererHasVtxOffset;
             SetPerFrameImGuiData(1f / 60f);
+            Init();
 
         }
-        public void Init()
+        private void Init()
         {
             if (_initialized)
             {
@@ -347,7 +348,10 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
                     }
                     else
                     {
-                        if (pcmd.ElemCount == 0) continue;
+                        if (pcmd.ElemCount == 0)
+                        {
+                            continue;
+                        }
 
                         // Get texture binding
                         var textureBinding = GetTextureBindingFromId(pcmd.TextureId);
@@ -365,8 +369,15 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
 
                         if (clipRect.X < _graphicsEngine.Swapchain.Extent.Width && clipRect.Y < _graphicsEngine.Swapchain.Extent.Height && clipRect.Z >= 0.0f && clipRect.W >= 0.0f)
                         {
-                            if (clipRect.X < 0.0f) clipRect.X = 0.0f;
-                            if (clipRect.Y < 0.0f) clipRect.Y = 0.0f;
+                            if (clipRect.X < 0.0f)
+                            {
+                                clipRect.X = 0.0f;
+                            }
+
+                            if (clipRect.Y < 0.0f)
+                            {
+                                clipRect.Y = 0.0f;
+                            }
 
                             Rect2D scissor = new Rect2D
                             {
@@ -411,43 +422,43 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
             var io = ImGui.GetIO();
             io.BackendFlags |= ImGuiBackendFlags.RendererHasVtxOffset;
 
-            // Load Roboto as main font
-            byte[] robotoData = GetEmbeddedResourceBytes("RockEngine.Editor.Resources.Fonts.OpenSans-VariableFont_wdth,wght.ttf");
-
-            // Keep font data alive until after Build()
-            GCHandle robotoHandle = GCHandle.Alloc(robotoData, GCHandleType.Pinned);
+            // Use a list to track all GCHandles and ensure they stay alive
+            List<GCHandle> fontHandles = new List<GCHandle>();
 
             try
             {
+                // Load Roboto as main font
+                byte[] robotoData = GetEmbeddedResourceBytes("RockEngine.Editor.Resources.Fonts.OpenSans-VariableFont_wdth,wght.ttf");
+                GCHandle robotoHandle = GCHandle.Alloc(robotoData, GCHandleType.Pinned);
+                fontHandles.Add(robotoHandle);
+
                 // Main font - Roboto at 16px
                 var fontConfig = new ImFontConfigPtr(ImGuiNative.ImFontConfig_ImFontConfig());
-                fontConfig.FontDataOwnedByAtlas = false; // We'll manage the memory
+                fontConfig.FontDataOwnedByAtlas = false; // We manage the memory
+                //fontConfig.FontNo = 0;
+
                 io.Fonts.AddFontFromMemoryTTF(
                     robotoHandle.AddrOfPinnedObject(),
                     robotoData.Length,
-                    16.0f
-                    //fontConfig
+                    16.0f,
+                    fontConfig
                 );
-                fontConfig.Destroy();
-            }
-            finally
-            {
-                // Don't free the handle yet - wait until after Build()
-            }
 
-            // Configure icon font merging
-            var config = new ImFontConfigPtr(ImGuiNative.ImFontConfig_ImFontConfig());
-            config.MergeMode = true;
-            config.PixelSnapH = true;
-            config.GlyphOffset = new Vector2(0, 2);
-            config.FontDataOwnedByAtlas = false;
+                // Don't destroy config yet - it might still be in use
 
-            // Load Fork Awesome for icons
-            byte[] iconFontData = GetEmbeddedResourceBytes("RockEngine.Editor.Resources.Fonts.forkawesome-webfont.ttf");
-            GCHandle iconFontHandle = GCHandle.Alloc(iconFontData, GCHandleType.Pinned);
+                // Configure icon font merging
+                var iconConfig = new ImFontConfigPtr(ImGuiNative.ImFontConfig_ImFontConfig());
+                iconConfig.MergeMode = true;
+                iconConfig.PixelSnapH = true;
+                iconConfig.GlyphOffset = new Vector2(0, 2);
+                iconConfig.FontDataOwnedByAtlas = false;
+                //iconConfig.FontNo = 1;
 
-            try
-            {
+                // Load Fork Awesome for icons
+                byte[] iconFontData = GetEmbeddedResourceBytes("RockEngine.Editor.Resources.Fonts.forkawesome-webfont.ttf");
+                GCHandle iconFontHandle = GCHandle.Alloc(iconFontData, GCHandleType.Pinned);
+                fontHandles.Add(iconFontHandle);
+
                 // Define icon ranges (Fork Awesome range: 0xf000-0xf2e0)
                 ushort[] iconRanges = [0xf000, 0xf2e0, 0];
                 fixed (ushort* rangesPtr = iconRanges)
@@ -455,34 +466,38 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
                     _iconFont = io.Fonts.AddFontFromMemoryTTF(
                         iconFontHandle.AddrOfPinnedObject(),
                         iconFontData.Length,
-                        14.0f, // Slightly smaller than main font
-                        config,
+                        14.0f,
+                        iconConfig,
                         (IntPtr)rangesPtr
                     );
                 }
+
+                // Build font atlas - this is where the crash occurs
+                io.Fonts.Build();
+
+                // Now we can safely get texture data
+                io.Fonts.GetTexDataAsRGBA32(out nint pixels, out int width, out int height, out int bytesPerPixel);
+
+                // Create texture
+                Span<byte> bytes = new Span<byte>((void*)pixels, width * height * bytesPerPixel);
+                _fontTexture = Texture2D.Create(_vkContext, width, height, Format.R8G8B8A8Unorm, bytes);
+
+                // Store texture identifier
+                io.Fonts.SetTexID(GetTextureID(_fontTexture));
+
+                // Clear font data from RAM (GPU has the texture now)
+                io.Fonts.ClearTexData();
+
+                // Now destroy configs
+                fontConfig.Destroy();
+                iconConfig.Destroy();
             }
             finally
             {
-                iconFontHandle.Free();
-                config.Destroy();
+                // Keep font data pinned until we're completely done
+                // The GCHandles will be freed when the method ends and fontHandles goes out of scope
+                // ImGui has copied the data it needs during Build()
             }
-
-            // Build font atlas
-            io.Fonts.Build();
-
-            // Now we can free the main font handle
-            robotoHandle.Free();
-
-            // Get texture data
-            io.Fonts.GetTexDataAsRGBA32(out nint pixels, out int width, out int height, out int bytesPerPixel);
-
-            // Create texture with Unorm format instead of Srgb
-            Span<byte> bytes = new Span<byte>((void*)pixels, width * height * bytesPerPixel);
-            _fontTexture = Texture2D.Create(_vkContext, width, height, Format.R8G8B8A8Unorm, bytes);
-
-            // Store texture identifier
-            io.Fonts.SetTexID(GetTextureID(_fontTexture));
-            io.Fonts.ClearTexData();
         }
 
         private unsafe ImFontPtr LoadFontFromResources(string resourcePath, float size, bool mergeMode = false, ushort[] glyphRanges = null)
@@ -544,19 +559,39 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
         private static byte[] GetEmbeddedResourceBytes(string resourcePath)
         {
             var assembly = Assembly.GetExecutingAssembly();
-            using Stream stream = assembly.GetManifestResourceStream(resourcePath) ?? throw new FileNotFoundException($"Resource '{resourcePath}' not found.");
+
+            // Debug output to verify resources
+            var resourceNames = assembly.GetManifestResourceNames();
+            if (!resourceNames.Contains(resourcePath))
+            {
+                throw new FileNotFoundException($"Resource '{resourcePath}' not found. Available resources: {string.Join(", ", resourceNames)}");
+            }
+
+            using Stream stream = assembly.GetManifestResourceStream(resourcePath) ?? throw new FileNotFoundException($"Resource '{resourcePath}' could not be opened.");
             byte[] data = new byte[stream.Length];
-            stream.ReadExactly(data);
+            int bytesRead = stream.Read(data, 0, data.Length);
+
+            if (bytesRead != data.Length)
+            {
+                throw new InvalidDataException($"Failed to read complete resource '{resourcePath}'");
+            }
+
             return data;
         }
         private TextureBinding GetTextureBindingFromId(IntPtr textureId)
         {
-            if (textureId == IntPtr.Zero) return null;
+            if (textureId == IntPtr.Zero)
+            {
+                return null;
+            }
 
             // The texture ID is the address of the Texture object
             // We need to find the corresponding TextureBinding
             var texture = GetTextureFromId(textureId);
-            if (texture == null) return null;
+            if (texture == null)
+            {
+                return null;
+            }
 
             lock (_textureCacheLock)
             {
@@ -582,7 +617,9 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
         public unsafe IntPtr GetTextureID(Texture texture)
         {
             if (texture == null || texture.IsDisposed)
+            {
                 return IntPtr.Zero;
+            }
 
             lock (_textureCacheLock)
             {

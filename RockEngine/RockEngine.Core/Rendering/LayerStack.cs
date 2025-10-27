@@ -12,7 +12,7 @@ namespace RockEngine.Core.Rendering
         void OnDetach();
         void OnUpdate();
         void OnRender(VkCommandBuffer vkCommandBuffer);
-        void OnImGuiRender(VkCommandBuffer vkCommandBuffer);
+        Task OnImGuiRender(VkCommandBuffer vkCommandBuffer);
     }
 
     public class LayerStack : ILayerStack, IDisposable
@@ -65,7 +65,10 @@ namespace RockEngine.Core.Rendering
 
         public void PopLayer(ILayer layer)
         {
-            if (_disposed) return;
+            if (_disposed)
+            {
+                return;
+            }
 
             // Queue the removal for processing after all updates
             _pendingRemovals.Enqueue(layer);
@@ -74,7 +77,10 @@ namespace RockEngine.Core.Rendering
 
         public void Update()
         {
-            if (_disposed) return;
+            if (_disposed)
+            {
+                return;
+            }
 
             ProcessPendingOperations();
 
@@ -89,10 +95,12 @@ namespace RockEngine.Core.Rendering
             // Process removals after all updates are complete
             ProcessRemovals();
         }
-
         public void Render(VkCommandBuffer vkCommandBuffer)
         {
-            if (_disposed) return;
+            if (_disposed)
+            {
+                return;
+            }
 
             ProcessPendingOperations();
 
@@ -105,18 +113,20 @@ namespace RockEngine.Core.Rendering
             }
         }
 
-        public void RenderImGui(VkCommandBuffer commandBuffer)
+        public async Task RenderImGui(VkCommandBuffer commandBuffer)
         {
-            if (_disposed) return;
+            if (_disposed)
+            {
+                return;
+            }
 
             ProcessPendingOperations();
 
             // Use a stack-allocated span for iteration (no heap allocation)
-            Span<ILayer> layersToRenderImGui = _activeLayers.AsSpan(0, _activeLayerCount);
 
-            for (int i = 0; i < layersToRenderImGui.Length; i++)
+            for (int i = 0; i < _activeLayerCount; i++)
             {
-                layersToRenderImGui[i].OnImGuiRender(commandBuffer);
+                await _activeLayers[i].OnImGuiRender(commandBuffer);
             }
         }
 
@@ -214,7 +224,10 @@ namespace RockEngine.Core.Rendering
 
         private void ProcessRemovals()
         {
-            if (!_shouldProcessRemovals) return;
+            if (!_shouldProcessRemovals)
+            {
+                return;
+            }
 
             _isProcessing = true;
 
@@ -243,7 +256,10 @@ namespace RockEngine.Core.Rendering
 
         public void Dispose()
         {
-            if (_disposed) return;
+            if (_disposed)
+            {
+                return;
+            }
 
             _disposed = true;
 

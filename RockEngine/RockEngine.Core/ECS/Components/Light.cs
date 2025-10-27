@@ -1,4 +1,5 @@
-﻿using RockEngine.Core.Rendering;
+﻿using RockEngine.Core.Attributes;
+using RockEngine.Core.Rendering;
 using RockEngine.Core.Rendering.Buffers;
 using RockEngine.Vulkan;
 
@@ -14,11 +15,15 @@ namespace RockEngine.Core.ECS.Components
         Spot
     }
 
-    public class Light : Component
+    public partial class Light : Component
     {
         private static UniformBuffer? _buffer;
         public LightType Type { get; set; } = LightType.Point;
+
+        [Color]
         public Vector3 Color { get; set; } = Vector3.One;
+
+        [Range(0,1000)]
         public float Intensity { get; set; } = 1.0f;
 
         // Directional/Spot properties
@@ -28,8 +33,8 @@ namespace RockEngine.Core.ECS.Components
         public float Radius { get; set; } = 10.0f;
 
         // Spot specific
-        public float InnerCutoff = 0.9f;  // Cos(25 degrees)
-        public float OuterCutoff = 0.7f;  // Cos(45 degrees)
+        public float InnerCutoff { get; set; } = 0.9f;  // Cos(25 degrees)
+        public float OuterCutoff { get; set; } = 0.7f;  // Cos(45 degrees)
 
         private static ulong _offsetCounter = 0; // Counter for offset allocation
         private LightData _lightData;
@@ -45,7 +50,7 @@ namespace RockEngine.Core.ECS.Components
 
         public override async ValueTask OnStart(Renderer renderer)
         {
-            _buffer ??= new UniformBuffer(VulkanContext.GetCurrent(), "Lights", 0, Renderer.MAX_LIGHTS_SUPPORTED * LightData.DataSize, true);
+            _buffer ??= new UniformBuffer(VulkanContext.GetCurrent(), 0, Renderer.MAX_LIGHTS_SUPPORTED * LightData.DataSize, true);
             renderer.LightManager.RegisterLight(this);
         }
 

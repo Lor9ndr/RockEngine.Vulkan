@@ -128,7 +128,7 @@ namespace RockEngine.Core.Rendering.Materials
 
             reflection.PushConstants.Add(new ShaderReflectionData.PushConstantInfo
             {
-                Name = "lightColor",
+                Name = "color",
                 StageFlags = ShaderStageFlags.FragmentBit,
                 Size = (uint)Unsafe.SizeOf<Vector3>()
             });

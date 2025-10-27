@@ -1,5 +1,6 @@
 ﻿using RockEngine.Core.ECS.Components;
 using RockEngine.Core.Rendering.Buffers;
+using RockEngine.Core.Rendering.RenderTargets;
 using RockEngine.Core.Rendering.ResourceBindings;
 using RockEngine.Vulkan;
 
@@ -33,7 +34,7 @@ namespace RockEngine.Core.Rendering.Managers
                 );
             }
 
-            _countLightUbo = new UniformBuffer("LightCount", 1, sizeof(uint));
+            _countLightUbo = new UniformBuffer(1, sizeof(uint));
 
             _countLightBinding = new UniformBufferBinding(_countLightUbo, 1, 1);
         }
@@ -60,8 +61,8 @@ namespace RockEngine.Core.Rendering.Managers
 
             // Update light count UBO
             var lightCountData = new[] { _activeLights.Count };
-            batch.StageToBuffer(
-                lightCountData.AsSpan(),
+            batch.StageToBuffer<int>(
+                lightCountData,
                 _countLightUbo.Buffer,
                 0,
                 (ulong)(sizeof(int) * lightCountData.Length)
@@ -73,8 +74,12 @@ namespace RockEngine.Core.Rendering.Managers
             // Update camera materials
             foreach (var camera in cameras)
             {
-                camera.RenderTarget.GBuffer.Material.BindResource(_countLightBinding);
-                camera.RenderTarget.GBuffer.Material.BindResource(_lightBindings[_currentFrameIndex]);
+                if(camera.RenderTarget is CameraRenderTarget cameraRenderTarget)
+                {
+                    cameraRenderTarget.Material.BindResource(_countLightBinding);
+                    cameraRenderTarget.Material.BindResource(_lightBindings[_currentFrameIndex]);
+                }
+               
             }
 
             _currentFrameIndex = (_currentFrameIndex + 1) % _lightBuffers.Length;

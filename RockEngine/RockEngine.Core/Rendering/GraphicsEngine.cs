@@ -8,9 +8,9 @@ namespace RockEngine.Core.Rendering
     {
         private readonly VulkanContext _context;
         private readonly VkSwapchain _swapchain;
-        private uint _frameCount = 0;
+        private uint _frameIndex = 0;
 
-        public uint FrameIndex => (uint)(_frameCount % _swapchain.SwapChainImagesCount);
+        public uint FrameIndex => _frameIndex;
         public VkSwapchain Swapchain => _swapchain;
 
         public GraphicsEngine(VulkanContext context)
@@ -22,16 +22,20 @@ namespace RockEngine.Core.Rendering
         public UploadBatch? Begin()
         {
             var size = _swapchain.Surface.Size;
-            if (size.X < 1 || size.Y < 1) return null;
+            if (size.X < 1 || size.Y < 1)
+            {
+                return null;
+            }
 
+            uint frameIndex = FrameIndex;
 
-            var frameData = _swapchain.GetFrameData(FrameIndex);
+            var frameData = _swapchain.GetFrameData(frameIndex);
             frameData.FlushOperation?.Wait();
 
-            var result = _swapchain.AcquireNextImage(FrameIndex);
+            var result = _swapchain.AcquireNextImage(frameIndex);
             if (result == Result.ErrorOutOfDateKhr)
             {
-                RecreateSwapchain();
+                 RecreateSwapchain();
                 return null;
             }
 
@@ -41,8 +45,8 @@ namespace RockEngine.Core.Rendering
 
         public void SubmitAndPresent(UploadBatch batch)
         {
-            
-            var frameData = _swapchain.GetFrameData(FrameIndex);
+            uint frameIndex = FrameIndex;
+            var frameData = _swapchain.GetFrameData(frameIndex);
 
             batch.AddWaitSemaphore(frameData.ImageAvailableSemaphore, PipelineStageFlags.ColorAttachmentOutputBit);
             batch.AddSignalSemaphore(frameData.RenderFinishedSemaphore);
@@ -55,15 +59,15 @@ namespace RockEngine.Core.Rendering
             var operation = _context.GraphicsSubmitContext.FlushAsync(frameData.InFlightFence);
 
             // Представляем кадр
-            var result = _swapchain.Present(FrameIndex, operation);
+            var result = _swapchain.Present(frameIndex, operation);
 
-            _frameCount++;
+            _frameIndex = (_frameIndex + 1) % (uint)_swapchain.SwapChainImagesCount;
         }
 
         private void RecreateSwapchain()
         {
             _swapchain.RecreateSwapchain();
-            _frameCount = 0;
+            _frameIndex = 0;
         }
 
         public void Dispose() => _swapchain.Dispose();

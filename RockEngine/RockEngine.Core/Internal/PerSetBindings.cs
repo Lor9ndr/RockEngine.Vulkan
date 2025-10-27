@@ -24,7 +24,9 @@ namespace RockEngine.Core.Internal
         public void Add(ResourceBinding binding)
         {
             if (binding.SetLocation != Set)
+            {
                 throw new ArgumentException($"Binding set {binding.SetLocation} doesn't match collection set {Set}");
+            }
 
             _bindings[binding.BindingLocation] = binding;
             CheckForUpdates();

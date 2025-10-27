@@ -40,7 +40,7 @@ namespace RockEngine.Vulkan
             out Result status) where T : unmanaged
         {
             T[] results = new T[queryCount];
-            status = GetResults(firstQuery, queryCount, new Span<T>(results), (ulong)sizeof(T), flags);
+            status = GetResults(firstQuery, queryCount, new Span<T>(results), (uint)sizeof(T), flags);
             return results;
         }
 
@@ -51,7 +51,7 @@ namespace RockEngine.Vulkan
          Span<T> destination,
          QueryResultFlags flags) where T : unmanaged
         {
-            return GetResults(firstQuery, queryCount, destination, (ulong)sizeof(T), flags);
+            return GetResults(firstQuery, queryCount, destination, (uint)sizeof(T), flags);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -59,7 +59,7 @@ namespace RockEngine.Vulkan
             uint firstQuery,
             uint queryCount,
             Span<T> destination,
-            ulong stride,
+            uint stride,
             QueryResultFlags flags) where T : unmanaged
         {
             if (destination.Length < queryCount)
@@ -74,7 +74,7 @@ namespace RockEngine.Vulkan
                     queryPool: _vkObject,
                     firstQuery: firstQuery,
                     queryCount: queryCount,
-                    dataSize: (nuint)(queryCount * stride),  // Was incorrect
+                    dataSize: (queryCount * stride), 
                     pData: ptr,
                     stride: stride,
                     flags: flags

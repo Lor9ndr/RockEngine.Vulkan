@@ -40,9 +40,15 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
                 // Play Button
                 ImGui.PushStyleColor(ImGuiCol.Button, isPlaying ? colors[(int)ImGuiCol.ButtonActive] : colors[(int)ImGuiCol.Button]);
                 if (ImGui.Button($"{ICON_PLAY}##Play", buttonSize))
+                {
                     _stateManager.SetState(EditorState.Play);
+                }
+
                 ImGui.PopStyleColor();
-                if (ImGui.IsItemHovered()) ImGui.SetTooltip("Play");
+                if (ImGui.IsItemHovered())
+                {
+                    ImGui.SetTooltip("Play");
+                }
 
                 ImGui.SameLine();
 
@@ -50,19 +56,31 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
                 ImGui.BeginDisabled(!isPlaying && !isPaused);
                 ImGui.PushStyleColor(ImGuiCol.Button, isPaused ? colors[(int)ImGuiCol.ButtonActive] : colors[(int)ImGuiCol.Button]);
                 if (ImGui.Button($"{ICON_PAUSE}##Pause", buttonSize))
+                {
                     _stateManager.SetState(isPaused ? EditorState.Play : EditorState.Paused);
+                }
+
                 ImGui.PopStyleColor();
                 ImGui.EndDisabled();
-                if (ImGui.IsItemHovered()) ImGui.SetTooltip(isPaused ? "Resume" : "Pause");
+                if (ImGui.IsItemHovered())
+                {
+                    ImGui.SetTooltip(isPaused ? "Resume" : "Pause");
+                }
 
                 ImGui.SameLine();
 
                 // Stop Button
                 ImGui.BeginDisabled(state == EditorState.Edit);
                 if (ImGui.Button($"{ICON_STOP}##Stop", buttonSize))
+                {
                     _stateManager.SetState(EditorState.Edit);
+                }
+
                 ImGui.EndDisabled();
-                if (ImGui.IsItemHovered()) ImGui.SetTooltip("Stop");
+                if (ImGui.IsItemHovered())
+                {
+                    ImGui.SetTooltip("Stop");
+                }
 
                 ImGui.SameLine();
 
@@ -73,7 +91,10 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
                     // Step frame logic
                 }
                 ImGui.EndDisabled();
-                if (ImGui.IsItemHovered()) ImGui.SetTooltip("Step Forward");
+                if (ImGui.IsItemHovered())
+                {
+                    ImGui.SetTooltip("Step Forward");
+                }
 
                 ImGui.SameLine();
                 ImGui.Separator();

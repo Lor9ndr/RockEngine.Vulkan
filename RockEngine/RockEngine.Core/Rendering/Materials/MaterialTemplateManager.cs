@@ -59,7 +59,11 @@ namespace RockEngine.Core.Rendering.Materials
 
         public void Dispose()
         {
-            if (_disposed) return;
+            if (_disposed)
+            {
+                return;
+            }
+
             _templates.Clear();
             _disposed = true;
         }

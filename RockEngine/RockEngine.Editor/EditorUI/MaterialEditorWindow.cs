@@ -130,7 +130,10 @@ namespace RockEngine.Editor.EditorUI
 
         private void HandleTexturePreview(Texture2D texture)
         {
-            if (texture == null) return;
+            if (texture == null)
+            {
+                return;
+            }
 
             IntPtr texId = _imGuiController.GetTextureID(texture);
             float previewWidth = Math.Min(ImGui.GetContentRegionAvail().X, 200);

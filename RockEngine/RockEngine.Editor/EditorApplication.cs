@@ -2,6 +2,7 @@
 
 using RockEngine.Core;
 using RockEngine.Core.DI;
+using RockEngine.Core.Shaders;
 using RockEngine.Editor.EditorUI.Logging;
 using RockEngine.Editor.Layers;
 
@@ -25,6 +26,5 @@ namespace RockEngine.Editor
             await _layerStack.PushLayer(imGuiLayer).ConfigureAwait(false);
             await _layerStack.PushLayer(projectLayer).ConfigureAwait(false);
         }
-        
     }
 }

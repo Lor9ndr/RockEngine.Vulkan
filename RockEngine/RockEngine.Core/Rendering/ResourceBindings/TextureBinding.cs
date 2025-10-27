@@ -33,7 +33,11 @@ namespace RockEngine.Core.Rendering.ResourceBindings
         {
             foreach (var item in DescriptorSets)
             {
-                if (item is null) continue;
+                if (item is null)
+                {
+                    continue;
+                }
+
                 item.IsDirty = true;
             }
         }

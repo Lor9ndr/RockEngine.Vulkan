@@ -14,6 +14,8 @@ public class RenderPassBuilder : DisposableBuilder
     private readonly List<VkSubpassDescription> _subpasses = new();
     private readonly List<SubpassDependency> _dependencies = new();
 
+    public List<AttachmentDescription> Attachments => _attachments;
+
     public RenderPassBuilder(VulkanContext context) => _context = context;
 
     public AttachmentConfigurer ConfigureAttachment(Format format, SampleCountFlags samples = SampleCountFlags.Count1Bit)

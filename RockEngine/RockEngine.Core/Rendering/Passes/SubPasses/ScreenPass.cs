@@ -99,7 +99,7 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
                 .WithMultisampleState(new VulkanMultisampleStateInfoBuilder().Configure(false, SampleCountFlags.Count1Bit))
                 .WithColorBlendState(new VulkanColorBlendStateBuilder().AddDefaultAttachment())
                 .AddRenderPass(renderPass)
-                .WithSubpass<ScreenPass>()
+                .WithSubpass(GetMetadata())
                 .WithPipelineLayout(pipelineLayout);
 
             
@@ -121,17 +121,17 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
             // Color attachment (swapchain image)
             builder.ConfigureAttachment(_graphicsEngine.Swapchain.Format)
                 .WithColorOperations(
-                    load: AttachmentLoadOp.Clear,
+                    load: AttachmentLoadOp.Clear, // Preserve existing content
                     store: AttachmentStoreOp.Store,
                     initialLayout: ImageLayout.Undefined,
                     finalLayout: ImageLayout.PresentSrcKhr)
                 .Add();
 
-            // Depth attachment
+            // Depth attachment (optional)
             builder.ConfigureAttachment(_graphicsEngine.Swapchain.DepthFormat)
                 .WithDepthOperations(
                     load: AttachmentLoadOp.Clear,
-                    store: AttachmentStoreOp.DontCare,
+                    store: AttachmentStoreOp.Store,
                     initialLayout: ImageLayout.Undefined,
                     finalLayout: ImageLayout.DepthStencilAttachmentOptimal)
                 .Add();
@@ -139,27 +139,26 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
 
         public void SetupSubpassDescription(RenderPassBuilder.SubpassConfigurer subpass)
         {
-            // Color output
-            subpass.AddColorAttachment(0);
-
-            // Depth testing
-            subpass.SetDepthAttachment(1);
+            // Only need color attachment
+            subpass
+              .AddColorAttachment(0, ImageLayout.ColorAttachmentOptimal)
+              .SetDepthAttachment(1);
         }
 
         public void SetupDependencies(RenderPassBuilder builder, uint subpassIndex)
         {
-            /*builder.AddDependency()
-                .FromExternal()
-                .ToSubpass(subpassIndex)
+
+            // Dependency to external (presentation)
+            builder.AddDependency()
+                .FromSubpass(subpassIndex)
+                .ToExtenral()
                 .WithStages(
-                    PipelineStageFlags.TopOfPipeBit,
-                    PipelineStageFlags.ColorAttachmentOutputBit |
-                    PipelineStageFlags.EarlyFragmentTestsBit)
+                    PipelineStageFlags.ColorAttachmentOutputBit,
+                    PipelineStageFlags.BottomOfPipeBit)
                 .WithAccess(
-                    AccessFlags.None,
-                    AccessFlags.ColorAttachmentWriteBit |
-                    AccessFlags.DepthStencilAttachmentWriteBit)
-                .Add();*/
+                    AccessFlags.ColorAttachmentWriteBit,
+                    AccessFlags.None)
+                .Add();
         }
         public void Dispose()
         {

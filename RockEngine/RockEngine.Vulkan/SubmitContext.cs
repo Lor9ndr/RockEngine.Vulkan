@@ -35,13 +35,13 @@ namespace RockEngine.Vulkan
         private readonly ConcurrentDictionary<string, CommandPoolContext> _namedContexts = new();
 
         // Per-flush resource tracking
-        private readonly ConcurrentBag<Action> _flushDisposables = new();
+        private readonly ConcurrentBag<IDisposable> _flushDisposables = new();
         private readonly ConcurrentBag<VkSemaphore> _signalSemaphores = new();
         private readonly ConcurrentDictionary<VkSemaphore, PipelineStageFlags> _waitSemaphores = new();
 
         // Reusable collections for submission
         private readonly List<CommandBuffer> _commandBufferList = new(64);
-        private readonly List<Action> _disposableList = new(64);
+        private readonly List<IDisposable> _disposableList = new(64);
         private readonly List<UploadBatch> _batchList = new(64);
 
         private static readonly ArrayPool<CommandBuffer> _commandBufferPool = ArrayPool<CommandBuffer>.Shared;
@@ -201,7 +201,7 @@ namespace RockEngine.Vulkan
                     this,
                     fence,
                     new List<UploadBatch> { batch },
-                    new List<Action>(_disposableList)
+                    new List<IDisposable>(_disposableList)
                 );
             }
         }
@@ -295,8 +295,7 @@ namespace RockEngine.Vulkan
             _waitSemaphores.Clear();
         }
 
-        public void AddDependency(IDisposable disposable) => _flushDisposables.Add(disposable.Dispose);
-        public void AddDependency(Action disposable) => _flushDisposables.Add(disposable);
+        public void AddDependency(IDisposable disposable) => _flushDisposables.Add(disposable);
         public void AddWaitSemaphore(VkSemaphore semaphore, PipelineStageFlags stage) => _waitSemaphores[semaphore] = stage;
         public void AddSignalSemaphore(VkSemaphore semaphore) => _signalSemaphores.Add(semaphore);
 

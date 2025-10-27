@@ -1,4 +1,5 @@
-﻿using RockEngine.Core.Rendering.Objects;
+﻿using RockEngine.Core.Helpers.Attributes;
+using RockEngine.Core.Rendering.Objects;
 using RockEngine.Core.Rendering.Texturing;
 using RockEngine.Vulkan;
 
@@ -6,7 +7,7 @@ using Silk.NET.Vulkan;
 
 namespace RockEngine.Core.Rendering.RenderTargets
 {
-    public class CameraRenderTarget : RenderTarget
+    public partial class CameraRenderTarget : RenderTarget
     {
         private readonly GBuffer _gBuffer;
         private readonly VulkanContext _context;
@@ -94,15 +95,16 @@ namespace RockEngine.Core.Rendering.RenderTargets
 
         public override void PrepareForRender(VkCommandBuffer cmd)
         {
-            using (cmd.NameAction("Transition camera output to ColorAttachmentOptimal", [1, 1, 1, 1]))
+            using (cmd.NameAction(nameof(PrepareForRender), [1, 1, 1, 1]))
             {
                 OutputTexture.Image.TransitionImageLayout(cmd, ImageLayout.ColorAttachmentOptimal);
             }
         }
 
+        [GPUAction([1, 1, 1, 1])]
         public override void TransitionToRead(VkCommandBuffer cmd)
         {
-            using (cmd.NameAction("Transition camera output to ShaderReadOnlyOptimal", [1, 1, 1, 1]))
+            using (cmd.NameAction(nameof(TransitionToRead), [1, 1, 1, 1]))
             {
                 OutputTexture.Image.TransitionImageLayout(cmd, ImageLayout.ShaderReadOnlyOptimal);
             }

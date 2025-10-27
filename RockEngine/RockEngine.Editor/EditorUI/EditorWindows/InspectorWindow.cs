@@ -1,33 +1,27 @@
 ﻿using ImGuiNET;
 
 using RockEngine.Core.Assets;
-using RockEngine.Core.ECS;
+using RockEngine.Core.DI;
 using RockEngine.Core.ECS.Components;
 using RockEngine.Editor.EditorUI.ImGuiRendering;
-
-using System.Reflection;
+using RockEngine.Editor.Selection;
 
 namespace RockEngine.Editor.EditorUI.EditorWindows
 {
     public class InspectorWindow : EditorWindow
     {
-        private Entity _selectedEntity;
         private readonly PropertyDrawer _propertyDrawer;
+        private readonly ISelectionManager _selectionManager;
 
-        public Entity SelectedEntity
-        {
-            get => _selectedEntity;
-            set => _selectedEntity = value;
-        }
-
-        public InspectorWindow(AssetManager assetManager, ImGuiController imGuiController) : base("Inspector")
+        public InspectorWindow(AssetManager assetManager, ImGuiController imGuiController, ISelectionManager selectionManager) : base("Inspector")
         {
             _propertyDrawer = new PropertyDrawer(assetManager, imGuiController);
+            _selectionManager = selectionManager;
         }
 
-        protected override void OnDraw()
+        protected override async ValueTask OnDraw()
         {
-            if (_selectedEntity == null)
+            if (_selectionManager.CurrentSelection == null || !_selectionManager.CurrentSelection.HasSelection)
             {
                 ImGui.Text("No entity selected");
                 return;
@@ -40,13 +34,13 @@ namespace RockEngine.Editor.EditorUI.EditorWindows
             ImGui.Separator();
 
             // Transform component
-            var transform = _selectedEntity.Transform;
+            var transform = _selectionManager.CurrentSelection.PrimaryEntity.Transform;
             DrawTransformComponent(transform);
 
             // Other components
-            foreach (var component in _selectedEntity.Components.Where(c => c is not Transform))
+            foreach (var component in _selectionManager.CurrentSelection.PrimaryEntity.Components.Except([transform]))
             {
-                DrawComponent(component);
+                await DrawComponent(component);
             }
 
             // Add component button
@@ -58,9 +52,15 @@ namespace RockEngine.Editor.EditorUI.EditorWindows
 
             if (ImGui.BeginPopup("AddComponentPopup"))
             {
-                if (ImGui.MenuItem("Mesh Renderer")) { }
-                if (ImGui.MenuItem("Light")) { }
-                if (ImGui.MenuItem("Camera")) { }
+                var registrations = IoC.Container.GetCurrentRegistrations().Where(s=>s.ImplementationType.GetInterface(nameof(IComponent)) is not null);
+
+                foreach (var registration in registrations)
+                {
+                    if (ImGui.MenuItem(registration.ImplementationType.Name))
+                    {
+                        _selectionManager.CurrentSelection.PrimaryEntity.AddComponent(registration.ImplementationType);
+                    }
+                }
                 ImGui.EndPopup();
             }
 
@@ -72,23 +72,24 @@ namespace RockEngine.Editor.EditorUI.EditorWindows
             if (ImGui.CollapsingHeader("Transform", ImGuiTreeNodeFlags.DefaultOpen))
             {
                 var position = transform.Position;
-                var rotation = transform.Rotation;
+                var rotation = transform.EulerAngles;
                 var scale = transform.Scale;
 
                 bool changed = false;
                 changed |= ImGui.DragFloat3("Position", ref position, 0.1f);
+                changed |= ImGui.DragFloat3("Rotation", ref rotation, 0.1f);
                 changed |= ImGui.DragFloat3("Scale", ref scale, 0.1f);
 
                 if (changed)
                 {
                     transform.Position = position;
-                    transform.Rotation = rotation;
+                    transform.EulerAngles = rotation;
                     transform.Scale = scale;
                 }
             }
         }
 
-        private void DrawComponent(IComponent component)
+        private async ValueTask DrawComponent(IComponent component)
         {
             var typeName = component.GetType().Name;
             var isOpen = ImGui.CollapsingHeader(typeName, ImGuiTreeNodeFlags.DefaultOpen);
@@ -103,20 +104,8 @@ namespace RockEngine.Editor.EditorUI.EditorWindows
             if (isOpen)
             {
                 ImGui.Indent();
-                DrawComponentProperties(component);
+                await _propertyDrawer.DrawComponentProperties(component);
                 ImGui.Unindent();
-            }
-        }
-
-        private void DrawComponentProperties(IComponent component)
-        {
-            var properties = component.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance);
-
-            foreach (var property in properties)
-            {
-                if (!property.CanRead) continue;
-
-                _propertyDrawer.DrawProperty(component, property);
             }
         }
     }

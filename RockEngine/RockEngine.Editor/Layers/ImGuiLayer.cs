@@ -17,12 +17,10 @@ namespace RockEngine.Editor.Layers
         {
             _controller = controller;
             _renderer = renderer;
-            _controller.Init();
         }
 
         public Task OnAttach()
         {
-
             return Task.CompletedTask;
         }
 
@@ -30,9 +28,10 @@ namespace RockEngine.Editor.Layers
         {
         }
 
-        public void OnImGuiRender(VkCommandBuffer vkCommandBuffer)
+        public Task OnImGuiRender(VkCommandBuffer vkCommandBuffer)
         {
             ImGui.DockSpaceOverViewport(ImGui.GetMainViewport(), ImGuiDockNodeFlags.PassthruCentralNode);
+            return Task.CompletedTask;
         }
 
         public void OnRender(VkCommandBuffer vkCommandBuffer)

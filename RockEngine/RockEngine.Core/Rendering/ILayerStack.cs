@@ -9,7 +9,7 @@ namespace RockEngine.Core.Rendering
         void PopLayer(ILayer layer);
         Task PushLayer(ILayer layer);
         void Render(VkCommandBuffer vkCommandBuffer);
-        void RenderImGui(VkCommandBuffer commandBuffer);
+        Task RenderImGui(VkCommandBuffer commandBuffer);
         void Update();
     }
 }

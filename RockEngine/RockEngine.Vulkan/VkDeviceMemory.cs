@@ -89,7 +89,11 @@ namespace RockEngine.Vulkan
 
         protected override unsafe void Dispose(bool disposing)
         {
-            if (_disposed) return;
+            if (_disposed)
+            {
+                return;
+            }
+
             VulkanContext.Vk.FreeMemory(_context.Device, _memory, in VulkanContext.CustomAllocator<VkDeviceMemory>());
             _mappedData = null;
             _disposed = true;

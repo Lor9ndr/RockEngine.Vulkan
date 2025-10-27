@@ -42,15 +42,15 @@ namespace RockEngine.Vulkan
 
         public unsafe bool TryStage<T>(UploadBatch batch, T[] data, out ulong offset, out ulong size) where T : unmanaged
         {
-            return TryStageInternal(batch, data.AsSpan(), out offset, out size);
+            return TryStageInternal<T>(batch, data.AsSpan(), out offset, out size);
         }
 
-        public unsafe bool TryStage<T>(UploadBatch batch, Span<T> data, out ulong offset, out ulong size) where T : unmanaged
+        public unsafe bool TryStage<T>(UploadBatch batch, ReadOnlySpan<T> data, out ulong offset, out ulong size) where T : unmanaged
         {
             return TryStageInternal(batch, data, out offset, out size);
         }
 
-        private unsafe bool TryStageInternal<T>(UploadBatch batch, Span<T> data, out ulong offset, out ulong size) where T : unmanaged
+        private unsafe bool TryStageInternal<T>(UploadBatch batch, ReadOnlySpan<T> data, out ulong offset, out ulong size) where T : unmanaged
         {
             size = (ulong)(Unsafe.SizeOf<T>() * data.Length);
             offset = 0;

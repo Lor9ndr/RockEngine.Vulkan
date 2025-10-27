@@ -1,4 +1,5 @@
 ﻿using RockEngine.Core.Rendering.Managers;
+using RockEngine.Core.Rendering.Materials;
 using RockEngine.Core.Rendering.Objects;
 using RockEngine.Core.Rendering.Texturing;
 using RockEngine.Vulkan;
@@ -17,6 +18,8 @@ namespace RockEngine.Core.Rendering.RenderTargets
         public virtual Viewport Viewport { get; protected set; }
         public virtual Rect2D Scissor { get; protected set; }
         public ClearValue[] ClearValues { get; protected set; }
+        public Material? Material { get;set;}
+
         protected VulkanContext Context { get; }
 
         protected readonly ImageUsageFlags _usageFlags;
@@ -40,6 +43,8 @@ namespace RockEngine.Core.Rendering.RenderTargets
         public virtual void Resize(Extent2D newSize)
         {
             Size = newSize;
+            Scissor = new Rect2D(new Offset2D(0,0), newSize);
+            Viewport = new Viewport(0,0, newSize.Width,newSize.Height,0,1);
             DisposeResources();
         }
 

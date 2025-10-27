@@ -100,7 +100,10 @@ namespace RockEngine.Vulkan
             do
             {
                 currentPeak = Interlocked.Read(ref _peakAllocatedBytes);
-                if (currentTotal <= currentPeak) break;
+                if (currentTotal <= currentPeak)
+                {
+                    break;
+                }
             } while (Interlocked.CompareExchange(ref _peakAllocatedBytes, currentTotal, currentPeak) != currentPeak);
         }
 

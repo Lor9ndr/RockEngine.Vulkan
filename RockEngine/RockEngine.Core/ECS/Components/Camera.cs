@@ -1,13 +1,18 @@
-﻿using RockEngine.Core.DI;
+﻿using RockEngine.Core.Attributes;
 using RockEngine.Core.Helpers;
 using RockEngine.Core.Rendering;
+using RockEngine.Core.Rendering.Materials;
+using RockEngine.Core.Rendering.Passes.SubPasses;
 using RockEngine.Core.Rendering.RenderTargets;
+using RockEngine.Core.Rendering.ResourceBindings;
 
 using System.Numerics;
 
+using static RockEngine.Core.Rendering.Managers.CameraManager;
+
 namespace RockEngine.Core.ECS.Components
 {
-    public class Camera : Component
+    public partial class Camera : Component
     {
         public const int MAX_FOV = 120;
         public const int MIN_FOV = 30;
@@ -27,12 +32,16 @@ namespace RockEngine.Core.ECS.Components
 
         private Vector3 _up;
         private Vector3 _front;
+        private InputAttachmentBinding _attachmentBinding;
 
         public Vector3 Right => _right;
 
         public Vector3 Up => _up;
         public Matrix4x4 ViewProjectionMatrix => _viewProjectionMatrix;
 
+        public virtual RenderLayerMask VisibleLayers { get; set; } = RenderLayerMask.All & ~RenderLayerMask.Debug;
+
+        [Step(1)]
         public float Fov
         {
             get => MathHelper.RadiansToDegrees(_fov);
@@ -52,6 +61,8 @@ namespace RockEngine.Core.ECS.Components
             }
         }
 
+        [Range(0.001f, float.MaxValue)]
+        [Step(0.001f)]
         public float NearClip
         {
             get => _nearClip;
@@ -61,6 +72,8 @@ namespace RockEngine.Core.ECS.Components
             }
         }
 
+        [Range(0.001f, float.MaxValue)]
+        [Step(0.001f)]
         public float FarClip
         {
             get => _farClip;
@@ -70,7 +83,7 @@ namespace RockEngine.Core.ECS.Components
             }
         }
 
-        public Vector3 Front
+        public Vector3 Forward
         {
             get => _front;
             set
@@ -100,10 +113,23 @@ namespace RockEngine.Core.ECS.Components
                 _yaw = MathHelper.DegreesToRadians(value);
             }
         }
+        [Step(0.001f), Range(0.1f, 4.0f)]
+        public float Exposure { get;set;} = 1.0f;     // [0.1 - 4.0] Typical HDR exposure range
 
+        [Step(0.001f), Range(0.1f, 2.0f)]
+        public float EnvIntensity { get;set;} = 1.0f; // [0.0 - 2.0] Environment map multiplier
 
-        public CameraRenderTarget RenderTarget { get; set; }
+        [Step(0.001f), Range(0.0f, 1.0f)]
+        public float AoStrength { get; set; } = 1.0f;
 
+        [SerializeIgnore]
+        public RenderTarget RenderTarget { get; set; }
+        
+        [SerializeIgnore]
+        public Matrix4x4 ViewMatrix { get => _viewMatrix; set => _viewMatrix = value; }
+        
+        [SerializeIgnore]
+        public Matrix4x4 ProjectionMatrix { get => _projectionMatrix; set => _projectionMatrix = value; }
 
         public Camera()
         {
@@ -114,7 +140,7 @@ namespace RockEngine.Core.ECS.Components
         }
         public void UpdateViewMatrix()
         {
-            _viewMatrix = Matrix4x4.CreateLookAt(Entity.Transform.WorldPosition, Entity.Transform.WorldPosition + Front, _up);
+            _viewMatrix = Matrix4x4.CreateLookAt(Entity.Transform.WorldPosition, Entity.Transform.WorldPosition + Forward, _up);
             UpdateProjectionMatrix();
         }
 
@@ -150,15 +176,57 @@ namespace RockEngine.Core.ECS.Components
 
         public override ValueTask OnStart(Renderer renderer)
         {
-            renderer.RegisterCamera(this);
+            var camIndex = renderer.RegisterCamera(this);
+            if(RenderTarget is null)
+            {
+                RenderTarget = new CameraRenderTarget(renderer.Context, renderer.GraphicsEngine, new Silk.NET.Vulkan.Extent2D(1280, 720));
+                RenderTarget.Initialize(renderer.RenderPass ?? throw new Exception("Renderer Renderpass was not created"));
+                InitializeGBuffer(((CameraRenderTarget)RenderTarget).GBuffer, renderer, camIndex);
+            }
             return default;
+        }
+        private void InitializeGBuffer(GBuffer gbuffer, Renderer renderer,int cameraIndex)
+        {
+
+            var pipeline = renderer.PipelineManager.GetPipelineByName("DeferredLighting");
+            RenderTarget.Material=  new Material("GBuffer");
+            var material = RenderTarget.Material;
+            material.AddPass(LightingPass.Name, new MaterialPass(pipeline));
+
+            _attachmentBinding = new InputAttachmentBinding(
+                setLocation: 2,
+                bindingLocation: 0,
+                gbuffer.ColorAttachments  // Position + Normal + Albedo
+            );
+            material.BindResource(_attachmentBinding);
+            material.BindResource(renderer.GlobalUbo.GetBinding((uint)cameraIndex));
+
+            material.BindResource(new UniformBufferBinding(renderer.LightManager.CountLightUbo, 1, 1));
+            material.PushConstant("iblParams", new IBLParams()
+            {
+                aoStrength = AoStrength,
+                envIntensity = EnvIntensity,
+                exposure = Exposure
+            });
+
         }
 
 
         public override ValueTask Update(Renderer renderer)
         {
             UpdateVectors();
+            RenderTarget.Material.PushConstant("iblParams", new IBLParams()
+            {
+                aoStrength = AoStrength,
+                envIntensity = EnvIntensity,
+                exposure = Exposure
+            });
             return default;
+        }
+
+        public virtual bool CanRender(Entity entity)
+        {
+            return VisibleLayers.Contains(entity.Layer);
         }
         public override void SetActive(bool isActive = true)
         {

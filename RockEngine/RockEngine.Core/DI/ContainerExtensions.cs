@@ -113,7 +113,10 @@ namespace RockEngine.Core.DI
 
         private static List<StrategyRegistration> TopologicalSort(List<StrategyRegistration> registrations, string groupName)
         {
-            if (registrations.Count == 0) return registrations;
+            if (registrations.Count == 0)
+            {
+                return registrations;
+            }
 
             var regDict = registrations.ToDictionary(r => r.StrategyType);
             var graph = new Dictionary<StrategyRegistration, List<StrategyRegistration>>();
@@ -155,12 +158,17 @@ namespace RockEngine.Core.DI
                 sorted.Add(current);
                 foreach (var neighbor in graph[current])
                 {
-                    if (--inDegree[neighbor] == 0) queue.Enqueue(neighbor);
+                    if (--inDegree[neighbor] == 0)
+                    {
+                        queue.Enqueue(neighbor);
+                    }
                 }
             }
 
             if (sorted.Count != registrations.Count)
+            {
                 throw new InvalidOperationException($"Cycle detected in {groupName} strategy group");
+            }
 
             return sorted;
         }
@@ -203,7 +211,10 @@ namespace RockEngine.Core.DI
             public StrategyRegistrationBuilder BeforeAll()
             {
                 if (_registration.IsAfterAll)
+                {
                     throw new InvalidOperationException("Cannot set both BeforeAll and AfterAll");
+                }
+
                 _registration.IsBeforeAll = true;
                 return this;
             }
@@ -211,7 +222,10 @@ namespace RockEngine.Core.DI
             public StrategyRegistrationBuilder AfterAll()
             {
                 if (_registration.IsBeforeAll)
+                {
                     throw new InvalidOperationException("Cannot set both BeforeAll and AfterAll");
+                }
+
                 _registration.IsAfterAll = true;
                 return this;
             }

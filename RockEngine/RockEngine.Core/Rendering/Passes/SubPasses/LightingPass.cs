@@ -2,6 +2,7 @@
 using RockEngine.Core.DI;
 using RockEngine.Core.ECS.Components;
 using RockEngine.Core.Rendering.Managers;
+using RockEngine.Core.Rendering.RenderTargets;
 using RockEngine.Core.Rendering.ResourceBindings;
 using RockEngine.Core.Rendering.Texturing;
 using RockEngine.Vulkan;
@@ -89,6 +90,7 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
                     .AddState(DynamicState.Viewport)
                     .AddState(DynamicState.Scissor));
             _lightingPipeline = _pipelineManager.Create(pipelineBuilder)!;
+            SetIBLTextures(Texture3D.GetDefaultCubemapTexture(_context), Texture3D.GetDefaultCubemapTexture(_context), Texture2D.GetDefaultAlbedoTexture(_context));
         }
 
         public void Execute(VkCommandBuffer cmd, params object[] args)
@@ -100,20 +102,22 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
 
                 cmd.SetViewport(camera.RenderTarget.Viewport);
                 cmd.SetScissor(camera.RenderTarget.Scissor);
-                var materialPass = camera.RenderTarget.GBuffer.Material.GetPass(Name);
-                materialPass.BindResource(_lightManager.GetCurrentLightBufferBinding());
-
-                if (_iblBinding != null)
+                if (camera.RenderTarget is CameraRenderTarget cameraRenderTarget)
                 {
-                    camera.RenderTarget.GBuffer.Material.GetPass(Name).BindResource(_iblBinding);
+                    var materialPass = cameraRenderTarget.Material.GetPass(Name);
+                    materialPass.BindResource(_lightManager.GetCurrentLightBufferBinding());
+
+                    if (_iblBinding != null)
+                    {
+                        materialPass.BindResource(_iblBinding);
+                    }
+                    //camera.RenderTarget.GBuffer.Material.Bind(_binding);
+                    cmd.BindPipeline(_lightingPipeline, PipelineBindPoint.Graphics);
+
+                    materialPass.CmdPushConstants(cmd);
+                    _bindingManager.BindResourcesForMaterial(frameIndex, materialPass, cmd);
+                    cmd.Draw(3, 1, 0, 0);
                 }
-                //camera.RenderTarget.GBuffer.Material.Bind(_binding);
-                cmd.BindPipeline(_lightingPipeline, PipelineBindPoint.Graphics);
-
-                materialPass.CmdPushConstants(cmd);
-
-                _bindingManager.BindResourcesForMaterial(frameIndex, materialPass, cmd);
-                cmd.Draw(3, 1, 0, 0);
             }
         }
 

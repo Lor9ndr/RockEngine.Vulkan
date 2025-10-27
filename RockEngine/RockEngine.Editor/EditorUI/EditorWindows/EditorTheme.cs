@@ -62,6 +62,9 @@ namespace RockEngine.Editor.EditorUI.EditorWindows
             colors[(int)ImGuiCol.TitleBgActive] = darkColor;
             colors[(int)ImGuiCol.TitleBgCollapsed] = new Vector4(0.00f, 0.00f, 0.00f, 0.51f);
 
+            // Menu bar
+            colors[(int)ImGuiCol.MenuBarBg] = new Vector4(0.10f, 0.10f, 0.10f, 1.00f);
+
             // Scrollbars
             colors[(int)ImGuiCol.ScrollbarBg] = darkColor;
             colors[(int)ImGuiCol.ScrollbarGrab] = new Vector4(0.35f, 0.35f, 0.35f, 1.00f);
@@ -80,7 +83,7 @@ namespace RockEngine.Editor.EditorUI.EditorWindows
             colors[(int)ImGuiCol.TabHovered] = accentColor;
             colors[(int)ImGuiCol.TabActive] = accentHoverColor;
             colors[(int)ImGuiCol.TabUnfocused] = darkColor;
-            colors[(int)ImGuiCol.TabUnfocusedActive] = darkColor;
+            colors[(int)ImGuiCol.TabUnfocusedActive] = new Vector4(0.14f, 0.14f, 0.14f, 1.00f);
 
             // Docking
             colors[(int)ImGuiCol.DockingPreview] = accentColor * new Vector4(1.0f, 1.0f, 1.0f, 0.7f);
@@ -102,8 +105,24 @@ namespace RockEngine.Editor.EditorUI.EditorWindows
             colors[(int)ImGuiCol.PlotHistogram] = accentColor;
             colors[(int)ImGuiCol.PlotHistogramHovered] = accentHoverColor;
 
+            // Tables
+            colors[(int)ImGuiCol.TableHeaderBg] = new Vector4(0.15f, 0.15f, 0.15f, 1.00f);
+            colors[(int)ImGuiCol.TableBorderStrong] = new Vector4(0.25f, 0.25f, 0.25f, 1.00f);
+            colors[(int)ImGuiCol.TableBorderLight] = new Vector4(0.20f, 0.20f, 0.20f, 1.00f);
+            colors[(int)ImGuiCol.TableRowBg] = new Vector4(0.00f, 0.00f, 0.00f, 0.00f);
+            colors[(int)ImGuiCol.TableRowBgAlt] = new Vector4(0.10f, 0.10f, 0.10f, 0.10f);
+
             // Text selection
             colors[(int)ImGuiCol.TextSelectedBg] = accentColor * new Vector4(0.24f, 0.45f, 0.68f, 0.35f);
+            colors[(int)ImGuiCol.DragDropTarget] = accentColor * new Vector4(1.0f, 1.0f, 1.0f, 0.7f);
+
+            // Navigation
+            colors[(int)ImGuiCol.NavHighlight] = accentColor;
+            colors[(int)ImGuiCol.NavWindowingHighlight] = new Vector4(1.00f, 1.00f, 1.00f, 0.70f);
+            colors[(int)ImGuiCol.NavWindowingDimBg] = new Vector4(0.80f, 0.80f, 0.80f, 0.20f);
+
+            // Modal
+            colors[(int)ImGuiCol.ModalWindowDimBg] = new Vector4(0.00f, 0.00f, 0.00f, 0.60f);
 
             // Font scaling for icons
             if (io.Fonts.Fonts.Size > 1)

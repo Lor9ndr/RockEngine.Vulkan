@@ -52,22 +52,34 @@ namespace RockEngine.Editor.EditorUI
                 if (ImGui.BeginMenu("View"))
                 {
                     if (ImGui.MenuItem($"{ICON_EYE} Scene Hierarchy", null, ref _showSceneHierarchy))
+                    {
                         ViewToggled?.Invoke("Scene Hierarchy", _showSceneHierarchy);
+                    }
 
                     if (ImGui.MenuItem($"{ICON_INFO} Inspector", null, ref _showInspector))
+                    {
                         ViewToggled?.Invoke("Inspector", _showInspector);
+                    }
 
                     if (ImGui.MenuItem($"{ICON_MATERIAL} Material Templates", null, ref _showMaterialTemplates))
+                    {
                         ViewToggled?.Invoke("Material Templates", _showMaterialTemplates);
+                    }
 
                     if (ImGui.MenuItem($"{ICON_CHART} Performance", null, ref _showPerformanceMetrics))
+                    {
                         ViewToggled?.Invoke("Performance", _showPerformanceMetrics);
+                    }
 
                     if (ImGui.MenuItem($"{ICON_MEMORY} Memory Stats", null, ref _showMemoryStats))
+                    {
                         ViewToggled?.Invoke("Memory Stats", _showMemoryStats);
+                    }
 
                     if (ImGui.MenuItem($"{ICON_LIST} Console", null, ref _showConsole))
+                    {
                         ViewToggled?.Invoke("Console", _showConsole);
+                    }
 
                     ImGui.EndMenu();
                 }

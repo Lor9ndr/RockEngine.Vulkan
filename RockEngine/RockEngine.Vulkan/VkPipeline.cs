@@ -33,17 +33,25 @@ namespace RockEngine.Vulkan
 
         public static unsafe VkPipeline Create(VulkanContext context, string name, ref GraphicsPipelineCreateInfo ci, VkRenderPass renderPass, VkPipelineLayout layout)
         {
-            VulkanContext.Vk.CreateGraphicsPipelines(context.Device, pipelineCache: default, 1, in ci, in VulkanContext.CustomAllocator<VkPipeline>(), out Pipeline pipeline)
+            VulkanContext.Vk.CreateGraphicsPipelines(context.Device,
+                                                     pipelineCache: default,
+                                                     1,
+                                                     in ci,
+                                                     in VulkanContext.CustomAllocator<VkPipeline>(),
+                                                     out Pipeline pipeline)
                   .VkAssertResult("Failed to create pipeline");
-            context.DebugUtils.SetDebugUtilsObjectName(pipeline,ObjectType.Pipeline, name);
 
-            return new VkPipeline(context, name, pipeline, layout, renderPass, ci.Subpass);
+            var vkPipeline =  new VkPipeline(context, name, pipeline, layout, renderPass, ci.Subpass);
+            vkPipeline.LabelObject(name);
+            return vkPipeline;
         }
 
         public static VkPipeline CreateComputePipeline(VulkanContext context, string name, VkPipelineLayout layout,in ComputePipelineCreateInfo ci)
         {
             VulkanContext.Vk.CreateComputePipelines(context.Device, default,1u, in ci, in VulkanContext.CustomAllocator<VkPipeline>(),  out Pipeline pipeline);
-            return new VkPipeline(context, name, pipeline, layout, null, 0);
+            var vkPipeline = new VkPipeline(context, name, pipeline, layout, null, 0);
+            vkPipeline.LabelObject(name);
+            return vkPipeline;
         }
         public override void LabelObject(string name) => _context.DebugUtils.SetDebugUtilsObjectName(_vkObject, ObjectType.Pipeline, name);
 

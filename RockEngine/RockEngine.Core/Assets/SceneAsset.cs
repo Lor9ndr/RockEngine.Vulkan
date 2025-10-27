@@ -1,4 +1,5 @@
-﻿using Newtonsoft.Json;
+﻿// Updated SceneAsset.cs
+using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
 using NLog;
@@ -9,6 +10,8 @@ using RockEngine.Core.ECS;
 using RockEngine.Core.ECS.Components;
 using RockEngine.Core.Rendering;
 
+using System.Collections.Concurrent;
+
 using ZLinq;
 
 namespace RockEngine.Core.Assets
@@ -18,7 +21,7 @@ namespace RockEngine.Core.Assets
         private static readonly Logger _logger = LogManager.GetCurrentClassLogger();
 
         [JsonIgnore]
-        public List<Entity> Entities { get; private set; } = new List<Entity>();
+        public ConcurrentDictionary<ulong, Entity> Entities { get; private set; } = new();
 
         public override string Type => "Scene";
 
@@ -28,7 +31,7 @@ namespace RockEngine.Core.Assets
         public Entity CreateEntity(string name = null, Entity parent = null)
         {
             var entity = World.GetCurrent().CreateEntity(name);
-            Entities.Add(entity);
+            Entities[entity.ID] = entity;
 
             if (parent != null)
             {
@@ -40,8 +43,34 @@ namespace RockEngine.Core.Assets
 
         public void RemoveEntity(Entity entity)
         {
-            Entities.Remove(entity);
+            Entities.TryRemove(entity.ID, out _);
             World.GetCurrent().RemoveEntity(entity);
+        }
+
+        public void Unload()
+        {
+            if (!IsLoaded)
+            {
+                return;
+            }
+
+            try
+            {
+                // Remove all entities from the world
+                foreach (var entity in Entities.Values)
+                {
+                    World.GetCurrent().RemoveEntity(entity);
+                }
+
+                Entities.Clear();
+                IsLoaded = false;
+
+                _logger.Debug($"Unloaded scene: {Name}");
+            }
+            catch (Exception ex)
+            {
+                _logger.Error(ex, $"Failed to unload scene: {Name}");
+            }
         }
 
         public override void BeforeSaving()
@@ -49,7 +78,7 @@ namespace RockEngine.Core.Assets
             var serializer = IoC.Container.GetInstance<IAssetSerializer>();
 
             // Convert entities to serializable data, starting from root entities
-            var rootEntities = Entities.Where(e => e.Parent == null).ToList();
+            var rootEntities = Entities.Values.Where(e => e.Parent == null).ToList();
 
             Data = new SceneData
             {
@@ -69,11 +98,22 @@ namespace RockEngine.Core.Assets
                     Name = entity.Name,
                     ParentID = entity.Parent?.ID,
                     RenderLayerType = entity.Layer,
-                    Components = entity.Components.AsValueEnumerable().Select(comp => new SceneComponentData
+                    Components = entity.Components.AsValueEnumerable().Select(comp =>
                     {
-                        TypeName = comp.GetType().AssemblyQualifiedName,
-                        Data = JObject.FromObject(comp, serializer.Serializer)
-                    }).ToList()
+                        try
+                        {
+                            return new SceneComponentData
+                            {
+                                TypeName = comp.GetType().AssemblyQualifiedName,
+                                Data = JObject.FromObject(comp, serializer.Serializer)
+                            };
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.Warn(ex, $"Failed to serialize component {comp.GetType().Name} for entity {entity.Name}");
+                            return null;
+                        }
+                    }).Where(c => c!= null).ToList()
                 };
 
                 result.Add(entityData);
@@ -90,61 +130,73 @@ namespace RockEngine.Core.Assets
 
         public override void AfterSaving()
         {
-            // Clear data after saving to free memory
-            Data = null;
+            // Optional: Clear data after saving to free memory
+            // Data = null;
         }
 
         public void InstantiateEntities()
         {
-            if (Data == null) return;
-
-            var serializer = IoC.Container.GetInstance<IAssetSerializer>();
-            var entityMap = new Dictionary<ulong, Entity>();
-
-            // First pass: create all entities without setting hierarchy
-            foreach (var entityData in Data.Entities)
+            if (Data == null || IsLoaded)
             {
-                var entity = CreateEntity(entityData.Name);
-                entityMap[entityData.ID] = entity;
-                entity.Layer = entityData.RenderLayerType;
+                return;
+            }
 
-                foreach (var componentData in entityData.Components)
+            try
+            {
+                var serializer = IoC.Container.GetInstance<IAssetSerializer>();
+                var entityMap = new Dictionary<ulong, Entity>();
+
+                // First pass: create all entities without setting hierarchy
+                foreach (var entityData in Data.Entities)
                 {
-                    var componentType = System.Type.GetType(componentData.TypeName);
-                    if (componentType != null && typeof(IComponent).IsAssignableFrom(componentType))
+                    var entity = CreateEntity(entityData.Name);
+                    entityMap[entityData.ID] = entity;
+                    entity.Layer = entityData.RenderLayerType;
+
+                    foreach (var componentData in entityData.Components)
                     {
-                        try
+                        var componentType = System.Type.GetType(componentData.TypeName);
+                        if (componentType != null && typeof(IComponent).IsAssignableFrom(componentType))
                         {
-                            // Use the asset serializer to deserialize components
-                            var component = (IComponent)componentData.Data.ToObject(componentType, serializer.Serializer);
-                            if(component is Transform componentTransform)
+                            try
                             {
-                                entity.Transform.Position = componentTransform.Position;
-                                entity.Transform.Rotation = componentTransform.Rotation;
-                                entity.Transform.Scale = componentTransform.Scale;
+                                var component = (IComponent)componentData.Data.ToObject(componentType, serializer.Serializer);
+                                if (component is Transform componentTransform)
+                                {
+                                    entity.Transform.Position = componentTransform.Position;
+                                    entity.Transform.Rotation = componentTransform.Rotation;
+                                    entity.Transform.Scale = componentTransform.Scale;
+                                }
+                                entity.AddComponent(component);
                             }
-                            entity.AddComponent(component);
-                        }
-                        catch (Exception ex)
-                        {
-                            _logger.Error(ex, "Failed to deserialize component of type {Type} for entity: {Name}",
-                                componentType.Name, entity.Name);
+                            catch (Exception ex)
+                            {
+                                _logger.Error(ex, "Failed to deserialize component of type {Type} for entity: {Name}",
+                                    componentType.Name, entity.Name);
+                            }
                         }
                     }
                 }
-            }
 
-            // Second pass: establish parent-child relationships
-            foreach (var entityData in Data.Entities)
-            {
-                if (entityData.ParentID.HasValue && entityMap.TryGetValue(entityData.ParentID.Value, out var parent) &&
-                    entityMap.TryGetValue(entityData.ID, out var child))
+                // Second pass: establish parent-child relationships
+                foreach (var entityData in Data.Entities)
                 {
-                    parent.AddChild(child);
+                    if (entityData.ParentID.HasValue &&
+                        entityMap.TryGetValue(entityData.ParentID.Value, out var parent) &&
+                        entityMap.TryGetValue(entityData.ID, out var child))
+                    {
+                        parent.AddChild(child);
+                    }
                 }
-            }
 
-            IsLoaded = true;
+                IsLoaded = true;
+                _logger.Debug($"Instantiated {Entities.Count} entities for scene: {Name}");
+            }
+            catch (Exception ex)
+            {
+                _logger.Error(ex, $"Failed to instantiate entities for scene: {Name}");
+                throw;
+            }
         }
     }
 
@@ -158,7 +210,7 @@ namespace RockEngine.Core.Assets
         public ulong ID { get; set; }
         public string Name { get; set; } = string.Empty;
         public ulong? ParentID { get; set; }
-        public RenderLayerType RenderLayerType { get;set;}
+        public RenderLayer RenderLayerType { get; set; }
         public List<SceneComponentData> Components { get; set; } = new List<SceneComponentData>();
     }
 

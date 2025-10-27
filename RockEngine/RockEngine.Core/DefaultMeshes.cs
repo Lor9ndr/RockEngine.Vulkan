@@ -13,7 +13,7 @@ namespace RockEngine.Core
             meshAsset.SetGeometry(Cube.Vertices, Cube.Indices);
             assetManager.RegisterAsset(meshAsset);
         }
-        public static readonly MeshData Cube = new MeshData() { 
+        public static readonly MeshData<Vertex> Cube = new MeshData<Vertex>() { 
 
             Vertices = 
             [

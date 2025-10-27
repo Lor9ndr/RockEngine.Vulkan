@@ -4,6 +4,10 @@ using RockEngine.Core.Rendering.Passes;
 using RockEngine.Core.Rendering.Passes.SubPasses;
 using RockEngine.Vulkan;
 
+using Silk.NET.Vulkan;
+
+using System.Net.Mail;
+
 namespace RockEngine.Core.Rendering.Managers
 {
     public class RenderPassManager : IDisposable
@@ -31,7 +35,7 @@ namespace RockEngine.Core.Rendering.Managers
         }
         public RckRenderPass CreateRenderPass(VkRenderPass renderPass, Type passProvider, params IRenderSubPass[] subPasses) 
         {
-            var engineRenderPass = new RckRenderPass(renderPass, subPasses);
+            var engineRenderPass = new RckRenderPass(renderPass,  subPasses);
             _registry.Register(passProvider, engineRenderPass);
             return engineRenderPass;
         }

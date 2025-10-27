@@ -75,7 +75,11 @@ namespace RockEngine.Core.Assets
 
         public void Dispose()
         {
-            if (_disposed) return;
+            if (_disposed)
+            {
+                return;
+            }
+
             UnloadGpuResources();
             _disposed = true;
         }

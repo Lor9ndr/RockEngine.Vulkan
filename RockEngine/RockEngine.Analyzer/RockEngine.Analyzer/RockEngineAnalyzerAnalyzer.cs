@@ -71,7 +71,9 @@ namespace RockEngine.Analyzer
             foreach (var parameter in method.Parameters)
             {
                 if (IsThreadAffinedType(parameter.Type))
+                {
                     return true;
+                }
             }
             return false;
         }

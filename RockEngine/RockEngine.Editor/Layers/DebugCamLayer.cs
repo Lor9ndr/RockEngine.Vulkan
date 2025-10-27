@@ -23,6 +23,7 @@ namespace RockEngine.Editor.Layers
             }
             var cam = _world.CreateEntity();
             var debugCam = cam.AddComponent<DebugCamera>();
+            cam.Transform.Position = new System.Numerics.Vector3(0,10, 0);
             _isAttached = true;
 
             return Task.CompletedTask;
@@ -32,8 +33,9 @@ namespace RockEngine.Editor.Layers
         {
         }
 
-        public void OnImGuiRender(VkCommandBuffer vkCommandBuffer)
+        public Task OnImGuiRender(VkCommandBuffer vkCommandBuffer)
         {
+            return Task.CompletedTask;
         }
 
         public void OnRender(VkCommandBuffer vkCommandBuffer)

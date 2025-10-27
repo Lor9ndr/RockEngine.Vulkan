@@ -52,38 +52,39 @@ namespace RockEngine.Core.Rendering.Managers
         {
             var output = await CreateCubeTexture(size, Format.R16G16B16A16Sfloat, "Irradiance");
             var batch = _context.ComputeSubmitContext.CreateBatch();
-
-            var cmd = batch.CommandBuffer;
-            cmd.LabelObject("Irradiance cmd");
-            // Transition layouts
-            envMap.Image.TransitionImageLayout(cmd, ImageLayout.General, 0, envMap.Image.MipLevels, 0, 6);
-            output.Image.TransitionImageLayout(cmd, ImageLayout.General, 0, 1, 0, 6);
-
-            // Create material with required bindings
-            MaterialPass matPass = new MaterialPass(_irradiancePipeline);
-            matPass.BindResource(new TextureBinding(0, 0,  0, 6, envMap));
-            matPass.BindResource(new StorageImageBinding([output], 0, 1));
-
-            // Set push constants
-            const uint sampleCount = 1024u;
-            matPass.PushConstant("pc", new IrradiancePushConstants()
+            using (PerformanceTracer.BeginSection("GenerateIrradianceMap", batch.CommandBuffer, 0))
             {
-                OutputSize = new Vector2D<int>((int)size),
-                DeltaPhi = (2f * MathF.PI) / sampleCount,
-                DeltaTheta = (0.5f * MathF.PI) / sampleCount
-            });
-            matPass.CmdPushConstants(cmd);
+                var cmd = batch.CommandBuffer;
+                cmd.LabelObject("Irradiance cmd");
+                // Transition layouts
+                envMap.Image.TransitionImageLayout(cmd, ImageLayout.General, 0, envMap.Image.MipLevels, 0, 6);
+                output.Image.TransitionImageLayout(cmd, ImageLayout.General, 0, 1, 0, 6);
 
-            // Dispatch compute
-            uint groupsX = (size + 31) / 32;
-            uint groupsY = (size + 31) / 32;
-            _bindingManager.BindResourcesForMaterial(0, matPass, cmd, true);
-            cmd.BindPipeline(_irradiancePipeline, PipelineBindPoint.Compute);
-            _computeManager.Dispatch(cmd, groupsX, groupsY, 6);
-            // Transition and return
-            output.Image.TransitionImageLayout(cmd, ImageLayout.ShaderReadOnlyOptimal, 0, 1, 0, 6);
-            envMap.Image.TransitionImageLayout(cmd, ImageLayout.ShaderReadOnlyOptimal, 0, envMap.Image.MipLevels, 0, 6);
+                // Create material with required bindings
+                MaterialPass matPass = new MaterialPass(_irradiancePipeline);
+                matPass.BindResource(new TextureBinding(0, 0, 0, 6, envMap));
+                matPass.BindResource(new StorageImageBinding([output], 0, 1));
 
+                // Set push constants
+                const uint sampleCount = 1024u;
+                matPass.PushConstant("pc", new IrradiancePushConstants()
+                {
+                    OutputSize = new Vector2D<int>((int)size),
+                    DeltaPhi = (2f * MathF.PI) / sampleCount,
+                    DeltaTheta = (0.5f * MathF.PI) / sampleCount
+                });
+                matPass.CmdPushConstants(cmd);
+
+                // Dispatch compute
+                uint groupsX = (size + 31) / 32;
+                uint groupsY = (size + 31) / 32;
+                _bindingManager.BindResourcesForMaterial(0, matPass, cmd, true);
+                cmd.BindPipeline(_irradiancePipeline, PipelineBindPoint.Compute);
+                _computeManager.Dispatch(cmd, groupsX, groupsY, 6);
+                // Transition and return
+                output.Image.TransitionImageLayout(cmd, ImageLayout.ShaderReadOnlyOptimal, 0, 1, 0, 6);
+                envMap.Image.TransitionImageLayout(cmd, ImageLayout.ShaderReadOnlyOptimal, 0, envMap.Image.MipLevels, 0, 6);
+            }
 
             await _context.ComputeSubmitContext.FlushSingle(batch, VkFence.CreateNotSignaled(_context));
 
@@ -97,86 +98,90 @@ namespace RockEngine.Core.Rendering.Managers
             var batch = _context.ComputeSubmitContext.CreateBatch();
             var cmd = batch.CommandBuffer;
             cmd.LabelObject("Prefilter cmd");
-            // Transition base mip of input/output images
-            if (envMap.Image.GetMipLayout(0,0) != ImageLayout.General)
+            using (PerformanceTracer.BeginSection("GeneratePrefilterMap", batch.CommandBuffer, 0))
             {
-                envMap.Image.TransitionImageLayout(cmd, ImageLayout.General, 0, envMap.Image.MipLevels, 0, 6);
-            }
-
-            cmd.BindPipeline(_prefilterPipeline, PipelineBindPoint.Compute);
-
-            for (uint mip = 0; mip < mipLevels; mip++)
-            {
-                if (mip > 0)
+                // Transition base mip of input/output images
+                if (envMap.Image.GetMipLayout(0, 0) != ImageLayout.General)
                 {
-                    var barrier = new ImageMemoryBarrier
-                    {
-                        SType = StructureType.ImageMemoryBarrier,
-                        Image = output.Image,
-                        OldLayout = ImageLayout.General,
-                        NewLayout = ImageLayout.General,
-                        SubresourceRange = new ImageSubresourceRange
-                        {
-                            AspectMask = ImageAspectFlags.ColorBit,
-                            BaseMipLevel = mip - 1,
-                            LevelCount = 1,
-                            BaseArrayLayer = 0,
-                            LayerCount = 6
-                        },
-                        SrcAccessMask = AccessFlags.ShaderWriteBit,
-                        DstAccessMask = AccessFlags.ShaderReadBit
-                    };
-
-                    batch.PipelineBarrier(
-                        srcStage: PipelineStageFlags.ComputeShaderBit,
-                        dstStage: PipelineStageFlags.ComputeShaderBit,
-                        imageMemoryBarriers: new[] { barrier }
-                    );
+                    envMap.Image.TransitionImageLayout(cmd, ImageLayout.General, 0, envMap.Image.MipLevels, 0, 6);
                 }
 
-                var mipSize = (uint)(size * Math.Pow(0.5, mip));
-                float roughness = mip / (float)(mipLevels - 1);
+                cmd.BindPipeline(_prefilterPipeline, PipelineBindPoint.Compute);
 
-                // Transition current mip to GENERAL before use
+                for (uint mip = 0; mip < mipLevels; mip++)
+                {
+                    if (mip > 0)
+                    {
+                        var barrier = new ImageMemoryBarrier
+                        {
+                            SType = StructureType.ImageMemoryBarrier,
+                            Image = output.Image,
+                            OldLayout = ImageLayout.General,
+                            NewLayout = ImageLayout.General,
+                            SubresourceRange = new ImageSubresourceRange
+                            {
+                                AspectMask = ImageAspectFlags.ColorBit,
+                                BaseMipLevel = mip - 1,
+                                LevelCount = 1,
+                                BaseArrayLayer = 0,
+                                LayerCount = 6
+                            },
+                            SrcAccessMask = AccessFlags.ShaderWriteBit,
+                            DstAccessMask = AccessFlags.ShaderReadBit
+                        };
+
+                        batch.PipelineBarrier(
+                            srcStage: PipelineStageFlags.ComputeShaderBit,
+                            dstStage: PipelineStageFlags.ComputeShaderBit,
+                            imageMemoryBarriers: new[] { barrier }
+                        );
+                    }
+
+                    var mipSize = (uint)(size * Math.Pow(0.5, mip));
+                    float roughness = mip / (float)(mipLevels - 1);
+
+                    // Transition current mip to GENERAL before use
+                    output.Image.TransitionImageLayout(
+                        cmd,
+                        ImageLayout.General,
+                        baseMipLevel: mip,
+                        levelCount: 1,
+                        baseArrayLayer: 0,
+                        layerCount: 6
+                    );
+
+                    // Create per-mip material
+                    var material = new MaterialPass(_prefilterPipeline);
+                    material.BindResource(new TextureBinding(0, 0, 0, 6, envMap));
+                    material.BindResource(new StorageImageBinding(output, 0, 1, mip));
+
+                    // Set push constants
+                    material.PushConstant("pc", new PrefilterPushConstants()
+                    {
+                        OutputSize = new Vector2D<int>((int)mipSize),
+                        MipLevel = mip,
+                        Roughness = roughness
+                    });
+                    material.CmdPushConstants(cmd);
+
+                    // Bind and dispatch
+                    _bindingManager.BindResourcesForMaterial(0, material, cmd, true);
+                    uint groups = (mipSize + 31) / 32;
+                    _computeManager.Dispatch(cmd, groups, groups, 6);
+                }
+
+                // Transition all mip levels to SHADER_READ_ONLY_OPTIMAL
                 output.Image.TransitionImageLayout(
                     cmd,
-                    ImageLayout.General,
-                    baseMipLevel: mip,
-                    levelCount: 1,
+                    ImageLayout.ShaderReadOnlyOptimal,
+                    baseMipLevel: 0,
+                    levelCount: mipLevels,
                     baseArrayLayer: 0,
                     layerCount: 6
                 );
-
-                // Create per-mip material
-                var material = new MaterialPass(_prefilterPipeline);
-                material.BindResource(new TextureBinding(0, 0,  0,6,envMap));
-                material.BindResource(new StorageImageBinding(output, 0, 1, mip));
-
-                // Set push constants
-                material.PushConstant("pc", new PrefilterPushConstants()
-                {
-                    OutputSize = new Vector2D<int>((int)mipSize),
-                    MipLevel = mip,
-                    Roughness = roughness
-                });
-                material.CmdPushConstants(cmd);
-
-                // Bind and dispatch
-                _bindingManager.BindResourcesForMaterial(0,material, cmd, true);
-                uint groups = (mipSize + 31) / 32;
-                _computeManager.Dispatch(cmd, groups, groups, 6);
+                envMap.Image.TransitionImageLayout(cmd, ImageLayout.ShaderReadOnlyOptimal, 0, envMap.Image.MipLevels, 0, 6);
             }
-
-            // Transition all mip levels to SHADER_READ_ONLY_OPTIMAL
-            output.Image.TransitionImageLayout(
-                cmd,
-                ImageLayout.ShaderReadOnlyOptimal,
-                baseMipLevel: 0,
-                levelCount: mipLevels,
-                baseArrayLayer: 0,
-                layerCount: 6
-            );
-            envMap.Image.TransitionImageLayout(cmd, ImageLayout.ShaderReadOnlyOptimal, 0, envMap.Image.MipLevels, 0, 6);
+            
 
             await _context.ComputeSubmitContext.FlushSingle(batch, VkFence.CreateNotSignaled(_context));
 
@@ -187,30 +192,32 @@ namespace RockEngine.Core.Rendering.Managers
             var batch = _context.ComputeSubmitContext.CreateBatch();
             var cmd = batch.CommandBuffer;
             cmd.LabelObject("BRDFLUT cmd");
-
             var output = new Texture.Builder(_context)
-                .SetSize(new Extent2D(size, size))
-                .SetFormat(Format.R16G16Sfloat)
-                .SetUsage(ImageUsageFlags.StorageBit | ImageUsageFlags.SampledBit)
-                .Build();
+                  .SetSize(new Extent2D(size, size))
+                  .SetFormat(Format.R16G16Sfloat)
+                  .SetUsage(ImageUsageFlags.StorageBit | ImageUsageFlags.SampledBit)
+                  .Build();
+            using (PerformanceTracer.BeginSection("GenerateBRDFLUT", batch.CommandBuffer, 0))
+            {
+            
 
-            output.Image.TransitionImageLayout(cmd, ImageLayout.General);
-            cmd.BindPipeline(_brdfPipeline, PipelineBindPoint.Compute);
+                output.Image.TransitionImageLayout(cmd, ImageLayout.General);
+                cmd.BindPipeline(_brdfPipeline, PipelineBindPoint.Compute);
 
-            var material = new MaterialPass(_brdfPipeline);
-            material.BindResource(new StorageImageBinding(output, 0, 0));
+                var material = new MaterialPass(_brdfPipeline);
+                material.BindResource(new StorageImageBinding(output, 0, 0));
 
-            // Ensure proper descriptor set binding
-            _bindingManager.BindResourcesForMaterial(0, material, cmd, true);
+                // Ensure proper descriptor set binding
+                _bindingManager.BindResourcesForMaterial(0, material, cmd, true);
 
-            uint groups = (size + 31) / 32;
-            _computeManager.Dispatch(cmd, groups, groups, 1);
+                uint groups = (size + 31) / 32;
+                _computeManager.Dispatch(cmd, groups, groups, 1);
 
-            output.Image.TransitionImageLayout(cmd, ImageLayout.ShaderReadOnlyOptimal);
-            var semaphore = VkSemaphore.Create(_context);
-            semaphore.LabelObject("BRDFLUT SEMAPHORE");
-
-            var fence = VkFence.CreateSignaled(_context);
+                output.Image.TransitionImageLayout(cmd, ImageLayout.ShaderReadOnlyOptimal);
+                var semaphore = VkSemaphore.Create(_context);
+                semaphore.LabelObject("BRDFLUT SEMAPHORE");
+            }
+              
             await _context.ComputeSubmitContext.FlushSingle(batch, VkFence.CreateNotSignaled(_context));
 
 

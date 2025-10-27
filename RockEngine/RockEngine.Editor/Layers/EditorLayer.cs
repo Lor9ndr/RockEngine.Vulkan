@@ -1,6 +1,4 @@
-﻿using ImGuiNET;
-
-using NLog;
+﻿using NLog;
 
 using RockEngine.Core;
 using RockEngine.Core.Assets;
@@ -12,32 +10,26 @@ using RockEngine.Core.ECS;
 using RockEngine.Core.ECS.Components;
 using RockEngine.Core.Rendering;
 using RockEngine.Core.Rendering.Managers;
-using RockEngine.Core.Rendering.Materials;
 using RockEngine.Core.Rendering.Passes;
 using RockEngine.Core.Rendering.Passes.SubPasses;
-using RockEngine.Core.Rendering.RenderTargets;
-using RockEngine.Core.Rendering.Texturing;
-using RockEngine.Editor.EditorComponents;
 using RockEngine.Editor.EditorUI;
 using RockEngine.Editor.EditorUI.EditorWindows;
 using RockEngine.Editor.EditorUI.ImGuiRendering;
 using RockEngine.Editor.EditorUI.Logging;
-using RockEngine.Editor.UIAttributes;
+using RockEngine.Editor.Selection;
 using RockEngine.Vulkan;
 
 using Silk.NET.Input;
 using Silk.NET.Vulkan;
 
 using System.Numerics;
-using System.Reflection;
-using System.Runtime.CompilerServices;
-
-using ZLinq;
 
 namespace RockEngine.Editor.Layers
 {
     public class EditorLayer : ILayer
     {
+        private static readonly Logger _logger = LogManager.GetCurrentClassLogger();
+
         private readonly World _world;
         private readonly VulkanContext _context;
         private readonly GraphicsEngine _graphicsEngine;
@@ -45,7 +37,9 @@ namespace RockEngine.Editor.Layers
         private readonly IInputContext _inputContext;
         private readonly AssetManager _assetManager;
         private readonly EditorConsole _editorConsole;
-        private readonly EditorStateManager _stateManager;
+        private readonly ISelectionManager _selectionManager;
+
+        // UI Components
         private readonly EditorDockSpace _dockSpace;
         private readonly MainMenuBar _mainMenuBar;
         private readonly Toolbar _toolbar;
@@ -55,21 +49,17 @@ namespace RockEngine.Editor.Layers
         private readonly ViewportWindow _gameViewport;
         private readonly ConsoleWindow _console;
         private readonly PerformanceWindow _performance;
-        private VkPipelineLayout _pipelineLayout;
-        private VkPipeline _pipeline;
 
-
-        private static readonly Logger _logger = LogManager.GetCurrentClassLogger();
-
-        public EditorLayer(World world,
+        public EditorLayer(
+            World world,
             VulkanContext context,
             GraphicsEngine graphicsEngine,
             Renderer renderer,
             IInputContext inputContext,
             AssetManager assetManager,
             EditorConsole editorConsole,
-            ImGuiController imGuiController
-            )
+            ImGuiController imGuiController,
+            ISelectionManager selectionManager)
         {
             _world = world;
             _context = context;
@@ -78,27 +68,24 @@ namespace RockEngine.Editor.Layers
             _inputContext = inputContext;
             _assetManager = assetManager;
             _editorConsole = editorConsole;
-            _stateManager = new EditorStateManager();
+            _selectionManager = selectionManager;
+
             // Initialize UI components
             _dockSpace = new EditorDockSpace();
             _mainMenuBar = new MainMenuBar();
-            _dockSpace = new EditorDockSpace();
-            _mainMenuBar = new MainMenuBar();
             _toolbar = new Toolbar();
-            _sceneHierarchy = new SceneHierarchyWindow(world);
-            _inspector = new InspectorWindow(assetManager, imGuiController);
-            _sceneViewport = new ViewportWindow("Scene View", world, inputContext, imGuiController);
+            _sceneHierarchy = new SceneHierarchyWindow(world, _selectionManager);
+            _inspector = new InspectorWindow(assetManager, imGuiController, _selectionManager);
+            _sceneViewport = new ViewportWindow("Scene View", world, inputContext, imGuiController, _selectionManager);
             _gameViewport = new ViewportWindow("Game View", world, inputContext, imGuiController);
             _console = new ConsoleWindow(editorConsole);
             _performance = new PerformanceWindow();
 
             // Connect event handlers
-            _sceneHierarchy.SelectedEntityChanged += (entity) => _inspector.SelectedEntity = entity;
             _mainMenuBar.ViewToggled += OnViewToggled;
 
-            // Apply theme
+            // Apply theme and initialize
             EditorTheme.ApplyModernDarkTheme();
-
             DefaultMeshes.Initalize(_assetManager);
         }
 
@@ -106,24 +93,34 @@ namespace RockEngine.Editor.Layers
         {
             switch (viewName)
             {
-                case "Scene Hierarchy":
-                    _sceneHierarchy.IsOpen = isVisible;
-                    break;
-                case "Inspector":
-                    _inspector.IsOpen = isVisible;
-                    break;
-                case "Console":
-                    _console.IsOpen = isVisible;
-                    break;
-                case "Performance":
-                    _performance.IsOpen = isVisible;
-                    break;
-                case "Material Templates":
-                    // Handle material templates window visibility
-                    break;
-                case "Memory Stats":
-                    // Handle memory stats window visibility  
-                    break;
+                case "Scene Hierarchy": _sceneHierarchy.IsOpen = isVisible; break;
+                case "Inspector": _inspector.IsOpen = isVisible; break;
+                case "Console": _console.IsOpen = isVisible; break;
+                case "Performance": _performance.IsOpen = isVisible; break;
+                case "Material Templates": /* TODO */ break;
+                case "Memory Stats": /* TODO */ break;
+            }
+        }
+
+        public async Task OnAttach()
+        {
+            CreateSolidPipeline();
+            // Uncomment to load assets when needed
+            // await LoadOrCreateAssets();
+        }
+
+        private async Task LoadOrCreateAssets()
+        {
+            bool loadFromProject = false;
+
+            if (loadFromProject)
+            {
+                await LoadAssetsFromProject(
+                    @"X:\RockEngine.Vulkan\RockEngine\RockEngine.Editor\bin\Debug\net9.0\Project\TestAssetSystem\DebugProject\DebugProject.rockproj");
+            }
+            else
+            {
+                await CreateAssetsProgrammatically();
             }
         }
 
@@ -132,11 +129,8 @@ namespace RockEngine.Editor.Layers
             try
             {
                 _logger.Info($"Loading assets from project: {projectPath}");
-
-                // Load the project
                 await _assetManager.LoadProjectAsync(projectPath);
 
-                // Load the main scene
                 var scene = await _assetManager.LoadAsync<SceneData>(new AssetPath("Scenes", "DebugScene"));
                 await scene.LoadDataAsync();
                 ((SceneAsset)scene).InstantiateEntities();
@@ -156,37 +150,25 @@ namespace RockEngine.Editor.Layers
             {
                 _logger.Info("Creating assets programmatically");
 
-                // Create project
                 var project = await _assetManager.CreateProjectAsync("DebugProject",
                     "X:\\RockEngine.Vulkan\\RockEngine\\RockEngine.Editor\\bin\\Debug\\net9.0\\Project\\TestAssetSystem");
 
-                // Create scene
                 var scene = _assetManager.Create<SceneAsset>(new AssetPath("Scenes", "DebugScene"));
                 scene.SetData(new SceneData());
 
-                // Create skybox texture
                 var skyboxAsset = await CreateTexture("Skybox", "debug_skybox", [
-                    "Resources/skybox/right.jpg",
-            "Resources/skybox/left.jpg",
-            "Resources/skybox/top.jpg",
-            "Resources/skybox/bottom.jpg",
-            "Resources/skybox/front.jpg",
-            "Resources/skybox/back.jpg"
+                    "Resources/skybox/right.jpg", "Resources/skybox/left.jpg",
+                    "Resources/skybox/top.jpg", "Resources/skybox/bottom.jpg",
+                    "Resources/skybox/front.jpg", "Resources/skybox/back.jpg"
                 ], TextureType.TextureCube);
 
-                // Get cube mesh
                 var cubeMesh = _assetManager.GetAsset<MeshAsset>(DefaultMeshes.CubeAssetID);
-
-                // Create scene entities
                 await CreateSceneEntities(scene, cubeMesh, skyboxAsset);
 
-                // Load model
                 var sponza = await _assetManager.LoadModelAsync("Resources\\Models\\SponzaAtrium\\scene.gltf", "Sponza");
                 CreateModelEntities(scene, sponza, new Vector3(0), new Vector3(0.1f));
 
-                // Save everything
                 await SaveAssetsAsync(sponza, skyboxAsset, scene);
-
                 _logger.Info("Programmatic assets created successfully");
             }
             catch (Exception ex)
@@ -195,6 +177,7 @@ namespace RockEngine.Editor.Layers
                 throw;
             }
         }
+
         private async Task<TextureAsset> CreateTexture(string folder, string name, string[] filePaths, TextureType type)
         {
             var texture = _assetManager.Create<TextureAsset>(new AssetPath(folder, name));
@@ -208,6 +191,7 @@ namespace RockEngine.Editor.Layers
             await _assetManager.SaveAsync(texture);
             return texture;
         }
+
         private async Task CreateSceneEntities(SceneAsset scene, MeshAsset cubeMesh, TextureAsset skyboxAsset)
         {
             // Skybox
@@ -220,7 +204,7 @@ namespace RockEngine.Editor.Layers
             camera.AddComponent<Camera>();
             camera.Name = "Camera";
 
-            // Create 100 lights with solid materials
+            // Create lights with solid materials
             for (int i = 0; i < 100; i++)
             {
                 var lightColor = new Vector3(Random.Shared.NextSingle(), Random.Shared.NextSingle(), Random.Shared.NextSingle());
@@ -229,11 +213,10 @@ namespace RockEngine.Editor.Layers
                 solidMaterial.SetData(new MaterialData
                 {
                     PipelineName = "Solid",
-                    Parameters = new Dictionary<string, object> { ["lightColor"] = lightColor }
+                    Parameters = new Dictionary<string, object> { ["color"] = lightColor }
                 });
 
                 var light = scene.CreateEntity();
-                light.Layer = RenderLayerType.Solid;
                 light.Name = $"light ({i})";
                 light.Transform.Scale *= 0.5f;
 
@@ -246,13 +229,36 @@ namespace RockEngine.Editor.Layers
                 );
 
                 var lightMeshRenderer = light.AddComponent<MeshRenderer>();
-                lightMeshRenderer.SetAssets(cubeMesh, solidMaterial);
+                lightMeshRenderer.SetProviders(cubeMesh, solidMaterial);
                 lightComponent.Intensity = 100;
                 lightComponent.Radius = 100;
                 lightComponent.Color = lightColor;
+
                 await _assetManager.SaveAsync(solidMaterial);
             }
         }
+
+        private void CreateModelEntities(SceneAsset scene, ModelAsset model, Vector3 position, Vector3 scale, Quaternion? rotation = null)
+        {
+            var parent = scene.CreateEntity();
+            parent.Name = model.Name;
+            parent.Transform.Position = position;
+            parent.Transform.Scale = scale;
+            if (rotation.HasValue)
+            {
+                parent.Transform.Rotation = rotation.Value;
+            }
+
+            foreach (var part in model.Parts)
+            {
+                var entity = scene.CreateEntity();
+                entity.AddComponent<MeshRenderer>()
+                    .SetProviders(part.Mesh, part.Material);
+
+                parent.AddChild(entity);
+            }
+        }
+
         private async Task SaveAssetsAsync(params IAsset[] assets)
         {
             foreach (var asset in assets)
@@ -261,129 +267,29 @@ namespace RockEngine.Editor.Layers
             }
         }
 
-
-        // Modify the OnAttach method to use these methods
-        public async Task OnAttach()
-        {
-            CretePipeline();
-            CreateSolidPipeline();
-
-            // Choose between loading from project or creating programmatically
-          /*  bool loadFromProject = false;
-
-            if (loadFromProject)
-            {
-                await LoadAssetsFromProject(
-                    @"X:\RockEngine.Vulkan\RockEngine\RockEngine.Editor\bin\Debug\net9.0\Project\TestAssetSystem\DebugProject\DebugProject.rockproj");
-            }
-            else
-            {
-                await CreateAssetsProgrammatically();
-            }*/
-        }
-        private void CreateModelEntities(SceneAsset scene, ModelAsset model, Vector3 position, Vector3 scale, Quaternion? rotation = null)
-        {
-            var parent = scene.CreateEntity();
-            parent.Name = model.Name;
-            parent.Transform.Position = position;
-            parent.Transform.Scale = scale;
-            if (rotation.HasValue) parent.Transform.Rotation = rotation.Value;
-
-            foreach (var part in model.Parts)
-            {
-                var entity = scene.CreateEntity();
-                entity.AddComponent<MeshRenderer>().SetAssets(part.Mesh, part.Material);
-                parent.AddChild(entity);
-            }
-        }
-
-        private void CretePipeline()
-        {
-            var shaderManager = IoC.Container.GetInstance<IShaderManager>();
-            VkShaderModule vkShaderModuleFrag = VkShaderModule.Create(_context, shaderManager.GetShader("Geometry.frag"), ShaderStageFlags.FragmentBit);
-
-            VkShaderModule vkShaderModuleVert = VkShaderModule.Create(_context, shaderManager.GetShader("Geometry.vert"), ShaderStageFlags.VertexBit);
-
-            _pipelineLayout = VkPipelineLayout.Create(_context, vkShaderModuleVert, vkShaderModuleFrag);
-
-            var binding_desc = new VertexInputBindingDescription();
-            binding_desc.Stride = (uint)Unsafe.SizeOf<Vertex>();
-            binding_desc.InputRate = VertexInputRate.Vertex;
-
-            var colorBlendAttachments = new PipelineColorBlendAttachmentState[GBuffer.ColorAttachmentFormats.Length];
-            for (int i = 0; i < GBuffer.ColorAttachmentFormats.Length; i++)
-            {
-                colorBlendAttachments[i] = new PipelineColorBlendAttachmentState
-                {
-                    ColorWriteMask = ColorComponentFlags.RBit |
-                                    ColorComponentFlags.GBit |
-                                    ColorComponentFlags.BBit |
-                                    ColorComponentFlags.ABit,
-                    BlendEnable = false
-                };
-            }
-
-
-            using GraphicsPipelineBuilder pipelineBuilder = new GraphicsPipelineBuilder(_context, "Geometry")
-                 .WithShaderModule(vkShaderModuleVert)
-                 .WithShaderModule(vkShaderModuleFrag)
-                 .WithRasterizer(new VulkanRasterizerBuilder().CullFace(CullModeFlags.FrontBit).FrontFace(FrontFace.Clockwise))
-                 .WithInputAssembly(new VulkanInputAssemblyBuilder().Configure())
-                 .WithVertexInputState(new VulkanPipelineVertexInputStateBuilder()
-                     .Add(Vertex.GetBindingDescription(), Vertex.GetAttributeDescriptions()))
-                 .WithViewportState(new VulkanViewportStateInfoBuilder()
-                     .AddViewport(new Viewport() { Height = _graphicsEngine.Swapchain.Surface.Size.Y, Width = _graphicsEngine.Swapchain.Surface.Size.X })
-                     .AddScissors(new Rect2D()
-                     {
-                         Offset = new Offset2D(),
-                         Extent = new Extent2D((uint?)_graphicsEngine.Swapchain.Surface.Size.X, (uint?)_graphicsEngine.Swapchain.Surface.Size.Y)
-                     }))
-                 .WithMultisampleState(new VulkanMultisampleStateInfoBuilder().Configure(false, SampleCountFlags.Count1Bit))
-                 .WithColorBlendState(new VulkanColorBlendStateBuilder()
-                     .AddAttachment(colorBlendAttachments))
-                 .AddRenderPass<DeferredPassStrategy>(IoC.Container.GetInstance<RenderPassManager>())
-                 .WithPipelineLayout(_pipelineLayout)
-                 .WithSubpass<GeometryPass>()
-                 .WithDynamicState(new PipelineDynamicStateBuilder()
-                    .AddState(DynamicState.Viewport)
-                    .AddState(DynamicState.Scissor)
-                    )
-                 .AddDepthStencilState(new PipelineDepthStencilStateCreateInfo()
-                 {
-                     SType = StructureType.PipelineDepthStencilStateCreateInfo,
-                     DepthTestEnable = true,
-                     DepthWriteEnable = true,
-                     DepthCompareOp = CompareOp.Less,
-                     DepthBoundsTestEnable = false,
-                     MinDepthBounds = 0.0f,
-                     MaxDepthBounds = 1.0f,
-                     StencilTestEnable = false,
-                 });
-            _pipeline = _renderer.PipelineManager.Create(pipelineBuilder);
-
-        }
         private void CreateSolidPipeline()
         {
             var shaderManager = IoC.Container.GetInstance<IShaderManager>();
             var vertShader = VkShaderModule.Create(_context, shaderManager.GetShader("Solid.vert"), ShaderStageFlags.VertexBit);
             var fragShader = VkShaderModule.Create(_context, shaderManager.GetShader("Solid.frag"), ShaderStageFlags.FragmentBit);
+
             var colorBlendAttachments = new PipelineColorBlendAttachmentState[1]
-              {
-                    new PipelineColorBlendAttachmentState
-                    {
-                        ColorWriteMask = ColorComponentFlags.RBit |
-                                        ColorComponentFlags.GBit |
-                                        ColorComponentFlags.BBit |
-                                        ColorComponentFlags.ABit,
-                        BlendEnable = false
-                    }
-              };
-            using var pipelineBuilder = GraphicsPipelineBuilder.CreateDefault(_context, "Solid", [vertShader, fragShader]);
+            {
+                new PipelineColorBlendAttachmentState
+                {
+                    ColorWriteMask = ColorComponentFlags.RBit | ColorComponentFlags.GBit |
+                                   ColorComponentFlags.BBit | ColorComponentFlags.ABit,
+                    BlendEnable = false
+                }
+            };
+
+            using var pipelineBuilder = GraphicsPipelineBuilder.CreateDefault<DeferredPassStrategy>(
+                _context, "Solid", IoC.Container, [vertShader, fragShader]);
+
             pipelineBuilder.WithColorBlendState(new VulkanColorBlendStateBuilder()
                     .AddAttachment(colorBlendAttachments))
                 .WithVertexInputState(new VulkanPipelineVertexInputStateBuilder()
-                     .Add(Vertex.GetBindingDescription(), Vertex.GetAttributeDescriptions()))
-                .AddRenderPass<DeferredPassStrategy>(IoC.Container.GetInstance<RenderPassManager>())
+                    .Add(Vertex.GetBindingDescription(), Vertex.GetAttributeDescriptions()))
                 .WithSubpass<PostLightPass>()
                 .AddDepthStencilState(new PipelineDepthStencilStateCreateInfo
                 {
@@ -398,30 +304,26 @@ namespace RockEngine.Editor.Layers
             _renderer.PipelineManager.Create(pipelineBuilder);
         }
 
-        public void OnDetach()
-        {
-        }
+        public void OnDetach() { }
 
-        public void OnImGuiRender(VkCommandBuffer vkCommandBuffer)
+        public async Task OnImGuiRender(VkCommandBuffer vkCommandBuffer)
         {
             _dockSpace.Begin();
             _mainMenuBar.Draw();
             _toolbar.Draw();
 
             // Draw all windows
-            _sceneHierarchy.Draw();
-            _inspector.Draw();
-            _sceneViewport.Draw();
-            _gameViewport.Draw();
-            _console.Draw();
-            _performance.Draw();
+            await _sceneHierarchy.Draw();
+            await _inspector.Draw();
+            await _sceneViewport.Draw();
+            await _gameViewport.Draw();
+            await _console.Draw();
+            await _performance.Draw();
 
             _dockSpace.End();
         }
-       
-        public void OnRender(VkCommandBuffer vkCommandBuffer)
-        {
-        }
+
+        public void OnRender(VkCommandBuffer vkCommandBuffer) { }
 
         public void OnUpdate()
         {

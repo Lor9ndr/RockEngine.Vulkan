@@ -15,7 +15,7 @@ namespace RockEngine.Core.Rendering
         private readonly UniformBufferBinding[] _bindings;
 
         public GlobalUbo(VulkanContext context, AppSettings appSettings)
-            : base("GlobalUbo", 0, CalculateTotalSize(appSettings.MaxCamerasSupported), true)
+            : base(0, CalculateTotalSize(appSettings.MaxCamerasSupported), true)
         {
             _context = context;
             _maxCameras = appSettings.MaxCamerasSupported;

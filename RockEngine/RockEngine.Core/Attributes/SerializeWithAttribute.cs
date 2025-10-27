@@ -13,7 +13,9 @@ namespace RockEngine.Core.Attributes
         public SerializeWithAttribute(Type converterType)
         {
             if (!typeof(ISerializationConverter).IsAssignableFrom(converterType))
+            {
                 throw new ArgumentException("Converter type must implement ISerializationConverter");
+            }
 
             ConverterType = converterType;
         }

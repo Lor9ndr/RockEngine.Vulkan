@@ -12,7 +12,6 @@ using RockEngine.Vulkan;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Numerics;
-using System.Runtime.InteropServices;
 
 namespace RockEngine.Editor.Layers
 {
@@ -73,9 +72,10 @@ namespace RockEngine.Editor.Layers
             _imGuiController = imGuiController;
         }
 
-        public void OnImGuiRender(VkCommandBuffer vkCommandBuffer)
+        public Task OnImGuiRender(VkCommandBuffer vkCommandBuffer)
         {
             DrawMainWindow();
+            return Task.CompletedTask;
         }
 
         private void DrawMainWindow()
@@ -119,7 +119,10 @@ namespace RockEngine.Editor.Layers
             {
                 _gridView = !_gridView;
             }
-            if (ImGui.IsItemHovered()) ImGui.SetTooltip(_gridView ? "Switch to List View" : "Switch to Grid View");
+            if (ImGui.IsItemHovered())
+            {
+                ImGui.SetTooltip(_gridView ? "Switch to List View" : "Switch to Grid View");
+            }
 
             ImGui.EndChild();
         }
@@ -154,26 +157,6 @@ namespace RockEngine.Editor.Layers
                     if (ImGui.MenuItem("New Folder"))
                     {
                         CreateNewFolder();
-                    }
-
-                    if (ImGui.BeginMenu("New Asset"))
-                    {
-                        if (ImGui.MenuItem("Material"))
-                        {
-                            CreateNewAsset<MaterialAsset>("Materials", "NewMaterial");
-                        }
-
-                        if (ImGui.MenuItem("Texture"))
-                        {
-                            CreateNewAsset<TextureAsset>("Textures", "NewTexture");
-                        }
-
-                        if (ImGui.MenuItem("Scene"))
-                        {
-                            CreateNewAsset<SceneAsset>("Scenes", "NewScene");
-                        }
-
-                        ImGui.EndMenu();
                     }
                     ImGui.EndMenu();
                 }
@@ -255,7 +238,10 @@ namespace RockEngine.Editor.Layers
 
         private void DrawDirectoryTree(string path)
         {
-            if (!Directory.Exists(path)) return;
+            if (!Directory.Exists(path))
+            {
+                return;
+            }
 
             try
             {
@@ -264,7 +250,9 @@ namespace RockEngine.Editor.Layers
 
                 ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags.OpenOnArrow | ImGuiTreeNodeFlags.SpanFullWidth;
                 if (path == _currentDirectoryPath)
+                {
                     flags |= ImGuiTreeNodeFlags.Selected;
+                }
 
                 // Apply custom folder color if available
                 if (_folderColors.TryGetValue(dirName, out Vector4 color))
@@ -616,10 +604,17 @@ namespace RockEngine.Editor.Layers
             {
                 HandleAssetSelection(file.FullName);
 
+                // Set as selected asset for properties window
+                if (metadata != null)
+                {
+                    var asset = _assetManager.GetAsset<IAsset>(metadata.ID);
+                    AssetSelection.SelectedAsset = asset;
+                }
+
                 // Open scene on single click in grid view
                 if (metadata != null && metadata.Type == "SceneAsset")
                 {
-                    _ = OpenSceneAsset(metadata.ID, metadata.Name);
+                    _ = Task.Factory.StartNew(() => OpenSceneAsset(metadata.ID, metadata.Name), CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Current);
                 }
             }
 
@@ -628,10 +623,9 @@ namespace RockEngine.Editor.Layers
                 ImGui.PopStyleColor();
             }
 
-            // Use AssetDragDrop for drag source if we have metadata
             if (metadata != null)
             {
-                AssetDragDrop.BeginDragDropSource(metadata.ID, metadata.Name);
+                AssetDragDrop.BeginDragDropSource(metadata.ID, fileName);
             }
 
             string displayName = fileName;
@@ -643,9 +637,6 @@ namespace RockEngine.Editor.Layers
             ImGui.TextWrapped(displayName);
             ImGui.EndGroup();
 
-            // Use AssetDragDrop for drop target
-            HandleDropTarget(_currentDirectoryPath);
-
             if (ImGui.IsItemHovered())
             {
                 DrawAssetTooltip(relativePath, file);
@@ -653,6 +644,18 @@ namespace RockEngine.Editor.Layers
 
             DrawAssetContextMenu(file);
             ImGui.PopID();
+        }
+
+        private Type GetAssetTypeFromMetadata(AssetMetadataInfo metadata)
+        {
+            return metadata.Type switch
+            {
+                "TextureAsset" => typeof(TextureAsset),
+                "MaterialAsset" => typeof(MaterialAsset),
+                "MeshAsset" => typeof(MeshAsset),
+                "SceneAsset" => typeof(SceneAsset),
+                _ => typeof(IAsset)
+            };
         }
 
         private void DrawAssetListItem(FileInfo file)
@@ -682,7 +685,7 @@ namespace RockEngine.Editor.Layers
                 if (ImGui.IsItemHovered() && ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left) &&
                     metadata != null && metadata.Type == "SceneAsset")
                 {
-                    _ = OpenSceneAsset(metadata.ID, metadata.Name);
+                    _ = Task.Factory.StartNew(() => OpenSceneAsset(metadata.ID, metadata.Name), CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Current);
                 }
             }
 
@@ -757,7 +760,10 @@ namespace RockEngine.Editor.Layers
 
         private void DrawRenamePopup()
         {
-            if (!_renameState.IsActive) return;
+            if (!_renameState.IsActive)
+            {
+                return;
+            }
 
             ImGui.OpenPopup("Rename Item");
 
@@ -790,7 +796,10 @@ namespace RockEngine.Editor.Layers
 
         private void DrawDeleteConfirmationPopup()
         {
-            if (!_deleteState.ShowConfirmation) return;
+            if (!_deleteState.ShowConfirmation)
+            {
+                return;
+            }
 
             ImGui.OpenPopup("Confirm Delete");
 
@@ -971,6 +980,7 @@ namespace RockEngine.Editor.Layers
                 {
                     sceneAsset.InstantiateEntities();
                     _logger.Info($"Opened scene: {sceneAsset.Name}");
+                    GC.Collect();
                 }
             }
             catch (Exception ex)
@@ -1100,7 +1110,10 @@ namespace RockEngine.Editor.Layers
             if (_metadataByIdCache.TryGetValue(assetId, out var metadata))
             {
                 var asset = _assetManager.GetAsset<T>(assetId);
-                if (asset != null) return asset;
+                if (asset != null)
+                {
+                    return asset;
+                }
             }
 
             var loadedAsset = await _assetManager.LoadAssetByIdAsync<T>(assetId);

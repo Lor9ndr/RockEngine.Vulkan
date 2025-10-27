@@ -6,7 +6,7 @@ using System.Runtime.InteropServices;
 namespace RockEngine.Core
 {
     [StructLayout(LayoutKind.Sequential)]
-    public struct Vertex
+    public struct Vertex:IVertex
     {
         public Vector3 Position;
         public Vector3 Normal;
@@ -45,4 +45,30 @@ namespace RockEngine.Core
             new VertexInputAttributeDescription(4, 0, Format.R32G32B32Sfloat, (uint)Marshal.OffsetOf<Vertex>(nameof(Bitangent)))
         };
     }
+    [StructLayout(LayoutKind.Sequential)]
+    public struct PositionVertex : IVertex
+    {
+        public Vector3 Position;
+
+        public static float Size = Marshal.SizeOf<Vertex>();
+
+        public PositionVertex(Vector3 position)
+        {
+            Position = position;
+        }
+    
+
+        public static VertexInputBindingDescription GetBindingDescription() => new VertexInputBindingDescription()
+        {
+            Binding = 0,
+            Stride = (uint)Size,
+            InputRate = VertexInputRate.Vertex
+        };
+
+        public static VertexInputAttributeDescription[] GetAttributeDescriptions() => new VertexInputAttributeDescription[]
+        {
+            new VertexInputAttributeDescription(0, 0, Format.R32G32B32Sfloat, 0),
+        };
+    }
+
 }

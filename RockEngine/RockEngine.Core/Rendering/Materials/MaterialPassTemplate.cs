@@ -45,7 +45,9 @@ namespace RockEngine.Core.Rendering.Materials
         {
             var context = VulkanContext.GetCurrent();
             if (context == null)
+            {
                 throw new InvalidOperationException("VulkanContext is not available");
+            }
 
             foreach (var setInfo in ReflectionData.DescriptorSets)
             {
@@ -60,7 +62,7 @@ namespace RockEngine.Core.Rendering.Materials
             }
         }
 
-        private ResourceBinding CreateDefaultBinding(uint set, DescriptorSetLayoutBindingReflected binding, VulkanContext context)
+        private ResourceBinding? CreateDefaultBinding(uint set, DescriptorSetLayoutBindingReflected binding, VulkanContext context)
         {
             return binding.DescriptorType switch
             {
@@ -71,7 +73,7 @@ namespace RockEngine.Core.Rendering.Materials
                 DescriptorType.StorageBuffer => CreateBufferBinding(set, binding, context),
                 DescriptorType.UniformBufferDynamic => CreateBufferBinding(set, binding, context),
                 DescriptorType.StorageBufferDynamic => CreateBufferBinding(set, binding, context),
-                _ => throw new NotImplementedException()
+                _ => null
             };
         }
 
@@ -101,7 +103,9 @@ namespace RockEngine.Core.Rendering.Materials
         public MaterialPass CreateMaterialPass(RckPipeline pipeline)
         {
             if (pipeline == null)
+            {
                 throw new ArgumentNullException(nameof(pipeline));
+            }
 
             var pass = new MaterialPass(pipeline);
 
@@ -121,10 +125,16 @@ namespace RockEngine.Core.Rendering.Materials
 
         private static void SetPushConstant(MaterialPass pass, string name, object value)
         {
-            if (value == null) return;
+            if (value == null)
+            {
+                return;
+            }
 
             var method = typeof(MaterialPass).GetMethod("PushConstant", BindingFlags.Public | BindingFlags.Instance);
-            if (method == null) return;
+            if (method == null)
+            {
+                return;
+            }
 
             try
             {

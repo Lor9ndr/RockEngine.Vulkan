@@ -12,7 +12,7 @@ namespace RockEngine.Core.ECS.Components
         [SerializeIgnore]
         public Entity Entity { get; private set; }
 
-        public bool IsActive {get; protected set;}
+        public bool IsActive {get; protected set;} = true;
 
         public virtual void SetEntity(Entity entity)
         {

@@ -18,18 +18,21 @@ namespace RockEngine.Editor.EditorUI.EditorWindows
             Title = title;
         }
 
-        public virtual void Draw()
+        public virtual async ValueTask Draw()
         {
-            if (!IsOpen) return;
+            if (!IsOpen)
+            {
+                return;
+            }
 
             if (ImGui.Begin(Title, ref _isOpen))
             {
-                OnDraw();
+                await OnDraw();
             }
             ImGui.End();
         }
 
-        protected abstract void OnDraw();
+        protected abstract ValueTask OnDraw();
 
         protected virtual void ApplyWindowStyling()
         {

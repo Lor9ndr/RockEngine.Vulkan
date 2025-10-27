@@ -76,7 +76,11 @@ namespace RockEngine.Core.Assets
 
         public void AddDependency(IAsset asset)
         {
-            if (asset == null || asset.ID == ID) return;
+            if (asset == null || asset.ID == ID)
+            {
+                return;
+            }
+
             if (!_dependencies.Any(d => d.ID == asset.ID))
             {
                 _dependencies.Add(asset);

@@ -8,6 +8,8 @@ using RockEngine.Vulkan.Builders;
 
 using Silk.NET.Vulkan;
 
+using SimpleInjector;
+
 using System.Buffers;
 using System.Text;
 
@@ -38,9 +40,9 @@ namespace RockEngine.Core.Builders
             _name = name;
         }
 
-        public static GraphicsPipelineBuilder CreateDefault(VulkanContext context, string name, params VkShaderModule[] shaders)
+        public static GraphicsPipelineBuilder CreateDefault(VulkanContext context, string name, RckRenderPass renderPass, params VkShaderModule[] shaders)
         {
-            return new GraphicsPipelineBuilder(context, name)
+            var builder =  new GraphicsPipelineBuilder(context, name)
                 .WithShaderModule(shaders)
                 .WithVertexInputState(new VulkanPipelineVertexInputStateBuilder())
                 .WithInputAssembly(new VulkanInputAssemblyBuilder().Configure())
@@ -50,6 +52,7 @@ namespace RockEngine.Core.Builders
                 .WithRasterizer(new VulkanRasterizerBuilder().CullFace(CullModeFlags.None))
                 .WithMultisampleState(new VulkanMultisampleStateInfoBuilder().Configure(false, SampleCountFlags.Count1Bit))
                 .WithPipelineLayout(VkPipelineLayout.Create(context, shaders))
+                .AddRenderPass(renderPass)
                 .AddDepthStencilState(new PipelineDepthStencilStateCreateInfo()
                 {
                     SType = StructureType.PipelineDepthStencilStateCreateInfo,
@@ -64,6 +67,52 @@ namespace RockEngine.Core.Builders
                 .WithDynamicState(new PipelineDynamicStateBuilder()
                     .AddState(DynamicState.Viewport)
                     .AddState(DynamicState.Scissor));
+
+            return builder;
+        }
+        public static GraphicsPipelineBuilder CreateDefault<TRenderPassStrategy>(VulkanContext context, string name, Container container, params VkShaderModule[] shaders) where TRenderPassStrategy : class,IRenderPassStrategy
+        {
+            var renderPassStrategy = container.GetInstance<TRenderPassStrategy>();
+            var builder = new GraphicsPipelineBuilder(context, name)
+                .WithShaderModule(shaders)
+                .WithVertexInputState(new VulkanPipelineVertexInputStateBuilder())
+                .WithInputAssembly(new VulkanInputAssemblyBuilder().Configure())
+                .WithViewportState(new VulkanViewportStateInfoBuilder()
+                    .AddViewport(new Viewport(0, 0, 1280, 720, 0, 1))
+                    .AddScissors(new Rect2D(new Offset2D(), new Extent2D(1280, 720))))
+                .WithRasterizer(new VulkanRasterizerBuilder().CullFace(CullModeFlags.None))
+                .WithMultisampleState(new VulkanMultisampleStateInfoBuilder().Configure(false, SampleCountFlags.Count1Bit))
+                .WithPipelineLayout(VkPipelineLayout.Create(context, shaders))
+                .AddRenderPass(renderPassStrategy.RenderPass ?? renderPassStrategy.BuildRenderPass())
+                .AddDepthStencilState(new PipelineDepthStencilStateCreateInfo()
+                {
+                    SType = StructureType.PipelineDepthStencilStateCreateInfo,
+                    DepthTestEnable = false,
+                    DepthWriteEnable = false,
+                    DepthCompareOp = CompareOp.Always,
+                    DepthBoundsTestEnable = false,
+                    MinDepthBounds = 0.0f,
+                    MaxDepthBounds = 1.0f,
+                    StencilTestEnable = false,
+                })
+                .WithDynamicState(new PipelineDynamicStateBuilder()
+                    .AddState(DynamicState.Viewport)
+                    .AddState(DynamicState.Scissor));
+
+            return builder;
+        }
+        private static bool IsColorFormat(Format format)
+        {
+            return format switch
+            {
+                Format.D16Unorm => false,
+                Format.D32Sfloat => false,
+                Format.S8Uint => false,
+                Format.D16UnormS8Uint => false,
+                Format.D24UnormS8Uint => false,
+                Format.D32SfloatS8Uint => false,
+                _ => true // Assume it's a color format if not explicitly a depth/stencil format
+            };
         }
 
         public GraphicsPipelineBuilder AddRenderPass(RckRenderPass renderPass)
@@ -108,6 +157,11 @@ namespace RockEngine.Core.Builders
         public GraphicsPipelineBuilder WithVertexInputState(VulkanPipelineVertexInputStateBuilder vertexInputStateBuilder)
         {
             _vertexInputStateBuilder = vertexInputStateBuilder;
+            return this;
+        }
+        public GraphicsPipelineBuilder WithVertexInputState<T>() where T: IVertex
+        {
+            _vertexInputStateBuilder = new VulkanPipelineVertexInputStateBuilder().Add<T>();
             return this;
         }
 
@@ -186,7 +240,7 @@ namespace RockEngine.Core.Builders
             ArgumentNullException.ThrowIfNull(_viewportStateBuilder, nameof(_viewportStateBuilder));
             ArgumentNullException.ThrowIfNull(_renderPass, nameof(_renderPass));
 
-            if (_subpassMetadata.Equals(default(SubPassMetadata)))
+            if (_subpassMetadata.Equals(default))
             {
                 throw new InvalidOperationException("Subpass metadata must be set before building the pipeline");
             }

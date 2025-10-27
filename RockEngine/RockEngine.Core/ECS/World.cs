@@ -16,7 +16,7 @@ namespace RockEngine.Core.ECS
         private readonly ConcurrentQueue<IComponent> _pendingStartComponents = new();
         private readonly Lock _stateLock = new();
 
-        internal static World GetCurrent()
+        public static World GetCurrent()
         {
             return _singleton;
         }
@@ -64,7 +64,11 @@ namespace RockEngine.Core.ECS
         {
             lock (_stateLock)
             {
-                if (_state != WorldState.NotStarted) return;
+                if (_state != WorldState.NotStarted)
+                {
+                    return;
+                }
+
                 _state = WorldState.Starting;
             }
 
@@ -74,7 +78,11 @@ namespace RockEngine.Core.ECS
                 await ProcessEntityComponents(entity, renderer);
             }
 
-            lock (_stateLock) _state = WorldState.Started;
+            lock (_stateLock)
+            {
+                _state = WorldState.Started;
+            }
+
             await ProcessPendingStarts(renderer);
         }
         internal void AddEntity(Entity entity)

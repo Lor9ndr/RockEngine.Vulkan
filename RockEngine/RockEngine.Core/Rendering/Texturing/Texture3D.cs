@@ -23,7 +23,9 @@ namespace RockEngine.Core.Rendering.Texturing
                                                               CancellationToken cancellationToken = default)
         {
             if (facePaths.Length != 6)
+            {
                 throw new ArgumentException("Cube map requires exactly 6 face paths.");
+            }
 
             // Load face bitmaps
             var faceBitmaps = new SKBitmap[6];
@@ -33,9 +35,14 @@ namespace RockEngine.Core.Rendering.Texturing
                 faceBitmaps[i] = SKBitmap.Decode(bytes);
                 if (faceBitmaps[i].Width != faceBitmaps[0].Width ||
                     faceBitmaps[i].Height != faceBitmaps[0].Height)
+                {
                     throw new InvalidOperationException("Cube map faces must have uniform dimensions.");
+                }
+
                 if (faceBitmaps[i].ColorType != faceBitmaps[0].ColorType)
+                {
                     throw new InvalidOperationException("Cube map faces must have the same color format.");
+                }
             }
 
             uint width = (uint)faceBitmaps[0].Width;
@@ -68,7 +75,7 @@ namespace RockEngine.Core.Rendering.Texturing
             for (int i = 0; i < 6; i++)
             {
                 var pixelData = faceBitmaps[i].GetPixelSpan();
-                if (!transferBatch.SubmitContext.StagingManager.TryStage(transferBatch, pixelData,
+                if (!transferBatch.SubmitContext.StagingManager.TryStage<byte>(transferBatch, pixelData,
                                                                   out ulong bufferOffset,
                                                                   out ulong stagedSize))
                 {
@@ -207,12 +214,12 @@ namespace RockEngine.Core.Rendering.Texturing
             // Define colors for each face (RGBA)
             var faceColors = new byte[][]
             {
-        [255, 0, 0, 255],       // Right  - Red
-        [0, 255, 0, 255],       // Left   - Green
-        [0, 0, 255, 255],       // Top    - Blue
-        [255, 255, 0, 255],     // Bottom - Yellow
-        [255, 0, 255, 255],     // Front  - Magenta
-        [0, 255, 255, 255]      // Back   - Cyan
+                [255, 0, 0, 255],       // Right  - Red
+                [0, 255, 0, 255],       // Left   - Green
+                [0, 0, 255, 255],       // Top    - Blue
+                [255, 255, 0, 255],     // Bottom - Yellow
+                [255, 0, 255, 255],     // Front  - Magenta
+                [0, 255, 255, 255]      // Back   - Cyan
             };
 
             // Create image

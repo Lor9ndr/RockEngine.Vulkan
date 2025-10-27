@@ -47,7 +47,10 @@ namespace RockEngine.Core.Rendering.Materials
         private void SetPushConstantValue(string name, object value, uint size)
         {
             var method = typeof(MaterialPass).GetMethod("PushConstant", BindingFlags.Public | BindingFlags.Instance);
-            if (method == null) return;
+            if (method == null)
+            {
+                return;
+            }
 
             try
             {
@@ -60,6 +63,7 @@ namespace RockEngine.Core.Rendering.Materials
                 _pushConstantValues[name] = new byte[size];
             }
         }
+    
 
         private static object? CreateDefaultValueForSize(uint size)
         {
@@ -133,7 +137,9 @@ namespace RockEngine.Core.Rendering.Materials
             ObjectDisposedException.ThrowIf(_disposed, this);
 
             if (string.IsNullOrEmpty(name))
+            {
                 throw new ArgumentException("Push constant name cannot be null or empty", nameof(name));
+            }
 
             if (!PushConstants.TryGetValue(name, out var constant))
             {
@@ -143,7 +149,7 @@ namespace RockEngine.Core.Rendering.Materials
             uint size = (uint)Unsafe.SizeOf<T>();
             if (size != constant.Size)
             {
-                //throw new ArgumentException($"Size mismatch for push constant '{name}'. Expected: {constant.Size}, Actual: {size}");
+                //_logger.Warn("Size mismatch for push constant '{name}'. Expected: {constant.Size}, Actual: {size}", name, constant.Size, size);
             }
 
             if (!_pushConstantValues.TryGetValue(name, out byte[]? buffer) || buffer.Length != size)
@@ -170,10 +176,7 @@ namespace RockEngine.Core.Rendering.Materials
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
 
-            if (cmd == null)
-            {
-                throw new ArgumentNullException(nameof(cmd));
-            }
+            ArgumentNullException.ThrowIfNull(cmd);
 
             foreach (var (name, constant) in PushConstants)
             {
@@ -199,7 +202,10 @@ namespace RockEngine.Core.Rendering.Materials
 
         public void Dispose()
         {
-            if (_disposed) return;
+            if (_disposed)
+            {
+                return;
+            }
 
             _pushConstantValues.Clear();
             Bindings.Clear();

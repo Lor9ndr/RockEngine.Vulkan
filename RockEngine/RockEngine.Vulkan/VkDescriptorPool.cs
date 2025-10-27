@@ -71,8 +71,15 @@ namespace RockEngine.Vulkan
 
         internal void FreeDescriptorSet(VkDescriptorSet vkDescriptorSet)
         {
-            var native = vkDescriptorSet.VkObjectNative;
-            _context.GraphicsSubmitContext.AddDependency(()=> Vk.FreeDescriptorSets(_context.Device,this, 1, in native));
+            _context.GraphicsSubmitContext.AddDependency(new TmpDisposable(vkDescriptorSet, _context));
+        }
+        private record TmpDisposable(VkDescriptorSet DescriptorSet, VulkanContext Context) : IDisposable
+        {
+
+            public void Dispose()
+            {
+                VulkanContext.Vk.FreeDescriptorSets(Context.Device, DescriptorSet.Pool, [DescriptorSet.VkObjectNative]);
+            }
         }
     }
 }

@@ -8,6 +8,7 @@ namespace RockEngine.Core.Assets
         private Guid _assetId;
         private T _asset;
         private bool _isResolved;
+        private Task<T> _loadingTask;
 
         public Guid AssetID
         {
@@ -17,6 +18,7 @@ namespace RockEngine.Core.Assets
                 _assetId = value;
                 _asset = null;
                 _isResolved = false;
+                _loadingTask = null;
             }
         }
 
@@ -36,15 +38,16 @@ namespace RockEngine.Core.Assets
                 _asset = value;
                 _assetId = value?.ID ?? Guid.Empty;
                 _isResolved = value is not null;
+                _loadingTask = Task.FromResult(value);
             }
         }
+
 
         public AssetReference() { }
 
         public AssetReference(T asset)
         {
             Asset = asset;
-            
         }
 
         public AssetReference(Guid assetId)
@@ -54,15 +57,73 @@ namespace RockEngine.Core.Assets
 
         private void Resolve()
         {
-            if (_isResolved && _asset != null) return;
+            if (_isResolved && _asset != null)
+            {
+                return;
+            }
 
             var assetManager = IoC.Container.GetInstance<AssetManager>();
-            _asset = assetManager.GetAsset<T>(_assetId);
 
-            if (_asset == null)
-                throw new Exception($"Asset not found: {_assetId}");
+            // Try synchronous first
+            if (assetManager.TryGetAsset<T>(_assetId, out var foundAsset))
+            {
+                _asset = foundAsset;
+                _isResolved = true;
+                return;
+            }
 
+            // If not found synchronously, start async loading but don't wait
+            _loadingTask = assetManager.GetAssetAsync<T>(_assetId);
+            _loadingTask.ContinueWith(task =>
+            {
+                if (task.IsCompletedSuccessfully)
+                {
+                    _asset = task.Result;
+                    _isResolved = true;
+                }
+            }, TaskScheduler.Default);
+
+        }
+
+        // Async method for explicit async loading
+        public async Task<T> GetAssetAsync()
+        {
+            if (_isResolved && _asset != null)
+            {
+                return _asset;
+            }
+
+            if (_loadingTask != null)
+            {
+                return await _loadingTask;
+            }
+
+            var assetManager = IoC.Container.GetInstance<AssetManager>();
+            _loadingTask = assetManager.GetAssetAsync<T>(_assetId);
+            _asset = await _loadingTask;
             _isResolved = true;
+            return _asset;
+        }
+
+        // Safe getter that doesn't throw
+        public bool TryGetAsset(out T asset)
+        {
+            if (_isResolved && _asset != null)
+            {
+                asset = _asset;
+                return true;
+            }
+
+            var assetManager = IoC.Container.GetInstance<AssetManager>();
+            if (assetManager.TryGetAsset<T>(_assetId, out asset))
+            {
+                _asset = asset;
+                _isResolved = true;
+                return true;
+            }
+
+            asset = null;
+            return false;
         }
 
         public static implicit operator T(AssetReference<T> reference) => reference.Asset;

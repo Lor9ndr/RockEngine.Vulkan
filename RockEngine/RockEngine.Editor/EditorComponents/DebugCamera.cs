@@ -1,4 +1,5 @@
 ﻿using RockEngine.Core;
+using RockEngine.Core.ECS;
 using RockEngine.Core.ECS.Components;
 using RockEngine.Core.Rendering;
 
@@ -8,7 +9,7 @@ using System.Numerics;
 
 namespace RockEngine.Editor.EditorComponents
 {
-    internal class DebugCamera : Camera
+    internal partial class DebugCamera : Camera
     {
         private readonly IInputContext _inputContext;
         private float _movementSpeed = 5.0f; // Speed of movement
@@ -16,6 +17,7 @@ namespace RockEngine.Editor.EditorComponents
         private Vector2 _lastMousePosition;
         private bool _firstMouse = true;
         public bool CanMove = false;
+        public override RenderLayerMask VisibleLayers { get;set; } = RenderLayerMask.All;
 
         public DebugCamera(IInputContext inputContext )
         {
@@ -31,7 +33,6 @@ namespace RockEngine.Editor.EditorComponents
     
         public override ValueTask Update(Renderer renderer)
         {
-            _movementSpeed += _inputContext.Mice[0].ScrollWheels[0].Y;
             HandleKeyboardInput();
             return base.Update(renderer);
         }
@@ -42,6 +43,7 @@ namespace RockEngine.Editor.EditorComponents
             {
                 return;
             }
+            _movementSpeed += _inputContext.Mice[0].ScrollWheels[0].Y;
 
             foreach (var keyboard in _inputContext.Keyboards)
             {
@@ -50,13 +52,13 @@ namespace RockEngine.Editor.EditorComponents
                 // Move forward
                 if (keyboard.IsKeyPressed(Key.W))
                 {
-                    position += Front * _movementSpeed * Time.DeltaTime;
+                    position += Forward * _movementSpeed * Time.DeltaTime;
                 }
 
                 // Move backward
                 if (keyboard.IsKeyPressed(Key.S))
                 {
-                    position -= Front * _movementSpeed * Time.DeltaTime;
+                    position -= Forward * _movementSpeed * Time.DeltaTime;
                 }
 
                 // Move right
@@ -109,6 +111,13 @@ namespace RockEngine.Editor.EditorComponents
             Pitch -= yOffset; // Invert Y-axis for natural camera movement
 
             UpdateVectors();
+        }
+
+        public override ValueTask OnStart(Renderer renderer)
+        {
+            Entity.AddComponent<InfinityGrid>();
+            World.GetCurrent().CreateEntity("GIZMO").AddComponent<TransformGizmo>();
+            return base.OnStart(renderer);
         }
     }
 }

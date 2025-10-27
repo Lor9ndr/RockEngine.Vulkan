@@ -259,7 +259,7 @@ namespace RockEngine.Vulkan
             Vk.CmdCopyBufferToImage(this, srcBuffer, dstImage, dstImageLayout, regionCount, in pRegions);
         }
 
-        public void ResetQueryPool(VkQueryPool queryPool, int firstQuery, uint queryCount)
+        public void ResetQueryPool(VkQueryPool queryPool, uint firstQuery, uint queryCount)
         {
             Vk.ResetQueryPool(_context.Device, queryPool, 0, queryCount);
         }

@@ -39,7 +39,9 @@ namespace RockEngine.Core.Internal
                 return false;
             }
             if (!_setBindings.TryGetValue(binding.SetLocation, out var setBindings))
+            {
                 return false;
+            }
 
             var removed = setBindings.Remove(binding);
 

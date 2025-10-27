@@ -2,7 +2,6 @@
 
 using NLog;
 
-using RockEngine.Core;
 using RockEngine.Core.Rendering;
 using RockEngine.Editor.EditorUI;
 using RockEngine.Vulkan;
@@ -53,7 +52,7 @@ namespace RockEngine.Editor.Layers
             // No rendering logic needed for this layer
         }
 
-        public void OnImGuiRender(VkCommandBuffer vkCommandBuffer)
+        public async Task OnImGuiRender(VkCommandBuffer vkCommandBuffer)
         {
             // Show progress modal if an operation is in progress
             if (_isOperationInProgress)
@@ -62,7 +61,7 @@ namespace RockEngine.Editor.Layers
                 ImGui.SetNextWindowPos(center, ImGuiCond.Appearing, new Vector2(0.5f, 0.5f));
                 ImGui.SetNextWindowContentSize(new Vector2(200, 150));
                 ImGui.OpenPopup("Operation in Progress");
-                if (ImGui.BeginPopupModal("Operation in Progress", ref _isOperationInProgress, ImGuiWindowFlags.AlwaysAutoResize | ImGuiWindowFlags.NoTitleBar))
+                if (ImGui.BeginPopup("Operation in Progress", ImGuiWindowFlags.AlwaysAutoResize | ImGuiWindowFlags.NoTitleBar))
                 {
                     ImGui.Text($"{_operationInProgress}...");
                     // Center the spinner using available space
@@ -86,8 +85,8 @@ namespace RockEngine.Editor.Layers
             }
 
             // Center the project selection window
-            ImGui.SetNextWindowPos(ImGui.GetMainViewport().GetCenter(), ImGuiCond.Always, new System.Numerics.Vector2(0.5f, 0.5f));
-            ImGui.SetNextWindowSize(new System.Numerics.Vector2(600, 400), ImGuiCond.Always);
+            ImGui.SetNextWindowPos(ImGui.GetMainViewport().GetCenter(), ImGuiCond.Always, new Vector2(0.5f, 0.5f));
+            ImGui.SetNextWindowSize(new Vector2(600, 400), ImGuiCond.Always);
 
             if (!_isOperationInProgress)
             {
@@ -109,7 +108,7 @@ namespace RockEngine.Editor.Layers
                         {
                             if (ImGui.Selectable($"{project.Name}##{project.Path}", false) && !_isOperationInProgress)
                             {
-                                _ = OpenProjectAsync(project.Path);
+                                _ = Task.Factory.StartNew(() => OpenProjectAsync(project.Path), CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Current);
                             }
 
                             // Show tooltip with full path
@@ -128,7 +127,7 @@ namespace RockEngine.Editor.Layers
                         var path = PlatformFileDialog.OpenFile("RockEngine Project|*.rockproj", "Open Project");
                         if (!string.IsNullOrEmpty(path) && File.Exists(path))
                         {
-                            _ = OpenProjectAsync(path);
+                            _ = Task.Factory.StartNew(() => OpenProjectAsync(path), CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Current);
                         }
                         else if (!string.IsNullOrEmpty(path))
                         {

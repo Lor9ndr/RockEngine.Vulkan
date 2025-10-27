@@ -2,16 +2,19 @@
 using RockEngine.Core.ECS.Components;
 using RockEngine.Core.Rendering;
 
+using ZLinq;
+
 namespace RockEngine.Core.ECS
 {
     public class Entity
     {
-        private static ulong _id = 0;
+        private static uint _id = 0;
         private readonly Lock _componentsLock = new Lock();
 
         public string Name { get;set;}
+        public bool IsActive { get; private set; } = true;
 
-        public readonly ulong ID;
+        public readonly uint ID;
 
         private readonly List<IComponent> _components = [];
         public Transform Transform { get; private set; }
@@ -19,7 +22,7 @@ namespace RockEngine.Core.ECS
         private readonly List<Entity> _children = new List<Entity>();
         public IReadOnlyList<Entity> Children => _children.AsReadOnly();
 
-        public RenderLayerType Layer { get; set; } = RenderLayerType.Opaque;
+        public RenderLayer Layer { get; set; }
 
         public event Action OnDestroy;
 
@@ -28,14 +31,24 @@ namespace RockEngine.Core.ECS
             ID = _id++;
             Transform = AddComponent<Transform>();
             Name = $"Entity_{ID}";
+            Layer = IoC.Container.GetInstance<RenderLayerSystem>().DefaultLayer;
         }
 
         public T AddComponent<T>() where T : Component
         {
             if (typeof(T) == typeof(Transform) && Transform is not null)
+            {
                 return (Transform as T)!;
+            }
 
             var component = IoC.Container.GetInstance<T>();
+            AddComponent(component);
+
+            return component;
+        }
+        public IComponent AddComponent(Type componentType) 
+        {
+            var component = (IComponent)IoC.Container.GetInstance(componentType);
             AddComponent(component);
 
             return component;
@@ -44,7 +57,9 @@ namespace RockEngine.Core.ECS
         internal void AddComponent(IComponent component)
         {
             if (component is Transform && Transform is not null)
+            {
                 return;
+            }
 
             component.SetEntity(this);
             _components.Add(component);
@@ -62,15 +77,18 @@ namespace RockEngine.Core.ECS
 
         public T? GetComponent<T>() where T : IComponent
         {
-            return _components.OfType<T>().FirstOrDefault();
+            return _components.AsValueEnumerable().OfType<T>().FirstOrDefault();
         }
         public IEnumerable<IComponent> Components => _components;
 
-        public bool IsActive { get; private set; }
 
         public void AddChild(Entity child)
         {
-            if (child.Parent == this) return;
+            if (child.Parent == this)
+            {
+                return;
+            }
+
             child.Parent?.RemoveChild(child);
             child.Parent = this;
             _children.Add(child);
@@ -79,7 +97,11 @@ namespace RockEngine.Core.ECS
 
         public bool RemoveChild(Entity child)
         {
-            if (!_children.Remove(child)) return false;
+            if (!_children.Remove(child))
+            {
+                return false;
+            }
+
             child.Parent = null;
             child.Transform.SetParent(null);
             return true;
@@ -131,6 +153,11 @@ namespace RockEngine.Core.ECS
             {
                 item.SetActive(IsActive);
             }
+        }
+
+        public bool HasComponent<T>()
+        {
+            return _components.OfType<T>().Any();
         }
     }
 }

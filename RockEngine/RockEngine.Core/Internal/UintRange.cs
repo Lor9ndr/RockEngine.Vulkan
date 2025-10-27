@@ -149,12 +149,16 @@ namespace RockEngine.Core.Internal
             // Prefer wider ranges (more binding points)
             int lengthComparison = other.Length.CompareTo(Length);
             if (lengthComparison != 0)
+            {
                 return lengthComparison;
+            }
 
             // If same width, prefer lower start positions
             int startComparison = Start.CompareTo(other.Start);
             if (startComparison != 0)
+            {
                 return startComparison;
+            }
 
             // If same start, compare by end
             return End.CompareTo(other.End);

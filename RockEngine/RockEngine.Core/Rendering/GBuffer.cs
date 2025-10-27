@@ -29,7 +29,6 @@ namespace RockEngine.Core.Rendering
             Format.R8G8Unorm             // Metallic (R), Roughness (G)
         ];
 
-        public Material Material { get; private set; }
         public VkSampler[] Samplers { get; private set; }
 
         public GBuffer(VulkanContext context, Extent2D size, Format depthFormat)
@@ -49,27 +48,12 @@ namespace RockEngine.Core.Rendering
            
         }
 
-        public void CreateLightingDescriptorSets(RckPipeline pipeline)
-        {
-            if (_pipeline != pipeline)
-            {
-                _pipeline = pipeline;
-                Material = new Material("GBuffer");
-                Material.AddPass(LightingPass.Name, new MaterialPass(pipeline));
-            }
-
-            _attachmentBinding = new InputAttachmentBinding(
-                setLocation: 2,
-                bindingLocation: 0,
-                ColorAttachments  // Position + Normal + Albedo
-            );
-            Material.BindResource(_attachmentBinding);
-        }
+       
 
         private void CreateAttachments()
         {
             ColorAttachments = new VkImageView[ColorAttachmentFormats.Length];
-            string[] debugNames = ["GPosition", "GNormal", "GAlbedo", "GMRA", "GEmissive"];
+            ReadOnlySpan<string> debugNames =  ["GPosition", "GNormal", "GAlbedo", "GMRA", "GEmissive"];
             for (int i = 0; i < ColorAttachments.Length; i++)
             {
                 ColorAttachments[i] = CreateColorAttachment(ColorAttachmentFormats[i]);

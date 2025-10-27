@@ -59,8 +59,9 @@ namespace RockEngine.Core.Rendering.Managers
                     .VkAssertResult("Failed to allocate descriptor set", Result.ErrorOutOfPoolMemory);
 
                 if (result == Result.Success)
+                {
                     return descriptorSet;
-
+                }
             }
 
             // All pools exhausted, create new one
@@ -76,7 +77,10 @@ namespace RockEngine.Core.Rendering.Managers
             foreach (var pools in _pools.Values)
             {
                 foreach (var pool in pools)
+                {
                     pool.Dispose();
+                }
+
                 pools.Clear();
             }
             _pools.Dispose();

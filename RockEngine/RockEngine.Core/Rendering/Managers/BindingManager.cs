@@ -70,8 +70,9 @@ namespace RockEngine.Core.Rendering.Managers
             // 1. Проверка существования сета в pipeline layout
             var setLocation = binding.SetLocation;
             var setLayout = pipelineLayout.GetSetLayout(setLocation);
-            if (setLayout == default)
+            if (setLayout == default || setLayout.Bindings.Length == 0 || setLayout.Bindings.Any(s=>s.DescriptorType != binding.DescriptorType))
             {
+                return;
                 throw new InvalidOperationException(
                     $"Set {setLocation} not found in pipeline layout");
             }

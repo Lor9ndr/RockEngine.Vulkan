@@ -9,11 +9,10 @@ namespace RockEngine.Editor.EditorUI.EditorWindows
     {
         public PerformanceWindow() : base("Performance") { }
 
-        protected override void OnDraw()
+        protected override ValueTask OnDraw()
         {
             PerformanceTracer.DrawMetrics();
-
-
+            return ValueTask.CompletedTask;
         }
 
         private void DrawMemoryStats()

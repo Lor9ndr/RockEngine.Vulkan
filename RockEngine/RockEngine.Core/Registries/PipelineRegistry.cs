@@ -19,6 +19,10 @@ namespace RockEngine.Core.Registries
 
         public void Register(string key, RckPipeline value)
         {
+            if (_pipelines.ContainsKey(key))
+            {
+                throw new InvalidOperationException($"Pipeline with same name already exists, name={key}");
+            }
             _pipelines[key] = value;
         }
 

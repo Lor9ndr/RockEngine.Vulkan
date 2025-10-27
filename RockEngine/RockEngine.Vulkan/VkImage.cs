@@ -276,7 +276,10 @@ namespace RockEngine.Vulkan
              AccessFlags dstAccessMask)
         {
             ImageLayout oldLayout = GetMipLayout(baseMipLevel, baseArrayLayer);
-            if (oldLayout == newLayout) return;
+            if (oldLayout == newLayout)
+            {
+                return;
+            }
 
             var barrier = new ImageMemoryBarrier
             {
@@ -444,7 +447,10 @@ namespace RockEngine.Vulkan
         {
             // Get current layout for THIS mip+layer
             ImageLayout oldLayout = GetMipLayout(mipLevel, layer);
-            if (oldLayout == newLayout) return;
+            if (oldLayout == newLayout)
+            {
+                return;
+            }
 
             var (srcAccess, dstAccess) = GetAccessMasks(oldLayout, newLayout, Vk.QueueFamilyIgnored, Vk.QueueFamilyIgnored);
             var (srcStage, dstStage) = GetPipelineStages(oldLayout, newLayout, Vk.QueueFamilyIgnored, Vk.QueueFamilyIgnored);
@@ -484,7 +490,10 @@ namespace RockEngine.Vulkan
 
         protected override void Dispose(bool disposing)
         {
-            if (IsDisposed) return;
+            if (IsDisposed)
+            {
+                return;
+            }
 
             VulkanContext.Vk.DestroyImage(_context.Device, _vkObject, in VulkanContext.CustomAllocator<VkImage>());
             _imageMemory?.Dispose();
@@ -538,6 +547,22 @@ namespace RockEngine.Vulkan
                 // General → ShaderReadOnlyOptimal (e.g., after compute write)
                 (ImageLayout.General, ImageLayout.ShaderReadOnlyOptimal)
                     => (PipelineStageFlags.ComputeShaderBit, PipelineStageFlags.FragmentShaderBit),
+
+                // ADD THIS: ColorAttachmentOptimal → TransferSrcOptimal (for picking)
+                (ImageLayout.ColorAttachmentOptimal, ImageLayout.TransferSrcOptimal)
+                    => (PipelineStageFlags.ColorAttachmentOutputBit, PipelineStageFlags.TransferBit),
+
+                // ADD THIS: TransferSrcOptimal → ColorAttachmentOptimal (reverse transition)
+                (ImageLayout.TransferSrcOptimal, ImageLayout.ColorAttachmentOptimal)
+                    => (PipelineStageFlags.TransferBit, PipelineStageFlags.ColorAttachmentOutputBit),
+
+                // ADD THIS: ColorAttachmentOptimal → ShaderReadOnlyOptimal
+                (ImageLayout.ColorAttachmentOptimal, ImageLayout.ShaderReadOnlyOptimal)
+                    => (PipelineStageFlags.ColorAttachmentOutputBit, PipelineStageFlags.FragmentShaderBit),
+
+                // ADD THIS: ShaderReadOnlyOptimal → ColorAttachmentOptimal
+                (ImageLayout.ShaderReadOnlyOptimal, ImageLayout.ColorAttachmentOptimal)
+                    => (PipelineStageFlags.FragmentShaderBit, PipelineStageFlags.ColorAttachmentOutputBit),
                 // Existing transitions
                 (ImageLayout.Undefined, ImageLayout.TransferDstOptimal) =>
                     (PipelineStageFlags.TopOfPipeBit, PipelineStageFlags.TransferBit),
@@ -549,8 +574,7 @@ namespace RockEngine.Vulkan
                     (PipelineStageFlags.TransferBit, PipelineStageFlags.TransferBit),
                 (ImageLayout.Undefined, ImageLayout.ColorAttachmentOptimal) =>
                     (PipelineStageFlags.TopOfPipeBit, PipelineStageFlags.ColorAttachmentOutputBit),
-                (ImageLayout.ColorAttachmentOptimal, ImageLayout.ShaderReadOnlyOptimal) =>
-                    (PipelineStageFlags.ColorAttachmentOutputBit, PipelineStageFlags.FragmentShaderBit),
+               
                 (ImageLayout.ShaderReadOnlyOptimal, ImageLayout.TransferDstOptimal) =>
                     (PipelineStageFlags.FragmentShaderBit, PipelineStageFlags.TransferBit),
                 (ImageLayout.ShaderReadOnlyOptimal, ImageLayout.TransferSrcOptimal) =>
@@ -568,8 +592,7 @@ namespace RockEngine.Vulkan
 
                 (ImageLayout.Undefined, ImageLayout.ShaderReadOnlyOptimal) =>
                     (PipelineStageFlags.TopOfPipeBit, PipelineStageFlags.FragmentShaderBit),
-                (ImageLayout.ShaderReadOnlyOptimal, ImageLayout.ColorAttachmentOptimal) =>
-                    (PipelineStageFlags.FragmentShaderBit, PipelineStageFlags.ColorAttachmentOutputBit),
+              
                 (ImageLayout.PresentSrcKhr, ImageLayout.ColorAttachmentOptimal) =>
                     (PipelineStageFlags.BottomOfPipeBit, PipelineStageFlags.ColorAttachmentOutputBit),
 
@@ -585,6 +608,20 @@ namespace RockEngine.Vulkan
             }
             return (oldLayout, newLayout) switch
             {
+                (ImageLayout.ColorAttachmentOptimal, ImageLayout.TransferSrcOptimal)
+            => (AccessFlags.ColorAttachmentWriteBit, AccessFlags.TransferReadBit),
+
+                // ADD THIS: TransferSrcOptimal → ColorAttachmentOptimal
+                (ImageLayout.TransferSrcOptimal, ImageLayout.ColorAttachmentOptimal)
+                    => (AccessFlags.TransferReadBit, AccessFlags.ColorAttachmentWriteBit),
+
+                // ADD THIS: ColorAttachmentOptimal → ShaderReadOnlyOptimal
+                (ImageLayout.ColorAttachmentOptimal, ImageLayout.ShaderReadOnlyOptimal)
+                    => (AccessFlags.ColorAttachmentWriteBit, AccessFlags.ShaderReadBit),
+
+                // ADD THIS: ShaderReadOnlyOptimal → ColorAttachmentOptimal
+                (ImageLayout.ShaderReadOnlyOptimal, ImageLayout.ColorAttachmentOptimal)
+                    => (AccessFlags.ShaderReadBit, AccessFlags.ColorAttachmentWriteBit),
                 (ImageLayout.General, ImageLayout.TransferSrcOptimal)
                     => (AccessFlags.ShaderWriteBit, AccessFlags.TransferReadBit),
                 (ImageLayout.ShaderReadOnlyOptimal, ImageLayout.General)
@@ -606,8 +643,7 @@ namespace RockEngine.Vulkan
 
                 (ImageLayout.Undefined, ImageLayout.ColorAttachmentOptimal) =>
                     (AccessFlags.None, AccessFlags.ColorAttachmentWriteBit),
-                (ImageLayout.ColorAttachmentOptimal, ImageLayout.ShaderReadOnlyOptimal) =>
-                    (AccessFlags.ColorAttachmentWriteBit, AccessFlags.ShaderReadBit),
+               
                 (ImageLayout.Undefined, ImageLayout.TransferSrcOptimal) =>
                     (AccessFlags.None, AccessFlags.TransferReadBit),
                 (ImageLayout.Undefined, ImageLayout.General) =>
@@ -620,8 +656,7 @@ namespace RockEngine.Vulkan
                     (AccessFlags.None, AccessFlags.DepthStencilAttachmentReadBit | AccessFlags.DepthStencilAttachmentWriteBit),
                 (ImageLayout.Undefined, ImageLayout.ShaderReadOnlyOptimal) =>
                     (AccessFlags.None, AccessFlags.ShaderReadBit),
-                (ImageLayout.ShaderReadOnlyOptimal, ImageLayout.ColorAttachmentOptimal) =>
-                    (AccessFlags.ShaderReadBit, AccessFlags.ColorAttachmentWriteBit),
+               
                 (ImageLayout.PresentSrcKhr, ImageLayout.ColorAttachmentOptimal) =>
                     (AccessFlags.MemoryReadBit, AccessFlags.ColorAttachmentWriteBit),
                 (ImageLayout.ShaderReadOnlyOptimal, ImageLayout.TransferSrcOptimal) =>

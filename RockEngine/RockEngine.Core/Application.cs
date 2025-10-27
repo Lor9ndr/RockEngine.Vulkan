@@ -4,6 +4,8 @@ using RockEngine.Core.DI;
 using RockEngine.Core.ECS;
 using RockEngine.Core.Rendering;
 using RockEngine.Core.Rendering.Managers;
+using RockEngine.Core.Shaders;
+using RockEngine.Core.TPL;
 using RockEngine.Vulkan;
 
 using Silk.NET.Input;
@@ -32,7 +34,7 @@ namespace RockEngine.Core
 
         private IShaderManager _shaderManager;
         private Task[] _renderTasks;
-
+        private ImGuiSynchronizationContext _imguiContext;
         private readonly Container _container;
         private readonly Scope _applicationScope;
 
@@ -57,6 +59,8 @@ namespace RockEngine.Core
         public void Run()
         {
             CancellationTokenSource = new CancellationTokenSource();
+            _imguiContext = new ImGuiSynchronizationContext();
+
             // Configure window
             _window = IoC.Container.GetInstance<IWindow>();
             _window.Title = _appSettings.Name;
@@ -95,12 +99,14 @@ namespace RockEngine.Core
             _shaderManager = IoC.Container.GetInstance<IShaderManager>();
             _renderTasks = new Task[2];
 
-           
+
 
 
             await _shaderManager.CompileAllShadersAsync();
 
             PerformanceTracer.Initialize(_context);
+            PerformanceTracer.ProcessQueries(_context, _graphicsEngine.FrameIndex);
+            PerformanceTracer.BeginFrame(_graphicsEngine.FrameIndex);
             await _renderer.InitializeAsync().ConfigureAwait(false);
             await _world.Start(_renderer).ConfigureAwait(false);
 
@@ -131,7 +137,7 @@ namespace RockEngine.Core
                 }
                 catch (Exception ex)
                 {
-                    _logger.Error(ex, "Unhandled exception in Render. Closing application.");
+                    _logger.Error(ex, "Unhandled exception in Render. Closing application. :{0}, \n {1}", ex.Message, ex.StackTrace);
                     throw;
                 }
             };
@@ -156,6 +162,8 @@ namespace RockEngine.Core
             {
                 Time.Update(_window.Time, deltaTime);
                 _layerStack.Update();
+                _imguiContext.Update();
+
                 await _world.Update(_renderer).ConfigureAwait(false);
                 await _renderer.UpdateFrameData().ConfigureAwait(false);
             }
@@ -163,30 +171,41 @@ namespace RockEngine.Core
 
         protected virtual async Task Render(double time)
         {
-            PerformanceTracer.ProcessQueries(_context, _graphicsEngine.FrameIndex);
             using (PerformanceTracer.BeginSection("Whole Render"))
             {
-                if (_layerStack.Count == 0) return;
-
-                 var batch = _graphicsEngine.Begin();
-                if (batch is null) return;
-
-                PerformanceTracer.BeginFrame(batch.CommandBuffer, _renderer.FrameIndex);
-
-                using (PerformanceTracer.BeginSection("_layerStack.RenderImGui"))
+                if (_layerStack.Count == 0)
                 {
-                    using (PerformanceTracer.BeginSection("RenderImGui", batch.CommandBuffer, _renderer.FrameIndex))
-                    {
-                        _layerStack.RenderImGui(batch.CommandBuffer);
-                    }
+                    return;
                 }
 
-                // Use Vulkan context for parallel rendering
+                var batch = _graphicsEngine.Begin();
+                if (batch is null)
+                {
+                    return;
+                }
+
+                var frameIndex = _renderer.FrameIndex;
+                
+                PerformanceTracer.ProcessQueries(_context, frameIndex);
+                PerformanceTracer.BeginFrame(frameIndex);
+
+                var prevContext = SynchronizationContext.Current;
+                SynchronizationContext.SetSynchronizationContext(_imguiContext);
+                using (PerformanceTracer.BeginSection("_layerStack.RenderImGui"))
+                {
+                    using (PerformanceTracer.BeginSection("RenderImGui", batch.CommandBuffer, frameIndex))
+                    {
+                        await _layerStack.RenderImGui(batch.CommandBuffer).ConfigureAwait(true);
+                    }
+                }
+                _imguiContext.Update();
+                SynchronizationContext.SetSynchronizationContext(prevContext);
+
                 _renderTasks[0] = Task.Run(() => {
                     using (PerformanceTracer.BeginSection("_layerStack.Render"))
                     {
                         var renderBatch = _context.GraphicsSubmitContext.CreateBatch();
-                        using (PerformanceTracer.BeginSection("_layerStack.Render", renderBatch.CommandBuffer, _renderer.FrameIndex))
+                        using (PerformanceTracer.BeginSection("_layerStack.Render", renderBatch.CommandBuffer, frameIndex))
                         {
                             _layerStack.Render(renderBatch.CommandBuffer);
                         }
@@ -194,20 +213,20 @@ namespace RockEngine.Core
                     }
                 });
 
-                _renderTasks[1] = Task.Run(()=>
+                _renderTasks[1] = Task.Run(async ()=>
                 {
                     using (PerformanceTracer.BeginSection("_renderer.Render()"))
                     {
-                        return _renderer.Render();
+                        await _renderer.Render();
                     }
                 });
-
+                await Task.WhenAll(_renderTasks).ConfigureAwait(false);
                 using (PerformanceTracer.BeginSection("_graphicsEngine.end & Submit"))
                 {
-                    await Task.WhenAll(_renderTasks).ConfigureAwait(false);
                     _graphicsEngine.SubmitAndPresent(batch);
                 }
             }
+
         }
 
         public Task PushLayer(ILayer layer) => _layerStack.PushLayer(layer);

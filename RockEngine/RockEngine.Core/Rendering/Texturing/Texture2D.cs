@@ -141,7 +141,7 @@ namespace RockEngine.Core.Rendering.Texturing
 
             // Transfer queue operations
             var transferBatch = context.TransferSubmitContext.CreateBatch();
-            CopyImageDataFromPointer(context, transferBatch, vkImage, data, (uint)width, (uint)height, format);
+            CopyImageDataFromPointer(transferBatch, vkImage, data, (uint)width, (uint)height, format);
             transferBatch.AddSignalSemaphore(transferComplete);
             using (var transferOp = context.TransferSubmitContext.FlushSingle(transferBatch, VkFence.CreateNotSignaled(context)))
             {
@@ -209,13 +209,12 @@ namespace RockEngine.Core.Rendering.Texturing
         private static unsafe void CopyImageData(VulkanContext context, UploadBatch batch,
                                              SKBitmap skBitmap, VkImage vkImage)
         {
-            CopyImageDataFromPointer(context, batch, vkImage, skBitmap.GetPixelSpan(),
+            CopyImageDataFromPointer(batch, vkImage, skBitmap.GetPixelSpan(),
                                     (uint)skBitmap.Width, (uint)skBitmap.Height,
                                     GetVulkanFormat(skBitmap.ColorType, context));
         }
 
         private static unsafe void CopyImageDataFromPointer(
-             VulkanContext context,
              UploadBatch batch,
              VkImage vkImage,
              Span<byte> data,
@@ -251,7 +250,7 @@ namespace RockEngine.Core.Rendering.Texturing
             );
 
             // Copy data
-            if (!batch.SubmitContext.StagingManager.TryStage(batch, data, out var offset, out var size))
+            if (!batch.SubmitContext.StagingManager.TryStage<byte>(batch, data, out var offset, out var size))
             {
                 throw new Exception("Failed to stage data from image");
             }
@@ -323,7 +322,7 @@ namespace RockEngine.Core.Rendering.Texturing
 
             // Upload data via transfer queue
             var transferBatch = context.TransferSubmitContext.CreateBatch();
-            CopyImageDataFromPointer(context, transferBatch, vkImage, skImage.GetPixelSpan(),
+            CopyImageDataFromPointer(transferBatch, vkImage, skImage.GetPixelSpan(),
                                     width, height, format);
             transferBatch.AddSignalSemaphore(transferComplete);
             using (var transferOp = context.TransferSubmitContext.FlushSingle(transferBatch, VkFence.CreateNotSignaled(context)))

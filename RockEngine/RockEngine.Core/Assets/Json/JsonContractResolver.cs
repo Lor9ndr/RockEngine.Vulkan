@@ -40,6 +40,29 @@ namespace RockEngine.Core.Assets.Json
             return property;
         }
 
+        protected override List<MemberInfo> GetSerializableMembers(Type objectType)
+        {
+            var members = base.GetSerializableMembers(objectType);
+
+            // Add private fields with [Serialize] attribute
+            var privateFields = objectType.GetFields(BindingFlags.NonPublic | BindingFlags.Instance)
+                                         .Where(f => f.GetCustomAttribute<SerializeAttribute>() != null).ToList();
+
+            members.AddRange(privateFields);
+
+            return members;
+        }
+
+        protected override JsonObjectContract CreateObjectContract(Type objectType)
+        {
+            var contract = base.CreateObjectContract(objectType);
+
+            // Ensure private fields with [Serialize] attribute are included in serialization
+            contract.MemberSerialization = MemberSerialization.Fields;
+
+            return contract;
+        }
+
         private class CustomJsonConverterWrapper : JsonConverter
         {
             private readonly ISerializationConverter _converter;

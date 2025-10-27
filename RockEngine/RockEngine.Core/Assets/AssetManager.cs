@@ -7,16 +7,33 @@ using RockEngine.Core.DI;
 
 using System.Collections.Concurrent;
 using System.Text;
+using System.IO.MemoryMappedFiles;
+using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.ObjectPool;
 
 namespace RockEngine.Core.Assets
 {
-    public sealed class AssetManager :  IDisposable
+    public sealed class AssetManager : IDisposable
     {
         private static readonly Logger _logger = LogManager.GetCurrentClassLogger();
         private const string ProjectExtension = ".rockproj";
         private const string AssetExtension = ".asset";
         private const string MetaExtension = ".meta";
-        private const int MetaFileBufferSize = 4096;
+        private const int MetaFileBufferSize = 8192;
+        private const int OptimalBufferSize = 65536; // 64KB aligned with disk sectors
+        private const long MaxCacheSize = 1024 * 1024 * 128; // 128MB limit
+
+        // Memory cache for assets
+        private readonly MemoryCache _assetCache = new MemoryCache(new MemoryCacheOptions
+        {
+            SizeLimit = MaxCacheSize,
+            CompactionPercentage = 0.25
+        });
+
+        // Object pools for common types
+        private readonly ObjectPool<MemoryStream> _memoryStreamPool;
+        private readonly ObjectPool<byte[]> _bufferPool;
+
         private sealed class AssetMetadata
         {
             public Guid ID { get; set; }
@@ -24,6 +41,8 @@ namespace RockEngine.Core.Assets
             public AssetPath Path { get; set; }
             public Type AssetType { get; set; }
             public DateTime LastModified { get; set; }
+            public long FileSize { get; set; }
+            public int AccessCount { get; set; }
 
             public AssetMetadata() { }
 
@@ -46,6 +65,7 @@ namespace RockEngine.Core.Assets
                 writer.Write(Path.ToString());
                 writer.Write(AssetType.AssemblyQualifiedName);
                 writer.Write(LastModified.ToBinary());
+                writer.Write(FileSize);
 
                 return ms.ToArray();
             }
@@ -55,22 +75,44 @@ namespace RockEngine.Core.Assets
                 using var ms = new MemoryStream(data);
                 using var reader = new BinaryReader(ms, Encoding.UTF8);
 
-                var id = new Guid(reader.ReadBytes(16));
-                var name = reader.ReadString();
-                var pathStr = reader.ReadString();
-                var assetType = Type.GetType(reader.ReadString());
-                var lastModified = DateTime.FromBinary(reader.ReadInt64());
-
-                return new AssetMetadata
+                try
                 {
-                    ID = id,
-                    Name = name,
-                    Path = new AssetPath(pathStr),
-                    AssetType = assetType,
-                    LastModified = lastModified
-                };
+                    var id = new Guid(reader.ReadBytes(16));
+                    var name = reader.ReadString();
+                    var pathStr = reader.ReadString();
+                    var assetType = Type.GetType(reader.ReadString());
+                    var lastModified = DateTime.FromBinary(reader.ReadInt64());
+
+                    // Only read FileSize if there's more data available
+                    long fileSize = 0;
+                    if (ms.Position < ms.Length)
+                    {
+                        fileSize = reader.ReadInt64();
+                    }
+
+                    return new AssetMetadata
+                    {
+                        ID = id,
+                        Name = name,
+                        Path = new AssetPath(pathStr),
+                        AssetType = assetType,
+                        LastModified = lastModified,
+                        FileSize = fileSize
+                    };
+                }
+                catch (EndOfStreamException ex)
+                {
+                    throw new InvalidDataException("Meta file data is incomplete", ex);
+                }
             }
         }
+
+        // Memory-mapped files management
+        private readonly ConcurrentDictionary<string, (MemoryMappedFile MappedFile, MemoryMappedViewAccessor Accessor)> _mappedFiles = new();
+        private readonly ConcurrentDictionary<Guid, Lazy<Task<IAsset>>> _lazyAssets = new();
+        private readonly PriorityQueue<AssetLoadRequest, int> _prefetchQueue = new();
+        private readonly CancellationTokenSource _prefetchCancellation = new();
+        private readonly Task _prefetchWorker;
 
         private readonly IAssetSerializer _serializer;
         private readonly AssimpLoader _assimpLoader;
@@ -86,6 +128,7 @@ namespace RockEngine.Core.Assets
 
         private string _basePath = string.Empty;
         private ProjectAsset _project;
+        private FileSystemWatcher _fileWatcher;
 
         public string BasePath => _basePath;
         public event Action<Guid>? OnAssetRemoved;
@@ -97,71 +140,248 @@ namespace RockEngine.Core.Assets
             _logger.Info("AssetManager initializing...");
             _serializer = serializer;
             _assimpLoader = assimpLoader;
+
+            // Initialize object pools
+            _memoryStreamPool = new DefaultObjectPool<MemoryStream>(
+                new MemoryStreamPooledObjectPolicy(),
+                Environment.ProcessorCount );
+
+            _bufferPool = new DefaultObjectPool<byte[]>(
+                new BufferPooledObjectPolicy(OptimalBufferSize),
+                Environment.ProcessorCount * 4);
+
+            // Start background prefetch worker
+            _prefetchWorker = StartPrefetchWorker();
+
+        }
+
+        private async Task StartPrefetchWorker()
+        {
+            while (!_prefetchCancellation.Token.IsCancellationRequested)
+            {
+                try
+                {
+                    await Task.Delay(100, _prefetchCancellation.Token);
+                    await ProcessPrefetchQueueAsync();
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+            }
+        }
+
+        private async Task ProcessPrefetchQueueAsync()
+        {
+            const int maxConcurrentLoads = 4;
+            var loadTasks = new List<Task>();
+
+            while (_prefetchQueue.TryDequeue(out var request, out _) &&
+                   loadTasks.Count < maxConcurrentLoads)
+            {
+                loadTasks.Add(LoadAssetBackgroundAsync(request.AssetId));
+            }
+
+            await Task.WhenAll(loadTasks);
+        }
+
+        public void PrefetchAsset(Guid assetId, int priority = 0)
+        {
+            if (!_assetsById.ContainsKey(assetId) && _metadataById.ContainsKey(assetId))
+            {
+                _prefetchQueue.Enqueue(new AssetLoadRequest(assetId), priority);
+                _logger.Debug($"Prefetch queued for asset: {assetId}");
+            }
+        }
+
+        private async Task LoadAssetBackgroundAsync(Guid assetId)
+        {
+            try
+            {
+                if (!_metadataById.TryGetValue(assetId, out var metadata))
+                {
+                    return;
+                }
+
+                // Use lazy loading to avoid duplicate loads
+                var lazyTask = _lazyAssets.GetOrAdd(assetId, id => new Lazy<Task<IAsset>>(
+                    () => LoadAssetWithOptimizationsAsync(metadata),
+                    LazyThreadSafetyMode.ExecutionAndPublication));
+
+                await lazyTask.Value;
+                _logger.Debug($"Background prefetch completed for asset: {assetId}");
+            }
+            catch (Exception ex)
+            {
+                _logger.Warn(ex, $"Background prefetch failed for asset: {assetId}");
+            }
+        }
+
+        private void SetupFileWatching()
+        {
+            try
+            {
+                _fileWatcher = new FileSystemWatcher(_basePath)
+                {
+                    IncludeSubdirectories = true,
+                    NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName | NotifyFilters.Size,
+                    EnableRaisingEvents = !string.IsNullOrEmpty(_basePath)
+                };
+                _fileWatcher.Changed += OnAssetFileChanged;
+                _fileWatcher.Deleted += OnAssetFileDeleted;
+                _fileWatcher.Renamed += OnAssetFileRenamed;
+            }
+            catch (Exception ex)
+            {
+                _logger.Warn(ex, "Failed to setup file system watcher");
+            }
+        }
+
+        private void OnAssetFileChanged(object sender, FileSystemEventArgs e)
+        {
+            var normalizedPath = NormalizePath(e.FullPath);
+
+            // Invalidate cache when files change
+            if (_metadataByPath.TryGetValue(normalizedPath, out var metadata))
+            {
+                _assetCache.Remove(metadata.ID);
+                _assetsById.TryRemove(metadata.ID, out _);
+                _assetsByPath.TryRemove(normalizedPath, out _);
+                _lazyAssets.TryRemove(metadata.ID, out _);
+
+                _logger.Debug($"Invalidated cache for modified asset: {normalizedPath}");
+            }
+        }
+
+        private void OnAssetFileDeleted(object sender, FileSystemEventArgs e)
+        {
+            var normalizedPath = NormalizePath(e.FullPath);
+            if (_metadataByPath.TryGetValue(normalizedPath, out var metadata))
+            {
+                RemoveFromCache(metadata.ID);
+                _logger.Debug($"Removed deleted asset from cache: {normalizedPath}");
+            }
+        }
+
+        private void OnAssetFileRenamed(object sender, RenamedEventArgs e)
+        {
+            var oldNormalizedPath = NormalizePath(e.OldFullPath);
+            var newNormalizedPath = NormalizePath(e.FullPath);
+
+            if (_metadataByPath.TryGetValue(oldNormalizedPath, out var metadata))
+            {
+                _metadataByPath.TryRemove(oldNormalizedPath, out _);
+                _metadataByPath[newNormalizedPath] = metadata;
+
+                if (_assetsByPath.TryRemove(oldNormalizedPath, out var asset))
+                {
+                    _assetsByPath[newNormalizedPath] = asset;
+                }
+
+                _logger.Debug($"Updated paths for renamed asset: {oldNormalizedPath} -> {newNormalizedPath}");
+            }
         }
 
         private async Task InitializeAsync(ProjectAsset project)
         {
             _basePath = project.Data.RootPath;
             _project = project;
-
+            SetupFileWatching();
             await IndexProjectAssetsAsync();
+            GC.Collect();
+
+            // Update file watcher with new base path
+            if (_fileWatcher != null)
+            {
+                _fileWatcher.Path = _basePath;
+                _fileWatcher.EnableRaisingEvents = true;
+            }
         }
 
         private async Task IndexProjectAssetsAsync()
         {
-            // Process meta files
-            var metaFiles = Directory.GetFiles(_basePath, $"*{MetaExtension}", SearchOption.AllDirectories);
-            var tasks = new List<Task>(metaFiles.Length);
-
-            foreach (var metaFile in metaFiles)
+            // Use optimized file enumeration
+            var enumerationOptions = new EnumerationOptions
             {
-                tasks.Add(ProcessMetaFileAsync(metaFile));
-            }
+                RecurseSubdirectories = true,
+                IgnoreInaccessible = true,
+                BufferSize = OptimalBufferSize,
+                AttributesToSkip = FileAttributes.System | FileAttributes.Temporary
+            };
 
-            await Task.WhenAll(tasks).ConfigureAwait(false);
+            var metaFiles = Directory.EnumerateFiles(_basePath, $"*{MetaExtension}", enumerationOptions);
 
-            // Check for assets without meta files
-            var assetFiles = Directory.GetFiles(_basePath, $"*{AssetExtension}", SearchOption.AllDirectories);
+            // Process meta files in parallel with optimal degree of parallelism
+            var options = new ParallelOptions
+            {
+                MaxDegreeOfParallelism = Environment.ProcessorCount
+            };
+
+            await Parallel.ForEachAsync(metaFiles, options, async (metaFile, ct) =>
+            {
+                await ProcessMetaFileAsync(metaFile);
+            });
+
+            // Check for assets without meta files using parallel processing
+            var assetFiles = Directory.EnumerateFiles(_basePath, $"*{AssetExtension}", enumerationOptions);
             var missingMetaTasks = new List<Task>();
 
-            foreach (var assetFile in assetFiles)
+            await Parallel.ForEachAsync(assetFiles, options, async (assetFile, ct) =>
             {
                 var metaFile = GetMetaPath(assetFile);
                 if (!File.Exists(metaFile))
                 {
-                    missingMetaTasks.Add(CreateMetaFromAssetAsync(assetFile));
+                    await CreateMetaFromAssetAsync(assetFile);
                 }
-            }
+            });
 
-            await Task.WhenAll(missingMetaTasks).ConfigureAwait(false);
+            // Prefetch frequently used assets in background
+            PrefetchCommonAssets();
+        }
 
-            // Load all assets into memory
-            var loadTasks = new List<Task>();
-            foreach (var metadata in _metadataById.Values)
+        private void PrefetchCommonAssets()
+        {
+            // Prefetch project file and commonly used assets
+            if (_project != null)
             {
-                if (_assetsById.ContainsKey(metadata.ID))
-                {
-                    continue;
-                }
-                loadTasks.Add(LoadAssetInternalAsync(metadata));
+                PrefetchAsset(_project.ID, 10);
             }
-            await Task.WhenAll(loadTasks).ConfigureAwait(false);
 
-            _logger.Info($"Loaded {_metadataById.Count} assets into memory");
+            // Prefetch small assets that are likely to be used soon
+            foreach (var metadata in _metadataById.Values.Where(m => m.FileSize < 1024 * 1024))
+            {
+                PrefetchAsset(metadata.ID, 5);
+            }
         }
 
         private async Task ProcessMetaFileAsync(string metaFilePath)
         {
             try
             {
-                using var stream = new FileStream(metaFilePath, FileMode.Open, FileAccess.Read, FileShare.Read);
-                var buffer = new byte[MetaFileBufferSize];
-                var bytesRead = await stream.ReadAsync(buffer.AsMemory(0, MetaFileBufferSize));
-                var metadata = AssetMetadata.FromBytes(buffer.AsSpan(0, bytesRead).ToArray());
+                var fileInfo = new FileInfo(metaFilePath);
+
+                // Read the exact file size instead of fixed buffer
+                byte[] fileBytes = await File.ReadAllBytesAsync(metaFilePath);
+
+                // Use the exact file content for deserialization
+                var metadata = AssetMetadata.FromBytes(fileBytes);
+
+                // Update file size information
+                var assetPath = GetFullPath(metadata.Path);
+                if (File.Exists(assetPath))
+                {
+                    metadata.FileSize = new FileInfo(assetPath).Length;
+                }
 
                 var normalizedPath = NormalizePath(metadata.Path.ToString());
                 _metadataByPath[normalizedPath] = metadata;
                 _metadataById[metadata.ID] = metadata;
+
+                _logger.Debug($"Processed meta file: {metaFilePath}");
+            }
+            catch (EndOfStreamException ex)
+            {
+                _logger.Warn(ex, $"Meta file is shorter than expected: {metaFilePath}");
             }
             catch (Exception ex)
             {
@@ -173,7 +393,8 @@ namespace RockEngine.Core.Assets
         {
             try
             {
-                using var stream = new FileStream(assetFilePath, FileMode.Open, FileAccess.Read, FileShare.Read);
+                using var stream = new FileStream(assetFilePath, FileMode.Open, FileAccess.Read,
+                    FileShare.Read, OptimalBufferSize, FileOptions.SequentialScan);
                 var asset = await _serializer.DeserializeMetadataAsync(stream);
                 await SaveMetadataAsync(asset);
             }
@@ -190,7 +411,9 @@ namespace RockEngine.Core.Assets
             var directory = Path.GetDirectoryName(metaPath);
 
             if (!string.IsNullOrEmpty(directory))
+            {
                 Directory.CreateDirectory(directory);
+            }
 
             await SaveMetadataToDiskAsync(metadata);
 
@@ -224,7 +447,9 @@ namespace RockEngine.Core.Assets
             var modelPathKey = NormalizePath(Path.Combine(parentPath, modelName));
 
             if (TryGetAsset<ModelAsset>(modelPathKey, out var existing))
+            {
                 return existing;
+            }
 
             var meshesData = await _assimpLoader.LoadMeshesAsync(filePath);
             var modelAsset = Create<ModelAsset>(new AssetPath(parentPath, modelName));
@@ -239,6 +464,7 @@ namespace RockEngine.Core.Assets
                     new AssetPath($"{parentPath}/{modelName}/Meshes", meshName),
                     meshName);
 
+                // Use pooled arrays for mesh data
                 meshAsset.SetGeometry(meshData.Vertices, meshData.Indices);
 
                 var materialAsset = Create<MaterialAsset>(
@@ -287,6 +513,7 @@ namespace RockEngine.Core.Assets
 
             return modelAsset;
         }
+
         public MaterialAsset CreateMaterial(string name, string template, List<AssetReference<TextureAsset>>? textures = null, Dictionary<string, object>? parameters = null)
         {
             var material = Create<MaterialAsset>(new AssetPath("Materials", name));
@@ -325,6 +552,7 @@ namespace RockEngine.Core.Assets
         {
             var project = await LoadAssetFromDisk<ProjectData>(new AssetPath(projectPath));
             _basePath = project.Data.RootPath;
+
             await IndexProjectAssetsAsync();
             return (ProjectAsset)project;
         }
@@ -337,11 +565,39 @@ namespace RockEngine.Core.Assets
 
             try
             {
-                using var stream = new FileStream(fullPath, FileMode.Open, FileAccess.Read, FileShare.Read);
-                var asset = await _serializer.DeserializeMetadataAsync(stream);
-                stream.Position = 0;
-                await LoadDataForAssetAsync(asset, stream);
+                // Check cache first
+                if (_assetCache.TryGetValue<IAsset<T>>(path.ToString(), out var cachedAsset))
+                {
+                    return cachedAsset;
+                }
+
+                var fileInfo = new FileInfo(fullPath);
+                IAsset asset;
+
+                // Use memory mapping for large files
+                if (fileInfo.Length > 1024 * 1024) // 1MB threshold
+                {
+                    asset = await LoadAssetWithMemoryMapping(fullPath);
+                }
+                else
+                {
+                    // Use optimized file streaming for small files
+                    using var stream = new FileStream(fullPath, FileMode.Open, FileAccess.Read,
+                        FileShare.Read, OptimalBufferSize, FileOptions.SequentialScan | FileOptions.Asynchronous);
+                    asset = await _serializer.DeserializeMetadataAsync(stream);
+                    stream.Position = 0;
+                    await LoadDataForAssetAsync(asset, stream);
+                }
+
                 RegisterAsset(asset);
+
+                // Add to cache with size-based expiration
+                var cacheEntryOptions = new MemoryCacheEntryOptions()
+                    .SetSize(((IAsset<T>)asset).GetData()?.GetHashCode() ?? 0)
+                    .SetSlidingExpiration(TimeSpan.FromMinutes(30));
+
+                _assetCache.Set(path.ToString(), asset, cacheEntryOptions);
+
                 return (IAsset<T>)asset;
             }
             finally
@@ -350,15 +606,69 @@ namespace RockEngine.Core.Assets
             }
         }
 
-        public async Task SaveAsync(IAsset asset) 
+        private async Task<IAsset> LoadAssetWithMemoryMapping(string fullPath)
+        {
+            var fileInfo = new FileInfo(fullPath);
+            using var mmf = MemoryMappedFile.CreateFromFile(fullPath, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
+            using var stream = mmf.CreateViewStream(0, fileInfo.Length, MemoryMappedFileAccess.Read);
+
+            var asset = await _serializer.DeserializeMetadataAsync(stream);
+            stream.Position = 0;
+            await LoadDataForAssetAsync(asset, stream);
+            return asset;
+        }
+
+        private async Task<IAsset> LoadAssetWithOptimizationsAsync(AssetMetadata metadata)
+        {
+            var fullPath = GetFullPath(metadata.Path);
+
+            // Use memory mapping for large assets
+            if (metadata.FileSize > 1024 * 1024)
+            {
+                return await LoadAssetWithMemoryMapping(fullPath);
+            }
+            else
+            {
+                // Use pooled memory stream for small assets
+                var memoryStream = _memoryStreamPool.Get();
+                try
+                {
+                    using var fileStream = new FileStream(fullPath, FileMode.Open, FileAccess.Read,
+                        FileShare.Read, OptimalBufferSize, FileOptions.SequentialScan);
+
+                    await fileStream.CopyToAsync(memoryStream);
+                    memoryStream.Position = 0;
+
+                    var asset = await _serializer.DeserializeMetadataAsync(memoryStream);
+                    memoryStream.Position = 0;
+                    await LoadDataForAssetAsync(asset, memoryStream);
+
+                    return asset;
+                }
+                finally
+                {
+                    memoryStream.SetLength(0); // Reset for reuse
+                    _memoryStreamPool.Return(memoryStream);
+                }
+            }
+        }
+
+        public async Task SaveAsync(IAsset asset)
         {
             asset.BeforeSaving();
             await SaveAsync(asset, GetFullPath(asset.Path));
             asset.AfterSaving();
             await SaveMetadataAsync(asset);
+
+            // Update cache
+            var cacheEntryOptions = new MemoryCacheEntryOptions()
+                .SetSize(asset.GetData()?.GetHashCode() ?? 0)
+                .SetSlidingExpiration(TimeSpan.FromMinutes(30));
+
+            _assetCache.Set(asset.Path.ToString(), asset, cacheEntryOptions);
         }
 
-        private async Task SaveAsync(IAsset asset, string fullPath) 
+        private async Task SaveAsync(IAsset asset, string fullPath)
         {
             var assetLock = _assetLocks.GetOrAdd(fullPath, _ => new SemaphoreSlim(1, 1));
             await assetLock.WaitAsync();
@@ -367,9 +677,14 @@ namespace RockEngine.Core.Assets
             {
                 asset.UpdateModified();
                 var directory = Path.GetDirectoryName(fullPath);
-                if (!string.IsNullOrEmpty(directory)) Directory.CreateDirectory(directory);
+                if (!string.IsNullOrEmpty(directory))
+                {
+                    Directory.CreateDirectory(directory);
+                }
 
-                using var stream = new FileStream(fullPath, FileMode.Create, FileAccess.Write, FileShare.None);
+                // Use optimized file writing with write-through caching
+                using var stream = new FileStream(fullPath, FileMode.Create, FileAccess.Write,
+                    FileShare.None, OptimalBufferSize, FileOptions.WriteThrough | FileOptions.Asynchronous);
                 await _serializer.SerializeAsync(asset, stream);
             }
             finally
@@ -378,19 +693,12 @@ namespace RockEngine.Core.Assets
             }
         }
 
-        private async Task LoadAssetInternalAsync(AssetMetadata metadata)
-        {
-            var fullPath = GetFullPath(metadata.Path);
-            using var stream = new FileStream(fullPath, FileMode.Open, FileAccess.Read);
-            var asset = await _serializer.DeserializeMetadataAsync(stream);
-            stream.Position = 0;
-            await LoadDataForAssetAsync(asset, stream);
-            RegisterAsset(asset);
-        }
-
         private async Task LoadDataForAssetAsync(IAsset asset, Stream stream)
         {
-            if (asset.IsDataLoaded) return;
+            if (asset.IsDataLoaded)
+            {
+                return;
+            }
 
             var data = await _serializer.DeserializeDataAsync(stream, asset.GetDataType());
             asset.SetData(data);
@@ -409,12 +717,27 @@ namespace RockEngine.Core.Assets
             _metadataById[asset.ID] = metadata;
             _assetsById[asset.ID] = asset;
 
+            // Add to cache
+            var cacheEntryOptions = new MemoryCacheEntryOptions()
+                .SetSize(asset.GetData()?.GetHashCode() ?? 0)
+                .SetSlidingExpiration(TimeSpan.FromMinutes(30));
+
+            _assetCache.Set(asset.ID.ToString(), asset, cacheEntryOptions);
+            _assetCache.Set(pathKey, asset, cacheEntryOptions);
+
             OnAssetRegistered?.Invoke(asset);
             OnAssetsChanged?.Invoke();
         }
 
         public bool TryGetAsset<T>(Guid assetID, out T asset) where T : class, IAsset
         {
+            // Check cache first
+            if (_assetCache.TryGetValue<T>(assetID.ToString(), out var cachedAsset))
+            {
+                asset = cachedAsset;
+                return true;
+            }
+
             if (_assetsById.TryGetValue(assetID, out var foundAsset) && foundAsset is T typedAsset)
             {
                 asset = typedAsset;
@@ -428,6 +751,14 @@ namespace RockEngine.Core.Assets
         public bool TryGetAsset<T>(string pathKey, out T asset) where T : class, IAsset
         {
             var normalizedPath = NormalizePath(pathKey);
+
+            // Check cache first
+            if (_assetCache.TryGetValue<T>(normalizedPath, out var cachedAsset))
+            {
+                asset = cachedAsset;
+                return true;
+            }
+
             if (_assetsByPath.TryGetValue(normalizedPath, out var foundAsset) && foundAsset is T typedAsset)
             {
                 asset = typedAsset;
@@ -438,10 +769,32 @@ namespace RockEngine.Core.Assets
             return false;
         }
 
+        public async Task<T?> GetAssetAsync<T>(Guid assetId) where T : class, IAsset
+        {
+            if (TryGetAsset<T>(assetId, out var asset))
+            {
+                return asset;
+            }
+
+            if (!_metadataById.TryGetValue(assetId, out var metadata))
+            {
+                throw new FileNotFoundException($"Asset not found: {assetId}");
+            }
+
+            var lazyTask = _lazyAssets.GetOrAdd(assetId, id => new Lazy<Task<IAsset>>(
+                () => LoadAssetWithOptimizationsAsync(metadata),
+                LazyThreadSafetyMode.ExecutionAndPublication));
+
+            var result = await lazyTask.Value;
+            return result as T;
+        }
+
         private string GetFullPath(AssetPath assetPath)
         {
             if (Path.IsPathRooted(assetPath.ToString()))
+            {
                 return assetPath.ToString();
+            }
 
             return Path.Combine(_basePath, assetPath.ToString());
         }
@@ -455,10 +808,23 @@ namespace RockEngine.Core.Assets
 
         public void Dispose()
         {
+            _prefetchCancellation.Cancel();
+            _prefetchWorker?.Wait(5000);
+
             foreach (var lockObj in _assetLocks.Values)
             {
                 lockObj.Dispose();
             }
+
+            foreach (var (mmf, accessor) in _mappedFiles.Values)
+            {
+                accessor.Dispose();
+                mmf.Dispose();
+            }
+
+            _assetCache.Dispose();
+            _fileWatcher?.Dispose();
+            _prefetchCancellation.Dispose();
         }
 
         public async Task<IAsset<TData>> LoadAsync<TAsset, TData>(AssetPath path) where TAsset : IAsset<TData> where TData : class
@@ -487,13 +853,19 @@ namespace RockEngine.Core.Assets
 
         public T? GetAsset<T>(Guid assetID) where T : class, IAsset
         {
-            return _assetsById.TryGetValue(assetID, out var asset) ? asset as T : null;
+            return GetAsset(assetID) as T;
+        }
+        public IAsset? GetAsset(Guid assetID)
+        {
+            return _assetsById.TryGetValue(assetID, out var asset) ? asset: null;
         }
 
         public async Task<T?> LoadAssetByIdAsync<T>(Guid assetId, CancellationToken ct = default) where T : class, IAsset
         {
             if (TryGetAsset(assetId, out T? asset))
+            {
                 return asset;
+            }
 
             if (!_metadataById.TryGetValue(assetId, out var metadata))
             {
@@ -503,7 +875,7 @@ namespace RockEngine.Core.Assets
 
             try
             {
-                return (T?)await LoadAssetFromDisk<object>(metadata.Path);
+                return (T?)await LoadAssetWithOptimizationsAsync(metadata);
             }
             catch (Exception ex)
             {
@@ -545,7 +917,9 @@ namespace RockEngine.Core.Assets
         public async Task<bool> RenameAssetAsync(Guid assetId, string newName)
         {
             if (!_metadataById.TryGetValue(assetId, out var metadata))
+            {
                 return false;
+            }
 
             if (_assetsById.TryGetValue(assetId, out var asset))
             {
@@ -555,16 +929,21 @@ namespace RockEngine.Core.Assets
             var newPath = new AssetPath(metadata.Path.Folder, newName, metadata.Path.Extension);
             return await MoveAssetInternalAsync(metadata, newPath);
         }
+
         private async Task<bool> MoveAssetInternalAsync(AssetMetadata metadata, AssetPath newPath)
         {
             var newNormalizedPath = NormalizePath(newPath.ToString());
             var oldNormalizedPath = NormalizePath(metadata.Path.ToString());
 
             if (oldNormalizedPath.Equals(newNormalizedPath, StringComparison.OrdinalIgnoreCase))
+            {
                 return true;
+            }
 
             if (_metadataByPath.ContainsKey(newNormalizedPath))
+            {
                 return false;
+            }
 
             var oldFullPath = GetFullPath(metadata.Path);
             var newFullPath = GetFullPath(newPath);
@@ -606,6 +985,17 @@ namespace RockEngine.Core.Assets
                     _assetsByPath[newNormalizedPath] = loadedAsset;
                 }
 
+                // Update cache
+                _assetCache.Remove(oldNormalizedPath);
+                _assetCache.Remove(metadata.ID.ToString());
+
+                var cacheEntryOptions = new MemoryCacheEntryOptions()
+                    .SetSize(loadedAsset?.GetData()?.GetHashCode() ?? 0)
+                    .SetSlidingExpiration(TimeSpan.FromMinutes(30));
+
+                _assetCache.Set(newNormalizedPath, loadedAsset, cacheEntryOptions);
+                _assetCache.Set(metadata.ID.ToString(), loadedAsset, cacheEntryOptions);
+
                 await SaveMetadataToDiskAsync(metadata);
                 return true;
             }
@@ -620,12 +1010,15 @@ namespace RockEngine.Core.Assets
                 newLock.Release();
             }
         }
+
         private async Task SaveMetadataToDiskAsync(AssetMetadata metadata)
         {
             var metaPath = GetMetaPath(GetFullPath(metadata.Path));
             var directory = Path.GetDirectoryName(metaPath);
             if (!string.IsNullOrEmpty(directory))
+            {
                 Directory.CreateDirectory(directory);
+            }
 
             using var stream = new FileStream(metaPath, FileMode.Create, FileAccess.Write, FileShare.None);
             var metadataBytes = metadata.ToBytes();
@@ -636,17 +1029,23 @@ namespace RockEngine.Core.Assets
         {
             var normalizedPath = NormalizePath(currentAssetPath);
             if (!_metadataByPath.TryGetValue(normalizedPath, out var metadata))
+            {
                 return false;
+            }
 
             return await MoveAssetInternalAsync(metadata, newPath);
         }
+
         public async Task<bool> MoveAssetAsync(Guid assetId, AssetPath newPath)
         {
             if (!_metadataById.TryGetValue(assetId, out var metadata))
+            {
                 return false;
+            }
 
             return await MoveAssetInternalAsync(metadata, newPath);
         }
+
         public async Task<bool> RemoveAssetAsync(string assetPath, bool removeFile = false)
         {
             var normalizedPath = NormalizePath(assetPath);
@@ -667,6 +1066,11 @@ namespace RockEngine.Core.Assets
                 _metadataByPath.TryRemove(NormalizePath(metadata.Path.ToString()), out _);
                 _assetsById.TryRemove(metadata.ID, out _);
                 _assetsByPath.TryRemove(NormalizePath(metadata.Path.ToString()), out _);
+                _lazyAssets.TryRemove(metadata.ID, out _);
+
+                // Remove from cache
+                _assetCache.Remove(metadata.ID.ToString());
+                _assetCache.Remove(NormalizePath(metadata.Path.ToString()));
 
                 if (removeFile)
                 {
@@ -674,10 +1078,14 @@ namespace RockEngine.Core.Assets
                     var metaPath = GetMetaPath(fullPath);
 
                     if (File.Exists(fullPath))
+                    {
                         File.Delete(fullPath);
+                    }
 
                     if (File.Exists(metaPath))
+                    {
                         File.Delete(metaPath);
+                    }
                 }
 
                 OnAssetRemoved?.Invoke(metadata.ID);
@@ -697,6 +1105,8 @@ namespace RockEngine.Core.Assets
         {
             _assetsById.Clear();
             _assetsByPath.Clear();
+            _assetCache.Clear();
+            _lazyAssets.Clear();
             _logger.Info("Asset cache cleared");
         }
 
@@ -706,6 +1116,9 @@ namespace RockEngine.Core.Assets
             {
                 _assetsById.TryRemove(assetId, out _);
                 _assetsByPath.TryRemove(NormalizePath(metadata.Path.ToString()), out _);
+                _assetCache.Remove(assetId.ToString());
+                _assetCache.Remove(NormalizePath(metadata.Path.ToString()));
+                _lazyAssets.TryRemove(assetId, out _);
                 _logger.Debug($"Removed asset {assetId} from cache");
             }
         }
@@ -718,7 +1131,44 @@ namespace RockEngine.Core.Assets
                 RemoveFromCache(metadata.ID);
             }
         }
+    }
 
+    // Supporting classes
+    public record struct AssetLoadRequest(Guid AssetId);
 
+    // Object pool policies
+    public class MemoryStreamPooledObjectPolicy : IPooledObjectPolicy<MemoryStream>
+    {
+        public MemoryStream Create()
+        {
+            return new MemoryStream();
+        }
+
+        public bool Return(MemoryStream obj)
+        {
+            obj.SetLength(0);
+            return true;
+        }
+    }
+
+    public class BufferPooledObjectPolicy : IPooledObjectPolicy<byte[]>
+    {
+        private readonly int _bufferSize;
+
+        public BufferPooledObjectPolicy(int bufferSize)
+        {
+            _bufferSize = bufferSize;
+        }
+
+        public byte[] Create()
+        {
+            return new byte[_bufferSize];
+        }
+
+        public bool Return(byte[] obj)
+        {
+            Array.Clear(obj, 0, obj.Length);
+            return true;
+        }
     }
 }

@@ -1,8 +1,10 @@
-﻿using RockEngine.Vulkan;
+﻿using NLog;
+
+using RockEngine.Vulkan;
 
 using Silk.NET.Vulkan;
 
-using System.Runtime.InteropServices;
+using System.Runtime.CompilerServices;
 
 namespace RockEngine.Core.Rendering.Buffers
 {
@@ -18,12 +20,16 @@ namespace RockEngine.Core.Rendering.Buffers
         private readonly LinkedList<FreeBlock> _vertexFreeList = new();
         private readonly LinkedList<FreeBlock> _indexFreeList = new();
         private readonly Dictionary<Guid, MeshAllocation> _meshAllocations = new();
+        private readonly Dictionary<Guid, VertexFormat> _vertexFormats = new();
+        private readonly Dictionary<Guid, Type> _vertexTypes = new();
+        private readonly Dictionary<Guid, uint> _vertexStrides = new();
         private readonly Lock _allocationLock = new();
 
         // Defragmentation tracking
         private ulong _vertexFragmentationScore;
         private ulong _indexFragmentationScore;
         private const ulong FRAGMENTATION_THRESHOLD = 1024 * 1024; // 1MB
+        private static readonly ILogger _logger = LogManager.GetCurrentClassLogger();
 
         public GlobalGeometryBuffer(VulkanContext context, ulong initialVertexSize = 64 * 1024 * 1024,
                                    ulong initialIndexSize = 16 * 1024 * 1024)
@@ -41,75 +47,126 @@ namespace RockEngine.Core.Rendering.Buffers
             _vertexBuffer = VkBuffer.Create(
                 _context,
                 _vertexBufferSize,
-                BufferUsageFlags.VertexBufferBit | BufferUsageFlags.TransferDstBit,
+                BufferUsageFlags.VertexBufferBit | BufferUsageFlags.TransferDstBit | BufferUsageFlags.TransferSrcBit,
                 MemoryPropertyFlags.DeviceLocalBit
             );
 
             _indexBuffer = VkBuffer.Create(
                 _context,
                 _indexBufferSize,
-                BufferUsageFlags.IndexBufferBit | BufferUsageFlags.TransferDstBit,
+                BufferUsageFlags.IndexBufferBit | BufferUsageFlags.TransferDstBit | BufferUsageFlags.TransferSrcBit,
                 MemoryPropertyFlags.DeviceLocalBit
             );
         }
 
-        public async ValueTask<MeshAllocation> AddMeshAsync(Guid meshID, Vertex[] vertices, uint[] indices)
+        public async ValueTask<MeshAllocation> AddMeshAsync<T>(Guid meshID, T[] vertices, uint[] indices) where T : unmanaged, IVertex
         {
-            ulong vertexSize = (ulong)(vertices.Length * Marshal.SizeOf<Vertex>());
+            uint vertexStride = (uint)Unsafe.SizeOf<T>();
+            ulong vertexSize = (ulong)(vertices.Length * vertexStride);
             ulong indexSize = (ulong)(indices.Length * sizeof(uint));
 
-            // Try to find space in free lists
-            var vertexBlock = FindFreeBlock(_vertexFreeList, vertexSize);
-            var indexBlock = FindFreeBlock(_indexFreeList, indexSize);
-
-            // If no suitable free blocks, expand buffers
-            if (vertexBlock == null)
+            // Ensure proper alignment for the vertex data
+            if (vertexStride % 4 != 0)
             {
-                ExpandVertexBuffer(vertexSize);
-                vertexBlock = FindFreeBlock(_vertexFreeList, vertexSize);
+                throw new InvalidOperationException($"Vertex stride {vertexStride} is not 4-byte aligned for type {typeof(T).Name}");
             }
 
-            if (indexBlock == null)
+            FreeBlock vertexAllocation, indexAllocation;
+
+            lock (_allocationLock)
             {
-                ExpandIndexBuffer(indexSize);
-                indexBlock = FindFreeBlock(_indexFreeList, indexSize);
+                // Find and allocate vertex block with proper alignment
+                var vertexResult = FindAndAllocateAlignedBlock(_vertexFreeList, vertexSize, vertexStride);
+                if (!vertexResult.HasValue)
+                {
+                    ExpandVertexBuffer(vertexSize);
+                    vertexResult = FindAndAllocateAlignedBlock(_vertexFreeList, vertexSize, vertexStride);
+                    if (!vertexResult.HasValue)
+                    {
+                        throw new InvalidOperationException("Failed to allocate vertex buffer space after expansion");
+                    }
+                }
+                vertexAllocation = vertexResult.Value;
+
+                // Verify alignment immediately after allocation
+                if (vertexAllocation.Offset % vertexStride != 0)
+                {
+                    throw new InvalidOperationException($"Critical: Allocated vertex block at {vertexAllocation.Offset} is not aligned to stride {vertexStride}");
+                }
+             
+
+                // Find and allocate index block
+                var indexResult = FindAndAllocateBlock(_indexFreeList, indexSize);
+                if (!indexResult.HasValue)
+                {
+                    ExpandIndexBuffer(indexSize);
+                    indexResult = FindAndAllocateBlock(_indexFreeList, indexSize);
+                    if (!indexResult.HasValue)
+                    {
+                        throw new InvalidOperationException("Failed to allocate index buffer space after expansion");
+                    }
+                }
+                indexAllocation = indexResult.Value;
+
+                var allocation = new MeshAllocation(meshID, vertexAllocation, indexAllocation,
+                                                  (uint)vertices.Length, (uint)indices.Length);
+
+                _meshAllocations[meshID] = allocation;
+
+                // Store vertex type information
+                _vertexTypes[meshID] = typeof(T);
+                _vertexStrides[meshID] = vertexStride;
+                _vertexFormats[meshID] = new VertexFormat(
+                    T.GetBindingDescription(),
+                    T.GetAttributeDescriptions()
+                );
+
+                _logger.Info($"Mesh {meshID} allocated at vertex offset {vertexAllocation.Offset} (aligned to {vertexStride})");
             }
 
-            // Allocate from free blocks
-            var vertexAllocation = AllocateFromBlock(_vertexFreeList, vertexBlock!.Value, vertexSize);
-            var indexAllocation = AllocateFromBlock(_indexFreeList, indexBlock!.Value, indexSize);
-
-            // Create mesh allocation
-            var allocation = new MeshAllocation(meshID, vertexAllocation, indexAllocation,
-                                              (uint)vertices.Length, (uint)indices.Length);
-            _meshAllocations[meshID] = allocation;
-
-            return await UploadMeshData(allocation, vertices, indices);
+            return await UploadMeshData(meshID, vertices, indices, vertexSize, indexSize,
+                                      vertexAllocation.Offset, indexAllocation.Offset);
         }
 
-        private async ValueTask<MeshAllocation> UploadMeshData(MeshAllocation allocation, Vertex[] vertices, uint[] indices)
+
+        private ulong AlignUp(ulong value, ulong alignment)
+        {
+            if (alignment == 0)
+            {
+                return value;
+            }
+
+            ulong remainder = value % alignment;
+            return remainder == 0 ? value : value + alignment - remainder;
+        }
+        public uint GetVertexStride(Guid meshID)
+        {
+            lock (_allocationLock)
+            {
+                return _vertexStrides.TryGetValue(meshID, out var stride)
+                    ? stride
+                    : throw new KeyNotFoundException($"Mesh {meshID} not found");
+            }
+        }
+
+
+        private async ValueTask<MeshAllocation> UploadMeshData<T>(Guid meshID, T[] vertices, uint[] indices,
+             ulong vertexSize, ulong indexSize, ulong vertexOffset, ulong indexOffset) where T : unmanaged, IVertex
         {
             var transferBatch = _context.TransferSubmitContext.CreateBatch();
 
-            // Stage vertex data
-            transferBatch.StageToBuffer(
-                vertices.AsSpan(),
-                _vertexBuffer,
-                allocation.VertexOffset,
-                allocation.VertexSize
-            );
 
-            // Stage index data
-            transferBatch.StageToBuffer(
-                indices.AsSpan(),
-                _indexBuffer,
-                allocation.IndexOffset,
-                allocation.IndexSize
-            );
+            // Copy vertex data to staging buffer
+            transferBatch.StageToBuffer<T>(vertices, _vertexBuffer, vertexOffset, vertexSize);
+            transferBatch.StageToBuffer<uint>(indices, _indexBuffer, indexOffset, indexSize);
+
 
             await _context.TransferSubmitContext.FlushSingle(transferBatch, VkFence.CreateNotSignaled(_context));
 
-            return allocation;
+            return new MeshAllocation(meshID,
+                new FreeBlock(vertexOffset, vertexSize),
+                new FreeBlock(indexOffset, indexSize),
+                (uint)vertices.Length, (uint)indices.Length);
         }
 
         public void RemoveMesh(Guid meshID)
@@ -122,8 +179,9 @@ namespace RockEngine.Core.Rendering.Buffers
                     AddToFreeList(_vertexFreeList, allocation.VertexOffset, allocation.VertexSize);
                     AddToFreeList(_indexFreeList, allocation.IndexOffset, allocation.IndexSize);
 
-                    // Remove from allocations
+                    // Remove from allocations and formats
                     _meshAllocations.Remove(meshID);
+                    _vertexFormats.Remove(meshID);
 
                     // Update fragmentation scores
                     _vertexFragmentationScore += allocation.VertexSize;
@@ -139,38 +197,95 @@ namespace RockEngine.Core.Rendering.Buffers
             }
         }
 
+        // Functional approach: Direct access to vertex format without type storage
+        public VertexInputBindingDescription GetVertexBindingDescription(Guid meshID)
+        {
+            lock (_allocationLock)
+            {
+                return _vertexFormats.TryGetValue(meshID, out var format)
+                    ? format.BindingDescription
+                    : throw new KeyNotFoundException($"Mesh {meshID} not found");
+            }
+        }
+
+        public VertexInputAttributeDescription[] GetVertexAttributeDescriptions(Guid meshID)
+        {
+            lock (_allocationLock)
+            {
+                return _vertexFormats.TryGetValue(meshID, out var format)
+                    ? format.AttributeDescriptions
+                    : throw new KeyNotFoundException($"Mesh {meshID} not found");
+            }
+        }
+
+        // Functional programming style: Higher-order function for mesh operations
+        public TResult WithMeshFormat<TResult>(Guid meshID, Func<VertexInputBindingDescription, VertexInputAttributeDescription[], TResult> operation)
+        {
+            lock (_allocationLock)
+            {
+                if (!_vertexFormats.TryGetValue(meshID, out var format))
+                {
+                    throw new KeyNotFoundException($"Mesh {meshID} not found");
+                }
+
+                return operation(format.BindingDescription, format.AttributeDescriptions);
+            }
+        }
+
+        // Pipeline configuration helper using functional composition
+        public Action<CommandBuffer> CreatePipelineConfigurator(Guid meshID, Action<VertexInputBindingDescription, VertexInputAttributeDescription[]> pipelineSetup)
+        {
+            return cmd =>
+            {
+                WithMeshFormat(meshID, (binding, attributes) =>
+                {
+                    pipelineSetup(binding, attributes);
+                    return 0; // Return value doesn't matter for action
+                });
+            };
+        }
+
+        public void ForEachMesh(Action<Guid, MeshAllocation, VertexFormat> action)
+        {
+            lock (_allocationLock)
+            {
+                foreach (var (meshId, allocation) in _meshAllocations)
+                {
+                    if (_vertexFormats.TryGetValue(meshId, out var format))
+                    {
+                        action(meshId, allocation, format);
+                    }
+                }
+            }
+        }
         public async ValueTask DefragmentAsync()
         {
             lock (_allocationLock)
             {
-                // Don't defragment if not needed
                 if (_vertexFragmentationScore < FRAGMENTATION_THRESHOLD &&
                     _indexFragmentationScore < FRAGMENTATION_THRESHOLD)
                 {
                     return;
                 }
 
-                // Reset fragmentation scores
                 _vertexFragmentationScore = 0;
                 _indexFragmentationScore = 0;
             }
 
-            // Create new compacted buffers
             var newVertexBuffer = VkBuffer.Create(
                 _context,
                 _vertexBufferSize,
-                BufferUsageFlags.VertexBufferBit | BufferUsageFlags.TransferDstBit,
+                BufferUsageFlags.VertexBufferBit | BufferUsageFlags.TransferDstBit | BufferUsageFlags.TransferSrcBit,
                 MemoryPropertyFlags.DeviceLocalBit
             );
 
             var newIndexBuffer = VkBuffer.Create(
                 _context,
                 _indexBufferSize,
-                BufferUsageFlags.IndexBufferBit | BufferUsageFlags.TransferDstBit,
+                BufferUsageFlags.IndexBufferBit | BufferUsageFlags.TransferDstBit | BufferUsageFlags.TransferSrcBit,
                 MemoryPropertyFlags.DeviceLocalBit
             );
 
-            // Copy all active meshes to new buffers
             var transferBatch = _context.TransferSubmitContext.CreateBatch();
             ulong newVertexOffset = 0;
             ulong newIndexOffset = 0;
@@ -179,53 +294,38 @@ namespace RockEngine.Core.Rendering.Buffers
 
             foreach (var allocation in _meshAllocations.Values)
             {
-                // Copy vertex data
-                transferBatch.CopyBuffer(
-                    _vertexBuffer, newVertexBuffer,
-                    allocation.VertexOffset, newVertexOffset,
-                    allocation.VertexSize
-                );
+                transferBatch.CopyBuffer(_vertexBuffer, newVertexBuffer, allocation.VertexOffset, newVertexOffset, allocation.VertexSize);
+                transferBatch.CopyBuffer(_indexBuffer, newIndexBuffer, allocation.IndexOffset, newIndexOffset, allocation.IndexSize);
 
-                // Copy index data
-                transferBatch.CopyBuffer(
-                    _indexBuffer, newIndexBuffer,
-                    allocation.IndexOffset, newIndexOffset,
-                    allocation.IndexSize
-                );
-
-                // Update allocation with new offsets
                 var updatedAllocation = new MeshAllocation(
-                    allocation.MeshId,
+                    allocation.MeshID,
                     newVertexOffset, allocation.VertexSize,
                     newIndexOffset, allocation.IndexSize,
                     allocation.VertexCount, allocation.IndexCount
                 );
 
-                updatedAllocations[allocation.MeshId] = updatedAllocation;
+                updatedAllocations[allocation.MeshID] = updatedAllocation;
 
-                // Update offsets
                 newVertexOffset += allocation.VertexSize;
                 newIndexOffset += allocation.IndexSize;
             }
 
             await _context.TransferSubmitContext.FlushSingle(transferBatch, VkFence.CreateNotSignaled(_context));
 
-            // Swap buffers
             lock (_allocationLock)
             {
-                _vertexBuffer.Dispose();
-                _indexBuffer.Dispose();
+                _context.GraphicsSubmitContext.AddDependency(_vertexBuffer);
+                _context.GraphicsSubmitContext.AddDependency(_indexBuffer);
+
 
                 _vertexBuffer = newVertexBuffer;
                 _indexBuffer = newIndexBuffer;
 
-                // Update allocations
                 foreach (var updatedAllocation in updatedAllocations)
                 {
                     _meshAllocations[updatedAllocation.Key] = updatedAllocation.Value;
                 }
 
-                // Rebuild free lists with single free block at the end
                 _vertexFreeList.Clear();
                 _vertexFreeList.AddLast(new FreeBlock(newVertexOffset, _vertexBufferSize - newVertexOffset));
 
@@ -234,53 +334,18 @@ namespace RockEngine.Core.Rendering.Buffers
             }
         }
 
-        private FreeBlock? FindFreeBlock(LinkedList<FreeBlock> freeList, ulong requiredSize)
-        {
-            // First-fit algorithm
-            var node = freeList.First;
-            while (node != null)
-            {
-                if (node.Value.Size >= requiredSize)
-                {
-                    return node.Value;
-                }
-                node = node.Next;
-            }
-            return null;
-        }
-
-        private FreeBlock AllocateFromBlock(LinkedList<FreeBlock> freeList, FreeBlock block, ulong size)
-        {
-            // Find the node containing this block
-            var node = freeList.Find(block) ?? throw new InvalidOperationException("Block not found in free list");
-
-            // Remove the block from free list
-            freeList.Remove(node);
-
-            // If block is larger than needed, add remainder back to free list
-            if (block.Size > size)
-            {
-                var remainder = new FreeBlock(block.Offset + size, block.Size - size);
-                freeList.AddLast(remainder);
-            }
-
-            return new FreeBlock(block.Offset, size);
-        }
-
         private void AddToFreeList(LinkedList<FreeBlock> freeList, ulong offset, ulong size)
         {
             var newBlock = new FreeBlock(offset, size);
             var currentNode = freeList.First;
             LinkedListNode<FreeBlock> insertBefore = null;
 
-            // Find insertion point to keep list sorted by offset
             while (currentNode != null && currentNode.Value.Offset < offset)
             {
                 insertBefore = currentNode;
                 currentNode = currentNode.Next;
             }
 
-            // Insert the new block
             LinkedListNode<FreeBlock> newNode;
             if (insertBefore != null)
             {
@@ -291,13 +356,11 @@ namespace RockEngine.Core.Rendering.Buffers
                 newNode = freeList.AddFirst(newBlock);
             }
 
-            // Merge with adjacent blocks if possible
             MergeAdjacentBlocks(freeList, newNode);
         }
 
         private void MergeAdjacentBlocks(LinkedList<FreeBlock> freeList, LinkedListNode<FreeBlock> node)
         {
-            // Try to merge with next block
             var next = node.Next;
             if (next != null && node.Value.Offset + node.Value.Size == next.Value.Offset)
             {
@@ -305,13 +368,97 @@ namespace RockEngine.Core.Rendering.Buffers
                 freeList.Remove(next);
             }
 
-            // Try to merge with previous block
             var prev = node.Previous;
             if (prev != null && prev.Value.Offset + prev.Value.Size == node.Value.Offset)
             {
                 prev.Value = new FreeBlock(prev.Value.Offset, prev.Value.Size + node.Value.Size);
                 freeList.Remove(node);
             }
+        }
+        private FreeBlock? FindAndAllocateAlignedBlock(LinkedList<FreeBlock> freeList, ulong requiredSize, ulong alignment)
+        {
+            var node = freeList.First;
+            while (node != null)
+            {
+                var block = node.Value;
+
+                // Calculate aligned offset within this block
+                ulong alignedOffset = AlignUp(block.Offset, alignment);
+                ulong alignedEnd = alignedOffset + requiredSize;
+
+                // Verify the final alignment
+                ulong finalMod = alignedOffset % alignment;
+
+                if (finalMod != 0)
+                {
+                    _logger.Error($"Alignment failed! alignedOffset={alignedOffset} is not divisible by {alignment}");
+                }
+
+                // Debug logging
+                _logger.Debug($"FindAndAllocateAlignedBlock: block=({block.Offset}, {block.Size}), " +
+                                 $"alignedOffset={alignedOffset}, alignedEnd={alignedEnd}, " +
+                                 $"requiredSize={requiredSize}, alignment={alignment}");
+
+                // Check if the aligned allocation fits in this block
+                if (alignedEnd <= block.Offset + block.Size)
+                {
+                    // Remove the original block from free list
+                    freeList.Remove(node);
+
+                    // If there's a gap before the aligned offset, add it back to free list
+                    if (alignedOffset > block.Offset)
+                    {
+                        ulong frontGapSize = alignedOffset - block.Offset;
+                        _logger.Debug($"  Adding front gap: ({block.Offset}, {frontGapSize})");
+                        AddToFreeList(freeList, block.Offset, frontGapSize);
+                    }
+
+                    // If there's a gap after the allocation, add it back to free list
+                    ulong remainingSizeAfterAllocation = (block.Offset + block.Size) - alignedEnd;
+                    if (remainingSizeAfterAllocation > 0)
+                    {
+                        _logger.Debug($"  Adding back gap: ({alignedEnd}, {remainingSizeAfterAllocation})");
+                        AddToFreeList(freeList, alignedEnd, remainingSizeAfterAllocation);
+                    }
+
+                    _logger.Debug($"  Allocated: ({alignedOffset}, {requiredSize})");
+
+                    // Return the allocated block
+                    return new FreeBlock(alignedOffset, requiredSize);
+                }
+                node = node.Next;
+            }
+
+            _logger.Debug($"FindAndAllocateAlignedBlock: No suitable block found");
+            return null;
+        }
+
+        private FreeBlock? FindAndAllocateBlock(LinkedList<FreeBlock> freeList, ulong requiredSize)
+        {
+            var node = freeList.First;
+            while (node != null)
+            {
+                var block = node.Value;
+
+                if (block.Size >= requiredSize)
+                {
+                    // Remove the block from free list
+                    freeList.Remove(node);
+
+                    // If the block is larger than needed, add the remainder back to free list
+                    if (block.Size > requiredSize)
+                    {
+                        ulong remainderOffset = block.Offset + requiredSize;
+                        ulong remainderSize = block.Size - requiredSize;
+                        AddToFreeList(freeList, remainderOffset, remainderSize);
+                    }
+
+                    // Return the allocated block
+                    return new FreeBlock(block.Offset, requiredSize);
+                }
+                node = node.Next;
+            }
+            return null;
         }
 
         private void ExpandVertexBuffer(ulong additionalSize)
@@ -325,18 +472,15 @@ namespace RockEngine.Core.Rendering.Buffers
             var newBuffer = VkBuffer.Create(
                 _context,
                 newSize,
-                BufferUsageFlags.VertexBufferBit | BufferUsageFlags.TransferDstBit,
+                BufferUsageFlags.VertexBufferBit | BufferUsageFlags.TransferDstBit | BufferUsageFlags.TransferSrcBit,
                 MemoryPropertyFlags.DeviceLocalBit
             );
 
-            // Copy existing data to new buffer
             var transferBatch = _context.TransferSubmitContext.CreateBatch();
             transferBatch.CopyBuffer(_vertexBuffer, newBuffer, 0, 0, _vertexBufferSize);
 
-            // Add the new free space to the free list
             AddToFreeList(_vertexFreeList, _vertexBufferSize, newSize - _vertexBufferSize);
 
-            // Replace the old buffer
             _vertexBuffer.Dispose();
             _vertexBuffer = newBuffer;
             _vertexBufferSize = newSize;
@@ -353,30 +497,25 @@ namespace RockEngine.Core.Rendering.Buffers
             var newBuffer = VkBuffer.Create(
                 _context,
                 newSize,
-                BufferUsageFlags.IndexBufferBit | BufferUsageFlags.TransferDstBit,
+                BufferUsageFlags.IndexBufferBit | BufferUsageFlags.TransferDstBit | BufferUsageFlags.TransferSrcBit,
                 MemoryPropertyFlags.DeviceLocalBit
             );
 
-            // Copy existing data to new buffer
             var transferBatch = _context.TransferSubmitContext.CreateBatch();
             transferBatch.CopyBuffer(_indexBuffer, newBuffer, 0, 0, _indexBufferSize);
 
-            // Add the new free space to the free list
             AddToFreeList(_indexFreeList, _indexBufferSize, newSize - _indexBufferSize);
 
-            // Replace the old buffer
             _indexBuffer.Dispose();
             _indexBuffer = newBuffer;
             _indexBufferSize = newSize;
         }
 
-        public void BindVertexBuffer(VkCommandBuffer cmd)
+     
+
+        public void Bind(VkCommandBuffer cmd)
         {
             _vertexBuffer.BindVertexBuffer(cmd);
-        }
-
-        public void BindIndexBuffer(VkCommandBuffer cmd)
-        {
             _indexBuffer.BindIndexBuffer(cmd, 0, IndexType.Uint32);
         }
 
@@ -394,73 +533,28 @@ namespace RockEngine.Core.Rendering.Buffers
             _indexBuffer?.Dispose();
         }
 
-        public struct FreeBlock
+        public readonly record struct FreeBlock(ulong Offset, ulong Size);
+        
+
+        public readonly record struct MeshAllocation(
+            Guid MeshID,
+            ulong VertexOffset,
+            ulong VertexSize,
+            ulong IndexOffset,
+            ulong IndexSize,
+            uint VertexCount,
+            uint IndexCount
+        )
         {
-            public ulong Offset;
-            public ulong Size;
-
-            public FreeBlock(ulong offset, ulong size)
+            public MeshAllocation(Guid meshID, FreeBlock vertexBlock, FreeBlock indexBlock, uint vertexCount, uint indexCount)
+                : this(meshID, vertexBlock.Offset, vertexBlock.Size, indexBlock.Offset, indexBlock.Size, vertexCount, indexCount)
             {
-                Offset = offset;
-                Size = size;
-            }
-
-            public override bool Equals(object? obj)
-            {
-                return obj is FreeBlock block &&
-                       Offset == block.Offset &&
-                       Size == block.Size;
-            }
-
-            public override int GetHashCode()
-            {
-                return HashCode.Combine(Offset, Size);
-            }
-            public static bool operator ==(FreeBlock left, FreeBlock right)
-            {
-                return left.Equals(right);
-            }
-
-            public static bool operator !=(FreeBlock left, FreeBlock right)
-            {
-                return !(left == right);
             }
         }
 
-        public struct MeshAllocation
-        {
-            public Guid MeshId;
-            public ulong VertexOffset;
-            public ulong VertexSize;
-            public ulong IndexOffset;
-            public ulong IndexSize;
-            public uint VertexCount;
-            public uint IndexCount;
-
-            public MeshAllocation(Guid meshId, FreeBlock vertexBlock, FreeBlock indexBlock,
-                                uint vertexCount, uint indexCount)
-            {
-                MeshId = meshId;
-                VertexOffset = vertexBlock.Offset;
-                VertexSize = vertexBlock.Size;
-                IndexOffset = indexBlock.Offset;
-                IndexSize = indexBlock.Size;
-                VertexCount = vertexCount;
-                IndexCount = indexCount;
-            }
-
-            public MeshAllocation(Guid meshId, ulong vertexOffset, ulong vertexSize,
-                                ulong indexOffset, ulong indexSize,
-                                uint vertexCount, uint indexCount)
-            {
-                MeshId = meshId;
-                VertexOffset = vertexOffset;
-                VertexSize = vertexSize;
-                IndexOffset = indexOffset;
-                IndexSize = indexSize;
-                VertexCount = vertexCount;
-                IndexCount = indexCount;
-            }
-        }
+        public readonly record struct VertexFormat(
+            VertexInputBindingDescription BindingDescription,
+            VertexInputAttributeDescription[] AttributeDescriptions
+        );
     }
 }

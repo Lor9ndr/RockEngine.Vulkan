@@ -1,0 +1,422 @@
+﻿using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Microsoft.CodeAnalysis.Text;
+
+using RockEngine.Shading;
+
+using System;
+using System.Collections.Generic;
+using System.Collections.Immutable;
+using System.Diagnostics;
+using System.Linq;
+using System.Text;
+
+namespace RockEngine.CodeGenerator
+{
+    [Generator]
+    public class ShaderSourceGenerator : IIncrementalGenerator
+    {
+        public void Initialize(IncrementalGeneratorInitializationContext context)
+        {
+            // Register a syntax provider to find candidate classes
+            var candidateClasses = context.SyntaxProvider
+                .CreateSyntaxProvider(
+                    predicate: static (s, _) => IsSyntaxTargetForGeneration(s),
+                    transform: static (ctx, _) => GetSemanticTargetForGeneration(ctx))
+                .Where(static m => m is not null);
+
+            // Combine the candidates with the compilation
+            var compilationAndClasses = context.CompilationProvider.Combine(candidateClasses.Collect());
+
+            // Register the source generator output
+            context.RegisterSourceOutput(compilationAndClasses, static (spc, source) => Execute(source.Left, source.Right, spc));
+        }
+
+        private static bool IsSyntaxTargetForGeneration(SyntaxNode node)
+        {
+            return node is ClassDeclarationSyntax { AttributeLists.Count: > 0 };
+        }
+
+        private static ClassDeclarationSyntax? GetSemanticTargetForGeneration(GeneratorSyntaxContext context)
+        {
+            var classDeclaration = (ClassDeclarationSyntax)context.Node;
+
+            // Check if the class has any attributes that might be GLSLShader
+            foreach (var attributeList in classDeclaration.AttributeLists)
+            {
+                foreach (var attribute in attributeList.Attributes)
+                {
+                    if (context.SemanticModel.GetSymbolInfo(attribute).Symbol is not IMethodSymbol attributeSymbol)
+                    {
+                        continue;
+                    }
+
+                    var attributeContainingTypeSymbol = attributeSymbol.ContainingType;
+                    var fullName = attributeContainingTypeSymbol.ToDisplayString();
+
+                    // Check if this is the GLSLShader attribute
+                    if (fullName == "RockEngine.Shading.GLSLShaderAttribute" ||
+                        fullName.EndsWith(".GLSLShaderAttribute") ||
+                        attributeSymbol.Name == "GLSLShaderAttribute" ||
+                        attributeSymbol.Name == "GLSLShader")
+                    {
+                        return classDeclaration;
+                    }
+                }
+            }
+
+            return null;
+        }
+
+        private static void Execute(Compilation compilation, ImmutableArray<ClassDeclarationSyntax> classes, SourceProductionContext context)
+        {
+            foreach (var classDeclaration in classes)
+            {
+                var model = compilation.GetSemanticModel(classDeclaration.SyntaxTree);
+
+                if (model.GetDeclaredSymbol(classDeclaration) is not INamedTypeSymbol classSymbol)
+                {
+                    continue;
+                }
+
+                // Check if the class has the GLSLShader attribute
+                var shaderAttr = classSymbol.GetAttributes()
+                    .FirstOrDefault(attr => attr.AttributeClass?.Name == "GLSLShaderAttribute" ||
+                                           attr.AttributeClass?.Name == "GLSLShader");
+
+                if (shaderAttr == null)
+                {
+                    continue;
+                }
+
+                // Get shader type from attribute
+                var shaderType = GetShaderType(shaderAttr);
+
+                // Generate GLSL code
+                var glslCode = GenerateGLSLCode(classSymbol, shaderType);
+
+                // Generate C# helper class with embedded GLSL code
+                var csharpCode = GenerateCSharpHelper(classSymbol, glslCode, shaderType);
+                var fileName = $"{classSymbol.Name}.Shader.g.cs";
+
+                context.AddSource(fileName, SourceText.From(csharpCode, Encoding.UTF8));
+            }
+        }
+
+        private static string GenerateCSharpHelper(INamedTypeSymbol classSymbol, string glslCode, ShaderType shaderType)
+        {
+            var namespaceName = classSymbol.ContainingNamespace.ToDisplayString();
+            var className = classSymbol.Name;
+            var shaderName = $"{className}_{shaderType}";
+
+            // Escape the GLSL code for embedding in C#
+            var escapedGlslCode = glslCode.Replace("\"", "\"\"")
+                                         .Replace("\r", "")
+                                         .Replace("\n", "\\n\" +\n                \"");
+
+            return $@"// <auto-generated />
+using System;
+using System.IO;
+using System.Threading.Tasks;
+using RockEngine.Shading;
+
+namespace {namespaceName}
+{{
+    public partial class {className}
+    {{
+        /// <summary>
+        /// The generated GLSL shader code
+        /// </summary>
+        public const string GLSLCode = ""{escapedGlslCode}"";
+        
+        /// <summary>
+        /// Gets the name of this shader
+        /// </summary>
+        public static string ShaderName => ""{shaderName}"";
+        
+        /// <summary>
+        /// Gets the type of this shader
+        /// </summary>
+        public static ShaderType ShaderType => ShaderType.{shaderType};
+        
+        /// <summary>
+        /// Writes the GLSL code to a file at the specified path
+        /// </summary>
+        /// <param name=""directoryPath"">The directory where the shader file should be written</param>
+        public static async Task WriteToFileAsync(string directoryPath)
+        {{
+            var filePath = Path.Combine(directoryPath, ""{shaderName}.glsl"");
+            await File.WriteAllTextAsync(filePath, GLSLCode);
+        }}
+        
+        /// <summary>
+        /// Gets the expected file name for this shader
+        /// </summary>
+        public static string GetFileName() => ""{shaderName}.glsl"";
+        
+        /// <summary>
+        /// Gets the full file path for this shader
+        /// </summary>
+        public static string GetFilePath(string directoryPath) => Path.Combine(directoryPath, GetFileName());
+    }}
+}}";
+        }
+
+        private static string GenerateGLSLCode(INamedTypeSymbol classSymbol, ShaderType shaderType)
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine("#version 460 core");
+            sb.AppendLine();
+
+            // Process fields and properties for uniforms, inputs, outputs
+            ProcessMembers(classSymbol, sb, shaderType);
+
+            // Find and process the main method
+            ProcessMainMethod(classSymbol, sb);
+
+            return sb.ToString();
+        }
+
+        private static void ProcessMembers(INamedTypeSymbol classSymbol, StringBuilder sb, ShaderType shaderType)
+        {
+            var members = classSymbol.GetMembers()
+                .Where(m => m is IFieldSymbol || m is IPropertySymbol);
+
+            foreach (var member in members)
+            {
+                var attributes = member.GetAttributes();
+
+                // Process uniforms
+                var uniformAttr = attributes.FirstOrDefault(attr => attr.AttributeClass?.Name == "UniformAttribute");
+                if (uniformAttr != null)
+                {
+                    var name = GetMemberName(member, uniformAttr);
+                    var type = GetGLSLTypeName(member);
+                    sb.AppendLine($"uniform {type} {name};");
+                    continue;
+                }
+
+                // Process inputs (in)
+                var inAttr = attributes.FirstOrDefault(attr => attr.AttributeClass?.Name == "InAttribute");
+                if (inAttr != null)
+                {
+                    var name = GetMemberName(member, inAttr);
+                    var type = GetGLSLTypeName(member);
+                    var qualifier = shaderType == ShaderType.Vertex ? "layout(location = 0) in" : "in";
+                    sb.AppendLine($"{qualifier} {type} {name};");
+                    continue;
+                }
+
+                // Process outputs (out)
+                var outAttr = attributes.FirstOrDefault(attr => attr.AttributeClass?.Name == "OutAttribute");
+                if (outAttr != null)
+                {
+                    var name = GetMemberName(member, outAttr);
+                    var type = GetGLSLTypeName(member);
+                    var qualifier = shaderType == ShaderType.Vertex ? "out" : "out";
+                    sb.AppendLine($"{qualifier} {type} {name};");
+                }
+            }
+
+            sb.AppendLine();
+        }
+
+        private static void ProcessMainMethod(INamedTypeSymbol classSymbol, StringBuilder sb)
+        {
+            var mainMethod = classSymbol.GetMembers()
+                .OfType<IMethodSymbol>()
+                .FirstOrDefault(m => m.GetAttributes()
+                    .Any(attr => attr.AttributeClass?.Name == "ShaderMainAttribute"));
+
+            if (mainMethod == null)
+            {
+                // Add a default main function if none is found
+                sb.AppendLine("void main()");
+                sb.AppendLine("{");
+                sb.AppendLine("    // Auto-generated main function");
+                sb.AppendLine("}");
+                return;
+            }
+
+            sb.AppendLine("void main()");
+            sb.AppendLine("{");
+            sb.AppendLine("    // Shader main function");
+            sb.AppendLine("    // TODO: Convert C# method body to GLSL");
+
+            // Get method syntax to analyze the body
+            var methodSyntax = mainMethod.DeclaringSyntaxReferences.FirstOrDefault()?.GetSyntax() as MethodDeclarationSyntax;
+            if (methodSyntax?.Body != null)
+            {
+                foreach (var statement in methodSyntax.Body.Statements)
+                {
+                    var glslLine = ConvertStatement(statement);
+                    if (!string.IsNullOrEmpty(glslLine))
+                    {
+                        sb.AppendLine($"    {glslLine}");
+                    }
+                }
+            }
+
+            sb.AppendLine("}");
+        }
+
+        private static string ConvertStatement(StatementSyntax statement)
+        {
+            return statement switch
+            {
+                ExpressionStatementSyntax exprStmt => ConvertExpression(exprStmt.Expression),
+                LocalDeclarationStatementSyntax localDecl => ConvertLocalDeclaration(localDecl),
+                ReturnStatementSyntax returnStmt => ConvertReturnStatement(returnStmt),
+                _ => $"// {statement} // TODO: Implement conversion"
+            };
+        }
+
+        private static string ConvertExpression(ExpressionSyntax expression)
+        {
+            return expression switch
+            {
+                AssignmentExpressionSyntax assignment => ConvertAssignment(assignment),
+                InvocationExpressionSyntax invocation => ConvertMethodCall(invocation),
+                BinaryExpressionSyntax binary => ConvertBinaryExpression(binary),
+                _ => $"{expression}; // TODO: Convert expression"
+            };
+        }
+
+        private static string ConvertAssignment(AssignmentExpressionSyntax assignment)
+        {
+            var left = assignment.Left.ToString();
+            var right = assignment.Right.ToString();
+
+            // Convert C# syntax to GLSL
+            right = right.Replace("Vector3", "vec3")
+                        .Replace("Vector4", "vec4")
+                        .Replace("Matrix4", "mat4")
+                        .Replace("MathF.", "")
+                        .Replace("Math.", "");
+
+            return $"{left} = {right};";
+        }
+
+        private static string ConvertMethodCall(InvocationExpressionSyntax invocation)
+        {
+            var methodName = invocation.Expression.ToString();
+            var arguments = invocation.ArgumentList.Arguments;
+
+            // Map C# methods to GLSL functions
+            var glslFunction = methodName switch
+            {
+                "Normalize" => "normalize",
+                "Dot" => "dot",
+                "Cross" => "cross",
+                "Length" => "length",
+                "Max" => "max",
+                "Min" => "min",
+                "Clamp" => "clamp",
+                "Sin" => "sin",
+                "Cos" => "cos",
+                "Tan" => "tan",
+                _ => methodName.ToLower()
+            };
+
+            var args = string.Join(", ", arguments.Select(arg => arg.ToString()));
+            return $"{glslFunction}({args});";
+        }
+
+        private static string ConvertBinaryExpression(BinaryExpressionSyntax binary)
+        {
+            var left = binary.Left.ToString();
+            var right = binary.Right.ToString();
+            var op = binary.OperatorToken.ToString();
+
+            return $"{left} {op} {right};";
+        }
+
+        private static string ConvertLocalDeclaration(LocalDeclarationStatementSyntax localDecl)
+        {
+            var declaration = localDecl.Declaration;
+            var type = declaration.Type.ToString();
+            var variables = declaration.Variables;
+
+            // Convert C# types to GLSL types
+            var glslType = type switch
+            {
+                "Vector3" => "vec3",
+                "Vector4" => "vec4",
+                "Matrix4" => "mat4",
+                "float" => "float",
+                "int" => "int",
+                _ => "float"
+            };
+
+            var declarations = string.Join(", ", variables.Select(v =>
+                v.Initializer != null ? $"{v.Identifier} = {v.Initializer.Value}" : v.Identifier.ToString()));
+
+            return $"{glslType} {declarations};";
+        }
+
+        private static string ConvertReturnStatement(ReturnStatementSyntax returnStmt)
+        {
+            return returnStmt.Expression != null ? $"return {returnStmt.Expression};" : "return;";
+        }
+
+        private static ShaderType GetShaderType(AttributeData shaderAttr)
+        {
+            if (shaderAttr.ConstructorArguments.Length > 0)
+            {
+                var arg = shaderAttr.ConstructorArguments[0];
+                if (arg.Value is int intValue)
+                {
+                    return (ShaderType)intValue;
+                }
+                else if (arg.Value != null)
+                {
+                    return (ShaderType)Enum.Parse(typeof(ShaderType), arg.Value.ToString()!);
+                }
+            }
+            return ShaderType.Vertex;
+        }
+
+        private static string GetMemberName(ISymbol member, AttributeData attr)
+        {
+            // Get name from attribute or use member name
+            if (attr.ConstructorArguments.Length > 0)
+            {
+                var nameArg = attr.ConstructorArguments[0];
+                if (nameArg.Value is string name && !string.IsNullOrEmpty(name))
+                {
+                    return name;
+                }
+            }
+            return member.Name;
+        }
+
+        private static string GetGLSLTypeName(ISymbol member)
+        {
+            var type = member switch
+            {
+                IFieldSymbol field => field.Type,
+                IPropertySymbol prop => prop.Type,
+                _ => null
+            };
+
+            if (type == null)
+            {
+                return "float";
+            }
+
+            return type.Name switch
+            {
+                "Vector3" => "vec3",
+                "Vector4" => "vec4",
+                "Matrix4" => "mat4",
+                "Single" or "float" => "float",
+                "Int32" or "int" => "int",
+                "Boolean" or "bool" => "bool",
+                "Vector2" => "vec2",
+                "Matrix3" => "mat3",
+                _ => "float"
+            };
+        }
+    }
+}

@@ -4,8 +4,6 @@ using RockEngine.Core.Rendering.RenderTargets;
 using RockEngine.Core.Rendering.ResourceBindings;
 using RockEngine.Vulkan;
 
-using ZLinq;
-
 namespace RockEngine.Core.Rendering.Managers
 {
     public class CameraManager
@@ -16,8 +14,7 @@ namespace RockEngine.Core.Rendering.Managers
         private readonly PipelineManager _pipelineManager;
         private readonly List<Camera> _activeCameras = new List<Camera>();
         
-        //TODO: OPTIMIZE THAT
-        public ValueEnumerable<ZLinq.Linq.ListWhere<Camera>, Camera> ActiveCameras => _activeCameras.AsValueEnumerable().Where(s=>s.IsActive);
+        public IReadOnlyList<Camera> RegisteredCameras => _activeCameras;
 
         public CameraManager(VulkanContext context, GraphicsEngine engine, RenderPassManager renderPassManager, PipelineManager pipelineManager)
         {
@@ -27,31 +24,13 @@ namespace RockEngine.Core.Rendering.Managers
             _pipelineManager = pipelineManager;
         }
 
-        public void Register(Camera camera, Renderer renderer)
+        public int Register(Camera camera, Renderer renderer)
         {
-            if (camera.RenderTarget == null)
-            {
-                camera.RenderTarget = new CameraRenderTarget(
-                    _context,
-                    _engine,
-                    _engine.Swapchain.Extent);
-
-                camera.RenderTarget.Initialize(_renderPassManager.GetRenderPass<DeferredPassStrategy>() ?? throw new Exception($"Unable to get renderPass of {nameof(DeferredPassStrategy)}"));
-                InitializeGBuffer(camera.RenderTarget.GBuffer, renderer);
-            }
 
             _activeCameras.Add(camera);
+            return _activeCameras.Count;
         }
 
-        private void InitializeGBuffer(GBuffer gbuffer, Renderer renderer)
-        {
-            
-            gbuffer.CreateLightingDescriptorSets(_pipelineManager.GetPipelineByName("DeferredLighting"));
-            gbuffer.Material.BindResource(renderer.GlobalUbo.GetBinding((uint)_activeCameras.Count));
-
-            gbuffer.Material.BindResource(new UniformBufferBinding(renderer.LightManager.CountLightUbo, 1, 1));
-            gbuffer.Material.PushConstant("iblParams", new IBLParams());
-        }
 
         public void Unregister(Camera camera)
         {

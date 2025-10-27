@@ -3,8 +3,9 @@
     public interface IMesh
     {
         public Guid ID { get; }
-        bool HasIndices { get; }
-        uint? IndicesCount { get; }
+        bool HasIndices => IndicesCount > 0;
+
+        uint IndicesCount { get; }
         uint VerticesCount { get; }
     }
 }

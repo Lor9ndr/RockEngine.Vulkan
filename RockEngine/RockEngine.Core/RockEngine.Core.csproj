@@ -16,36 +16,39 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Content Include="Shaders\**\*.vert" CopyToOutputDirectory="Always" LinkBase="Shaders" />
-    <Content Include="Shaders\**\*.frag" CopyToOutputDirectory="Always" LinkBase="Shaders" />
-    <Content Include="Shaders\**\*.comp" CopyToOutputDirectory="Always" LinkBase="Shaders" />
-    <Content Include="Shaders\**\*.glsl" CopyToOutputDirectory="Always" LinkBase="Shaders" />
+    <AdditionalFiles Include="Shaders\**\*.comp" CopyToOutputDirectory="Always" LinkBase="Shaders" />
+    <AdditionalFiles Include="Shaders\**\*.glsl" CopyToOutputDirectory="Always" LinkBase="Shaders" />
+    <AdditionalFiles Include="Shaders\**\*.vert" CopyToOutputDirectory="Always" LinkBase="Shaders" />
+    <AdditionalFiles Include="Shaders\**\*.frag" CopyToOutputDirectory="Always" LinkBase="Shaders" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="AssimpNet" Version="4.1.0" />
     <PackageReference Include="ImGui.NET.Branches.Docking" Version="1.88.0" />
-    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+    <PackageReference Include="Microsoft.Extensions.Caching.Memory" Version="9.0.10" />
+    <PackageReference Include="Microsoft.Extensions.ObjectPool" Version="9.0.10" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
     <PackageReference Include="Newtonsoft.Json.Bson" Version="1.0.3" />
-    <PackageReference Include="NLog" Version="6.0.3" />
+    <PackageReference Include="NLog" Version="6.0.5" />
     <PackageReference Include="Silk.NET.Input" Version="2.22.0" />
     <PackageReference Include="Silk.NET.SDL" Version="2.22.0" />
     <PackageReference Include="SimpleInjector" Version="5.5.0" />
     <PackageReference Include="SixLabors.ImageSharp" Version="3.1.11" />
-    <PackageReference Include="SkiaSharp" Version="3.119.0" />
+    <PackageReference Include="SkiaSharp" Version="3.119.1" />
     <PackageReference Include="System.Net.Http" Version="4.3.4" />
     <PackageReference Include="System.Text.RegularExpressions" Version="4.3.1" />
-    <PackageReference Include="ZLinq" Version="1.5.2" />
+    <PackageReference Include="ZLinq" Version="1.5.3" />
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\RockEngine.CodeGenerator\RockEngine.CodeGenerator.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\RockEngine.Math\RockEngine.Mathematics.csproj" />
+    <ProjectReference Include="..\RockEngine.Shading\RockEngine.Shading.csproj" />
     <ProjectReference Include="..\RockEngine.Vulkan\RockEngine.Vulkan.csproj" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\RockEngine.Analyzer\RockEngine.Analyzer\RockEngine.Analyzer.csproj" ReferenceOutputAssembly="false" OutputItemType="Analyzer" />
   </ItemGroup>
-
-
 
 
   <ItemGroup>

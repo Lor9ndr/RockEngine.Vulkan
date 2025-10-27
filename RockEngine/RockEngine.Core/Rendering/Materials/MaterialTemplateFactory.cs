@@ -51,7 +51,9 @@ namespace RockEngine.Core.Rendering.Materials
         public MaterialTemplate GetOrCreateTemplateForSubpass(string subpassName)
         {
             if (string.IsNullOrEmpty(subpassName))
+            {
                 throw new ArgumentException("Subpass name cannot be null or empty", nameof(subpassName));
+            }
 
             var pipeline = _pipelineManager.GetPipelineForSubpass(subpassName);
             return pipeline != null ? GetOrCreateTemplate(pipeline.Name) : null;

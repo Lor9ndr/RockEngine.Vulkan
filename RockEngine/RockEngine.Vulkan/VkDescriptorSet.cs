@@ -9,6 +9,8 @@ namespace RockEngine.Vulkan
         private readonly VkDescriptorPool _pool;
         public bool IsDirty { get;set; } = true;
 
+        public VkDescriptorPool Pool => _pool;
+
         public VkDescriptorSet(VulkanContext context, VkDescriptorPool pool,in DescriptorSet vkObject)
             :base(vkObject)
         {

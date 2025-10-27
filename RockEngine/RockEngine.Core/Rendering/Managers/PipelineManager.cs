@@ -3,8 +3,6 @@ using RockEngine.Core.Registries;
 using RockEngine.Core.Rendering.Objects;
 using RockEngine.Vulkan;
 
-using Silk.NET.Vulkan;
-
 namespace RockEngine.Core.Rendering.Managers
 {
     public class PipelineManager : IDisposable
@@ -79,7 +77,10 @@ namespace RockEngine.Core.Rendering.Managers
 
         public void Dispose()
         {
-            if (_disposed) return;
+            if (_disposed)
+            {
+                return;
+            }
 
             // The registry will handle disposal of all pipelines
             _pipelineRegistry.Dispose();

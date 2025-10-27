@@ -11,10 +11,16 @@ namespace RockEngine.Core
 {
 	public class AssimpLoader : IDisposable
 	{
+        private AssimpContext _assimpContext;
+
+        public AssimpLoader()
+		{
+            _assimpContext = new AssimpContext();
+        }
 		public async Task<List<MeshAssimpData>> LoadMeshesAsync(string filePath)
 		{
 
-			var assimpContext = new AssimpContext();
+			
 
 			// Create a LogStream that writes to console
 			var logStream = new ConsoleLogStream();
@@ -22,11 +28,11 @@ namespace RockEngine.Core
 
 
 			var pathExtension = Path.GetExtension(filePath);
-			if (!assimpContext.IsImportFormatSupported(pathExtension))
+			if (!_assimpContext.IsImportFormatSupported(pathExtension))
 			{
 				throw new ArgumentException("Mesh format " + pathExtension + " is not supported!  Cannot load {1}", "filename");
 			}
-			Scene scene = assimpContext.ImportFile(filePath, PostProcessSteps.Triangulate |
+			Scene scene = _assimpContext.ImportFile(filePath, PostProcessSteps.Triangulate |
 				PostProcessSteps.GenerateSmoothNormals |
 				PostProcessSteps.FlipUVs |
 				PostProcessSteps.GlobalScale |
@@ -99,7 +105,6 @@ namespace RockEngine.Core
 
 			}
 			logStream.Detach();
-			assimpContext.Dispose();
 			//);
 			Debugger.Log(1, "Load mesh", $"Mesh {filePath} was loaded");
 			return meshes.ToList();

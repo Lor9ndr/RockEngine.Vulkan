@@ -129,7 +129,9 @@ namespace RockEngine.Core.Rendering.Texturing
             private void ValidateParameters()
             {
                 if (_size.Width == 0 || _size.Height == 0)
+                {
                     throw new InvalidOperationException("Texture size must be specified");
+                }
 
                 if (_format.IsBlockCompressed())
                 {

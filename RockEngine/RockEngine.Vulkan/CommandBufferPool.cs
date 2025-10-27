@@ -43,7 +43,11 @@ namespace RockEngine.Vulkan
 
         public void Dispose()
         {
-            if (_disposed) return;
+            if (_disposed)
+            {
+                return;
+            }
+
             _disposed = true;
 
             foreach (var buffer in _buffers)

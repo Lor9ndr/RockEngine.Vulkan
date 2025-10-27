@@ -11,9 +11,10 @@ namespace RockEngine.Editor.EditorUI.EditorWindows
             _editorConsole = editorConsole;
         }
 
-        protected override void OnDraw()
+        protected override ValueTask OnDraw()
         {
             _editorConsole.Draw();
+            return ValueTask.CompletedTask;
         }
     }
   

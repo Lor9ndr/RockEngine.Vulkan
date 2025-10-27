@@ -14,7 +14,10 @@
 
         public void SetState(EditorState newState)
         {
-            if (State == newState) return;
+            if (State == newState)
+            {
+                return;
+            }
 
             EditorState previousState = State;
             State = newState;

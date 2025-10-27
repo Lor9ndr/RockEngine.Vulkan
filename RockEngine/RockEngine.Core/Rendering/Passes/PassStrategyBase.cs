@@ -4,6 +4,8 @@ using RockEngine.Core.Rendering.Objects;
 using RockEngine.Core.Rendering.Passes.SubPasses;
 using RockEngine.Vulkan;
 
+using Silk.NET.Vulkan;
+
 namespace RockEngine.Core.Rendering.Passes
 {
     public abstract class PassStrategyBase:IRenderPassStrategy
@@ -14,11 +16,15 @@ namespace RockEngine.Core.Rendering.Passes
         /// <summary>
         /// Builded renderpass
         /// </summary>
-        protected RckRenderPass _renderPass;
+        private RckRenderPass? _renderPass;
 
         public abstract int Order { get; }
 
         public IReadOnlyCollection<IRenderSubPass> SubPasses => _subPasses;
+
+        public List<AttachmentDescription> Attachments { get; private set; }
+        public RckRenderPass? RenderPass { get => _renderPass; protected set => _renderPass = value; }
+
         protected PassStrategyBase(VulkanContext context, IEnumerable<IRenderSubPass> subPasses)
         {
             _context = context;
@@ -38,6 +44,7 @@ namespace RockEngine.Core.Rendering.Passes
             {
                 pass.SetupAttachmentDescriptions(builder);
             }
+            Attachments = builder.Attachments;
 
             // Configure subpasses
             for (uint i = 0; i < _subPasses.Length; i++)
@@ -53,7 +60,7 @@ namespace RockEngine.Core.Rendering.Passes
                 _subPasses[i].SetupDependencies(builder, i);
             }
            
-            _renderPass = new RckRenderPass(builder.Build(),  _subPasses);
+            _renderPass = new RckRenderPass(builder.Build(), _subPasses);
             return _renderPass;
         }
 
@@ -63,7 +70,7 @@ namespace RockEngine.Core.Rendering.Passes
 
         public abstract Task Execute(SubmitContext submitContext, CameraManager cameraManager, Renderer renderer);
 
-        public void InitializeSubPasses()
+        public virtual void InitializeSubPasses()
         {
             foreach (var item in SubPasses)
             {

@@ -12,11 +12,16 @@ namespace RockEngine.Core.Assets
     {
         public void RegisterDependencies(Container container)
         {
-            container.Register<IAssetSerializer, JsonAssetSerializer>(Lifestyle.Singleton);
+            container.Register<IAssetSerializer, OptimizedJsonAssetSerializer>(Lifestyle.Singleton);
             container.Register<AssetManager>(Lifestyle.Singleton);
+
             container.Collection.Append<JsonConverter, VertexConverter>(Lifestyle.Singleton);
             container.Collection.Append<JsonConverter, AssetPathConverter>(Lifestyle.Singleton);
             container.Collection.Append<JsonConverter, AssetReferenceConverter>(Lifestyle.Singleton);
+            container.Collection.Append<JsonConverter, MaterialResourceProviderConverter>(Lifestyle.Singleton);
+            container.Collection.Append<JsonConverter, MeshResourceProviderConverter>(Lifestyle.Singleton);
+            container.Collection.Append<JsonConverter, RenderLayerMaskConverter>(Lifestyle.Singleton);
+
             container.Register<MeshAsset>(Lifestyle.Transient);
             container.Register<TextureAsset>(Lifestyle.Transient);
             container.Register<ProjectAsset>(Lifestyle.Transient);

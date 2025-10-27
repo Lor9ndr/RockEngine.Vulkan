@@ -12,10 +12,10 @@ namespace RockEngine.Editor.EditorUI.Logging
         private readonly List<LogEntry> _logEntries = new List<LogEntry>();
         private readonly Lock _lock = new Lock();
         private bool _autoScroll = true;
-        private bool _showInfo = true;
+        private bool _showInfo = false;
         private bool _showWarn = true;
         private bool _showError = true;
-        private bool _showTrace = true;
+        private bool _showTrace = false;
         private string _filter = string.Empty;
 
         public void AddLog(LogLevel level, string message)
@@ -75,7 +75,10 @@ namespace RockEngine.Editor.EditorUI.Logging
 
                 foreach (var entry in entries)
                 {
-                    if (!ShouldShow(entry)) continue;
+                    if (!ShouldShow(entry))
+                    {
+                        continue;
+                    }
 
                     // Color based on log level
                     Vector4 color = GetColorForLogLevel(entry.Level);
@@ -97,10 +100,25 @@ namespace RockEngine.Editor.EditorUI.Logging
 
         private bool ShouldShow(LogEntry entry)
         {
-            if (!_showTrace && entry.Level == LogLevel.Trace) return false;
-            if (!_showInfo && entry.Level == LogLevel.Info) return false;
-            if (!_showWarn && entry.Level == LogLevel.Warn) return false;
-            if (!_showError && entry.Level == LogLevel.Error) return false;
+            if (!_showTrace && entry.Level == LogLevel.Trace || entry.Level == LogLevel.Debug)
+            {
+                return false;
+            }
+
+            if (!_showInfo && entry.Level == LogLevel.Info)
+            {
+                return false;
+            }
+
+            if (!_showWarn && entry.Level == LogLevel.Warn)
+            {
+                return false;
+            }
+
+            if (!_showError && entry.Level == LogLevel.Error)
+            {
+                return false;
+            }
 
             if (!string.IsNullOrEmpty(_filter) &&
                 !entry.Message.Contains(_filter, StringComparison.OrdinalIgnoreCase))
@@ -113,10 +131,26 @@ namespace RockEngine.Editor.EditorUI.Logging
 
         private Vector4 GetColorForLogLevel(LogLevel level)
         {
-            if (level == LogLevel.Error) return new Vector4(1.0f, 0.0f, 0.0f, 1.0f); // Red
-            if (level == LogLevel.Warn) return new Vector4(1.0f, 1.0f, 0.0f, 1.0f);  // Yellow
-            if (level == LogLevel.Info) return new Vector4(0.0f, 1.0f, 0.0f, 1.0f);  // Green
-            if (level == LogLevel.Trace) return new Vector4(0.5f, 0.5f, 0.5f, 1.0f); // Gray
+            if (level == LogLevel.Error)
+            {
+                return new Vector4(1.0f, 0.0f, 0.0f, 1.0f); // Red
+            }
+
+            if (level == LogLevel.Warn)
+            {
+                return new Vector4(1.0f, 1.0f, 0.0f, 1.0f);  // Yellow
+            }
+
+            if (level == LogLevel.Info)
+            {
+                return new Vector4(0.0f, 1.0f, 0.0f, 1.0f);  // Green
+            }
+
+            if (level == LogLevel.Trace)
+            {
+                return new Vector4(0.5f, 0.5f, 0.5f, 1.0f); // Gray
+            }
+
             return new Vector4(1.0f, 1.0f, 1.0f, 1.0f); // White
         }
 

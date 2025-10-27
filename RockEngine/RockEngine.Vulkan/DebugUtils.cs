@@ -83,7 +83,7 @@ namespace RockEngine.Vulkan
                         ObjectHandle = (ulong)(*(nint*)&handle),
                         PObjectName = (byte*)namePtr
                     };
-                    _setDebugUtilsObjectName(_device, &nameInfo);
+                    _setDebugUtilsObjectName(_device, &nameInfo).VkAssertResult("Failed to setup a object name");
                     SilkMarshal.FreeString(namePtr);
                 }
             }

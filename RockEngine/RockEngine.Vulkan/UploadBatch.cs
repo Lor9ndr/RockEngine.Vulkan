@@ -12,7 +12,7 @@ namespace RockEngine.Vulkan
         private readonly StagingManager _stagingManager;
         private readonly SubmitContext _submitContext;
         private readonly VkCommandBuffer _commandBuffer;
-        private readonly List<Action> _disposables;
+        private readonly List<IDisposable> _disposables;
         private bool _isInUse;
         private readonly CommandBufferLevel _level;
         private CommandBufferInheritanceInfo? _inheritanceInfo;
@@ -22,7 +22,7 @@ namespace RockEngine.Vulkan
         public List<VkSemaphore> SignalSemaphores { get; } = new List<VkSemaphore>(2);
         public Dictionary<VkSemaphore, PipelineStageFlags> WaitSemaphores { get; } = new Dictionary<VkSemaphore, PipelineStageFlags>(2);
         public VkCommandBuffer CommandBuffer => _commandBuffer;
-        public IReadOnlyList<Action> Disposables => _disposables;
+        public IReadOnlyList<IDisposable> Disposables => _disposables;
         public SubmitContext SubmitContext => _submitContext;
         internal CommandPoolContext Context { get; }
         public CommandBufferLevel Level => _level;
@@ -47,7 +47,7 @@ namespace RockEngine.Vulkan
             _commandBuffer = commandBuffer;
             _level = level;
             _inheritanceInfo = inheritanceInfo;
-            _disposables = new List<Action>(4);
+            _disposables = new List<IDisposable>(4);
         }
 
         public void BeginCommandBuffer()
@@ -60,7 +60,9 @@ namespace RockEngine.Vulkan
             if (_level == CommandBufferLevel.Secondary)
             {
                 if (!_inheritanceInfo.HasValue)
+                {
                     throw new InvalidOperationException("Secondary command buffers require inheritance info.");
+                }
 
                 // For secondary buffers, we always use SimultaneousUseBit for versioned batches
                 // and OneTimeSubmitBit for one-time batches
@@ -89,7 +91,10 @@ namespace RockEngine.Vulkan
 
         public void ResetLists()
         {
-            if (!_isInUse) return;
+            if (!_isInUse)
+            {
+                return;
+            }
 
             _disposables.Clear();
             SignalSemaphores.Clear();
@@ -107,16 +112,20 @@ namespace RockEngine.Vulkan
 
 
         public void StageToBuffer<T>(
-            Span<T> data,
+            ReadOnlySpan<T> data,
             VkBuffer destination,
             ulong dstOffset,
             ulong size) where T : unmanaged
         {
             if (size == 0)
+            {
                 throw new InvalidOperationException("Size cannot be 0");
+            }
 
             if (!_stagingManager.TryStage(this, data, out var srcOffset, out _))
+            {
                 throw new InvalidOperationException("Staging buffer overflow");
+            }
 
             _commandBuffer.CopyBuffer(
                 _stagingManager.StagingBuffer,
@@ -135,10 +144,14 @@ namespace RockEngine.Vulkan
         public void ExecuteCommands(UploadBatch secondaryBatch)
         {
             if (_level != CommandBufferLevel.Primary)
+            {
                 throw new InvalidOperationException("Only primary command buffers can execute secondary command buffers.");
+            }
 
             if (secondaryBatch.Level != CommandBufferLevel.Secondary)
+            {
                 throw new InvalidOperationException("Only secondary command buffers can be executed.");
+            }
 
             // Add the secondary batch as a dependency to ensure it's disposed properly
             _secondaryBatches.Add(secondaryBatch);
@@ -153,10 +166,8 @@ namespace RockEngine.Vulkan
         }
 
         public void AddDependency(IDisposable disposable)
-            => _disposables.Add(disposable.Dispose);
+            => _disposables.Add(disposable);
 
-        public void AddDependency(Action action)
-           => _disposables.Add(action);
 
         public void MarkInUse()
         {
@@ -185,6 +196,23 @@ namespace RockEngine.Vulkan
                 bufferMemoryBarriers,
                 (uint)(imageMemoryBarriers?.Length ?? 0),
                 imageMemoryBarriers
+            );
+        }
+        public void PipelineBarrier(
+          PipelineStageFlags srcStage,
+          PipelineStageFlags dstStage,
+          Span<BufferMemoryBarrier> bufferMemoryBarriers)
+        {
+            _commandBuffer.PipelineBarrier(
+                srcStage,
+                dstStage,
+                DependencyFlags.None,
+                0,
+                default,
+                (uint)(bufferMemoryBarriers.Length),
+                bufferMemoryBarriers,
+                 0,
+                default
             );
         }
 

@@ -51,7 +51,7 @@ namespace RockEngine.Core.Rendering.Buffers
             }
 
             // Запись данных в стаджинг буфер
-            if (!batch.SubmitContext.StagingManager.TryStage(batch, commands, out var stageOffset, out var stagedSize))
+            if (!batch.SubmitContext.StagingManager.TryStage<DrawIndexedIndirectCommand>(batch, commands, out var stageOffset, out var stagedSize))
             {
                 throw new InvalidOperationException("Failed to stage indirect commands");
             }

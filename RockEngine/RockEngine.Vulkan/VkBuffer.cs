@@ -1,10 +1,7 @@
 ﻿
 using Silk.NET.Vulkan;
 
-using System.Drawing;
 using System.Runtime.InteropServices;
-
-using static System.Runtime.InteropServices.JavaScript.JSType;
 
 using Buffer = Silk.NET.Vulkan.Buffer;
 

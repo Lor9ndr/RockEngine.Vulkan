@@ -26,6 +26,10 @@ namespace RockEngine.Core.Rendering.Managers
         private int _globalVersion;
         private readonly int[] _frameVersions;
 
+        private readonly Queue<int> _freeIndices = new Queue<int>();
+        private readonly HashSet<int> _activeIndices = new HashSet<int>();
+        private readonly Dictionary<int, int> _versionTracker = new Dictionary<int, int>();
+
         public TransformManager(VulkanContext context, uint maxFramesInFlight)
         {
             _context = context;
@@ -59,14 +63,48 @@ namespace RockEngine.Core.Rendering.Managers
         /// </summary>
         public int AddTransform(Matrix4x4 transform)
         {
-            if (_transforms.Count >= INITIAL_CAPACITY)
+            int index;
+
+            // Try to reuse free indices first
+            if (_freeIndices.Count > 0)
             {
-                throw new InvalidOperationException("Transform capacity exceeded");
+                index = _freeIndices.Dequeue();
+                _transforms[index] = transform;
+            }
+            else
+            {
+                if (_transforms.Count >= INITIAL_CAPACITY)
+                {
+                    throw new InvalidOperationException("Transform capacity exceeded");
+                }
+
+                index = _transforms.Count;
+                _transforms.Add(transform);
             }
 
-            _transforms.Add(transform);
+            _activeIndices.Add(index);
+            _versionTracker[index] = _globalVersion;
             _globalVersion++;
-            return _transforms.Count - 1;
+
+            return index;
+        }
+        /// <summary>
+        /// Removes a transform and makes its index available for reuse
+        /// </summary>
+        public void RemoveTransform(int index)
+        {
+            if (index < 0 || index >= _transforms.Count || !_activeIndices.Contains(index))
+            {
+                return; // Already removed or invalid
+            }
+
+            _activeIndices.Remove(index);
+            _freeIndices.Enqueue(index);
+            _versionTracker.Remove(index);
+
+            _transforms[index] = Matrix4x4.Identity;
+
+            _globalVersion++;
         }
 
         /// <summary>
@@ -74,14 +112,28 @@ namespace RockEngine.Core.Rendering.Managers
         /// </summary>
         public void UpdateTransform(int index, Matrix4x4 newTransform)
         {
-            if (index < 0 || index >= _transforms.Count)
+            if (index < 0 || index >= _transforms.Count || !_activeIndices.Contains(index))
             {
-                throw new ArgumentOutOfRangeException(nameof(index));
+                return; // Invalid or removed index
             }
 
             _transforms[index] = newTransform;
+            _versionTracker[index] = _globalVersion;
             _globalVersion++;
         }
+        /// <summary>
+        /// Gets only the active transforms for buffer updates
+        /// </summary>
+        private List<Matrix4x4> GetActiveTransforms()
+        {
+            var activeTransforms = new List<Matrix4x4>(_activeIndices.Count);
+            foreach (var index in _activeIndices)
+            {
+                activeTransforms.Add(_transforms[index]);
+            }
+            return activeTransforms;
+        }
+
 
         /// <summary>
         /// Updates GPU buffers only if changes exist for current frame
@@ -95,9 +147,17 @@ namespace RockEngine.Core.Rendering.Managers
             }
 
             var buffer = _transformBuffers[currentFrameIndex];
-            var batch = _context.GraphicsSubmitContext.CreateBatch();
+            var activeTransforms = GetActiveTransforms();
 
-            // Барьер перед обновлением
+            var batch = _context.GraphicsSubmitContext.CreateBatch();
+            // Ensure buffer is large enough
+            if (buffer.Capacity < (ulong)activeTransforms.Count)
+            {
+                buffer.Resize((ulong)Math.Max(activeTransforms.Count * 2, INITIAL_CAPACITY),batch);
+            }
+
+
+            // Barrier before update
             var preBarrier = new BufferMemoryBarrier
             {
                 SType = StructureType.BufferMemoryBarrier,
@@ -114,9 +174,9 @@ namespace RockEngine.Core.Rendering.Managers
                 bufferMemoryBarriers: new[] { preBarrier }
             );
 
-            buffer.StageData(batch, _transforms.ToArray());
+            buffer.StageData(batch, activeTransforms.ToArray());
 
-            // Барьер после обновления
+            // Barrier after update
             var postBarrier = new BufferMemoryBarrier
             {
                 SType = StructureType.BufferMemoryBarrier,
@@ -133,11 +193,18 @@ namespace RockEngine.Core.Rendering.Managers
                 bufferMemoryBarriers: new[] { postBarrier }
             );
 
-            // Ожидание завершения
             batch.Submit();
-
             _frameVersions[currentFrameIndex] = _globalVersion;
         }
+
+        /// <summary>
+        /// Checks if a transform index is still active/valid
+        /// </summary>
+        public bool IsTransformActive(int index)
+        {
+            return index >= 0 && index < _transforms.Count && _activeIndices.Contains(index);
+        }
+
 
         /// <summary>
         /// Gets binding information for current frame

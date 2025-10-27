@@ -1,9 +1,11 @@
 ﻿using ImGuiNET;
 
 using RockEngine.Core.Assets;
+using RockEngine.Core.Attributes;
 using RockEngine.Core.ECS.Components;
+using RockEngine.Core.Helpers;
 using RockEngine.Core.Rendering.Texturing;
-using RockEngine.Editor.UIAttributes;
+using RockEngine.Editor.EditorUI.ImGuiRendering.PropertyHandlers;
 
 using System.Numerics;
 using System.Reflection;
@@ -14,213 +16,226 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
     {
         private readonly AssetManager _assetManager;
         private readonly ImGuiController _imGuiController;
+        private readonly Dictionary<Type, IReadOnlyList<UIPropertyAccessor>> _propertyCache;
+        private readonly Dictionary<Type, IPropertyHandler> _propertyHandlers;
+
+        public AssetManager AssetManager => _assetManager;
+        public ImGuiController ImGuiController => _imGuiController;
 
         public PropertyDrawer(AssetManager assetManager, ImGuiController imGuiController)
         {
             _assetManager = assetManager;
             _imGuiController = imGuiController;
+            _propertyCache = new Dictionary<Type, IReadOnlyList<UIPropertyAccessor>>();
+            _propertyHandlers = new Dictionary<Type, IPropertyHandler>();
+            InitializeHandlers();
         }
 
-        public void DrawProperty(IComponent component, PropertyInfo property)
+        private void InitializeHandlers()
         {
-            if (!property.CanRead) return;
+            // Discover and register all handlers via reflection
+            var handlerTypes = Assembly.GetExecutingAssembly()
+                .GetTypes()
+                .Where(t => typeof(IPropertyHandler).IsAssignableFrom(t) && !t.IsInterface && !t.IsAbstract);
 
-            var uiAttr = property.GetCustomAttribute<UIEditableAttribute>();
-            string label = uiAttr?.DisplayName ?? property.Name;
+            foreach (var handlerType in handlerTypes)
+            {
+                var handler = Activator.CreateInstance(handlerType) as IPropertyHandler;
+                var attr = handlerType.GetCustomAttribute<PropertyHandlerAttribute>();
 
-            ImGui.PushID($"{component.GetType().Name}_{property.Name}");
+                if (attr != null)
+                {
+                    foreach (var handledType in attr.HandledTypes)
+                    {
+                        _propertyHandlers[handledType] = handler;
+                    }
+                }
+            }
+        }
 
-            if (!property.CanWrite)
+        public async ValueTask DrawComponentProperties(IComponent component)
+        {
+            var accessors = GetPropertyAccessors(component.GetType());
+
+            foreach (var accessor in accessors)
+            {
+                await DrawProperty(component, accessor);
+            }
+        }
+
+        public async ValueTask DrawProperty(IComponent component, UIPropertyAccessor accessor)
+        {
+            ImGui.PushID($"{component.GetType().Name}_{accessor.Name}");
+
+            if (!accessor.CanWrite)
             {
                 ImGui.BeginDisabled();
             }
 
-            // Handle different property types
-            if (property.PropertyType == typeof(AssetReference<TextureAsset>))
+            try
             {
-                HandleTextureProperty(component, property, label);
-            }
-            else if (property.PropertyType == typeof(AssetReference<MaterialAsset>))
-            {
-                HandleMaterialProperty(component, property, label);
-            }
-            else if (property.PropertyType == typeof(AssetReference<MeshAsset>))
-            {
-                HandleMeshProperty(component, property, label);
-            }
-            else if (property.PropertyType == typeof(float))
-            {
-                HandleFloatProperty(component, property, label);
-            }
-            else if (property.PropertyType == typeof(Vector3))
-            {
-                HandleVector3Property(component, property, label);
-            }
-            else if (property.PropertyType.IsEnum)
-            {
-                HandleEnumProperty(component, property, label);
-            }
-            else if (property.PropertyType == typeof(bool))
-            {
-                HandleBoolProperty(component, property, label);
-            }
-            else
-            {
-                var value = property.GetValue(component);
-                ImGui.Text($"{label}: {value}");
-            }
+                var value = accessor.GetValue(component);
+                var handler = FindHandler(accessor.PropertyType);
 
-            if (!property.CanWrite)
-            {
-                ImGui.EndDisabled();
-            }
-
-            ImGui.PopID();
-        }
-
-        private void HandleTextureProperty(IComponent component, PropertyInfo property, string label)
-        {
-            var textureRef = (AssetReference<TextureAsset>)property.GetValue(component);
-            string currentName = textureRef?.Asset?.Name ?? "None";
-
-            ImGui.Button($"{label}: {currentName}", new Vector2(ImGui.GetContentRegionAvail().X, 0));
-
-            // Drag and drop implementation would go here
-             if (AssetDragDrop.AcceptAssetDrop(out var assetID))
-             {
-                 var textureAsset = _assetManager.GetAsset<TextureAsset>(assetID);
-                 if (textureAsset != null)
-                 {
-                     property.SetValue(component, new AssetReference<TextureAsset>(textureAsset));
-                 }
-             }
-
-             if (textureRef?.Asset != null && AssetDragDrop.BeginDragDropSource(textureRef.Asset.ID, textureRef.Asset.Name))
-             {
-                 // Drag source handling
-             }
-
-            if (textureRef?.Asset?.Texture is Texture2D texture2D && ImGui.IsItemHovered())
-            {
-                ImGui.BeginTooltip();
-                HandleTexturePreview(texture2D);
-                ImGui.EndTooltip();
-            }
-        }
-
-        private void HandleMaterialProperty(IComponent component, PropertyInfo property, string label)
-        {
-            var materialRef = (AssetReference<MaterialAsset>)property.GetValue(component);
-            string currentName = materialRef?.Asset?.Name ?? "None";
-
-            float buttonWidth = ImGui.GetContentRegionAvail().X - 120;
-            ImGui.Button($"{label}: {currentName}", new Vector2(buttonWidth, 0));
-
-            // Drag and drop would go here
-            if (AssetDragDrop.AcceptAssetDrop(out var assetID))
-            {
-                var materialAsset = _assetManager.GetAsset<MaterialAsset>(assetID);
-                if (materialAsset != null)
+                if (handler != null)
                 {
-                    property.SetValue(component, new AssetReference<MaterialAsset>(materialAsset));
+                    await handler.Draw(component, accessor, value, this);
+                }
+                else
+                {
+                    // Fallback for unhandled types
+                    ImGui.Text($"{accessor.DisplayName}: {value}");
+                }
+            }
+            finally
+            {
+                if (!accessor.CanWrite)
+                {
+                    ImGui.EndDisabled();
+                }
+
+                ImGui.PopID();
+            }
+        }
+
+        private IReadOnlyList<UIPropertyAccessor> GetPropertyAccessors(Type componentType)
+        {
+            if (!_propertyCache.TryGetValue(componentType, out var accessors))
+            {
+                // Try to use the generated method first
+                var method = componentType.GetMethod("GetUIPropertyAccessors",
+                    BindingFlags.Public | BindingFlags.Static);
+
+                if (method != null)
+                {
+                    accessors = (IReadOnlyList<UIPropertyAccessor>)method.Invoke(null, null);
+                }
+                else
+                {
+                    // Fallback to reflection for non-generated types
+                    accessors = CreateAccessorsViaReflection(componentType);
+                }
+
+                _propertyCache[componentType] = accessors;
+            }
+
+            return accessors;
+        }
+
+        private IReadOnlyList<UIPropertyAccessor> CreateAccessorsViaReflection(Type componentType)
+        {
+            var properties = componentType.GetProperties(BindingFlags.Public | BindingFlags.Instance)
+                .Where(p => p.CanRead &&
+                           !p.GetCustomAttributes<SerializeIgnoreAttribute>().Any() &&
+                           p.GetMethod != null);
+
+            var accessors = new List<UIPropertyAccessor>();
+
+            foreach (var property in properties)
+            {
+                var uiAttr = property.GetCustomAttribute<UIEditableAttribute>();
+                var displayName = uiAttr?.DisplayName ?? property.Name;
+
+                var getter = CreateGetterDelegate(componentType, property);
+                var setter = property.CanWrite ? CreateSetterDelegate(componentType, property) : null;
+                var attributes = property.GetCustomAttributes().ToArray();
+
+                var accessor = new UIPropertyAccessor(
+                    property.Name,
+                    displayName,
+                    property.PropertyType,
+                    getter,
+                    setter,
+                    property.CanWrite,
+                    attributes
+                );
+
+                accessors.Add(accessor);
+            }
+
+            return accessors;
+        }
+
+        private PropertyGetter CreateGetterDelegate(Type componentType, PropertyInfo property)
+        {
+            var componentParam = System.Linq.Expressions.Expression.Parameter(typeof(IComponent), "component");
+            var castComponent = System.Linq.Expressions.Expression.Convert(componentParam, componentType);
+            var propertyAccess = System.Linq.Expressions.Expression.Property(castComponent, property);
+            var castResult = System.Linq.Expressions.Expression.Convert(propertyAccess, typeof(object));
+
+            var lambda = System.Linq.Expressions.Expression.Lambda<PropertyGetter>(castResult, componentParam);
+            return lambda.Compile();
+        }
+
+        private PropertySetter CreateSetterDelegate(Type componentType, PropertyInfo property)
+        {
+            var componentParam = System.Linq.Expressions.Expression.Parameter(typeof(IComponent), "component");
+            var valueParam = System.Linq.Expressions.Expression.Parameter(typeof(object), "value");
+
+            var castComponent = System.Linq.Expressions.Expression.Convert(componentParam, componentType);
+            var castValue = System.Linq.Expressions.Expression.Convert(valueParam, property.PropertyType);
+            var propertyAccess = System.Linq.Expressions.Expression.Property(castComponent, property);
+            var assign = System.Linq.Expressions.Expression.Assign(propertyAccess, castValue);
+
+            var lambda = System.Linq.Expressions.Expression.Lambda<PropertySetter>(assign, componentParam, valueParam);
+            return lambda.Compile();
+        }
+
+        private IPropertyHandler FindHandler(Type propertyType)
+        {
+            // Exact type match
+            if (_propertyHandlers.TryGetValue(propertyType, out var handler))
+            {
+                return handler;
+            }
+
+            // Generic type match (like AssetReference<>)
+            if (propertyType.IsGenericType)
+            {
+                var genericType = propertyType.GetGenericTypeDefinition();
+                if (_propertyHandlers.TryGetValue(genericType, out handler))
+                {
+                    return handler;
                 }
             }
 
-            ImGui.SameLine();
-            if (ImGui.Button("Clear##ClearMaterial"))
+            // Check if the type implements any handled interfaces
+            foreach (var interfaceType in propertyType.GetInterfaces())
             {
-                property.SetValue(component, new AssetReference<MaterialAsset>());
-            }
-
-            ImGui.SameLine();
-            if (ImGui.Button("New##NewMaterial"))
-            {
-                CreateNewMaterialForProperty(component, property);
-            }
-        }
-
-        private void HandleMeshProperty(IComponent component, PropertyInfo property, string label)
-        {
-            var meshRef = (AssetReference<MeshAsset>)property.GetValue(component);
-            string currentName = meshRef?.Asset?.Name ?? "None";
-
-            ImGui.Button($"{label}: {currentName}", new Vector2(ImGui.GetContentRegionAvail().X, 0));
-
-             if (AssetDragDrop.AcceptAssetDrop(out Guid assetId))
-             {
-                 var meshAsset = _assetManager.GetAsset<MeshAsset>(assetId);
-                 if (meshAsset != null)
-                 {
-                     property.SetValue(component, new AssetReference<MeshAsset>(meshAsset));
-                 }
-             }
-        }
-
-        private void HandleFloatProperty(IComponent component, PropertyInfo property, string label)
-        {
-            float value = (float)property.GetValue(component);
-            var range = property.GetCustomAttribute<RangeAttribute>();
-
-            if (range != null)
-                ImGui.DragFloat(label, ref value, 0.1f, range.Min, range.Max);
-            else
-                ImGui.DragFloat(label, ref value);
-
-            if (property.CanWrite)
-            {
-                property.SetValue(component, value);
-            }
-        }
-
-        private void HandleVector3Property(IComponent component, PropertyInfo property, string label)
-        {
-            Vector3 value = (Vector3)property.GetValue(component);
-            bool isColor = property.GetCustomAttribute<ColorAttribute>() != null;
-
-            if (isColor)
-                ImGui.ColorEdit3(label, ref value);
-            else
-                ImGui.DragFloat3(label, ref value);
-
-            if (property.CanWrite)
-            {
-                property.SetValue(component, value);
-            }
-        }
-
-        private void HandleEnumProperty(IComponent component, PropertyInfo property, string label)
-        {
-            Enum value = (Enum)property.GetValue(component);
-            if (ImGui.BeginCombo(label, value.ToString()))
-            {
-                foreach (Enum enumValue in Enum.GetValues(property.PropertyType))
+                if (_propertyHandlers.TryGetValue(interfaceType, out handler))
                 {
-                    bool isSelected = value.Equals(enumValue);
-                    if (ImGui.Selectable(enumValue.ToString(), isSelected) && property.CanWrite)
+                    return handler;
+                }
+
+                // Check for generic interfaces
+                if (interfaceType.IsGenericType)
+                {
+                    var genericInterface = interfaceType.GetGenericTypeDefinition();
+                    if (_propertyHandlers.TryGetValue(genericInterface, out handler))
                     {
-                        property.SetValue(component, enumValue);
-                    }
-                    if (isSelected)
-                    {
-                        ImGui.SetItemDefaultFocus();
+                        return handler;
                     }
                 }
-                ImGui.EndCombo();
             }
-        }
 
-        private void HandleBoolProperty(IComponent component, PropertyInfo property, string label)
-        {
-            bool value = (bool)property.GetValue(component);
-            if (ImGui.Checkbox(label, ref value) && property.CanWrite)
+            // Base type match (like Enum)
+            foreach (var kvp in _propertyHandlers)
             {
-                property.SetValue(component, value);
+                if (kvp.Key.IsAssignableFrom(propertyType))
+                {
+                    return kvp.Value;
+                }
             }
+
+            return null;
         }
 
-        private void HandleTexturePreview(Texture2D texture)
+        public void HandleTexturePreview(Texture2D texture)
         {
-            if (texture == null) return;
+            if (texture == null)
+            {
+                return;
+            }
 
             nint texId = _imGuiController.GetTextureID(texture);
             float previewWidth = Math.Min(ImGui.GetContentRegionAvail().X, 200);
@@ -231,11 +246,12 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
             ImGui.Text($"Mip Levels: {texture.LoadedMipLevels}/{texture.TotalMipLevels}");
         }
 
-        private void CreateNewMaterialForProperty(IComponent component, PropertyInfo property)
+        public void CreateNewMaterialForProperty(IComponent component, UIPropertyAccessor accessor)
         {
             try
             {
-                
+                // Your material creation logic here
+                // This could create a new material asset and assign it to the property
             }
             catch (Exception ex)
             {

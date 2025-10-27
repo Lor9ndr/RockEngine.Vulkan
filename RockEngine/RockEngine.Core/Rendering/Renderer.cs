@@ -1,4 +1,6 @@
-﻿using RockEngine.Core.Builders;
+﻿using NLog;
+
+using RockEngine.Core.Builders;
 using RockEngine.Core.ECS.Components;
 using RockEngine.Core.Rendering.Commands;
 using RockEngine.Core.Rendering.Managers;
@@ -19,7 +21,6 @@ namespace RockEngine.Core.Rendering
     {
         private readonly VulkanContext _context;
 
-        public RckRenderPass RenderPass { get; private set; }
 
         private readonly IRenderPassStrategy[] _renderPassStrategies;
         private readonly IBLManager _iblManager;
@@ -34,10 +35,15 @@ namespace RockEngine.Core.Rendering
         private VkPipeline _skyboxPipeline;
         private uint _prevFrameIndex = uint.MaxValue;
 
+        private readonly Dictionary<MeshRenderer, int> _meshTransformIndices = new Dictionary<MeshRenderer, int>();
+        private readonly Dictionary<MeshRenderer, Action<Transform>> _meshTransformHandlers = new Dictionary<MeshRenderer, Action<Transform>>();
+
+        private static readonly Logger _logger = LogManager.GetCurrentClassLogger();
+
 
         public SwapchainRenderTarget SwapchainTarget { get; }
 
-        public uint FrameIndex => (uint)_graphicsEngine.FrameIndex;
+        public uint FrameIndex => _graphicsEngine.FrameIndex;
 
         public const ulong MAX_LIGHTS_SUPPORTED = 10_000;
         private const uint MAX_CAMERAS_SUPPORTED = 10;
@@ -50,6 +56,16 @@ namespace RockEngine.Core.Rendering
 
         public BindingManager BindingManager => _bindingManager;
         public SubmitContext SubmitContext => _context.GraphicsSubmitContext;
+
+        public CameraManager CameraManager => _cameraManager;
+
+        public VulkanContext Context => _context;
+
+        public GraphicsEngine GraphicsEngine => _graphicsEngine;
+
+        public IBLManager IBLManager => _iblManager;
+        public RckRenderPass RenderPass { get; private set; }
+
 
         public Renderer(VulkanContext context,
                         GraphicsEngine graphicsEngine,
@@ -97,51 +113,20 @@ namespace RockEngine.Core.Rendering
             SwapchainTarget.Initialize(_renderPassManager.GetRenderPass<SwapchainPassStrategy>());
 
             _skyboxPipeline = CreateSkyboxPipeline();
-
-
-            // Generate IBL textures after loading environment map
-            var envMap = await Texture3D.CreateCubeMapAsync(_context, [
-            "Resources/skybox/right.jpg",    // +X
-            "Resources/skybox/left.jpg",     // -X
-            "Resources/skybox/top.jpg",      // +Y (Vulkan's Y points down)
-            "Resources/skybox/bottom.jpg",   // -Y
-            "Resources/skybox/front.jpg",    // +Z
-            "Resources/skybox/back.jpg"      // -Z
-            ]).ConfigureAwait(true); ;
-
-            envMap.Image.LabelObject("EnviromentMap");
-
             await iblManagerInitalizeTask;
-            // Ожидаем генерацию всех IBL текстур
-            var textures = await Task.WhenAll(
-                _iblManager.GenerateIrradianceMap(envMap, 128),
-                _iblManager.GeneratePrefilterMap(envMap, 512),
-                _iblManager.GenerateBRDFLUT(512)
-            ).ConfigureAwait(true);
-
-
-            var irradiance = textures[0];
-            var prefilter = textures[1];
-            var brdfLUT = textures[2];
-
-            irradiance.Image.LabelObject("Irradiance");
-            prefilter.Image.LabelObject("Prefilter");
-            brdfLUT.Image.LabelObject("BRDFLut");
-
-            // Store references in lighting pass
-            var lightingPass = _renderPassStrategies.OfType<DeferredPassStrategy>().First().LightingPass;
-            lightingPass.SetIBLTextures(irradiance, prefilter, brdfLUT);
         }
 
-       
+
         public async Task Render()
         {
-
             using (PerformanceTracer.BeginSection("Frame Render"))
             {
-                for (int i = 0; i < _renderPassStrategies.Length; i++)
+                var swapchainPass = _renderPassStrategies.OfType<SwapchainPassStrategy>().First();
+                var tasks = new List<Task>(_renderPassStrategies.Length);
+                var lst = _renderPassStrategies.OrderBy(s => s.Order).ToList();
+                for (int i = 0; i < lst.Count; i++)
                 {
-                    IRenderPassStrategy? item = _renderPassStrategies[i];
+                    IRenderPassStrategy? item = lst[i];
                     await item.Execute(SubmitContext, _cameraManager, this);
                 }
             }
@@ -156,7 +141,7 @@ namespace RockEngine.Core.Rendering
             }
 
             // Update all frame data first
-            var cameras = _cameraManager.ActiveCameras.ToList();
+            var cameras = _cameraManager.RegisteredCameras;
             await _lightManager.UpdateAsync(cameras).ConfigureAwait(false);
             await _transformManager.UpdateAsync(FrameIndex).ConfigureAwait(false);
             await _indirectCommandManager.UpdateAsync().ConfigureAwait(false);
@@ -180,8 +165,6 @@ namespace RockEngine.Core.Rendering
 
         }
 
-
-
         private unsafe VkPipeline CreateSkyboxPipeline()
         {
             var vertShader = VkShaderModule.Create(_context, "Shaders/Skybox.vert.spv", ShaderStageFlags.VertexBit);
@@ -197,12 +180,11 @@ namespace RockEngine.Core.Rendering
                         BlendEnable = false
                     }
               };
-            using var pipelineBuilder = GraphicsPipelineBuilder.CreateDefault(_context, "Skybox", [vertShader, fragShader]);
+            using var pipelineBuilder = GraphicsPipelineBuilder.CreateDefault(_context, "Skybox", RenderPass,[vertShader, fragShader]);
             pipelineBuilder.WithColorBlendState(new VulkanColorBlendStateBuilder()
                     .AddAttachment(colorBlendAttachments))
                 .WithVertexInputState(new VulkanPipelineVertexInputStateBuilder()
                      .Add(Vertex.GetBindingDescription(), Vertex.GetAttributeDescriptions()))
-                .AddRenderPass(RenderPass)
                 .WithSubpass<PostLightPass>()
                 .AddDepthStencilState(new PipelineDepthStencilStateCreateInfo
                 {
@@ -219,12 +201,75 @@ namespace RockEngine.Core.Rendering
 
         public void Draw(MeshRenderer mesh)
         {
-            var transformIndex = _transformManager.AddTransform(mesh.Entity.Transform.WorldMatrix);
-            _indirectCommandManager.AddMesh(mesh, transformIndex);
-            mesh.Entity.Transform.TransformChanged += () =>
+            if (_meshTransformIndices.ContainsKey(mesh))
             {
-                _transformManager.UpdateTransform(transformIndex,mesh.Entity.Transform.WorldMatrix);
-            };
+                _logger.Warn($"Mesh {mesh.Entity.Name} is already being drawn");
+                return;
+            }
+
+            var transformIndex = _transformManager.AddTransform(mesh.Entity.Transform.WorldMatrix);
+
+            // Create a properly captured event handler
+            void transformHandler(Transform transform)
+            {
+                if (_transformManager.IsTransformActive(transformIndex))
+                {
+                    _transformManager.UpdateTransform(transformIndex, transform.WorldMatrix);
+                }
+            }
+
+            mesh.Entity.Transform.TransformChanged += transformHandler;
+
+            _indirectCommandManager.AddMesh(mesh, (uint)transformIndex);
+
+            // Store the relationships
+            _meshTransformIndices[mesh] = transformIndex;
+            _meshTransformHandlers[mesh] = transformHandler;
+
+            // Let the mesh know about its transform index and handler
+            mesh.SetTransformIndex(transformIndex);
+            mesh.SetTransformChangedHandler(transformHandler);
+        }
+
+        public void StopDrawing(MeshRenderer meshRenderer)
+        {
+            if (!_meshTransformIndices.TryGetValue(meshRenderer, out int transformIndex))
+            {
+                return; // Not being drawn
+            }
+
+            // Remove from command manager first
+            _indirectCommandManager.RemoveMesh(meshRenderer);
+
+            // Remove transform event handler
+            if (_meshTransformHandlers.TryGetValue(meshRenderer, out var handler))
+            {
+                if (meshRenderer.Entity?.Transform != null)
+                {
+                    meshRenderer.Entity.Transform.TransformChanged -= handler;
+                }
+                _meshTransformHandlers.Remove(meshRenderer);
+            }
+
+            // Remove the transform from manager
+            _transformManager.RemoveTransform(transformIndex);
+
+            // Clean up tracking
+            _meshTransformIndices.Remove(meshRenderer);
+
+            _logger.Info($"Stopped drawing mesh {meshRenderer.Entity.Name}, transform index {transformIndex} freed");
+        }
+
+        // Add a method to clean up all meshes
+        public void CleanupAllMeshes()
+        {
+            var meshes = _meshTransformIndices.Keys.ToList();
+            foreach (var mesh in meshes)
+            {
+                StopDrawing(mesh);
+            }
+            _meshTransformIndices.Clear();
+            _meshTransformHandlers.Clear();
         }
 
         public void AddCommand(IRenderCommand command)
@@ -232,9 +277,9 @@ namespace RockEngine.Core.Rendering
             _indirectCommandManager.AddCommand(command);
         }
 
-        public void RegisterCamera(Camera camera)
+        public int RegisterCamera(Camera camera)
         {
-            _cameraManager.Register(camera, this);
+            return _cameraManager.Register(camera, this);
         }
 
         public void Dispose()
@@ -250,5 +295,7 @@ namespace RockEngine.Core.Rendering
         {
             _cameraManager.Unregister(camera);
         }
+
+       
     }
 }

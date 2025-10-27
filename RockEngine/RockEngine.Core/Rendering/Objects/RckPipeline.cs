@@ -1,5 +1,4 @@
-﻿using RockEngine.Core.Rendering.Passes;
-using RockEngine.Core.Rendering.Passes.SubPasses;
+﻿using RockEngine.Core.Rendering.Passes.SubPasses;
 using RockEngine.Vulkan;
 
 using Silk.NET.Vulkan;
@@ -63,14 +62,19 @@ namespace RockEngine.Core.Rendering.Objects
             ObjectDisposedException.ThrowIf(_disposed, this);
 
             if (Type != PipelineType.Compute)
+            {
                 throw new InvalidOperationException("Dispatch can only be called on compute pipelines");
+            }
 
             commandBuffer.Dispatch(groupCountX, groupCountY, groupCountZ);
         }
 
         public void Dispose()
         {
-            if (_disposed) return;
+            if (_disposed)
+            {
+                return;
+            }
 
             VkPipeline?.Dispose();
             _disposed = true;

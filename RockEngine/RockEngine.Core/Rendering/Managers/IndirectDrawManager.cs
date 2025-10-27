@@ -10,6 +10,8 @@ using RockEngine.Vulkan;
 using Silk.NET.Core;
 using Silk.NET.Vulkan;
 
+using SkiaSharp;
+
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
@@ -41,13 +43,15 @@ namespace RockEngine.Core.Rendering.Managers
             _supportsMultiDraw = context.Device.PhysicalDevice.Features2.Features.MultiDrawIndirect;
         }
 
-        public void AddMesh(MeshRenderer mesh, int transformIndex)
+        public void AddMesh(MeshRenderer mesh, uint transformIndex)
         {
             if (transformIndex < 0 || transformIndex >= _transformBufferCapacity)
+            {
                 throw new ArgumentOutOfRangeException(nameof(transformIndex), "Transform index exceeds buffer capacity");
+            }
 
             // Check which subpasses this mesh's material participates in
-            var material = mesh.Material.Asset.MaterialInstance;
+            var material = mesh.Material;
             foreach (var subpassName in material.Passes.Keys)
             {
                 _commands.Add(new MeshRenderCommand(mesh, (uint)transformIndex, subpassName));
@@ -56,22 +60,38 @@ namespace RockEngine.Core.Rendering.Managers
             _isDirty = true;
         }
 
-        public ValueTask UpdateAsync()
+        /// <summary>
+        /// Removes mesh from commands
+        /// </summary>
+        /// <param name="meshRenderer">remove by meshRenderer</param>
+        /// <returns>transform index</returns>
+        public uint RemoveMesh(MeshRenderer meshRenderer)
         {
-           if (!_isDirty)
-               return ValueTask.CompletedTask;
+            var command = _commands.First(s=>s.Mesh == meshRenderer);
+            _commands.RemoveAll(s => s.Mesh == meshRenderer);
+            _isDirty = true;
+            return command.TransformIndex;
+        }
+
+        public async ValueTask UpdateAsync()
+        {
+            if (!_isDirty)
+            {
+                return;
+            }
 
             _commands.Sort(MeshRenderCommandComparer.Default);
             Span<MeshRenderCommand> commandsSpan = CollectionsMarshal.AsSpan(_commands);
 
-            _indirectCommandsList.Clear();
-            _drawGroupsBySubpass.Clear();
-
             if (commandsSpan.Length == 0)
             {
                 _isDirty = false;
-                return ValueTask.CompletedTask;
+                return;
             }
+
+            _indirectCommandsList.Clear();
+            // DON'T clear _drawGroupsBySubpass here - only clear per-subpass lists as needed
+             _drawGroupsBySubpass.Clear(); // REMOVE THIS LINE
 
             _indirectCommandsList.Capacity = Math.Max(_indirectCommandsList.Capacity, commandsSpan.Length);
 
@@ -106,18 +126,17 @@ namespace RockEngine.Core.Rendering.Managers
                 bufferMemoryBarriers: new[] { bufferBarrier }
             );
 
-            batch.Submit();
+            await _context.GraphicsSubmitContext.FlushSingle(batch, VkFence.CreateNotSignaled(_context));
 
-            _commands.Clear();
             _isDirty = false;
-            return ValueTask.CompletedTask;
+            return;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool IsNewGroup(in MeshRenderCommand a, in MeshRenderCommand b)
         {
             return a.SubpassName != b.SubpassName ||
-                   !ReferenceEquals(a.Mesh.Material.Asset.MaterialInstance, b.Mesh.Material.Asset.MaterialInstance) ||
+                   !ReferenceEquals(a.Mesh.Material, b.Mesh.Material) ||
                    !ReferenceEquals(a.Mesh.Mesh, b.Mesh.Mesh); // Compare the actual mesh, not the renderer
         }
 
@@ -133,7 +152,7 @@ namespace RockEngine.Core.Rendering.Managers
 
             foreach (ref readonly var cmd in groupSpan)
             {
-                var key = (cmd.Mesh.Material.Asset.MaterialInstance, cmd.Mesh.Mesh);
+                var key = (cmd.Mesh.Material, cmd.Mesh.Mesh);
                 if (!meshGroups.TryGetValue(key, out var meshGroup))
                 {
                     meshGroup = new List<MeshRenderCommand>();
@@ -163,6 +182,17 @@ namespace RockEngine.Core.Rendering.Managers
                 }
 
                 var allocation = globalGeometryBuffer.GetMeshAllocation(mesh.ID);
+                var vertexStride = globalGeometryBuffer.GetVertexStride(allocation.MeshID);
+
+                // CRITICAL: Verify vertex offset alignment
+                if (allocation.VertexOffset % vertexStride != 0)
+                {
+                    _logger.Error($"Vertex offset {allocation.VertexOffset} is not aligned to vertex stride {vertexStride} for mesh {allocation.MeshID}");
+                    continue;
+                }
+
+                uint vertexOffsetInVertices = (uint)(allocation.VertexOffset / vertexStride);
+                uint firstIndex = (uint)(allocation.IndexOffset / sizeof(uint)); // Index buffer uses uint32
 
                 if (_supportsMultiDraw)
                 {
@@ -177,8 +207,8 @@ namespace RockEngine.Core.Rendering.Managers
                     {
                         IndexCount = allocation.IndexCount,
                         InstanceCount = (uint)meshGroup.Count,
-                        FirstIndex = (uint)(allocation.IndexOffset / sizeof(uint)),
-                        VertexOffset = (int)(allocation.VertexOffset / (ulong)Unsafe.SizeOf<Vertex>()),
+                        FirstIndex = firstIndex,
+                        VertexOffset = (int)vertexOffsetInVertices, // This is VERTEX count, not bytes!
                         FirstInstance = meshGroup[0].TransformIndex
                     });
                 }
@@ -198,8 +228,8 @@ namespace RockEngine.Core.Rendering.Managers
                         {
                             IndexCount = allocation.IndexCount,
                             InstanceCount = 1,
-                            FirstIndex = (uint)(allocation.IndexOffset / sizeof(uint)),
-                            VertexOffset = (int)(allocation.VertexOffset / (ulong)Unsafe.SizeOf<Vertex>()),
+                            FirstIndex = firstIndex,
+                            VertexOffset = (int)vertexOffsetInVertices, // This is VERTEX count, not bytes!
                             FirstInstance = cmd.TransformIndex
                         });
                     }
@@ -210,7 +240,7 @@ namespace RockEngine.Core.Rendering.Managers
         public List<DrawGroup> GetDrawGroups(string subpassName)
         {
             return _drawGroupsBySubpass.TryGetValue(subpassName, out var groups)
-                ? groups
+                ? groups.ToList()
                 : new List<DrawGroup>();
         }
 
@@ -256,20 +286,29 @@ namespace RockEngine.Core.Rendering.Managers
             {
                 // Sort by subpass name first
                 int subpassCompare = string.Compare(x.SubpassName, y.SubpassName, StringComparison.Ordinal);
-                if (subpassCompare != 0) return subpassCompare;
+                if (subpassCompare != 0)
+                {
+                    return subpassCompare;
+                }
 
                 // Then by pipeline within the subpass
-                var xPass = x.Mesh.Material.Asset.MaterialInstance.GetPass(x.SubpassName);
-                var yPass = y.Mesh.Material.Asset.MaterialInstance.GetPass(y.SubpassName);
+                var xPass = x.Mesh.Material.GetPass(x.SubpassName);
+                var yPass = y.Mesh.Material.GetPass(y.SubpassName);
 
                 int pipelineCompare = xPass.Pipeline.VkPipeline.VkObjectNative.Handle
                     .CompareTo(yPass.Pipeline.VkPipeline.VkObjectNative.Handle);
-                if (pipelineCompare != 0) return pipelineCompare;
+                if (pipelineCompare != 0)
+                {
+                    return pipelineCompare;
+                }
 
                 // Then by material
-                int materialCompare = x.Mesh.Material.AssetID
-                    .CompareTo(y.Mesh.Material.AssetID);
-                if (materialCompare != 0) return materialCompare;
+                int materialCompare = x.Mesh.Material.GetHashCode()
+                    .CompareTo(y.Mesh.Material.GetHashCode());
+                if (materialCompare != 0)
+                {
+                    return materialCompare;
+                }
 
                 // Finally by mesh
                 return x.Mesh.Mesh.ID.CompareTo(y.Mesh.Mesh.ID);

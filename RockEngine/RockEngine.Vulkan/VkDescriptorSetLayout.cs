@@ -37,12 +37,16 @@ namespace RockEngine.Vulkan
 
 
             if (SetLocation != other.SetLocation || Bindings.Length != other.Bindings.Length)
+            {
                 return false;
+            }
 
             for (int i = 0; i < Bindings.Length; i++)
             {
                 if (!BindingsEqual(Bindings[i], other.Bindings[i]))
+                {
                     return false;
+                }
             }
 
             return true;

@@ -14,7 +14,9 @@ namespace RockEngine.Core.Assets.Converters
         public override object ReadJson(JsonReader reader, Type objectType, object existingValue, JsonSerializer serializer)
         {
             if (reader.TokenType == JsonToken.Null)
+            {
                 return null;
+            }
 
             // Get the generic type argument (T in AssetReference<T>)
             Type assetType = objectType.GetGenericArguments()[0];
