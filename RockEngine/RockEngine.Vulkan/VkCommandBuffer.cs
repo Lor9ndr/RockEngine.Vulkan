@@ -237,11 +237,11 @@ namespace RockEngine.Vulkan
             VulkanContext.Vk.CmdWriteTimestamp(this, stage, pool, query);
         }
 
-        internal unsafe void PipelineBarrier(PipelineStageFlags srcStageMask, PipelineStageFlags dstStageMask, DependencyFlags dependencyFlags, uint memoryBarrierCount, MemoryBarrier* pMemoryBarriers, uint bufferMemoryBarrierCount, BufferMemoryBarrier* pBufferMemoryBarriers, uint imageMemoryBarrierCount, in ImageMemoryBarrier pImageMemoryBarriers)
+        public unsafe void PipelineBarrier(PipelineStageFlags srcStageMask, PipelineStageFlags dstStageMask, DependencyFlags dependencyFlags, uint memoryBarrierCount, MemoryBarrier* pMemoryBarriers, uint bufferMemoryBarrierCount, BufferMemoryBarrier* pBufferMemoryBarriers, uint imageMemoryBarrierCount, in ImageMemoryBarrier pImageMemoryBarriers)
         {
             VulkanContext.Vk.CmdPipelineBarrier(this, srcStageMask, dstStageMask, dependencyFlags, memoryBarrierCount, pMemoryBarriers, bufferMemoryBarrierCount, pBufferMemoryBarriers, imageMemoryBarrierCount, in pImageMemoryBarriers);
         }
-        internal void PipelineBarrier(PipelineStageFlags srcStageMask, PipelineStageFlags dstStageMask, DependencyFlags dependencyFlags, uint memoryBarrierCount, Span<MemoryBarrier> pMemoryBarriers, uint bufferMemoryBarrierCount, Span<BufferMemoryBarrier> pBufferMemoryBarriers, uint imageMemoryBarrierCount, Span<ImageMemoryBarrier> pImageMemoryBarriers)
+        public void PipelineBarrier(PipelineStageFlags srcStageMask, PipelineStageFlags dstStageMask, DependencyFlags dependencyFlags, uint memoryBarrierCount, Span<MemoryBarrier> pMemoryBarriers, uint bufferMemoryBarrierCount, Span<BufferMemoryBarrier> pBufferMemoryBarriers, uint imageMemoryBarrierCount, Span<ImageMemoryBarrier> pImageMemoryBarriers)
         {
             VulkanContext.Vk.CmdPipelineBarrier(this, srcStageMask, dstStageMask, dependencyFlags, memoryBarrierCount, pMemoryBarriers, bufferMemoryBarrierCount, pBufferMemoryBarriers, imageMemoryBarrierCount, pImageMemoryBarriers);
         }
@@ -267,6 +267,16 @@ namespace RockEngine.Vulkan
         public void Dispatch(uint groupCountX, uint groupCountY, uint groupCountZ)
         {
             Vk.CmdDispatch(this, groupCountX, groupCountY, groupCountZ);
+        }
+
+        public void ClearDepthStencilImage(VkImage image, ImageLayout layout, float depth, uint stencil,in ImageSubresourceRange imageSubresourceRange)
+        {
+            ClearDepthStencilValue clearDepthStencilValue = new ClearDepthStencilValue()
+            {
+                Depth = depth,
+                Stencil = stencil
+            };
+            Vk.CmdClearDepthStencilImage(this, image, layout,in clearDepthStencilValue, 1, in imageSubresourceRange);
         }
     }
 }

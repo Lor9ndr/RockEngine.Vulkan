@@ -12,7 +12,7 @@ namespace RockEngine.Core.Rendering
         void OnDetach();
         void OnUpdate();
         void OnRender(VkCommandBuffer vkCommandBuffer);
-        Task OnImGuiRender(VkCommandBuffer vkCommandBuffer);
+        ValueTask OnImGuiRender(VkCommandBuffer vkCommandBuffer);
     }
 
     public class LayerStack : ILayerStack, IDisposable
@@ -21,15 +21,15 @@ namespace RockEngine.Core.Rendering
         private int _activeLayerCount = 0;
 
         // Thread-safe queues for layer operations
-        private ConcurrentQueue<ILayer> _layersToAdd = new ConcurrentQueue<ILayer>();
-        private ConcurrentQueue<ILayer> _layersToRemove = new ConcurrentQueue<ILayer>();
-        private ConcurrentQueue<Task> _pendingAttachmentTasks = new ConcurrentQueue<Task>();
+        private readonly ConcurrentQueue<ILayer> _layersToAdd = new ConcurrentQueue<ILayer>();
+        private readonly ConcurrentQueue<ILayer> _layersToRemove = new ConcurrentQueue<ILayer>();
+        private readonly ConcurrentQueue<Task> _pendingAttachmentTasks = new ConcurrentQueue<Task>();
 
         // Track layers that need to be removed after all updates
-        private ConcurrentQueue<ILayer> _pendingRemovals = new ConcurrentQueue<ILayer>();
+        private readonly ConcurrentQueue<ILayer> _pendingRemovals = new ConcurrentQueue<ILayer>();
         private bool _shouldProcessRemovals = false;
 
-        private readonly object _syncLock = new object();
+        private readonly Lock _syncLock = new Lock();
         private bool _isProcessing = false;
         private bool _disposed = false;
 
@@ -113,7 +113,7 @@ namespace RockEngine.Core.Rendering
             }
         }
 
-        public async Task RenderImGui(VkCommandBuffer commandBuffer)
+        public async ValueTask RenderImGui(VkCommandBuffer commandBuffer)
         {
             if (_disposed)
             {
@@ -126,7 +126,7 @@ namespace RockEngine.Core.Rendering
 
             for (int i = 0; i < _activeLayerCount; i++)
             {
-                await _activeLayers[i].OnImGuiRender(commandBuffer);
+                 await _activeLayers[i].OnImGuiRender(commandBuffer);
             }
         }
 

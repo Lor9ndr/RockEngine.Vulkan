@@ -113,14 +113,21 @@ namespace RockEngine.Core.ECS.Components
                 _yaw = MathHelper.DegreesToRadians(value);
             }
         }
+
         [Step(0.001f), Range(0.1f, 4.0f)]
-        public float Exposure { get;set;} = 1.0f;     // [0.1 - 4.0] Typical HDR exposure range
+        public float Exposure { get; set; } = 1.0f;
 
-        [Step(0.001f), Range(0.1f, 2.0f)]
-        public float EnvIntensity { get;set;} = 1.0f; // [0.0 - 2.0] Environment map multiplier
+        [Step(0.001f), Range(0.0f, 2.0f)]
+        public float EnvIntensity { get; set; } = 1.0f;
 
-        [Step(0.001f), Range(0.0f, 1.0f)]
+        [Step(0.001f), Range(0.0f, 2.0f)]
         public float AoStrength { get; set; } = 1.0f;
+
+        [Step(0.01f), Range(1.8f, 2.4f)]
+        public float Gamma { get; set; } = 2.2f;
+
+        [Step(0.01f), Range(0.0f, (float)(2 * Math.PI))]
+        public float EnvRotation { get; set; } = 0.0f;
 
         [SerializeIgnore]
         public RenderTarget RenderTarget { get; set; }
@@ -174,7 +181,7 @@ namespace RockEngine.Core.ECS.Components
             UpdateViewMatrix();
         }
 
-        public override ValueTask OnStart(Renderer renderer)
+        public override ValueTask OnStart(WorldRenderer renderer)
         {
             var camIndex = renderer.RegisterCamera(this);
             if(RenderTarget is null)
@@ -185,11 +192,11 @@ namespace RockEngine.Core.ECS.Components
             }
             return default;
         }
-        private void InitializeGBuffer(GBuffer gbuffer, Renderer renderer,int cameraIndex)
+        private void InitializeGBuffer(GBuffer gbuffer, WorldRenderer renderer,int cameraIndex)
         {
 
             var pipeline = renderer.PipelineManager.GetPipelineByName("DeferredLighting");
-            RenderTarget.Material=  new Material("GBuffer");
+            RenderTarget.Material = new Material("GBuffer");
             var material = RenderTarget.Material;
             material.AddPass(LightingPass.Name, new MaterialPass(pipeline));
 
@@ -204,22 +211,26 @@ namespace RockEngine.Core.ECS.Components
             material.BindResource(new UniformBufferBinding(renderer.LightManager.CountLightUbo, 1, 1));
             material.PushConstant("iblParams", new IBLParams()
             {
-                aoStrength = AoStrength,
-                envIntensity = EnvIntensity,
-                exposure = Exposure
+                Exposure = Exposure,
+                EnvIntensity = EnvIntensity,
+                AoStrength = AoStrength,
+                Gamma = Gamma,
+                EnvRotation = EnvRotation
             });
 
         }
 
 
-        public override ValueTask Update(Renderer renderer)
+        public override ValueTask Update(WorldRenderer renderer)
         {
             UpdateVectors();
             RenderTarget.Material.PushConstant("iblParams", new IBLParams()
             {
-                aoStrength = AoStrength,
-                envIntensity = EnvIntensity,
-                exposure = Exposure
+                Exposure = Exposure,
+                EnvIntensity = EnvIntensity,
+                AoStrength = AoStrength,
+                Gamma = Gamma,
+                EnvRotation = EnvRotation
             });
             return default;
         }

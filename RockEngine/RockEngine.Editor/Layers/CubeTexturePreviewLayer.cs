@@ -34,9 +34,9 @@ namespace RockEngine.Editor.Layers
         {
         }
 
-        public Task OnImGuiRender(VkCommandBuffer vkCommandBuffer)
+        public ValueTask OnImGuiRender(VkCommandBuffer vkCommandBuffer)
         {
-            return Task.CompletedTask;
+            return ValueTask.CompletedTask;
         }
 
         public void OnRender(VkCommandBuffer vkCommandBuffer)

@@ -16,5 +16,6 @@ namespace RockEngine.Core.Rendering.RenderTargets
 
         void PrepareForRender(VkCommandBuffer cmd);
         void TransitionToRead(VkCommandBuffer cmd);
+        public void Initialize(RckRenderPass renderPass);
     }
 }

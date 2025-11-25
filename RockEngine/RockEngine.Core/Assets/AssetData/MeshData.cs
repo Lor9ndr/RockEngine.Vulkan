@@ -1,9 +1,11 @@
-﻿namespace RockEngine.Core.Assets.AssetData
+﻿using RockEngine.Core.Attributes;
+
+namespace RockEngine.Core.Assets.AssetData
 {
     public class MeshData<TVertex> where TVertex : IVertex
     {
-        public TVertex[] Vertices;
-        public uint[]? Indices;
+        public TVertex[] Vertices { get;set;}
+        public uint[]? Indices { get; set; }
 
         public MeshData()
         {

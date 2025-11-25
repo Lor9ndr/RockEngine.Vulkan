@@ -519,7 +519,7 @@ namespace RockEngine.Editor.EditorUI.EditorWindows
 
             var drawList = ImGui.GetWindowDrawList();
             var windowPos = ImGui.GetWindowPos();
-            var textPos = new Vector2(windowPos.X + 10, windowPos.Y + 10);
+            var textPos = new Vector2(windowPos.X + 10, windowPos.Y + 15);
 
             string modeText = gizmo.CurrentMode switch
             {
@@ -530,7 +530,7 @@ namespace RockEngine.Editor.EditorUI.EditorWindows
             };
 
             var textSize = ImGui.CalcTextSize(modeText);
-            var bgMin = textPos - new Vector2(5, 5);
+            var bgMin = textPos;
             var bgMax = textPos + textSize + new Vector2(5, 5);
 
             drawList.AddRectFilled(bgMin, bgMax, ImGui.ColorConvertFloat4ToU32(new Vector4(0, 0, 0, 0.7f)), 5);

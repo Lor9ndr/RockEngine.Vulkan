@@ -32,7 +32,7 @@ namespace RockEngine.Editor.Rendering.RenderTargets
 
             OutputTexture.Image.LabelObject("PickingRenderTarget Output");
 
-            var graphicsEngine = IoC.Container.GetInstance<GraphicsEngine>();
+            var graphicsEngine = IoC.Container.GetInstance<GraphicsContext>();
 
             // Create depth texture
             _depthTexture = (Texture2D)new Texture.Builder(context)

@@ -15,17 +15,17 @@ namespace RockEngine.Core.Rendering.Managers
         public async Task CompileAllShadersAsync()
         {
             var tasks = new List<Task>();
-            Console.WriteLine(Directory.EnumerateFiles(_basePath).Count());
-            foreach (var file in Directory.EnumerateFiles(_basePath, "*", SearchOption.AllDirectories))
+            var files = Directory.EnumerateFiles(_basePath, "*", SearchOption.AllDirectories);
+            foreach (var file in files)
             {
-                if (file.EndsWith(".vert") || file.EndsWith(".frag") || file.EndsWith(".comp"))
+                if (file.EndsWith(".vert") || file.EndsWith(".geom") ||file.EndsWith(".frag") || file.EndsWith(".comp"))
                 {
                     tasks.Add(CompileShader(file));
                 }
             }
             await Task.WhenAll(tasks).ConfigureAwait(false);
             DeleteShaderSource();
-            foreach (var file in Directory.EnumerateFiles(_basePath, "*", SearchOption.AllDirectories))
+            foreach (var file in Directory.EnumerateFiles(_basePath, "*.spv", SearchOption.AllDirectories))
             {
                 if (file.EndsWith(".spv"))
                 {
@@ -38,7 +38,7 @@ namespace RockEngine.Core.Rendering.Managers
         {
             foreach (var file in Directory.EnumerateFiles(_basePath, "*", SearchOption.AllDirectories))
             {
-                if (file.EndsWith(".vert") || file.EndsWith(".frag") || file.EndsWith(".comp"))
+                if (file.EndsWith(".vert") || file.EndsWith(".geom") || file.EndsWith(".frag") || file.EndsWith(".comp"))
                 {
                     File.Delete(file);
                 }

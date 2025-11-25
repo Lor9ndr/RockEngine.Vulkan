@@ -1,10 +1,11 @@
-﻿using Newtonsoft.Json;
-
+﻿
 using RockEngine.Core.Assets.Converters;
 using RockEngine.Core.Assets.Serializers;
 using RockEngine.Core.DI;
 
 using SimpleInjector;
+
+using System.Text.Json.Serialization;
 
 namespace RockEngine.Core.Assets
 {
@@ -12,15 +13,20 @@ namespace RockEngine.Core.Assets
     {
         public void RegisterDependencies(Container container)
         {
-            container.Register<IAssetSerializer, OptimizedJsonAssetSerializer>(Lifestyle.Singleton);
+            container.Register<IAssetSerializer, SystemTextJsonAssetSerializer>(Lifestyle.Singleton);
             container.Register<AssetManager>(Lifestyle.Singleton);
+            container.Register<IAssetFactory, AssetFactory>(Lifestyle.Singleton);
+            container.Register<IAssetRepository, AssetRepository>(Lifestyle.Singleton);
 
-            container.Collection.Append<JsonConverter, VertexConverter>(Lifestyle.Singleton);
-            container.Collection.Append<JsonConverter, AssetPathConverter>(Lifestyle.Singleton);
-            container.Collection.Append<JsonConverter, AssetReferenceConverter>(Lifestyle.Singleton);
-            container.Collection.Append<JsonConverter, MaterialResourceProviderConverter>(Lifestyle.Singleton);
-            container.Collection.Append<JsonConverter, MeshResourceProviderConverter>(Lifestyle.Singleton);
-            container.Collection.Append<JsonConverter, RenderLayerMaskConverter>(Lifestyle.Singleton);
+            container.Collection.Append<JsonConverter, VertexConverter2>(Lifestyle.Singleton);
+            container.Collection.Append<JsonConverter, AssetPathConverter2>(Lifestyle.Singleton);
+            container.Collection.Append<JsonConverter, AssetReferenceConverter2>(Lifestyle.Singleton);
+            container.Collection.Append<JsonConverter, MaterialResourceProviderConverter2>(Lifestyle.Singleton);
+            container.Collection.Append<JsonConverter, MeshResourceProviderConverter2>(Lifestyle.Singleton);
+            container.Collection.Append<JsonConverter, RenderLayerMaskConverter2>(Lifestyle.Singleton);
+            container.Collection.Append<JsonConverter, TypeConverter>(Lifestyle.Singleton);
+            //container.Collection.Append<JsonConverter, TypeHandlingConverter>(Lifestyle.Singleton);
+            //container.Collection.Append<JsonConverter, AssetWrapperConverter>(Lifestyle.Singleton);
 
             container.Register<MeshAsset>(Lifestyle.Transient);
             container.Register<TextureAsset>(Lifestyle.Transient);

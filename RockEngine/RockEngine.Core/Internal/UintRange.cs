@@ -1,13 +1,4 @@
-﻿using RockEngine.Vulkan;
-
-using Silk.NET.Vulkan;
-
-using System;
-using System.Collections;
-using System.Collections.Generic;
-using System.Linq;
-
-namespace RockEngine.Core.Internal 
+﻿namespace RockEngine.Core.Internal 
 {
 
     /// <summary>

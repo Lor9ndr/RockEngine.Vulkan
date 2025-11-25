@@ -2,14 +2,17 @@
 
 using NLog;
 
+using RockEngine.Core;
 using RockEngine.Core.Assets;
-using RockEngine.Core.Assets.RockEngine.Core.Assets;
+using RockEngine.Core.Coroutines;
 using RockEngine.Core.Rendering;
-using RockEngine.Core.Rendering.Texturing;
+using RockEngine.Editor.EditorUI;
 using RockEngine.Editor.EditorUI.ImGuiRendering;
 using RockEngine.Vulkan;
 
-using System.Collections.Concurrent;
+using Silk.NET.SDL;
+
+using System.Collections;
 using System.Diagnostics;
 using System.Numerics;
 
@@ -18,143 +21,1102 @@ namespace RockEngine.Editor.Layers
     public class AssetBrowserLayer : ILayer
     {
         private readonly AssetManager _assetManager;
-        private readonly ImGuiController _imGuiController;
-        private string _currentDirectoryPath;
+        private readonly CoroutineScheduler _coroutineScheduler;
+
+        // UI State
         private string _searchQuery = string.Empty;
-        private bool showFileExtensions;
-        private readonly Dictionary<string, Vector4> _folderColors = new Dictionary<string, Vector4>();
-        private const string FolderIcon = "\uf07b";
-        private const string FileIcon = "\uf15b";
+        private bool _showFileExtensions = true;
         private bool _gridView = true;
-        private float _thumbnailSize = 64f;
-        private HashSet<string> _selectedAssets = new HashSet<string>();
+        private float _thumbnailSize = 80f;
+        private string _basePath;
+        private readonly HashSet<string> _selectedItems = new HashSet<string>();
+
+        // File System State
+        private readonly List<FileSystemItem> _currentDirectoryItems = new List<FileSystemItem>();
+        private readonly Dictionary<string, FileSystemItem> _itemCache = new Dictionary<string, FileSystemItem>();
+        private bool _needsDirectoryRefresh = true;
+
+        // Loading State
+        private readonly Dictionary<string, Coroutine> _activeCoroutines = new Dictionary<string, Coroutine>();
         private bool _isLoadingScene = false;
         private string _loadingSceneName = "";
+        private float _loadingProgress = 0f;
 
-        // State management
-        private class RenameState
-        {
-            public string ItemPath;
-            public string NewName = string.Empty;
-            public bool IsActive;
-        }
+        // Visual State
+        private readonly Dictionary<string, Vector4> _folderColors = new Dictionary<string, Vector4>();
+        private string _currentHoveredItem = null;
+        private double _hoverStartTime = 0;
 
-        private class DeleteState
-        {
-            public string ItemPath;
-            public string ItemName;
-            public bool ShowConfirmation;
-        }
-
-        private class ColorPickerState
-        {
-            public string FolderName;
-            public bool RequestOpen;
-        }
-
-        private readonly RenameState _renameState = new RenameState();
-        private readonly DeleteState _deleteState = new DeleteState();
-        private readonly ColorPickerState _colorPickerState = new ColorPickerState();
-
-        // Cache for asset metadata
-        private readonly ConcurrentDictionary<string, AssetMetadataInfo> _metadataCache = new ConcurrentDictionary<string, AssetMetadataInfo>();
-        private readonly ConcurrentDictionary<Guid, AssetMetadataInfo> _metadataByIdCache = new ConcurrentDictionary<Guid, AssetMetadataInfo>();
         private static readonly Logger _logger = LogManager.GetCurrentClassLogger();
 
-        // Drag and drop
-        private string _dragHoverFolderPath;
-        private Stopwatch _dragHoverTimer = new Stopwatch();
-        private const double HOVER_OPEN_DELAY = 1000; // 1 second delay
+        private class FileSystemItem
+        {
+            public string Path { get; set; }
+            public string Name { get; set; }
+            public string DisplayName { get; set; }
+            public char Icon { get; set; } = Icons.File; // fa-file
+            public bool IsDirectory { get; set; }
+            public bool IsAssetFile { get; set; }
+            public bool IsLoading { get; set; }
+            public bool IsLoaded { get; set; }
+            public AssetMetadataInfo Metadata { get; set; }
+            public FileInfo FileInfo { get; set; }
+            public DirectoryInfo DirectoryInfo { get; set; }
+            public Stopwatch LoadTimer { get; set; }
+            public string FileExtension { get; set; }
+            public long FileSize { get; set; }
+            public DateTime LastModified { get; set; }
 
-        public AssetBrowserLayer(AssetManager assetManager, ImGuiController imGuiController)
+            // Unique ID that considers folder names for same-named folders
+            public string UniqueId => IsDirectory ? $"DIR_{Name}_{System.IO.Path.GetDirectoryName(Path)?.GetHashCode()}" : $"FILE_{Path}";
+        }
+
+        // File type icons and handling
+        private static readonly Dictionary<string, char> _fileTypeIcons = new Dictionary<string, char>(StringComparer.OrdinalIgnoreCase)
+        {
+            // Asset files
+           [".asset"] = '\uf1b2', // fa-cube
+
+            // Image files
+            [".png"] = '\uf1c5',   // fa-file-image
+            [".jpg"] = '\uf1c5',   // fa-file-image
+            [".jpeg"] = '\uf1c5',  // fa-file-image
+            [".bmp"] = '\uf1c5',   // fa-file-image
+            [".tga"] = '\uf1c5',   // fa-file-image
+            [".tiff"] = '\uf1c5',  // fa-file-image
+            [".psd"] = '\uf1c5',   // fa-file-image
+            [".hdr"] = '\uf1c5',   // fa-file-image
+
+            // 3D model files
+            [".fbx"] = '\uf1b2',   // fa-cube
+            [".obj"] = '\uf1b2',   // fa-cube
+            [".blend"] = '\uf1b2', // fa-cube
+            [".max"] = '\uf1b2',   // fa-cube
+            [".ma"] = '\uf1b2',    // fa-cube
+            [".mb"] = '\uf1b2',    // fa-cube
+            [".3ds"] = '\uf1b2',   // fa-cube
+            [".dae"] = '\uf1b2',   // fa-cube
+
+            // Audio files
+            [".wav"] = '\uf1c7',   // fa-file-audio
+            [".mp3"] = '\uf1c7',   // fa-file-audio
+            [".ogg"] = '\uf1c7',   // fa-file-audio
+            [".flac"] = '\uf1c7',  // fa-file-audio
+
+            // Video files
+            [".mp4"] = '\uf1c8',   // fa-file-video
+            [".avi"] = '\uf1c8',   // fa-file-video
+            [".mov"] ='\uf1c8',   // fa-file-video
+            [".mkv"] ='\uf1c8',   // fa-file-video
+
+            // Document files
+            [".txt"] = Icons.FileAlt,   // fa-file-alt
+            [".doc"] = Icons.FileWord,   // fa-file-word
+            [".docx"] = Icons.FileWord,  // fa-file-word
+            [".pdf"] = Icons.FilePdf,   // fa-file-pdf
+            [".md"] = Icons.FileAlt,    // fa-file-alt
+
+            // Code files
+            [".cs"] = Icons.Code,    // fa-code
+            [".js"] = Icons.Code,    // fa-code
+            [".ts"] = Icons.Code,    // fa-code
+            [".glsl"] = Icons.Code,  // fa-code
+
+            // Configuration files
+            [".json"] =   Icons.Code,  // fa-file-code
+            [".xml"] =   Icons.Code,   // fa-file-code
+            [".yaml"] =  Icons.Code,  // fa-file-code
+            [".yml"] =   Icons.Code,   // fa-file-code
+            [".config"] = Icons.Code,// fa-file-code
+
+            // Archive files
+            [".zip"] = Icons.FileArchive,   // fa-file-archive
+            [".rar"] = Icons.FileArchive,   // fa-file-archive
+            [".7z"] = Icons.FileArchive,    // fa-file-archive
+            [".tar"] = Icons.FileArchive,   // fa-file-archive
+            [".gz"] = Icons.FileArchive,    // fa-file-archive
+        };
+
+        // Font Awesome icons for asset types
+        private static readonly Dictionary<string, char> _assetTypeIcons = new Dictionary<string, char>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["material"] = Icons.PaintBrush,
+            ["texture"] = Icons.FileImage,
+            ["mesh"] = Icons.Cube,
+            ["model"] = Icons.Cube,
+            ["scene"] = Icons.Sitemap,
+            ["shader"] = Icons.Code,
+            ["script"] = Icons.FileCode,
+            ["prefab"] = Icons.Cube,
+            ["animation"] = Icons.Magic,
+            ["audio"] = Icons.FileAudio,
+            ["video"] = Icons.FileVideo,
+            ["font"] = Icons.Font,
+        };
+
+        public AssetBrowserLayer(AssetManager assetManager, CoroutineScheduler coroutineScheduler)
         {
             _assetManager = assetManager;
-            _imGuiController = imGuiController;
-        }
+            _coroutineScheduler = coroutineScheduler;
 
-        public Task OnImGuiRender(VkCommandBuffer vkCommandBuffer)
-        {
-            DrawMainWindow();
-            return Task.CompletedTask;
-        }
-
-        private void DrawMainWindow()
-        {
-            // Reset hover timer if not dragging
-            if (!ImGui.IsMouseDragging(ImGuiMouseButton.Left) && !AssetDragDrop.IsAnyPayloadActive())
+            try
             {
-                _dragHoverTimer.Stop();
-                _dragHoverFolderPath = null;
-            }
+                // Set initial base path
+                _basePath = string.IsNullOrEmpty(assetManager.BasePath)
+                    ? Directory.GetCurrentDirectory()
+                    : assetManager.BasePath;
 
+                // Ensure the path exists
+                if (!Directory.Exists(_basePath))
+                {
+                    _logger.Warn("Initial base path does not exist: {Path}, falling back to current directory", _basePath);
+                    _basePath = Directory.GetCurrentDirectory();
+                }
+
+                _logger.Info("AssetBrowserLayer initialized with path: {Path}", _basePath);
+            }
+            catch (Exception ex)
+            {
+                _logger.Error(ex, "Failed to initialize AssetBrowserLayer");
+                _basePath = Directory.GetCurrentDirectory();
+            }
+        }
+
+        public ValueTask OnImGuiRender(VkCommandBuffer vkCommandBuffer)
+        {
+            RenderMainWindow();
+            return ValueTask.CompletedTask;
+        }
+
+        private void RenderMainWindow()
+        {
             ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(8, 8));
             ImGui.Begin("Asset Browser", ImGuiWindowFlags.MenuBar);
             ImGui.PopStyleVar();
 
             DrawMenuBar();
-            DrawControls();
+            DrawSearchControls();
             DrawContentArea();
-
-            DrawColorPickerPopup();
-            DrawLoadingPopup();
-            DrawRenamePopup();
-            DrawDeleteConfirmationPopup();
+            DrawLoadingModal();
+            DrawContextMenus();
 
             ImGui.End();
         }
 
-        private void DrawControls()
+        private void DrawSearchControls()
         {
             ImGui.BeginChild("##AssetBrowserControls", new Vector2(0, ImGui.GetFrameHeightWithSpacing() * 2));
 
-            ImGui.SetNextItemWidth(ImGui.GetContentRegionAvail().X * 0.7f);
-            ImGui.InputTextWithHint("##SearchAssets", "Search assets...", ref _searchQuery, 100);
+            // Breadcrumb navigation
+            DrawBreadcrumbNavigation();
 
             ImGui.SameLine();
-            ImGui.SetNextItemWidth(ImGui.GetContentRegionAvail().X * 0.3f);
+
+            // Search box
+            ImGui.SetNextItemWidth(ImGui.GetContentRegionAvail().X * 0.4f);
+            if (ImGui.InputTextWithHint("##SearchAssets", "Search...", ref _searchQuery, 100))
+            {
+                // Search updated - we could add debouncing here
+            }
+
+            ImGui.SameLine();
+
+            // View controls
+            ImGui.SetNextItemWidth(ImGui.GetContentRegionAvail().X * 0.2f);
             ImGui.SliderFloat("##ThumbnailSize", ref _thumbnailSize, 32f, 128f, "Size: %.0f");
 
             ImGui.SameLine();
-            if (ImGui.Button(_gridView ? "\uf00a" : "\uf03a"))
+
+            if (ImguiExtensions.IconButton(_gridView ? "\uf00a" : "\uf03a", _gridView ? "List View" : "Grid View"))
             {
                 _gridView = !_gridView;
             }
-            if (ImGui.IsItemHovered())
+
+            ImGui.SameLine();
+
+            if (ImguiExtensions.IconButton("\uf021", "Refresh Directory"))
             {
-                ImGui.SetTooltip(_gridView ? "Switch to List View" : "Switch to Grid View");
+                _needsDirectoryRefresh = true;
             }
 
             ImGui.EndChild();
         }
 
+        private void DrawBreadcrumbNavigation()
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(_basePath) || !Directory.Exists(_basePath))
+                {
+                    ImGui.Text("Invalid path");
+                    return;
+                }
+
+                var currentDir = new DirectoryInfo(_basePath);
+                var pathParts = new List<string>();
+                var tempDir = currentDir;
+
+                // Build path parts
+                while (tempDir != null)
+                {
+                    pathParts.Insert(0, tempDir.Name);
+                    tempDir = tempDir.Parent;
+                }
+
+                // If we're at the root, make sure we have the root properly
+                if (pathParts.Count == 0)
+                {
+                    pathParts.Add(_basePath);
+                }
+
+                // Draw breadcrumbs with home button
+                if (ImGui.Button("\uf015")) // fa-home
+                {
+                    _basePath = Directory.GetCurrentDirectory();
+                    _needsDirectoryRefresh = true;
+                    _selectedItems.Clear();
+                }
+                if (ImGui.IsItemHovered())
+                {
+                    ImGui.SetTooltip("Home Directory");
+                }
+
+                // Draw path parts with unique IDs
+                string currentPath = "";
+                for (int i = 0; i < pathParts.Count; i++)
+                {
+                    ImGui.SameLine();
+                    ImGui.Text("\uf105"); // fa-angle-right
+                    ImGui.SameLine();
+
+                    var part = pathParts[i];
+                    currentPath = i == 0 ? part : Path.Combine(currentPath, part);
+                    var isLast = i == pathParts.Count - 1;
+
+                    if (isLast)
+                    {
+                        ImGui.Text(part);
+                    }
+                    else
+                    {
+                        // Use the full path as ID to ensure uniqueness
+                        string buttonId = $"{part}##{currentPath.GetHashCode()}";
+                        if (ImGui.Button(buttonId))
+                        {
+                            _basePath = currentPath;
+                            _needsDirectoryRefresh = true;
+                            _selectedItems.Clear();
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.Error(ex, "Error in breadcrumb navigation");
+                ImGui.Text("Navigation error");
+            }
+        }
+
+
         private void DrawContentArea()
         {
             float contentHeight = ImGui.GetContentRegionAvail().Y;
-            ImGui.BeginChild("##AssetBrowserContent", new Vector2(0, contentHeight), true, ImGuiWindowFlags.HorizontalScrollbar);
+            ImGui.BeginChild("##AssetBrowserContent", new Vector2(0, contentHeight), true);
 
-            // Directory tree on left
-            float treeWidth = ImGui.GetContentRegionAvail().X * 0.25f;
-            ImGui.BeginChild("##DirectoryTree", new Vector2(treeWidth, 0), true);
-            DrawDirectoryTree(_assetManager.BasePath);
-            ImGui.EndChild();
-
+            // Debug info
+            ImGui.TextDisabled($"Path: {_basePath}");
             ImGui.SameLine();
+            ImGui.TextDisabled($"Items: {_currentDirectoryItems.Count}");
+            ImGui.SameLine();
+            ImGui.TextDisabled($"Cache: {_itemCache.Count}");
 
-            // Asset list on right
-            ImGui.BeginChild("##AssetList", new Vector2(0, 0), true);
-            DrawCurrentDirectoryContents();
-            ImGui.EndChild();
+            if (!Directory.Exists(_basePath))
+            {
+                ImGui.TextColored(new Vector4(1, 0, 0, 1), "Directory does not exist!");
+                if (ImGui.Button("Reset to Current Directory"))
+                {
+                    _basePath = Directory.GetCurrentDirectory();
+                    _needsDirectoryRefresh = true;
+                }
+            }
+
+            // Refresh directory if needed
+            if (_needsDirectoryRefresh)
+            {
+                StartDirectoryRefreshCoroutine();
+                _needsDirectoryRefresh = false;
+            }
+
+            // Draw file system view
+            if (_currentDirectoryItems.Count == 0)
+            {
+                ImguiExtensions.CenteredText("No items found...");
+                if (ImGui.Button("Force Refresh"))
+                {
+                    _needsDirectoryRefresh = true;
+                }
+            }
+            else
+            {
+                if (_gridView)
+                {
+                    DrawGridView();
+                }
+                else
+                {
+                    DrawListView();
+                }
+            }
 
             ImGui.EndChild();
+        }
+
+        private void DrawGridView()
+        {
+            float availableWidth = ImGui.GetContentRegionAvail().X;
+            float itemWidth = _thumbnailSize + ImGui.GetStyle().ItemSpacing.X;
+            int columns = Math.Max(1, (int)(availableWidth / itemWidth));
+
+            // Use child window with horizontal scrolling if needed
+            ImGui.BeginChild("##AssetGridContainer", Vector2.Zero, false, ImGuiWindowFlags.HorizontalScrollbar);
+
+            float windowVisibleX = ImGui.GetWindowPos().X;
+            float windowWidth = ImGui.GetWindowWidth();
+
+            int itemCount = 0;
+            foreach (var item in _currentDirectoryItems)
+            {
+                if (ShouldFilterItem(item)) continue;
+                itemCount++;
+            }
+
+            // Calculate optimal grid layout
+            if (columns > 1)
+            {
+                ImGui.PushStyleVar(ImGuiStyleVar.ItemSpacing, new Vector2(8, 16));
+
+                int currentColumn = 0;
+                foreach (var item in _currentDirectoryItems)
+                {
+                    if (ShouldFilterItem(item)) continue;
+
+                    if (currentColumn == 0)
+                    {
+                        ImGui.BeginGroup();
+                    }
+
+                    ImGui.PushID(item.UniqueId);
+                    DrawGridItem(item);
+                    ImGui.PopID();
+
+                    currentColumn++;
+
+                    // Move to next row or same line
+                    if (currentColumn < columns)
+                    {
+                        ImGui.SameLine();
+                    }
+                    else
+                    {
+                        ImGui.EndGroup();
+                        currentColumn = 0;
+                    }
+                }
+
+                // End group if we have an incomplete row
+                if (currentColumn > 0 && currentColumn < columns)
+                {
+                    ImGui.EndGroup();
+                }
+
+                ImGui.PopStyleVar();
+            }
+            else
+            {
+                // Single column layout for very small windows
+                foreach (var item in _currentDirectoryItems)
+                {
+                    if (ShouldFilterItem(item)) continue;
+
+                    ImGui.PushID(item.UniqueId);
+                    DrawGridItem(item);
+                    ImGui.PopID();
+                }
+            }
+
+            ImGui.EndChild();
+        }
+
+        private void DrawListView()
+        {
+            if (ImGui.BeginTable("AssetList", 4,
+                ImGuiTableFlags.RowBg | ImGuiTableFlags.Borders | ImGuiTableFlags.Resizable | ImGuiTableFlags.Sortable))
+            {
+                // Header
+                ImGui.TableSetupColumn("Name", ImGuiTableColumnFlags.WidthStretch, 0.6f);
+                ImGui.TableSetupColumn("Type", ImGuiTableColumnFlags.WidthStretch, 0.2f);
+                ImGui.TableSetupColumn("Size", ImGuiTableColumnFlags.WidthStretch, 0.1f);
+                ImGui.TableSetupColumn("Modified", ImGuiTableColumnFlags.WidthStretch, 0.1f);
+                ImGui.TableHeadersRow();
+
+                foreach (var item in _currentDirectoryItems)
+                {
+                    if (ShouldFilterItem(item)) continue;
+
+                    ImGui.TableNextRow();
+                    DrawListItem(item);
+                }
+
+                ImGui.EndTable();
+            }
+        }
+
+        private void DrawGridItem(FileSystemItem item)
+        {
+            bool isSelected = _selectedItems.Contains(item.Path);
+
+            // Calculate item dimensions
+            float iconSize = _thumbnailSize;
+            float textHeight = ImGui.GetTextLineHeight() * 2 + ImGui.GetStyle().ItemSpacing.Y; // Allow for 2 lines of text
+            float totalHeight = iconSize + textHeight;
+
+            ImGui.BeginGroup();
+
+            // Draw selection background
+            if (isSelected)
+            {
+                var drawList = ImGui.GetWindowDrawList();
+                var min = ImGui.GetCursorScreenPos();
+                var max = min + new Vector2(iconSize, totalHeight);
+                drawList.AddRectFilled(min, max, ImGui.GetColorU32(ImGuiCol.Header));
+            }
+
+            // Draw icon/button
+            var buttonColor = isSelected ? ImGui.GetStyle().Colors[(int)ImGuiCol.Header]
+                : ImGui.GetStyle().Colors[(int)ImGuiCol.Button];
+
+            ImGui.PushStyleColor(ImGuiCol.Button, buttonColor);
+            ImGui.PushStyleColor(ImGuiCol.ButtonHovered, buttonColor * 1.1f);
+
+            Vector2 buttonSize = new Vector2(iconSize, iconSize);
+            if (item.IsLoading)
+            {
+                // Loading spinner
+                var frame = (int)(ImGui.GetTime() * 8) % 8;
+                var spinnerFrames = new[] { "⣾", "⣽", "⣻", "⢿", "⡿", "⣟", "⣯", "⣷" };
+                ImGui.Button($"{spinnerFrames[frame]}##{item.UniqueId}", buttonSize);
+            }
+            else
+            {
+                string buttonLabel = $"{item.Icon}##{item.UniqueId}";
+                if (ImGui.Button(buttonLabel, buttonSize))
+                {
+                    HandleItemClick(item);
+
+                    if (ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left))
+                    {
+                        HandleItemDoubleClick(item);
+                    }
+                }
+            }
+
+            ImGui.PopStyleColor(2);
+
+            // Draw name with proper text wrapping and centering
+            var displayName = GetDisplayName(item);
+            DrawGridItemName(displayName, iconSize);
+
+            ImGui.EndGroup();
+
+            // Handle hover and tooltips
+            if (ImGui.IsItemHovered())
+            {
+                _currentHoveredItem = item.Path;
+                _hoverStartTime = ImGui.GetTime();
+
+                // Show tooltip after delay
+                if (ImGui.GetTime() - _hoverStartTime > 0.5)
+                {
+                    DrawItemTooltip(item);
+                }
+            }
+            else if (_currentHoveredItem == item.Path)
+            {
+                _currentHoveredItem = null;
+            }
+
+            // Handle drag and drop
+            HandleItemDragDrop(item);
+        }
+        private void DrawGridItemName(string name, float availableWidth)
+        {
+            // Calculate text size and determine if we need wrapping
+            var textSize = ImGui.CalcTextSize(name);
+            float textPadding = 4f; // Small padding on sides
+
+            if (textSize.X <= availableWidth - textPadding * 2)
+            {
+                // Text fits, center it
+                float offset = (availableWidth - textSize.X) * 0.5f;
+                ImGui.SetCursorPosX(ImGui.GetCursorPosX() + offset);
+                ImGui.TextUnformatted(name);
+            }
+            else
+            {
+                ImGui.TextWrapped(name);
+            }
+        }
+
+        private void DrawListItem(FileSystemItem item)
+        {
+            // Use unique ID for list items as well
+            ImGui.PushID(item.UniqueId);
+
+            // Name column
+            ImGui.TableNextColumn();
+            bool isSelected = _selectedItems.Contains(item.Path);
+
+            string selectableLabel = item.IsLoading
+                ? $"{ImguiExtensions.GetLoadingSpinnerIcon()} {GetDisplayName(item)}"
+                : $"{item.Icon} {GetDisplayName(item)}";
+
+            if (ImGui.Selectable(selectableLabel, isSelected,
+                ImGuiSelectableFlags.SpanAllColumns | ImGuiSelectableFlags.AllowDoubleClick))
+            {
+                HandleItemClick(item);
+
+                if (ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left))
+                {
+                    HandleItemDoubleClick(item);
+                }
+            }
+
+            // Type column
+            ImGui.TableNextColumn();
+            if (item.IsDirectory)
+            {
+                ImGui.Text("Folder");
+            }
+            else if (item.IsAssetFile)
+            {
+                ImGui.Text("Asset");
+            }
+            else
+            {
+                ImGui.Text(item.FileExtension.ToUpper().TrimStart('.'));
+            }
+
+            // Size column
+            ImGui.TableNextColumn();
+            if (item.IsDirectory)
+            {
+                ImGui.Text("-");
+            }
+            else
+            {
+                ImGui.Text(FormatFileSize(item.FileSize));
+            }
+
+            // Modified column
+            ImGui.TableNextColumn();
+            ImGui.Text(item.LastModified.ToString("yyyy-MM-dd HH:mm"));
+
+            // Handle hover and tooltips
+            if (ImGui.IsItemHovered())
+            {
+                DrawItemTooltip(item);
+            }
+
+            ImGui.PopID();
+        }
+
+        private void DrawItemName(string name, float availableWidth)
+        {
+            ImguiExtensions.CenteredTextWrapped(name, availableWidth);
+        }
+
+        private void DrawItemTooltip(FileSystemItem item)
+        {
+            ImGui.BeginTooltip();
+
+            ImGui.PushTextWrapPos(400f);
+
+            if (item.IsDirectory)
+            {
+                ImGui.Text(item.Name);
+                ImGui.Separator();
+                ImGui.Text("\uf07b Folder"); // fa-folder
+                try
+                {
+                    var dirInfo = new DirectoryInfo(item.Path);
+                    var files = dirInfo.GetFiles();
+                    var dirs = dirInfo.GetDirectories();
+                    ImGui.Text($"Items: {files.Length + dirs.Length}");
+                }
+                catch
+                {
+                    ImGui.Text("Items: Unknown");
+                }
+            }
+            else
+            {
+                ImGui.Text(item.Name);
+                ImGui.Separator();
+
+                if (item.IsAssetFile && item.Metadata != null)
+                {
+                    ImGui.Text($"Type: {item.Metadata.Type} Asset");
+                    ImGui.Text($"ID: {item.Metadata.ID}");
+                }
+                else
+                {
+                    ImGui.Text($"Type: {item.FileExtension.ToUpper().TrimStart('.')} File");
+                }
+
+                ImGui.Text($"Size: {FormatFileSize(item.FileSize)}");
+                ImGui.Text($"Modified: {item.LastModified:yyyy-MM-dd HH:mm:ss}");
+            }
+
+            ImGui.PopTextWrapPos();
+            ImGui.EndTooltip();
+        }
+
+        private void StartDirectoryRefreshCoroutine()
+        {
+            // Cancel any existing refresh coroutine
+            if (_activeCoroutines.TryGetValue("directory_refresh", out var existingCoroutine))
+            {
+                _coroutineScheduler.StopCoroutine(existingCoroutine);
+            }
+
+            var refreshCoroutine = _coroutineScheduler.StartCoroutine(
+                RefreshDirectoryCoroutine(),
+                "RefreshDirectory"
+            );
+
+            _activeCoroutines["directory_refresh"] = refreshCoroutine;
+        }
+
+        private IEnumerator RefreshDirectoryCoroutine()
+        {
+            _logger.Debug("Starting directory refresh coroutine for: {Path}", _basePath);
+
+            _currentDirectoryItems.Clear();
+
+            if (!Directory.Exists(_basePath))
+            {
+                _logger.Warn("Directory does not exist: {Path}", _basePath);
+                yield break;
+            }
+
+            yield return new WaitForNextFrame();
+
+            string[] directories = Array.Empty<string>();
+            string[] allFiles = Array.Empty<string>();
+
+
+            // Load directories
+            directories = Directory.GetDirectories(_basePath);
+            _logger.Debug("Found {Count} directories in {Path}", directories.Length, _basePath);
+
+            foreach (var dir in directories)
+            {
+                var dirInfo = new DirectoryInfo(dir);
+                var item = CreateDirectoryItem(dirInfo);
+                _currentDirectoryItems.Add(item);
+            }
+
+            yield return new WaitForNextFrame();
+
+            // Load files
+            allFiles = Directory.GetFiles(_basePath);
+            _logger.Debug("Found {Count} files in {Path}", allFiles.Length, _basePath);
+
+            int filesProcessed = 0;
+
+            foreach (var file in allFiles)
+            {
+                var fileInfo = new FileInfo(file);
+                var relativePath = GetRelativePath(file);
+
+                // Use the file's unique path for cache key
+                string cacheKey = fileInfo.FullName;
+                if (!_itemCache.TryGetValue(cacheKey, out var item))
+                {
+                    item = CreateFileItem(fileInfo);
+                    _itemCache[cacheKey] = item;
+
+                    // Start metadata loading for asset files
+                    if (item.IsAssetFile)
+                    {
+                        StartAssetMetadataCoroutine(item);
+                    }
+                }
+
+                _currentDirectoryItems.Add(item);
+                filesProcessed++;
+
+                // Yield every 20 files to keep UI responsive
+                if (filesProcessed % 20 == 0)
+                    yield return new WaitForNextFrame();
+            }
+
+            // Sort items: directories first, then files alphabetically
+            _currentDirectoryItems.Sort((a, b) =>
+            {
+                if (a.IsDirectory && !b.IsDirectory) return -1;
+                if (!a.IsDirectory && b.IsDirectory) return 1;
+                return string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase);
+            });
+
+            _logger.Debug("Directory refresh completed. Found {DirCount} directories, {FileCount} files",
+                directories.Length, allFiles.Length);
+        }
+
+
+
+        private FileSystemItem CreateDirectoryItem(DirectoryInfo dirInfo)
+        {
+            return new FileSystemItem
+            {
+                Path = dirInfo.FullName,
+                Name = dirInfo.Name,
+                DisplayName = dirInfo.Name,
+                Icon = Icons.Folder, // fa-folder
+                IsDirectory = true,
+                IsAssetFile = false,
+                IsLoaded = true,
+                DirectoryInfo = dirInfo,
+                LastModified = dirInfo.LastWriteTime
+            };
+        }
+
+        private FileSystemItem CreateFileItem(FileInfo fileInfo)
+        {
+            var extension = fileInfo.Extension.ToLower();
+            var isAssetFile = extension == AssetPath.Empty.Extension;
+
+            return new FileSystemItem
+            {
+                Path = fileInfo.FullName,
+                Name = fileInfo.Name,
+                DisplayName = Path.GetFileNameWithoutExtension(fileInfo.Name),
+                Icon = GetFileIcon(extension),
+                IsDirectory = false,
+                IsAssetFile = isAssetFile,
+                IsLoaded = !isAssetFile, // Non-asset files are immediately "loaded"
+                IsLoading = isAssetFile,
+                FileInfo = fileInfo,
+                FileExtension = extension,
+                FileSize = fileInfo.Length,
+                LastModified = fileInfo.LastWriteTime
+            };
+        }
+
+        private char GetFileIcon(string extension)
+        {
+            return _fileTypeIcons.TryGetValue(extension, out var icon)
+                ? icon
+                : '\uf15b'; // fa-file
+        }
+
+        private void StartAssetMetadataCoroutine(FileSystemItem item)
+        {
+            var coroutineKey = $"metadata_{item.UniqueId}";
+
+            if (_activeCoroutines.TryGetValue(coroutineKey, out var existingCoroutine))
+            {
+                _coroutineScheduler.StopCoroutine(existingCoroutine);
+            }
+
+            item.IsLoading = true;
+            item.LoadTimer = Stopwatch.StartNew();
+
+            var metadataCoroutine = _coroutineScheduler.StartCoroutine(
+                LoadAssetMetadataCoroutine(item),
+                $"LoadMetadata_{item.UniqueId}"
+            );
+
+            _activeCoroutines[coroutineKey] = metadataCoroutine;
+
+            metadataCoroutine.OnCompleted += (coroutine) =>
+            {
+                _activeCoroutines.Remove(coroutineKey);
+                _logger.Debug("Metadata loaded for: {Asset}", item.Name);
+            };
+
+            metadataCoroutine.OnError += (coroutine, error) =>
+            {
+                _activeCoroutines.Remove(coroutineKey);
+                item.Icon = Icons.Times; // fa-times
+                item.IsLoading = false;
+                _logger.Warn("Failed to load metadata for {Asset}: {Error}", item.Name, error.Message);
+            };
+        }
+
+        private IEnumerator LoadAssetMetadataCoroutine(FileSystemItem item)
+        {
+            _logger.Debug("Starting metadata coroutine for: {Asset}", item.Name);
+
+            var metadataTask = _assetManager.LoadAssetAsync<IAsset>(item.Path);
+            yield return new WaitForTask(metadataTask);
+
+            if (metadataTask.IsCompletedSuccessfully)
+            {
+                var metadata = metadataTask.Result;
+                item.Metadata = new AssetMetadataInfo(metadata.ID, metadata.Name, metadata.GetType().Name.Replace("Asset", ""), metadata.Path.ToString());
+
+                // Update icon based on asset type
+                item.Icon = GetAssetTypeIcon(item.Metadata.Type);
+                item.IsLoaded = true;
+                item.IsLoading = false;
+
+                _logger.Debug("Metadata loaded successfully for: {Asset} ({Type})",
+                    item.Name, item.Metadata.Type);
+            }
+            else
+            {
+                item.Icon = Icons.Times; // fa-times
+                item.IsLoading = false;
+                throw new Exception($"Failed to load metadata for {item.Name}", metadataTask.Exception);
+            }
+        }
+
+        private char GetAssetTypeIcon(string assetType)
+        {
+            return _assetTypeIcons.TryGetValue(assetType?.ToLower() ?? "", out var icon)
+                ? icon
+                : Icons.Cube; // fa-cube (default)
+        }
+
+        private void HandleItemClick(FileSystemItem item)
+        {
+            if (ImGui.GetIO().KeyCtrl)
+            {
+                // Toggle selection
+                if (!_selectedItems.Remove(item.Path))
+                {
+                    _selectedItems.Add(item.Path);
+                }
+            }
+            else
+            {
+                _selectedItems.Clear();
+                _selectedItems.Add(item.Path);
+            }
+        }
+
+        private void HandleItemDoubleClick(FileSystemItem item)
+        {
+            if (item.IsDirectory)
+            {
+                _basePath = item.Path;
+                _needsDirectoryRefresh = true;
+                _selectedItems.Clear();
+            }
+            else if (item.IsAssetFile && item.Metadata?.Type == "Scene")
+            {
+                StartSceneLoadingCoroutine(item.Path, item.Name);
+            }
+            else
+            {
+                // Open file with default system application
+                OpenFileWithDefaultApplication(item.Path);
+            }
+        }
+
+        private void HandleItemDragDrop(FileSystemItem item)
+        {
+            // Implement drag and drop functionality here
+            // This would handle dragging assets into the scene, between folders, etc.
+        }
+
+        private void OpenFileWithDefaultApplication(string filePath)
+        {
+            try
+            {
+                var processStartInfo = new ProcessStartInfo
+                {
+                    FileName = filePath,
+                    UseShellExecute = true
+                };
+                Process.Start(processStartInfo);
+            }
+            catch (Exception ex)
+            {
+                _logger.Warn("Failed to open file {File}: {Error}", filePath, ex.Message);
+            }
+        }
+
+        private void StartSceneLoadingCoroutine(string scenePath, string sceneName)
+        {
+            var coroutineKey = $"scene_load_{scenePath.GetHashCode()}";
+
+            if (_activeCoroutines.TryGetValue(coroutineKey, out var existingCoroutine))
+            {
+                _coroutineScheduler.StopCoroutine(existingCoroutine);
+            }
+
+            var sceneCoroutine = _coroutineScheduler.StartCoroutine(
+                LoadSceneCoroutine(scenePath, sceneName),
+                $"LoadScene_{sceneName}"
+            );
+
+            _activeCoroutines[coroutineKey] = sceneCoroutine;
+
+            sceneCoroutine.OnCompleted += (coroutine) =>
+            {
+                _activeCoroutines.Remove(coroutineKey);
+                _logger.Info("Scene loaded successfully: {Scene}", sceneName);
+            };
+
+            sceneCoroutine.OnError += (coroutine, error) =>
+            {
+                _activeCoroutines.Remove(coroutineKey);
+                _logger.Error(error, "Failed to load scene: {Scene}", sceneName);
+            };
+        }
+
+        private IEnumerator LoadSceneCoroutine(string scenePath, string sceneName)
+        {
+            _isLoadingScene = true;
+            _loadingSceneName = sceneName;
+            _loadingProgress = 0f;
+
+            _logger.Info("Starting scene load coroutine: {Scene}", sceneName);
+
+            try
+            {
+                _loadingProgress = 0.1f;
+                yield return new WaitForNextFrame();
+
+                var loadTask = _assetManager.LoadAssetAsync<SceneAsset>(scenePath);
+
+                while (!loadTask.IsCompleted)
+                {
+                    _loadingProgress = 0.1f + (0.5f * GetEstimatedProgress(loadTask));
+                    yield return new WaitForNextFrame();
+                }
+
+                yield return new WaitForTask(loadTask);
+
+                if (loadTask.IsCompletedSuccessfully)
+                {
+                    var sceneAsset = loadTask.Result;
+                    var loadDataTask = _assetManager.LoadAssetDataAsync(sceneAsset);
+                    while (!loadDataTask.IsCompleted)
+                    {
+                        _loadingProgress = 0.5f + (0.9f * GetEstimatedProgress(loadDataTask));
+                        yield return new WaitForNextFrame();
+                    }
+                    yield return new WaitForTask(loadDataTask);
+                    if (!loadDataTask.IsCompletedSuccessfully)
+                    {
+                        throw new Exception($"Failed to load scene asset: {scenePath}", loadDataTask.Exception);
+                    }
+                    _loadingProgress = 0.9f;
+
+                    yield return new WaitForNextFrame();
+                    var sceneInitTask =  sceneAsset.InstantiateEntities();
+
+                    yield return new WaitForTask(sceneInitTask);
+                    if (!sceneInitTask.IsCompletedSuccessfully)
+                    {
+                        throw new Exception($"Failed to InstantiateEntities: {scenePath}", sceneInitTask.Exception);
+                    }
+
+                    _loadingProgress = 1.0f;
+                    yield return new WaitForNextFrame();
+
+                    _logger.Info("Scene instantiated: {Scene}", sceneAsset.Name);
+                }
+                else
+                {
+                    throw new Exception($"Failed to load scene asset: {scenePath}", loadTask.Exception);
+                }
+            }
+            finally
+            {
+                _isLoadingScene = false;
+                _loadingProgress = 0f;
+            }
+        }
+
+        private bool ShouldFilterItem(FileSystemItem item)
+        {
+            if (string.IsNullOrEmpty(_searchQuery)) return false;
+
+            var searchText = _searchQuery.ToLowerInvariant();
+            var itemName = item.Name.ToLowerInvariant();
+
+            return !itemName.Contains(searchText);
+        }
+
+        private string GetRelativePath(string fullPath)
+        {
+            try
+            {
+                return Path.GetRelativePath(_basePath, fullPath);
+            }
+            catch
+            {
+                return fullPath;
+            }
+        }
+
+        private string GetDisplayName(FileSystemItem item)
+        {
+            if (item.IsDirectory)
+                return item.Name;
+
+            return _showFileExtensions
+                ? item.Name
+                : item.DisplayName;
+        }
+
+        private static string FormatFileSize(long bytes)
+        {
+            string[] sizes = { "B", "KB", "MB", "GB", "TB" };
+            int order = 0;
+            double len = bytes;
+            while (len >= 1024 && order < sizes.Length - 1)
+            {
+                order++;
+                len = len / 1024;
+            }
+            return $"{len:0.##} {sizes[order]}";
+        }
+
+        private void DrawLoadingModal()
+        {
+            if (_isLoadingScene)
+            {
+                ImGui.OpenPopup("Loading Scene");
+
+                Vector2 center = ImGui.GetMainViewport().GetCenter();
+                ImGui.SetNextWindowPos(center, ImGuiCond.Appearing, new Vector2(0.5f, 0.5f));
+
+                if (ImGui.BeginPopupModal("Loading Scene", ref _isLoadingScene,
+                    ImGuiWindowFlags.AlwaysAutoResize | ImGuiWindowFlags.NoTitleBar))
+                {
+                    ImguiExtensions.CenteredText($"Loading: {_loadingSceneName}");
+                    ImguiExtensions.CenteredProgressBar(_loadingProgress, new Vector2(200, 20));
+                    ImGui.EndPopup();
+                }
+            }
+        }
+
+        private void DrawContextMenus()
+        {
         }
 
         private void DrawMenuBar()
         {
             if (ImGui.BeginMenuBar())
             {
-                if (ImGui.BeginMenu("Create"))
+                if (ImGui.BeginMenu("File"))
                 {
-                    if (ImGui.MenuItem("New Folder"))
+                    if (ImGui.MenuItem("\uf65e New Folder")) // fa-folder-plus
                     {
                         CreateNewFolder();
                     }
@@ -163,49 +1125,13 @@ namespace RockEngine.Editor.Layers
 
                 if (ImGui.BeginMenu("View"))
                 {
-                    ImGui.MenuItem("Show File Extensions", "", ref showFileExtensions);
-                    ImGui.MenuItem("Grid View", "", ref _gridView);
+                    ImGui.MenuItem("\uf15c Show File Extensions", "", ref _showFileExtensions); // fa-file-alt
+                    ImGui.MenuItem("\uf00a Grid View", "", ref _gridView); // fa-th
                     ImGui.EndMenu();
                 }
 
-                if (ImGui.BeginMenu("Selection"))
-                {
-                    if (ImGui.MenuItem("Select All", "Ctrl+A"))
-                    {
-                        SelectAllAssets();
-                    }
-
-                    if (ImGui.MenuItem("Deselect All", "Ctrl+D"))
-                    {
-                        DeselectAllAssets();
-                    }
-
-                    ImGui.EndMenu();
-                }
+                ImGui.EndMenuBar();
             }
-            ImGui.EndMenuBar();
-        }
-
-        private void SelectAllAssets()
-        {
-            _selectedAssets.Clear();
-            try
-            {
-                var files = Directory.GetFiles(_currentDirectoryPath, "*.asset");
-                foreach (var file in files)
-                {
-                    _selectedAssets.Add(file);
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.Error(ex, "Failed to select all assets");
-            }
-        }
-
-        private void DeselectAllAssets()
-        {
-            _selectedAssets.Clear();
         }
 
         private void CreateNewFolder()
@@ -214,16 +1140,17 @@ namespace RockEngine.Editor.Layers
             {
                 int folderNumber = 1;
                 string newFolderName = "New Folder";
-                string fullPath = Path.Combine(_currentDirectoryPath, newFolderName);
+                string fullPath = Path.Combine(_basePath, newFolderName);
 
                 while (Directory.Exists(fullPath))
                 {
                     folderNumber++;
                     newFolderName = $"New Folder ({folderNumber})";
-                    fullPath = Path.Combine(_currentDirectoryPath, newFolderName);
+                    fullPath = Path.Combine(_basePath, newFolderName);
                 }
 
                 Directory.CreateDirectory(fullPath);
+                _needsDirectoryRefresh = true;
             }
             catch (Exception ex)
             {
@@ -231,939 +1158,79 @@ namespace RockEngine.Editor.Layers
             }
         }
 
-        private void CreateNewAsset<T>(string defaultFolder, string defaultName) where T : IAsset
+        private float GetEstimatedProgress(Task task)
         {
-            // Implementation for creating new assets
+            if (task.IsCompleted) return 1.0f;
+            return Math.Min(0.95f, DateTime.Now.Ticks % 1000000 / 1000000f);
         }
 
-        private void DrawDirectoryTree(string path)
+        public void OnUpdate()
         {
-            if (!Directory.Exists(path))
-            {
-                return;
-            }
-
-            try
-            {
-                var dir = new DirectoryInfo(path);
-                string dirName = dir.Name;
-
-                ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags.OpenOnArrow | ImGuiTreeNodeFlags.SpanFullWidth;
-                if (path == _currentDirectoryPath)
-                {
-                    flags |= ImGuiTreeNodeFlags.Selected;
-                }
-
-                // Apply custom folder color if available
-                if (_folderColors.TryGetValue(dirName, out Vector4 color))
-                {
-                    ImGui.PushStyleColor(ImGuiCol.Text, color);
-                }
-
-                bool isOpen = ImGui.TreeNodeEx($"{FolderIcon} {dirName}", flags);
-
-                // Reset color if we pushed it
-                if (_folderColors.ContainsKey(dirName))
-                {
-                    ImGui.PopStyleColor();
-                }
-
-                if (ImGui.IsItemClicked())
-                {
-                    _currentDirectoryPath = path;
-                    _selectedAssets.Clear();
-                }
-
-                // Handle drag hover
-                if (ImGui.IsItemHovered() && (ImGui.IsMouseDragging(ImGuiMouseButton.Left) || AssetDragDrop.IsAnyPayloadActive()))
-                {
-                    HandleDragHover(path);
-                }
-
-                // Make the tree node a drop target
-                if (ImGui.BeginDragDropTarget())
-                {
-                    if (AssetDragDrop.AcceptAssetDrop(out Guid assetId))
-                    {
-                        MoveAssetToDirectory(assetId, path);
-                    }
-                    else if (AssetDragDrop.AcceptFolderDrop(out string sourcePath))
-                    {
-                        MoveItem(sourcePath, path);
-                    }
-                    ImGui.EndDragDropTarget();
-                }
-
-                DrawFolderContextMenu(path, dirName);
-
-                if (isOpen)
-                {
-                    foreach (var subDir in Directory.GetDirectories(path).OrderBy(d => d))
-                    {
-                        DrawDirectoryTree(subDir);
-                    }
-                    ImGui.TreePop();
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.Error(ex, $"Failed to draw directory tree for path: {path}");
-            }
+            // Coroutines are processed by the Application's CoroutineScheduler
         }
 
-        private void DrawFolderContextMenu(string path, string dirName)
+        public void OnRender(VkCommandBuffer vkCommandBuffer)
         {
-            if (ImGui.BeginPopupContextItem(path))
-            {
-                if (ImGui.MenuItem("Change Color"))
-                {
-                    _colorPickerState.FolderName = dirName;
-                    _colorPickerState.RequestOpen = true;
-                }
-
-                if (ImGui.MenuItem("Rename"))
-                {
-                    _renameState.ItemPath = path;
-                    _renameState.NewName = dirName;
-                    _renameState.IsActive = true;
-                }
-
-                if (ImGui.MenuItem("Delete"))
-                {
-                    _deleteState.ItemPath = path;
-                    _deleteState.ItemName = dirName;
-                    _deleteState.ShowConfirmation = true;
-                }
-
-                ImGui.EndPopup();
-            }
+            // 3D rendering logic would go here if needed
         }
 
-        private void DrawColorPickerPopup()
+        public Task OnAttach()
         {
-            if (_colorPickerState.RequestOpen)
-            {
-                ImGui.OpenPopup("##FolderColorPicker");
-                _colorPickerState.RequestOpen = false;
-            }
+            _logger.Info("AssetBrowserLayer attached");
 
-            if (ImGui.BeginPopup("##FolderColorPicker"))
-            {
-                if (_colorPickerState.FolderName != null)
-                {
-                    Vector4 color = _folderColors.TryGetValue(_colorPickerState.FolderName, out Vector4 existingColor)
-                        ? existingColor
-                        : new Vector4(1, 1, 1, 1);
+          
 
-                    if (ImGui.ColorPicker4("##FolderColor", ref color, ImGuiColorEditFlags.NoAlpha))
-                    {
-                        _folderColors[_colorPickerState.FolderName] = color;
-                    }
-
-                    if (ImGui.Button("Apply"))
-                    {
-                        ImGui.CloseCurrentPopup();
-                        _colorPickerState.FolderName = null;
-                    }
-
-                    ImGui.SameLine();
-                    if (ImGui.Button("Cancel"))
-                    {
-                        ImGui.CloseCurrentPopup();
-                        _colorPickerState.FolderName = null;
-                    }
-                }
-                ImGui.EndPopup();
-            }
-        }
-
-        private void DrawLoadingPopup()
-        {
-            if (_isLoadingScene)
-            {
-                ImGui.OpenPopup("Loading Scene");
-
-                Vector2 center = ImGui.GetMainViewport().GetCenter();
-                ImGui.SetNextWindowPos(center, ImGuiCond.Appearing, new Vector2(0.5f, 0.5f));
-                ImGui.SetNextWindowContentSize(new Vector2(200, 100));
-
-                if (ImGui.BeginPopupModal("Loading Scene", ref _isLoadingScene, ImGuiWindowFlags.AlwaysAutoResize | ImGuiWindowFlags.NoTitleBar))
-                {
-                    ImGui.Text($"Loading scene: {_loadingSceneName}");
-
-                    // Center the spinner using available space
-                    float spinnerRadius = 20f;
-                    float spinnerThickness = 4f;
-                    uint spinnerColor = ImGui.GetColorU32(ImGuiCol.ButtonHovered);
-
-                    // Calculate center position within the popup
-                    Vector2 windowSize = ImGui.GetWindowSize();
-                    Vector2 windowPos = ImGui.GetWindowPos();
-                    Vector2 centerPos = new Vector2(
-                        windowPos.X + windowSize.X * 0.5f,
-                        windowPos.Y + windowSize.Y * 0.5f + ImGui.GetTextLineHeight() // Offset below text
-                    );
-
-                    // Draw the spinner at the calculated center position
-                    ImGuiSpinnerExtension.Spinner(centerPos, spinnerRadius, spinnerThickness, spinnerColor);
-
-                    ImGui.EndPopup();
-                }
-            }
-        }
-
-        private void DrawCurrentDirectoryContents()
-        {
-            if (string.IsNullOrEmpty(_currentDirectoryPath) || !Directory.Exists(_currentDirectoryPath))
-            {
-                ImGui.Text("Invalid directory");
-                return;
-            }
-
-            try
-            {
-                ImGui.Text(_currentDirectoryPath);
-                ImGui.SameLine();
-
-                if (ImGui.Button("Create Folder"))
-                {
-                    CreateNewFolder();
-                }
-
-                ImGui.Separator();
-
-                // Parent directory button
-                var parentDir = Directory.GetParent(_currentDirectoryPath);
-                if (parentDir != null && parentDir.Exists)
-                {
-                    if (ImGui.Button($"{FolderIcon} .."))
-                    {
-                        _currentDirectoryPath = parentDir.FullName;
-                        _selectedAssets.Clear();
-                    }
-                    ImGui.Separator();
-                }
-
-                if (_gridView)
-                {
-                    DrawAssetGrid();
-                }
-                else
-                {
-                    DrawAssetList();
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.Error(ex, $"Failed to draw directory contents for path: {_currentDirectoryPath}");
-                ImGui.Text("Error loading directory contents");
-            }
-        }
-
-        private void DrawAssetGrid()
-        {
-            float availableWidth = ImGui.GetContentRegionAvail().X;
-            int columns = Math.Max(1, (int)(availableWidth / (_thumbnailSize + ImGui.GetStyle().ItemSpacing.X)));
-
-            if (ImGui.BeginTable("AssetGrid", columns, ImGuiTableFlags.SizingFixedFit))
-            {
-                // Draw folders
-                foreach (var dir in Directory.GetDirectories(_currentDirectoryPath).OrderBy(d => d))
-                {
-                    ImGui.TableNextColumn();
-                    DrawFolderGridItem(new DirectoryInfo(dir));
-                }
-
-                // Draw files
-                foreach (var file in Directory.GetFiles(_currentDirectoryPath, "*.asset").OrderBy(f => f))
-                {
-                    ImGui.TableNextColumn();
-                    DrawAssetGridItem(new FileInfo(file));
-                }
-
-                ImGui.EndTable();
-            }
-        }
-
-        private void DrawAssetList()
-        {
-            // Draw folders first in list view
-            foreach (var dir in Directory.GetDirectories(_currentDirectoryPath).OrderBy(d => d))
-            {
-                DrawFolderListItem(new DirectoryInfo(dir));
-            }
-
-            // Then draw files in list view
-            foreach (var file in Directory.GetFiles(_currentDirectoryPath, "*.asset").OrderBy(f => f))
-            {
-                DrawAssetListItem(new FileInfo(file));
-            }
-        }
-
-        private void DrawFolderGridItem(DirectoryInfo dir)
-        {
-            ImGui.PushID(dir.FullName);
-            ImGui.BeginGroup();
-
-            bool hasColor = _folderColors.TryGetValue(dir.Name, out Vector4 color);
-            if (hasColor)
-            {
-                ImGui.PushStyleColor(ImGuiCol.Text, color);
-            }
-
-            if (ImGui.Button($"{FolderIcon}##{dir.Name}", new Vector2(_thumbnailSize, _thumbnailSize)))
-            {
-                _currentDirectoryPath = dir.FullName;
-                _selectedAssets.Clear();
-            }
-
-            if (hasColor)
-            {
-                ImGui.PopStyleColor();
-            }
-
-            string folderName = dir.Name;
-            if (folderName.Length > 12)
-            {
-                folderName = string.Concat(folderName.AsSpan(0, 10), "...");
-            }
-
-            ImGui.TextWrapped(folderName);
-            ImGui.EndGroup();
-
-            // Use AssetDragDrop for drag source
-            AssetDragDrop.BeginDragDropSource(dir.FullName, dir.Name);
-
-            // Use AssetDragDrop for drop target
-            HandleDropTarget(dir.FullName);
-
-            DrawFolderContextMenu(dir.FullName, dir.Name);
-            ImGui.PopID();
-        }
-
-        private void DrawFolderListItem(DirectoryInfo dir)
-        {
-            ImGui.PushID(dir.FullName);
-
-            bool hasColor = _folderColors.TryGetValue(dir.Name, out Vector4 color);
-            if (hasColor)
-            {
-                ImGui.PushStyleColor(ImGuiCol.Text, color);
-            }
-
-            bool isSelected = ImGui.Selectable($"{FolderIcon} {dir.Name}", false,
-                ImGuiSelectableFlags.AllowDoubleClick | ImGuiSelectableFlags.SpanAllColumns);
-
-            if (hasColor)
-            {
-                ImGui.PopStyleColor();
-            }
-
-            if (ImGui.IsItemHovered() && ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left))
-            {
-                _currentDirectoryPath = dir.FullName;
-                _selectedAssets.Clear();
-            }
-
-            // Use AssetDragDrop for drag source
-            AssetDragDrop.BeginDragDropSource(dir.FullName, dir.Name);
-
-            // Use AssetDragDrop for drop target
-            HandleDropTarget(dir.FullName);
-
-            DrawFolderContextMenu(dir.FullName, dir.Name);
-            ImGui.PopID();
-        }
-
-        private void DrawAssetGridItem(FileInfo file)
-        {
-            ImGui.PushID(file.FullName);
-
-            string relativePath = Path.GetRelativePath(_assetManager.BasePath, file.FullName);
-            string fileName = showFileExtensions ? file.Name : Path.GetFileNameWithoutExtension(file.Name);
-
-            if (!string.IsNullOrEmpty(_searchQuery) && !fileName.Contains(_searchQuery, StringComparison.OrdinalIgnoreCase))
-            {
-                ImGui.PopID();
-                return;
-            }
-
-            string icon = GetAssetIcon(relativePath);
-            var metadata = GetCachedMetadata(relativePath);
-
-            bool isSelected = _selectedAssets.Contains(file.FullName);
-
-            ImGui.BeginGroup();
-
-            if (isSelected)
-            {
-                ImGui.PushStyleColor(ImGuiCol.Button, ImGui.GetStyle().Colors[(int)ImGuiCol.Header]);
-            }
-
-            if (ImGui.Button($"{icon}##{file.Name}", new Vector2(_thumbnailSize, _thumbnailSize)))
-            {
-                HandleAssetSelection(file.FullName);
-
-                // Set as selected asset for properties window
-                if (metadata != null)
-                {
-                    var asset = _assetManager.GetAsset<IAsset>(metadata.ID);
-                    AssetSelection.SelectedAsset = asset;
-                }
-
-                // Open scene on single click in grid view
-                if (metadata != null && metadata.Type == "SceneAsset")
-                {
-                    _ = Task.Factory.StartNew(() => OpenSceneAsset(metadata.ID, metadata.Name), CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Current);
-                }
-            }
-
-            if (isSelected)
-            {
-                ImGui.PopStyleColor();
-            }
-
-            if (metadata != null)
-            {
-                AssetDragDrop.BeginDragDropSource(metadata.ID, fileName);
-            }
-
-            string displayName = fileName;
-            if (displayName.Length > 12)
-            {
-                displayName = string.Concat(displayName.AsSpan(0, 10), "...");
-            }
-
-            ImGui.TextWrapped(displayName);
-            ImGui.EndGroup();
-
-            if (ImGui.IsItemHovered())
-            {
-                DrawAssetTooltip(relativePath, file);
-            }
-
-            DrawAssetContextMenu(file);
-            ImGui.PopID();
-        }
-
-        private Type GetAssetTypeFromMetadata(AssetMetadataInfo metadata)
-        {
-            return metadata.Type switch
-            {
-                "TextureAsset" => typeof(TextureAsset),
-                "MaterialAsset" => typeof(MaterialAsset),
-                "MeshAsset" => typeof(MeshAsset),
-                "SceneAsset" => typeof(SceneAsset),
-                _ => typeof(IAsset)
-            };
-        }
-
-        private void DrawAssetListItem(FileInfo file)
-        {
-            ImGui.PushID(file.FullName);
-
-            string relativePath = Path.GetRelativePath(_assetManager.BasePath, file.FullName);
-            string fileName = showFileExtensions ? file.Name : Path.GetFileNameWithoutExtension(file.Name);
-
-            if (!string.IsNullOrEmpty(_searchQuery) && !fileName.Contains(_searchQuery, StringComparison.OrdinalIgnoreCase))
-            {
-                ImGui.PopID();
-                return;
-            }
-
-            string icon = GetAssetIcon(relativePath);
-            var metadata = GetCachedMetadata(relativePath);
-
-            bool isSelected = _selectedAssets.Contains(file.FullName);
-
-            if (ImGui.Selectable($"{icon} {fileName}", isSelected,
-                ImGuiSelectableFlags.AllowDoubleClick | ImGuiSelectableFlags.SpanAllColumns))
-            {
-                HandleAssetSelection(file.FullName);
-
-                // Open scene on double click in list view
-                if (ImGui.IsItemHovered() && ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left) &&
-                    metadata != null && metadata.Type == "SceneAsset")
-                {
-                    _ = Task.Factory.StartNew(() => OpenSceneAsset(metadata.ID, metadata.Name), CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Current);
-                }
-            }
-
-            // Use AssetDragDrop for drag source if we have metadata
-            if (metadata != null)
-            {
-                AssetDragDrop.BeginDragDropSource(metadata.ID, fileName);
-            }
-
-            // Use AssetDragDrop for drop target
-            HandleDropTarget(_currentDirectoryPath);
-
-            if (ImGui.IsItemHovered())
-            {
-                DrawAssetTooltip(relativePath, file);
-            }
-
-            DrawAssetContextMenu(file);
-            ImGui.PopID();
-        }
-
-        private void HandleDropTarget(string targetPath)
-        {
-            if (AssetDragDrop.AcceptAssetDrop(out Guid assetId))
-            {
-                MoveAssetToDirectory(assetId, targetPath);
-            }
-            else if (AssetDragDrop.AcceptFolderDrop(out string sourcePath))
-            {
-                MoveItem(sourcePath, targetPath);
-            }
-        }
-
-        private void HandleDragHover(string folderPath)
-        {
-            if (_dragHoverFolderPath != folderPath)
-            {
-                // New folder being hovered, start timer
-                _dragHoverFolderPath = folderPath;
-                _dragHoverTimer.Restart();
-            }
-            else if (_dragHoverTimer.IsRunning && _dragHoverTimer.ElapsedMilliseconds > HOVER_OPEN_DELAY)
-            {
-                // Hover time exceeded, open the folder
-                _currentDirectoryPath = folderPath;
-                _dragHoverTimer.Stop();
-                _dragHoverFolderPath = null;
-            }
-        }
-
-        private void DrawAssetContextMenu(FileInfo file)
-        {
-            if (ImGui.BeginPopupContextItem(file.FullName))
-            {
-                if (ImGui.MenuItem("Rename"))
-                {
-                    _renameState.ItemPath = file.FullName;
-                    _renameState.NewName = Path.GetFileNameWithoutExtension(file.Name);
-                    _renameState.IsActive = true;
-                }
-
-                if (ImGui.MenuItem("Delete"))
-                {
-                    _deleteState.ItemPath = file.FullName;
-                    _deleteState.ItemName = Path.GetFileNameWithoutExtension(file.Name);
-                    _deleteState.ShowConfirmation = true;
-                }
-
-                ImGui.EndPopup();
-            }
-        }
-
-        private void DrawRenamePopup()
-        {
-            if (!_renameState.IsActive)
-            {
-                return;
-            }
-
-            ImGui.OpenPopup("Rename Item");
-
-            Vector2 center = ImGui.GetMainViewport().GetCenter();
-            ImGui.SetNextWindowPos(center, ImGuiCond.Appearing, new Vector2(0.5f, 0.5f));
-
-            if (ImGui.BeginPopupModal("Rename Item", ref _renameState.IsActive, ImGuiWindowFlags.AlwaysAutoResize))
-            {
-                ImGui.Text("New name:");
-                ImGui.InputText("##NewName", ref _renameState.NewName, 255);
-
-                if (ImGui.Button("OK"))
-                {
-                    RenameItem(_renameState.ItemPath, _renameState.NewName);
-                    _renameState.IsActive = false;
-                    ImGui.CloseCurrentPopup();
-                }
-
-                ImGui.SameLine();
-
-                if (ImGui.Button("Cancel"))
-                {
-                    _renameState.IsActive = false;
-                    ImGui.CloseCurrentPopup();
-                }
-
-                ImGui.EndPopup();
-            }
-        }
-
-        private void DrawDeleteConfirmationPopup()
-        {
-            if (!_deleteState.ShowConfirmation)
-            {
-                return;
-            }
-
-            ImGui.OpenPopup("Confirm Delete");
-
-            Vector2 center = ImGui.GetMainViewport().GetCenter();
-            ImGui.SetNextWindowPos(center, ImGuiCond.Appearing, new Vector2(0.5f, 0.5f));
-
-            if (ImGui.BeginPopupModal("Confirm Delete", ref _deleteState.ShowConfirmation, ImGuiWindowFlags.AlwaysAutoResize))
-            {
-                ImGui.Text($"Are you sure you want to delete '{_deleteState.ItemName}'?");
-                ImGui.Text("This action cannot be undone.");
-
-                if (ImGui.Button("Yes"))
-                {
-                    DeleteItem(_deleteState.ItemPath);
-                    _deleteState.ShowConfirmation = false;
-                    ImGui.CloseCurrentPopup();
-                }
-
-                ImGui.SameLine();
-
-                if (ImGui.Button("No"))
-                {
-                    _deleteState.ShowConfirmation = false;
-                    ImGui.CloseCurrentPopup();
-                }
-
-                ImGui.EndPopup();
-            }
-        }
-
-        private void RenameItem(string itemPath, string newName)
-        {
-            try
-            {
-                string directory = Path.GetDirectoryName(itemPath);
-                string newPath = Path.Combine(directory, newName);
-
-                if (File.Exists(itemPath))
-                {
-                    File.Move(itemPath, newPath);
-
-                    // Update asset metadata if it's an asset file
-                    if (itemPath.EndsWith(".asset"))
-                    {
-                        string oldRelativePath = Path.GetRelativePath(_assetManager.BasePath, itemPath);
-                        string newRelativePath = Path.GetRelativePath(_assetManager.BasePath, newPath);
-
-                        // Refresh metadata cache
-                        _metadataCache.TryRemove(oldRelativePath, out _);
-                        _assetManager.GetMetadataByPath(newRelativePath);
-                    }
-                }
-                else if (Directory.Exists(itemPath))
-                {
-                    Directory.Move(itemPath, newPath);
-                }
-
-                _logger.Info($"Renamed {itemPath} to {newPath}");
-                RefreshMetadataCache();
-            }
-            catch (Exception ex)
-            {
-                _logger.Error(ex, $"Failed to rename {itemPath} to {newName}");
-            }
-        }
-
-        private void DeleteItem(string itemPath)
-        {
-            try
-            {
-                if (File.Exists(itemPath))
-                {
-                    File.Delete(itemPath);
-
-                    // Remove from asset manager if it's an asset file
-                    if (itemPath.EndsWith(".asset"))
-                    {
-                        string relativePath = Path.GetRelativePath(_assetManager.BasePath, itemPath);
-                        _metadataCache.TryRemove(relativePath, out _);
-                    }
-                }
-                else if (Directory.Exists(itemPath))
-                {
-                    Directory.Delete(itemPath, true);
-                }
-
-                _logger.Info($"Deleted {itemPath}");
-                RefreshMetadataCache();
-            }
-            catch (Exception ex)
-            {
-                _logger.Error(ex, $"Failed to delete {itemPath}");
-            }
-        }
-
-        private void MoveAssetToDirectory(Guid assetId, string targetDirectory)
-        {
-            try
-            {
-                var asset = _assetManager.GetAsset<IAsset>(assetId);
-                if (asset != null)
-                {
-                    string newPath = Path.Combine(targetDirectory, $"{asset.Name}.asset");
-                    _ = _assetManager.MoveAssetAsync(assetId, newPath);
-                    RefreshMetadataCache();
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.Error(ex, $"Failed to move asset {assetId} to {targetDirectory}");
-            }
-        }
-
-        private void HandleAssetSelection(string assetPath)
-        {
-            if (ImGui.GetIO().KeyCtrl)
-            {
-                if (!_selectedAssets.Remove(assetPath))
-                {
-                    _selectedAssets.Add(assetPath);
-                }
-            }
-            else if (ImGui.GetIO().KeyShift)
-            {
-                if (!_gridView)
-                {
-                    // Implement range selection logic
-                }
-            }
-            else
-            {
-                _selectedAssets.Clear();
-                _selectedAssets.Add(assetPath);
-            }
-        }
-
-        private void MoveItem(string sourcePath, string targetPath)
-        {
-            try
-            {
-                string fileName = Path.GetFileName(sourcePath);
-                string destinationPath = Path.Combine(targetPath, fileName);
-
-                if (File.Exists(sourcePath))
-                {
-                    File.Move(sourcePath, destinationPath);
-
-                    // Update asset metadata if it's an asset file
-                    if (sourcePath.EndsWith(".asset"))
-                    {
-                        _ = _assetManager.MoveAssetAsync(sourcePath, destinationPath);
-                        return;
-                    }
-                }
-                else if (Directory.Exists(sourcePath))
-                {
-                    Directory.Move(sourcePath, destinationPath);
-                }
-
-                _logger.Info($"Moved {sourcePath} to {destinationPath}");
-                RefreshMetadataCache();
-            }
-            catch (Exception ex)
-            {
-                _logger.Error(ex, $"Failed to move {sourcePath} to {targetPath}");
-            }
-        }
-
-        private async Task OpenSceneAsset(Guid sceneAssetId, string sceneName)
-        {
-            _isLoadingScene = true;
-            _loadingSceneName = sceneName;
-
-            try
-            {
-                var sceneAsset = await _assetManager.LoadAssetByIdAsync<SceneAsset>(sceneAssetId);
-                if (sceneAsset != null)
-                {
-                    sceneAsset.InstantiateEntities();
-                    _logger.Info($"Opened scene: {sceneAsset.Name}");
-                    GC.Collect();
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.Error(ex, $"Failed to open scene asset: {sceneAssetId}");
-            }
-            finally
-            {
-                _isLoadingScene = false;
-            }
-        }
-
-        private string GetAssetIcon(string relativePath)
-        {
-            try
-            {
-                var metadata = GetCachedMetadata(relativePath);
-                if (metadata != null)
-                {
-                    return metadata.Type switch
-                    {
-                        "MaterialAsset" => "\uf1fc",
-                        "TextureAsset" => "\uf03e",
-                        "MeshAsset" => "\uf1b2",
-                        "ModelAsset" => "\uf1b2",
-                        "SceneAsset" => "\uf0c5",
-                        _ => FileIcon
-                    };
-                }
-            }
-            catch
-            {
-                // Fall through to default icon
-            }
-            return FileIcon;
-        }
-
-        private void DrawAssetTooltip(string relativePath, FileInfo file)
-        {
-            ImGui.BeginTooltip();
-
-            var metadata = GetCachedMetadata(relativePath);
-            if (metadata != null)
-            {
-                ImGui.Text(metadata.Name);
-                ImGui.Separator();
-                ImGui.Text($"Type: {metadata.Type.Replace("Asset", "")}");
-                ImGui.Text($"ID: {metadata.ID}");
-                ImGui.Text($"Size: {file.Length / 1024} KB");
-
-                // Preview for texture assets - handle cube textures differently
-                if (metadata.Type == "TextureAsset")
-                {
-                    try
-                    {
-                        var textureAsset = _assetManager.GetAsset<TextureAsset>(metadata.ID);
-                        if (textureAsset != null)
-                        {
-                            if (!textureAsset.GpuReady)
-                            {
-                                _ = textureAsset.LoadGpuResourcesAsync();
-                            }
-
-                            ImGui.Separator();
-                            ImGui.Text("Preview:");
-
-                            // Check if it's a cube texture
-                            if (textureAsset.TextureType == TextureType.TextureCube && textureAsset.GpuReady)
-                            {
-                                // For cube textures, just show an icon instead of trying to render
-                                ImGui.Text("\uf1b2 Cube Texture"); // Cube icon
-                                ImGui.Text($"Dimensions: {(textureAsset.Texture as Texture3D).Width}x{(textureAsset.Texture as Texture3D).Height}");
-                            }
-                            else
-                            {
-                                // For 2D textures, show the actual preview
-                                if (textureAsset.Texture is not null)
-                                {
-                                    IntPtr texId = _imGuiController.GetTextureID(textureAsset.Texture);
-                                    float previewSize = 128f;
-                                    ImGui.Text($"Mip Levels: {textureAsset.Texture.LoadedMipLevels}/{textureAsset.Texture.TotalMipLevels}");
-                                    ImGui.Image(texId, new Vector2(previewSize, previewSize));
-                                }
-                            }
-                        }
-                    }
-                    catch
-                    {
-                        // Ignore errors in preview
-                    }
-                }
-            }
-            else
-            {
-                ImGui.Text(Path.GetFileNameWithoutExtension(file.Name));
-                ImGui.Text("Unknown asset type");
-            }
-
-            ImGui.EndTooltip();
-        }
-
-        private AssetMetadataInfo GetCachedMetadata(string relativePath)
-        {
-            if (_metadataCache.TryGetValue(relativePath, out var cachedMetadata))
-            {
-                return cachedMetadata;
-            }
-
-            var metadata = _assetManager.GetMetadataByPath(relativePath);
-            if (metadata != null)
-            {
-                _metadataCache[relativePath] = metadata;
-                return metadata;
-            }
-
-            return null;
-        }
-
-        public void RefreshMetadataCache()
-        {
-            _metadataCache.Clear();
-            _metadataByIdCache.Clear();
-        }
-
-        public async Task<T> GetAssetWithMetadataAsync<T>(Guid assetId) where T : class, IAsset
-        {
-            if (_metadataByIdCache.TryGetValue(assetId, out var metadata))
-            {
-                var asset = _assetManager.GetAsset<T>(assetId);
-                if (asset != null)
-                {
-                    return asset;
-                }
-            }
-
-            var loadedAsset = await _assetManager.LoadAssetByIdAsync<T>(assetId);
-            if (loadedAsset != null)
-            {
-                var assetMetadata = new AssetMetadataInfo(
-                    loadedAsset.ID,
-                    loadedAsset.Name,
-                    loadedAsset.GetType().Name
-                );
-                _metadataByIdCache[assetId] = assetMetadata;
-            }
-
-            return loadedAsset;
-        }
-
-        public void OnRender(VkCommandBuffer vkCommandBuffer) { }
-        public void OnUpdate() { }
-
-        public async Task OnAttach()
-        {
-            _currentDirectoryPath = _assetManager.BasePath;
-
-            _folderColors["Materials"] = new Vector4(0.4f, 0.7f, 1.0f, 1.0f);
-            _folderColors["Textures"] = new Vector4(0.9f, 0.6f, 0.2f, 1.0f);
-            _folderColors["Models"] = new Vector4(0.3f, 0.8f, 0.4f, 1.0f);
-            _folderColors["Scenes"] = new Vector4(0.8f, 0.4f, 0.9f, 1.0f);
-
-            _assetManager.OnAssetsChanged += RefreshMetadataCache;
-            _assetManager.OnAssetRemoved += OnAssetRemoved;
+            // Subscribe to project events
+            _assetManager.OnProjectLoaded += OnProjectLoaded;
             _assetManager.OnAssetRegistered += OnAssetRegistered;
+
+            // Initial refresh
+            _needsDirectoryRefresh = true;
+
+            return Task.CompletedTask;
         }
 
         public void OnDetach()
         {
-            _assetManager.OnAssetsChanged -= RefreshMetadataCache;
-            _assetManager.OnAssetRemoved -= OnAssetRemoved;
+            _logger.Info("AssetBrowserLayer detached");
+
+            foreach (var coroutine in _activeCoroutines.Values)
+            {
+                _coroutineScheduler.StopCoroutine(coroutine);
+            }
+            _activeCoroutines.Clear();
+
+            _assetManager.OnProjectLoaded -= OnProjectLoaded;
             _assetManager.OnAssetRegistered -= OnAssetRegistered;
         }
 
-        private void OnAssetRemoved(Guid assetId)
+        private void OnProjectLoaded(ProjectAsset project)
         {
-            _logger.Info($"Asset removed: {assetId}");
-            _metadataCache.Clear();
+            _basePath = _assetManager.BasePath;
+            _needsDirectoryRefresh = true;
+            _itemCache.Clear();
+
+            foreach (var coroutine in _activeCoroutines.Values)
+            {
+                _coroutineScheduler.StopCoroutine(coroutine);
+            }
+            _activeCoroutines.Clear();
+
+            _logger.Info("Project loaded, base path: {BasePath}", _basePath);
         }
 
         private void OnAssetRegistered(IAsset asset)
         {
-            _logger.Info($"Asset registered: {asset.Name} ({asset.ID})");
-            RefreshMetadataCache();
+            _logger.Debug("Asset registered: {AssetName} ({AssetType})", asset.Name, asset.GetType().Name);
+
+            var assetPath = asset.Path.ToString();
+            if (_itemCache.TryGetValue(assetPath, out var cachedItem))
+            {
+                cachedItem.Metadata = new AssetMetadataInfo(asset.ID, asset.Name, asset.GetType().Name.Replace("Asset", ""), assetPath);
+                cachedItem.Icon = GetAssetTypeIcon(cachedItem.Metadata.Type);
+                cachedItem.IsLoaded = true;
+                cachedItem.IsLoading = false;
+            }
         }
     }
 }

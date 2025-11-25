@@ -1,4 +1,6 @@
-﻿using RockEngine.Core.DI;
+﻿using NLog;
+
+using RockEngine.Core.DI;
 
 using System.Text.Json.Serialization;
 
@@ -6,9 +8,10 @@ namespace RockEngine.Core.Assets
 {
     public sealed class ModelAsset : Asset<ModelData>
     {
+        private static readonly Logger _logger = LogManager.GetCurrentClassLogger();
         public override string Type => "Model";
 
-        [JsonIgnore]
+        [System.Text.Json.Serialization.JsonIgnore]
         public List<ModelPart> Parts { get; } = new List<ModelPart>();
 
 
@@ -30,12 +33,17 @@ namespace RockEngine.Core.Assets
             {
                 Parts.Clear();
 
-                var assetManager = IoC.Container.GetInstance<AssetManager>();
+                var assetManager = IoC.Container.GetInstance<AssetRepository>();
                 foreach (var partData in modelData.Parts)
                 {
-                    var mesh = assetManager.GetAsset<MeshAsset>(partData.MeshAssetID);
-                    var material = assetManager.GetAsset<MaterialAsset>(partData.MaterialAssetID);
-                    Parts.Add(new ModelPart { Mesh = mesh, Material = material });
+                    if(assetManager.TryGet(partData.MeshAssetID, out var meshAsset) && assetManager.TryGet(partData.MaterialAssetID, out var materialAsset))
+                    {
+                        Parts.Add(new ModelPart { Mesh = (MeshAsset)meshAsset, Material = (MaterialAsset)materialAsset });
+                    }
+                    else
+                    {
+                        _logger.Error("Failed to find mesh or material assets: mesh = {meshID}, material= {material}", partData.MeshAssetID, partData.MaterialAssetID);
+                    }
                 }
             }
                

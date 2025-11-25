@@ -18,7 +18,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.PropertyHandlers
             propertyType.IsGenericType &&
             propertyType.GetGenericTypeDefinition() == typeof(IResourceProvider<>);
 
-        public ValueTask Draw(IComponent component, UIPropertyAccessor accessor, object value, PropertyDrawer drawer)
+        public async ValueTask Draw(IComponent component, UIPropertyAccessor accessor, object value, PropertyDrawer drawer)
         {
             var resourceProvider = value as IResourceProvider;
             var resourceType = accessor.PropertyType.GetGenericArguments()[0];
@@ -29,10 +29,9 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.PropertyHandlers
             float buttonWidth = ImGui.GetContentRegionAvail().X - 120;
             ImGui.Button($"{accessor.DisplayName}: {currentName}", new Vector2(buttonWidth, 0));
 
-            HandleAssetDragDrop(component, accessor, resourceType, drawer);
+            await HandleAssetDragDrop(component, accessor, resourceType, drawer);
             HandleResourceSpecificUI(component, accessor, resourceProvider, resourceType, drawer);
             HandleResourceTooltip(resourceProvider, resourceType, drawer);
-            return ValueTask.CompletedTask;
 
         }
 
@@ -68,7 +67,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.PropertyHandlers
             return $"{resourceType.Name} Provider";
         }
 
-        private void HandleAssetDragDrop(IComponent component, UIPropertyAccessor accessor, Type resourceType, PropertyDrawer drawer)
+        private async Task HandleAssetDragDrop(IComponent component, UIPropertyAccessor accessor, Type resourceType, PropertyDrawer drawer)
         {
             if (AssetDragDrop.AcceptAssetDrop(out var assetID))
             {
@@ -76,7 +75,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.PropertyHandlers
                 Type assetType = GetAssetTypeForResourceType(resourceType);
                 if (assetType != null)
                 {
-                    var asset = drawer.AssetManager.GetAsset(assetID);
+                    var asset = await drawer.AssetManager.GetAssetAsync<IAsset>(assetID);
                     if (asset != null)
                     {
                         var provider = CreateProviderForAsset(accessor.PropertyType, asset);

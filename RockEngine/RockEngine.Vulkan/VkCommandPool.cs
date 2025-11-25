@@ -83,11 +83,11 @@ namespace RockEngine.Vulkan
 
         }
 
-        public void Reset()
+        public void Reset(CommandPoolResetFlags flags = CommandPoolResetFlags.None)
         {
             //lock (_lock)
             {
-                Vk.ResetCommandPool(_context.Device, this, CommandPoolResetFlags.ReleaseResourcesBit)
+                Vk.ResetCommandPool(_context.Device, this, flags)
                     .VkAssertResult("Failed to reset Command pool");
             }
         }

@@ -60,18 +60,28 @@ namespace RockEngine.Core.Rendering.ResourceBindings
                 var imageView = texture.Image.GetMipView(BaseMipLevel);
                 var layout = texture.Image.GetMipLayout(BaseMipLevel);
 
-                
+
 
                 // Validate layout
-                if (layout != ImageLayout.ShaderReadOnlyOptimal &&
-                    layout != ImageLayout.General)
+                bool needsLayoutTransition = false;
+                for (uint layer = 0; layer < texture.Image.ArrayLayers; layer++)
+                {
+                    layout = texture.Image.GetMipLayout(BaseMipLevel, layer);
+                    if (layout != ImageLayout.ShaderReadOnlyOptimal && layout != ImageLayout.General)
+                    {
+                        needsLayoutTransition = true;
+                        break;
+                    }
+                }
+
+                // Validate layout for ALL layers
+                if (needsLayoutTransition)
                 {
                     var batch = context.GraphicsSubmitContext.CreateBatch();
                     texture.PrepareForFragmentShader(batch.CommandBuffer);
                     batch.Submit();
-                    //context.GraphicsSubmitContext.FlushSingle(batch,VkFence.CreateNotSignaled(context)).Wait();
-                    layout = ImageLayout.ShaderReadOnlyOptimal;
                 }
+
                 imageInfos[i] = new DescriptorImageInfo
                 {
                     ImageLayout = layout,

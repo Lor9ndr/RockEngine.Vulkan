@@ -12,9 +12,10 @@ namespace RockEngine.Core.Rendering.Passes
     public class DeferredPassStrategy : PassStrategyBase
     {
         private readonly GlobalUbo _globalUbo;
+        private readonly List<Task> _renderTasks;
 
         public LightingPass LightingPass => SubPasses.OfType<LightingPass>().First();
-        public override int Order => int.MinValue;
+        public override int Order => 0;
 
         public DeferredPassStrategy(
              VulkanContext context,
@@ -23,13 +24,14 @@ namespace RockEngine.Core.Rendering.Passes
              : base(context, subpasses)
         {
             _globalUbo = globalUbo;
+            _renderTasks =  new List<Task>(4);
+
         }
 
-        public override Task Execute(SubmitContext submitContext, CameraManager cameraManager, Renderer renderer)
+        public override async ValueTask Execute(SubmitContext submitContext, CameraManager cameraManager, WorldRenderer renderer)
         {
             uint frameIndex = renderer.FrameIndex;
             var cams = cameraManager.RegisteredCameras;
-            var tasks = new Task[cams.Count];
 
             for (int i = 0; i < cams.Count; i++)
             {
@@ -40,14 +42,15 @@ namespace RockEngine.Core.Rendering.Passes
                 }
                 if (camera.IsActive)
                 {
-                    tasks[i] = (ExecuteCameraPass(submitContext, camera, renderer, i, frameIndex));
+                    _renderTasks.Add((ExecuteCameraPass(submitContext, camera, renderer, i, frameIndex)));
                 }
             }
-            return Task.WhenAll(tasks);
+            await Task.WhenAll(_renderTasks);
+            _renderTasks.Clear();
         }
 
 
-        private Task ExecuteCameraPass(SubmitContext submitContext, Camera camera, Renderer renderer, int camIndex, uint frameIndex)
+        private Task ExecuteCameraPass(SubmitContext submitContext, Camera camera, WorldRenderer renderer, int camIndex, uint frameIndex)
         {
 
             var name = $"Camera - {camera.Entity.Name}";
@@ -142,7 +145,7 @@ namespace RockEngine.Core.Rendering.Passes
             batch.End();
         }
 
-        private unsafe static void BeginRenderPass(Camera camera, Renderer renderer, VkCommandBuffer cmd)
+        private unsafe static void BeginRenderPass(Camera camera, WorldRenderer renderer, VkCommandBuffer cmd)
         {
 
             fixed (ClearValue* pClearValue = camera.RenderTarget.ClearValues)

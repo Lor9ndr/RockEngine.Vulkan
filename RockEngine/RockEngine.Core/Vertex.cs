@@ -1,4 +1,6 @@
-﻿using Silk.NET.Vulkan;
+﻿using RockEngine.Core.Attributes;
+
+using Silk.NET.Vulkan;
 
 using System.Numerics;
 using System.Runtime.InteropServices;
@@ -8,10 +10,15 @@ namespace RockEngine.Core
     [StructLayout(LayoutKind.Sequential)]
     public struct Vertex:IVertex
     {
+        [Serialize]
         public Vector3 Position;
+        [Serialize]
         public Vector3 Normal;
+        [Serialize]
         public Vector2 TexCoord;
+        [Serialize]
         public Vector3 Tangent;
+        [Serialize]
         public Vector3 Bitangent;
 
         public static float Size = Marshal.SizeOf<Vertex>();

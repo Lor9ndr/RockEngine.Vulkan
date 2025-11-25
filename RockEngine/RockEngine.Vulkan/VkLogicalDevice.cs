@@ -119,7 +119,9 @@ namespace RockEngine.Vulkan
             {
                 SamplerAnisotropy = true,
                 DepthClamp = true,
-                MultiDrawIndirect = true
+                MultiDrawIndirect = true,
+                ImageCubeArray = true,
+                GeometryShader = true,
             };
 
             vulkan11Features.SType = StructureType.PhysicalDeviceVulkan11Features;

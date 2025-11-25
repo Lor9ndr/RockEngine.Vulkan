@@ -16,7 +16,7 @@ namespace RockEngine.Core.Rendering.Passes
         RckRenderPass? RenderPass { get; }
         RckRenderPass BuildRenderPass();
         void InitializeSubPasses();
-        Task Execute(SubmitContext submitContext,CameraManager cameraManager, Renderer renderer);
+        ValueTask Execute(SubmitContext submitContext,CameraManager cameraManager, WorldRenderer renderer);
         ValueTask Update();
     }
 }

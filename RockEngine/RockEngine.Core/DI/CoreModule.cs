@@ -1,4 +1,5 @@
-﻿using RockEngine.Core.ECS;
+﻿using RockEngine.Core.Coroutines;
+using RockEngine.Core.ECS;
 using RockEngine.Core.ECS.Components;
 using RockEngine.Core.Registries;
 using RockEngine.Core.Rendering;
@@ -7,6 +8,7 @@ using RockEngine.Core.Rendering.Managers;
 using RockEngine.Core.Rendering.Objects;
 using RockEngine.Core.Rendering.Passes;
 using RockEngine.Core.Rendering.Passes.SubPasses;
+using RockEngine.Core.TPL;
 using RockEngine.Vulkan;
 
 using Silk.NET.Input;
@@ -24,6 +26,7 @@ namespace RockEngine.Core.DI
         {
             container.Options.AllowOverridingRegistrations = true;
             // Core systems
+            container.Register<VulkanSynchronizationContext>(() => new VulkanSynchronizationContext(priority:ThreadPriority.Highest));
             container.Register<World>(Lifestyle.Scoped);
             container.Register<ILayerStack,LayerStack>(Lifestyle.Scoped);
 
@@ -32,11 +35,14 @@ namespace RockEngine.Core.DI
 
             // Window-dependent registrations (factory pattern)
             container.Register<VulkanContext>(Lifestyle.Scoped);
-            container.Register<GraphicsEngine>(Lifestyle.Scoped);
+            container.Register<GraphicsContext>(Lifestyle.Scoped);
             container.Register<PipelineManager>(Lifestyle.Scoped);
-            container.Register<Renderer>(Lifestyle.Scoped);
+            container.Register<WorldRenderer>(Lifestyle.Scoped);
             container.Register<InputManager>(Lifestyle.Scoped);
             container.Register<IShaderManager, ShaderManager>(Lifestyle.Scoped);
+            container.Register<IServiceProvider, Container>(Lifestyle.Singleton);
+            container.Register<CoroutineScheduler>(Lifestyle.Singleton);
+            container.Register<ShadowManager>(Lifestyle.Scoped);
 
 
             /*IoC.Container.RegisterInitializer<LayerStack>(async s =>
@@ -54,12 +60,18 @@ namespace RockEngine.Core.DI
 
             // Factory for IWindow
             container.RegisterInstance<IWindow>(Window.Create(WindowOptions.DefaultVulkan));
-            container.Register<IInputContext>(() => container.GetInstance<IWindow>().CreateInput(), Lifestyle.Scoped);
+            container.Register<IInputContext>(() =>
+            {
+                var window = container.GetInstance<IWindow>();
+                return window.CreateInput();
+            }, Lifestyle.Scoped);
 
 
 
             container.RegisterRenderPassStrategy<DeferredPassStrategy>()
                 .Before<SwapchainPassStrategy>();
+            container.RegisterRenderPassStrategy<ShadowPassStrategy>()
+                .Before<DeferredPassStrategy>();
 
             container.RegisterRenderPassStrategy<SwapchainPassStrategy>()
                 .AfterAll();
@@ -67,6 +79,8 @@ namespace RockEngine.Core.DI
             container.RegisterRenderSubPass<GeometryPass, DeferredPassStrategy>();
             container.RegisterRenderSubPass<LightingPass, DeferredPassStrategy>();
             container.RegisterRenderSubPass<PostLightPass, DeferredPassStrategy>();
+
+            container.RegisterRenderSubPass<ShadowPass, ShadowPassStrategy>();
 
             // Components
             container.Register<MeshRenderer>(Lifestyle.Transient);
@@ -90,7 +104,7 @@ namespace RockEngine.Core.DI
                 new DescriptorPoolSize(DescriptorType.StorageImage, 10)
             };
             container.Register<DescriptorPoolManager>(() => new DescriptorPoolManager(container.GetInstance<VulkanContext>(), poolSizes, 500), Lifestyle.Scoped);
-            container.Register<LightManager>(() => new LightManager(container.GetInstance<VulkanContext>(), (uint)container.GetInstance<VulkanContext>().MaxFramesPerFlight, Renderer.MAX_LIGHTS_SUPPORTED), Lifestyle.Scoped);
+            container.Register<LightManager>(() => new LightManager(container.GetInstance<VulkanContext>(), (uint)container.GetInstance<VulkanContext>().MaxFramesPerFlight, WorldRenderer.MAX_LIGHTS_SUPPORTED), Lifestyle.Scoped);
 
 
             container.Register<TransformManager>(() =>
@@ -103,7 +117,8 @@ namespace RockEngine.Core.DI
             container.Register<IndirectCommandManager>(()=>
             {
                 var vkContext = container.GetInstance<VulkanContext>();
-                return new IndirectCommandManager(vkContext, TransformManager.INITIAL_CAPACITY);
+                
+                return new IndirectCommandManager(vkContext, TransformManager.INITIAL_CAPACITY, container.GetInstance<TransformManager>());
             },Lifestyle.Scoped);
 
             container.Register<IRegistry<RckPipeline, string>, PipelineRegistry>(Lifestyle.Scoped);

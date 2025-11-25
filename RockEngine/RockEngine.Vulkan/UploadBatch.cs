@@ -29,8 +29,8 @@ namespace RockEngine.Vulkan
 
         public CommandBufferInheritanceInfo? InheritanceInfo
         {
-            get => _inheritanceInfo; 
-            set => _inheritanceInfo = value; 
+            get => _inheritanceInfo;
+            set => _inheritanceInfo = value;
         }
 
         internal UploadBatch(
@@ -66,7 +66,7 @@ namespace RockEngine.Vulkan
 
                 // For secondary buffers, we always use SimultaneousUseBit for versioned batches
                 // and OneTimeSubmitBit for one-time batches
-                beginInfo.Flags =   CommandBufferUsageFlags.OneTimeSubmitBit | CommandBufferUsageFlags.RenderPassContinueBit;
+                beginInfo.Flags = CommandBufferUsageFlags.OneTimeSubmitBit | CommandBufferUsageFlags.RenderPassContinueBit;
 
                 unsafe
                 {
@@ -77,7 +77,7 @@ namespace RockEngine.Vulkan
             else
             {
                 // For primary buffers
-                beginInfo.Flags =  CommandBufferUsageFlags.OneTimeSubmitBit ;
+                beginInfo.Flags = CommandBufferUsageFlags.OneTimeSubmitBit;
             }
 
             _commandBuffer.Begin(beginInfo);
@@ -140,7 +140,7 @@ namespace RockEngine.Vulkan
             _submitContext.AddSubmission(this);
         }
 
-        
+
         public void ExecuteCommands(UploadBatch secondaryBatch)
         {
             if (_level != CommandBufferLevel.Primary)
@@ -198,6 +198,42 @@ namespace RockEngine.Vulkan
                 imageMemoryBarriers
             );
         }
+
+        public void PipelineBarrier(
+           PipelineStageFlags srcStage,
+           PipelineStageFlags dstStage,
+           Span<MemoryBarrier> memoryBarriers)
+        {
+            _commandBuffer.PipelineBarrier(
+                srcStage,
+                dstStage,
+                DependencyFlags.None,
+                (uint)(memoryBarriers.Length),
+                memoryBarriers,
+                0,
+                [],
+                0,
+                []
+            );
+        }
+
+        public void PipelineBarrier(
+           PipelineStageFlags srcStage,
+           PipelineStageFlags dstStage,
+           Span<ImageMemoryBarrier> imageMemoryBarriers)
+        {
+            _commandBuffer.PipelineBarrier(
+                srcStage,
+                dstStage,
+                DependencyFlags.None,
+                0,
+                [],
+                0,
+                [],
+                (uint)imageMemoryBarriers.Length,
+                imageMemoryBarriers
+            );
+        }
         public void PipelineBarrier(
           PipelineStageFlags srcStage,
           PipelineStageFlags dstStage,
@@ -231,6 +267,86 @@ namespace RockEngine.Vulkan
                 dstBuffer,
                 1,
                 in copyRegion
+            );
+        }
+
+        public void CopyImage(
+    VkImage source,
+    ImageLayout srcLayout,
+    VkImage destination,
+    ImageLayout dstLayout,
+    uint srcLayer,
+    uint dstLayer,
+    uint layerCount)
+        {
+            // Validate layer ranges
+            if (srcLayer + layerCount > source.ArrayLayers)
+            {
+                throw new ArgumentException(
+                    $"Source layer range [{srcLayer}-{srcLayer + layerCount - 1}] " +
+                    $"exceeds source array layers ({source.ArrayLayers})");
+            }
+
+            if (dstLayer + layerCount > destination.ArrayLayers)
+            {
+                throw new ArgumentException(
+                    $"Destination layer range [{dstLayer}-{dstLayer + layerCount - 1}] " +
+                    $"exceeds destination array layers ({destination.ArrayLayers})");
+            }
+
+            // Validate image dimensions are compatible
+            if (source.Extent.Width != destination.Extent.Width ||
+                source.Extent.Height != destination.Extent.Height)
+            {
+                throw new ArgumentException(
+                    $"Image copy between different dimensions: " +
+                    $"{source.Extent.Width}x{source.Extent.Height} -> " +
+                    $"{destination.Extent.Width}x{destination.Extent.Height}");
+            }
+
+            // For depth/stencil images, we should use DepthBit aspect
+            var srcAspect = source.AspectFlags;
+            var dstAspect = destination.AspectFlags;
+
+            // Create image copy regions for each layer
+            var regions = new ImageCopy[1]
+            {
+                new ImageCopy()
+                {
+                    SrcSubresource = new ImageSubresourceLayers
+                    {
+                        AspectMask = srcAspect,
+                        MipLevel = 0,
+                        BaseArrayLayer = srcLayer,
+                        LayerCount = layerCount, // Use layerCount instead of source.ArrayLayers
+                    },
+                    SrcOffset = new Offset3D(0, 0, 0),
+                    DstSubresource = new ImageSubresourceLayers
+                    {
+                        AspectMask = dstAspect,
+                        MipLevel = 0,
+                        BaseArrayLayer = dstLayer,
+                        LayerCount = layerCount // Use layerCount instead of destination.ArrayLayers
+                    },
+                    DstOffset = new Offset3D(0, 0, 0),
+                    Extent = new Extent3D
+                    {
+                        Width = source.Extent.Width,
+                        Height = source.Extent.Height,
+                        Depth = 1
+                    }
+                }
+            };
+
+            // Perform the image copy
+            VulkanContext.Vk.CmdCopyImage(
+                _commandBuffer,
+                source,
+                srcLayout,
+                destination,
+                dstLayout,
+                (uint)regions.Length,
+                regions
             );
         }
     }

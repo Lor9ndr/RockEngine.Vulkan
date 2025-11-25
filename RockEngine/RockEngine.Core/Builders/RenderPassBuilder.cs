@@ -192,7 +192,7 @@ public class RenderPassBuilder : DisposableBuilder
             _dependency.DstSubpass = subpass;
             return this;
         }
-        public DependencyConfigurer ToExtenral()
+        public DependencyConfigurer ToExternal()
         {
             _dependency.DstSubpass = Vk.SubpassExternal;
             return this;

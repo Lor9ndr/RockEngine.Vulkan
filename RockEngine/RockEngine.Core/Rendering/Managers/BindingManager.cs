@@ -14,10 +14,10 @@ namespace RockEngine.Core.Rendering.Managers
     {
         private readonly VulkanContext _context;
         private readonly DescriptorPoolManager _descriptorPoolManager;
-        private readonly GraphicsEngine _graphicsEngine;
+        private readonly GraphicsContext _graphicsEngine;
         private readonly Lock _updateLocker = new Lock();
 
-        public BindingManager(VulkanContext context, DescriptorPoolManager descriptorPool, GraphicsEngine graphicsEngine)
+        public BindingManager(VulkanContext context, DescriptorPoolManager descriptorPool, GraphicsContext graphicsEngine)
         {
             _context = context;
             _descriptorPoolManager = descriptorPool;
@@ -36,7 +36,8 @@ namespace RockEngine.Core.Rendering.Managers
 
             foreach(var(setLocation, perSetBindings) in materialPass.Bindings)
             {
-                if (skipSets.Contains(setLocation) || materialPass.Pipeline.Layout.GetSetLayout(setLocation) == default)
+                if (skipSets.Contains(setLocation) ||
+                    materialPass.Pipeline.Layout.GetSetLayout(setLocation) == default)
                 {
                     continue;
                 }

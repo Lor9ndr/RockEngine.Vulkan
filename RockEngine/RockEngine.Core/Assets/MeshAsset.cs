@@ -91,14 +91,14 @@ namespace RockEngine.Core.Assets
 
         public override void UnloadData()
         {
-            _loadSemaphore.Wait();
+            _fileSemaphore.Wait();
             try
             {
                 base.UnloadData();
             }
             finally
             {
-                _loadSemaphore.Release();
+                _fileSemaphore.Release();
             }
         }
 
@@ -121,7 +121,7 @@ namespace RockEngine.Core.Assets
 
             UnloadData();
             UnloadGpuResources();
-            _loadSemaphore.Dispose();
+            _fileSemaphore.Dispose();
             _disposed = true;
         }
 

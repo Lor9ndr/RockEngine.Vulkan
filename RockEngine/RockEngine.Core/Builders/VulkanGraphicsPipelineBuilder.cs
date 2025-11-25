@@ -1,4 +1,6 @@
-﻿using RockEngine.Core.DI;
+﻿using Microsoft.Extensions.DependencyInjection;
+
+using RockEngine.Core.DI;
 using RockEngine.Core.Rendering.Managers;
 using RockEngine.Core.Rendering.Objects;
 using RockEngine.Core.Rendering.Passes;
@@ -70,9 +72,9 @@ namespace RockEngine.Core.Builders
 
             return builder;
         }
-        public static GraphicsPipelineBuilder CreateDefault<TRenderPassStrategy>(VulkanContext context, string name, Container container, params VkShaderModule[] shaders) where TRenderPassStrategy : class,IRenderPassStrategy
+        public static GraphicsPipelineBuilder CreateDefault<TRenderPassStrategy>(VulkanContext context, string name, IServiceProvider container, params VkShaderModule[] shaders) where TRenderPassStrategy : class,IRenderPassStrategy
         {
-            var renderPassStrategy = container.GetInstance<TRenderPassStrategy>();
+            var renderPassStrategy = container.GetService<TRenderPassStrategy>();
             var builder = new GraphicsPipelineBuilder(context, name)
                 .WithShaderModule(shaders)
                 .WithVertexInputState(new VulkanPipelineVertexInputStateBuilder())

@@ -17,7 +17,7 @@ namespace RockEngine.Core.Rendering.Passes
         {
         }
 
-        public override Task Execute(SubmitContext submitContext, CameraManager cameraManager, Renderer renderer)
+        public override ValueTask Execute(SubmitContext submitContext, CameraManager cameraManager, WorldRenderer renderer)
         {
             using (PerformanceTracer.BeginSection(nameof(SwapchainPassStrategy)))
             {
@@ -84,7 +84,7 @@ namespace RockEngine.Core.Rendering.Passes
                 }
 
                 primaryBatch.Submit();
-                return Task.CompletedTask;
+                return ValueTask.CompletedTask;
             }
         }
     }

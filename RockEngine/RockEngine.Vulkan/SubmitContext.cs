@@ -1,5 +1,4 @@
-﻿
-using Silk.NET.GLFW;
+﻿using Silk.NET.GLFW;
 using Silk.NET.Vulkan;
 
 using System.Buffers;
@@ -20,7 +19,7 @@ namespace RockEngine.Vulkan
         private readonly VulkanContext _context;
         private readonly VkQueue _targetQueue;
         private readonly StagingManager _stagingManager;
-        private readonly Lock _submissionLock = new Lock();
+        private readonly SemaphoreSlim _submissionLock = new SemaphoreSlim(1, 1);
         private readonly int _ownerThreadId;
 
         // Double buffered queues for lock-free batch collection
@@ -159,15 +158,14 @@ namespace RockEngine.Vulkan
             return FlushInternal(fence);
         }
 
-        public FlushOperation FlushAsync(VkFence fence)
-        {
-            return FlushInternal(fence);
-        }
 
         public FlushOperation FlushSingle(UploadBatch batch, VkFence fence)
         {
             batch.End();
-            lock (_submissionLock)
+
+            // Only lock during submission preparation
+            _submissionLock.Wait();
+            try
             {
                 _disposableList.Clear();
                 _disposableList.AddRange(batch.Disposables);
@@ -204,11 +202,17 @@ namespace RockEngine.Vulkan
                     new List<IDisposable>(_disposableList)
                 );
             }
+            finally
+            {
+                _submissionLock.Release();
+            }
         }
 
         private FlushOperation FlushInternal(VkFence fence)
         {
-            lock (_submissionLock)
+            // Only lock during submission preparation
+            _submissionLock.Wait();
+            try
             {
                 // Swap active and submission queues
                 (_submissionQueue, _activeQueue) = (_activeQueue, _submissionQueue);
@@ -230,6 +234,10 @@ namespace RockEngine.Vulkan
                 ResetState();
                 StagingManager.Reset();
                 return operation;
+            }
+            finally
+            {
+                _submissionLock.Release();
             }
         }
 
@@ -329,7 +337,7 @@ namespace RockEngine.Vulkan
 
             public bool TryGetAvailableBatch(CommandBufferLevel level, out UploadBatch? batch)
             {
-                if(!_oneTimeBatches.TryGetValue(level, out var batchQueue))
+                if (!_oneTimeBatches.TryGetValue(level, out var batchQueue))
                 {
                     batch = null;
                     return false;

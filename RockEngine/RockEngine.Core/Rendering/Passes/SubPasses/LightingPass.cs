@@ -16,7 +16,8 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
         private readonly VulkanContext _context;
         private readonly BindingManager _bindingManager;
         private readonly LightManager _lightManager;
-        private readonly GraphicsEngine _graphicsEngine;
+        private readonly GraphicsContext _graphicsEngine;
+        private readonly ShadowManager _shadowManager;
         private readonly PipelineManager _pipelineManager;
         private TextureBinding _iblBinding;
         private VkPipeline _lightingPipeline;
@@ -25,13 +26,15 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
             VulkanContext context,
             BindingManager bindingManager,
             LightManager lightManager,
-            GraphicsEngine graphicsEngine,
+            GraphicsContext graphicsEngine,
+            ShadowManager shadowManager,
             PipelineManager pipelineManager)
         {
             _context = context;
             _bindingManager = bindingManager;
             _lightManager = lightManager;
             _graphicsEngine = graphicsEngine;
+            _shadowManager = shadowManager;
             _pipelineManager = pipelineManager;
         }
 
@@ -104,15 +107,22 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
                 cmd.SetScissor(camera.RenderTarget.Scissor);
                 if (camera.RenderTarget is CameraRenderTarget cameraRenderTarget)
                 {
+                    cmd.BindPipeline(_lightingPipeline, PipelineBindPoint.Graphics);
+
+
                     var materialPass = cameraRenderTarget.Material.GetPass(Name);
                     materialPass.BindResource(_lightManager.GetCurrentLightBufferBinding());
+                    materialPass.BindResource(_shadowManager.GetShadowMapsBinding());
+                    materialPass.BindResource(_shadowManager.GetPointShadowMapsBinding());
+                    var csm = _shadowManager.GetCSMDataBinding().Clone();
+                    csm.SetLocation = 5;
+                    materialPass.BindResource(csm);
 
                     if (_iblBinding != null)
                     {
                         materialPass.BindResource(_iblBinding);
                     }
                     //camera.RenderTarget.GBuffer.Material.Bind(_binding);
-                    cmd.BindPipeline(_lightingPipeline, PipelineBindPoint.Graphics);
 
                     materialPass.CmdPushConstants(cmd);
                     _bindingManager.BindResourcesForMaterial(frameIndex, materialPass, cmd);

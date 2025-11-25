@@ -7,8 +7,8 @@ namespace RockEngine.Core.ECS.Components
     {
         public bool IsActive { get; }
         public Entity Entity { get; }
-        public ValueTask Update(Renderer renderer);
-        public ValueTask OnStart(Renderer renderer);
+        public ValueTask Update(WorldRenderer renderer);
+        public ValueTask OnStart(WorldRenderer renderer);
         public void SetEntity(Entity entity);
         void Destroy();
         void SetActive(bool isActive = true);

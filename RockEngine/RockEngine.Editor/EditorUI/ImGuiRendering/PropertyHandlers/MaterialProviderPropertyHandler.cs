@@ -21,7 +21,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.PropertyHandlers
 
             string currentName = GetCurrentResourceName(materialProvider);
             float buttonWidth = 458;
-
+            ImGui.NewLine();
             ImGui.Button($"{accessor.DisplayName}: {currentName}");
 
             await HandleAssetDragDrop(component, accessor, drawer);
@@ -69,24 +69,8 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.PropertyHandlers
                 accessor.SetValue(component, null);
             }
 
-            ImGui.SameLine();
-            if (ImGui.Button("New##New" + accessor.Name))
-            {
-                CreateNewMaterialForProperty(component, accessor, drawer);
-            }
-
             if (ImGui.BeginPopupContextItem())
             {
-                if (ImGui.MenuItem("Create Default Material"))
-                {
-                    CreateDefaultMaterial(component, accessor, drawer);
-                }
-
-                if (materialProvider?.DirectMaterial != null && ImGui.MenuItem("Convert to Asset"))
-                {
-                    ConvertToAsset(component, accessor, materialProvider, drawer);
-                }
-
                 ImGui.EndPopup();
             }
         }
@@ -123,25 +107,6 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.PropertyHandlers
                     // Add more material info as needed
                 }
             }
-        }
-
-        private void CreateNewMaterialForProperty(IComponent component, UIPropertyAccessor accessor, PropertyDrawer drawer)
-        {
-            // This could open a material creation dialog
-            // For now, we'll just set it to null
-            accessor.SetValue(component, null);
-        }
-
-        private void CreateDefaultMaterial(IComponent component, UIPropertyAccessor accessor, PropertyDrawer drawer)
-        {
-            var defaultMaterial = new Material("Default Material");
-            var materialProvider = new MaterialProvider(defaultMaterial);
-            accessor.SetValue(component, materialProvider);
-        }
-
-        private void ConvertToAsset(IComponent component, UIPropertyAccessor accessor, MaterialProvider materialProvider, PropertyDrawer drawer)
-        {
-            // Convert direct material to asset
         }
     }
 }

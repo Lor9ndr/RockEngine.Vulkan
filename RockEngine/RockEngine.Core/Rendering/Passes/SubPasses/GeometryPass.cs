@@ -8,7 +8,6 @@ using RockEngine.Core.Rendering.Objects;
 using RockEngine.Vulkan;
 
 using Silk.NET.Core;
-using Silk.NET.SDL;
 using Silk.NET.Vulkan;
 
 using System.Runtime.CompilerServices;
@@ -19,7 +18,7 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
     public class GeometryPass : IRenderSubPass
     {
         private readonly VulkanContext _context;
-        private readonly GraphicsEngine _graphicsEngine;
+        private readonly GraphicsContext _graphicsEngine;
         private readonly BindingManager _bindingManager;
         private readonly TransformManager _transformManager;
         private readonly IndirectCommandManager _indirectCommands;
@@ -32,7 +31,7 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
 
         public GeometryPass(
             VulkanContext context,
-            GraphicsEngine graphicsEngine,
+            GraphicsContext graphicsEngine,
             BindingManager bindingManager,
             TransformManager transformManager,
             IndirectCommandManager indirectCommands,
@@ -83,8 +82,7 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
                 var indirectBuffer = _indirectCommands.IndirectBuffer.Buffer;
 
                 // Track state
-                RckPipeline? lastPipeline = null;
-                MaterialPass? lastMaterialPass = null;
+                RenderState currentState = default;
 
                 _globalGeometryBuffer.Bind(cmd);
 
@@ -102,32 +100,31 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
                             continue;
                         }
                         // Pipeline state change
-                        if (lastPipeline != drawGroup.MaterialPass.Pipeline)
+                        if (!ReferenceEquals(currentState.Pipeline, drawGroup.MaterialPass.Pipeline))
                         {
                             cmd.BindPipeline(drawGroup.MaterialPass.Pipeline);
-                            lastPipeline = drawGroup.MaterialPass.Pipeline;
+                            currentState.Pipeline = drawGroup.MaterialPass.Pipeline;
 
-                            // Bind global resources using the binding manager
-                            _bindingManager.BindResource(frameIndex, globalUboBinding, cmd, drawGroup.MaterialPass.Pipeline.Layout);
-                            _bindingManager.BindResource(frameIndex, matrixBinding, cmd, drawGroup.MaterialPass.Pipeline.Layout);
+                            _bindingManager.BindResource(frameIndex, globalUboBinding, cmd, currentState.Pipeline.Layout);
+                            _bindingManager.BindResource(frameIndex, matrixBinding, cmd, currentState.Pipeline.Layout);
                         }
 
                         // Material change
-                        if (lastMaterialPass != drawGroup.MaterialPass)
+                        if (!ReferenceEquals(currentState.MaterialPass, drawGroup.MaterialPass))
                         {
-                            lastMaterialPass = drawGroup.MaterialPass;
+                            currentState.MaterialPass = drawGroup.MaterialPass;
                             _bindingManager.BindResourcesForMaterial(
-                              frameIndex,
-                              lastMaterialPass,
-                              cmd,
-                              false,
-                              [matrixBinding.SetLocation, globalUboBinding.SetLocation]
-                          );
-                            lastMaterialPass.CmdPushConstants(cmd);
+                                frameIndex,
+                                currentState.MaterialPass,
+                                cmd,
+                                false,
+                                [matrixBinding.SetLocation, globalUboBinding.SetLocation]
+                            );
+                            currentState.MaterialPass.CmdPushConstants(cmd);
                         }
 
                         // Issue draw command
-                        if (_supportsMultiDraw)
+                        if (drawGroup.IsMultiDraw && _supportsMultiDraw)
                         {
                             VulkanContext.Vk.CmdDrawIndexedIndirect(
                                 cmd,
@@ -152,6 +149,18 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
                 }
             }
         }
+        private struct RenderState
+        {
+            public RckPipeline Pipeline;
+            public MaterialPass MaterialPass;
+
+            public RenderState(RckPipeline pipeline, MaterialPass materialPass)
+            {
+                Pipeline = pipeline;
+                MaterialPass = materialPass;
+            }
+        }
+
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private Bool32 GetMultiDrawIndirectFeature()

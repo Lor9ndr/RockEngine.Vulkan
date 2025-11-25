@@ -11,9 +11,9 @@ namespace RockEngine.Editor.Layers
     internal class ImGuiLayer : ILayer
     {
         private readonly ImGuiController _controller;
-        private readonly Renderer _renderer;
+        private readonly WorldRenderer _renderer;
 
-        public ImGuiLayer(ImGuiController controller, Renderer renderer)
+        public ImGuiLayer(ImGuiController controller, WorldRenderer renderer)
         {
             _controller = controller;
             _renderer = renderer;
@@ -28,10 +28,10 @@ namespace RockEngine.Editor.Layers
         {
         }
 
-        public Task OnImGuiRender(VkCommandBuffer vkCommandBuffer)
+        public ValueTask OnImGuiRender(VkCommandBuffer vkCommandBuffer)
         {
             ImGui.DockSpaceOverViewport(ImGui.GetMainViewport(), ImGuiDockNodeFlags.PassthruCentralNode);
-            return Task.CompletedTask;
+            return ValueTask.CompletedTask;
         }
 
         public void OnRender(VkCommandBuffer vkCommandBuffer)

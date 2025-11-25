@@ -1,47 +1,47 @@
-﻿using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
-
-using RockEngine.Core;
-
-using System.Numerics;
+﻿using System.Numerics;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace RockEngine.Core.Assets.Converters
 {
-    public sealed class VertexConverter : JsonConverter<Vertex>
+    public sealed class VertexConverter2 : JsonConverter<Vertex>
     {
-        private const string _bitanget = "BG";
-        private const string _tangent = "TG";
-        private const string _texCoord = "T";
-        private const string _normal = "N";
-        private const string _position = "P";
+        private const string Bitangent = "BG";
+        private const string Tangent = "TG";
+        private const string TexCoord = "T";
+        private const string Normal = "N";
+        private const string Position = "P";
 
-        public override Vertex ReadJson(JsonReader reader, Type objectType, Vertex existingValue, bool hasExistingValue, JsonSerializer serializer)
+        public override Vertex Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
         {
-            var obj = JObject.Load(reader);
+            using var document = JsonDocument.ParseValue(ref reader);
+            var obj = document.RootElement;
+
             return new Vertex
             {
-                Position = obj[_position].ToObject<Vector3>(),
-                Normal = obj[_normal].ToObject<Vector3>(),
-                TexCoord = obj[_texCoord].ToObject<Vector2>(),
-                Tangent = obj[_tangent].ToObject<Vector3>(),
-                Bitangent = obj[_bitanget].ToObject<Vector3>()
+                Position = obj.GetProperty(Position).Deserialize<Vector3>(options),
+                Normal = obj.GetProperty(Normal).Deserialize<Vector3>(options),
+                TexCoord = obj.GetProperty(TexCoord).Deserialize<Vector2>(options),
+                Tangent = obj.GetProperty(Tangent).Deserialize<Vector3>(options),
+                Bitangent = obj.GetProperty(Bitangent).Deserialize<Vector3>(options)
             };
         }
 
-        public override void WriteJson(JsonWriter writer, Vertex value, JsonSerializer serializer)
+        public override void Write(Utf8JsonWriter writer, Vertex value, JsonSerializerOptions options)
         {
             writer.WriteStartObject();
-            writer.WritePropertyName(_position);
-            serializer.Serialize(writer, value.Position);
-            writer.WritePropertyName(_normal);
-            serializer.Serialize(writer, value.Normal);
-            writer.WritePropertyName(_texCoord);
-            serializer.Serialize(writer, value.TexCoord);
-            writer.WritePropertyName(_tangent);
-            serializer.Serialize(writer, value.Tangent);
-            writer.WritePropertyName(_bitanget);
-            serializer.Serialize(writer, value.Bitangent);
+            writer.WritePropertyName(Position);
+            JsonSerializer.Serialize(writer, value.Position, options);
+            writer.WritePropertyName(Normal);
+            JsonSerializer.Serialize(writer, value.Normal, options);
+            writer.WritePropertyName(TexCoord);
+            JsonSerializer.Serialize(writer, value.TexCoord, options);
+            writer.WritePropertyName(Tangent);
+            JsonSerializer.Serialize(writer, value.Tangent, options);
+            writer.WritePropertyName(Bitangent);
+            JsonSerializer.Serialize(writer, value.Bitangent, options);
             writer.WriteEndObject();
         }
     }
 }
+

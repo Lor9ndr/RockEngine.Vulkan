@@ -60,7 +60,7 @@ namespace RockEngine.Core.ECS
             return _entities.AsValueEnumerable().Where(s=>s.GetComponent<T>() is not null);
         }
 
-        public async Task Start(Renderer renderer)
+        public async Task Start(WorldRenderer renderer)
         {
             lock (_stateLock)
             {
@@ -90,7 +90,7 @@ namespace RockEngine.Core.ECS
             _entities.Add(entity);
         }
 
-        private async ValueTask ProcessEntityComponents(Entity entity, Renderer renderer)
+        private async ValueTask ProcessEntityComponents(Entity entity, WorldRenderer renderer)
         {
             foreach (var component in entity.Components)
             {
@@ -98,7 +98,7 @@ namespace RockEngine.Core.ECS
             }
         }
 
-        private async ValueTask ProcessPendingStarts(Renderer renderer)
+        private async ValueTask ProcessPendingStarts(WorldRenderer renderer)
         {
             while (_pendingStartComponents.TryDequeue(out var component))
             {
@@ -117,7 +117,7 @@ namespace RockEngine.Core.ECS
             }
         }
 
-        public async ValueTask Update(Renderer renderer)
+        public async ValueTask Update(WorldRenderer renderer)
         {
             await ProcessPendingStarts(renderer);
             foreach (var entity in _entities.ToArray())

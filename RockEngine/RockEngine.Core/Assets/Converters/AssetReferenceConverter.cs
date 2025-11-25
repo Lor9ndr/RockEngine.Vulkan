@@ -1,67 +1,69 @@
-﻿using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
+﻿using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace RockEngine.Core.Assets.Converters
 {
-    public class AssetReferenceConverter : JsonConverter
+    public class AssetReferenceConverter2 : JsonConverterFactory
     {
-        public override bool CanConvert(Type objectType)
+        public override bool CanConvert(Type typeToConvert)
         {
-            return objectType.IsGenericType &&
-                   objectType.GetGenericTypeDefinition() == typeof(AssetReference<>);
+            return typeToConvert.IsGenericType &&
+                   typeToConvert.GetGenericTypeDefinition() == typeof(AssetReference<>);
         }
 
-        public override object ReadJson(JsonReader reader, Type objectType, object existingValue, JsonSerializer serializer)
+        public override JsonConverter CreateConverter(Type typeToConvert, JsonSerializerOptions options)
         {
-            if (reader.TokenType == JsonToken.Null)
+            Type assetType = typeToConvert.GetGenericArguments()[0];
+            Type converterType = typeof(AssetReferenceConverter<>).MakeGenericType(assetType);
+            return (JsonConverter)Activator.CreateInstance(converterType);
+        }
+
+        private class AssetReferenceConverter<T> : JsonConverter<AssetReference<T>> where T : class, IAsset
+        {
+            public override AssetReference<T> Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
             {
+                if (reader.TokenType == JsonTokenType.Null)
+                {
+                    return null;
+                }
+
+                if (reader.TokenType == JsonTokenType.String)
+                {
+                    string guidString = reader.GetString();
+                    if (Guid.TryParse(guidString, out Guid assetId))
+                    {
+                        return new AssetReference<T>(assetId);
+                    }
+                }
+                else if (reader.TokenType == JsonTokenType.StartObject)
+                {
+                    using var document = JsonDocument.ParseValue(ref reader);
+                    if (document.RootElement.TryGetProperty("AssetID", out var assetIdElement))
+                    {
+                        if (assetIdElement.ValueKind == JsonValueKind.String)
+                        {
+                            string guidString = assetIdElement.GetString();
+                            if (Guid.TryParse(guidString, out Guid assetId))
+                            {
+                                return new AssetReference<T>(assetId);
+                            }
+                        }
+                    }
+                }
+
                 return null;
             }
 
-            // Get the generic type argument (T in AssetReference<T>)
-            Type assetType = objectType.GetGenericArguments()[0];
-
-            // Create a new instance of AssetReference<T>
-            var reference = Activator.CreateInstance(objectType);
-
-            if (reader.TokenType == JsonToken.String)
+            public override void Write(Utf8JsonWriter writer, AssetReference<T> value, JsonSerializerOptions options)
             {
-                // Handle GUID string
-                string guidString = reader.Value.ToString();
-                if (Guid.TryParse(guidString, out Guid assetId))
+                if (value == null)
                 {
-                    var assetIdProperty = objectType.GetProperty("AssetID");
-                    assetIdProperty.SetValue(reference, assetId);
+                    writer.WriteNullValue();
+                    return;
                 }
+
+                writer.WriteStringValue(value.AssetID.ToString());
             }
-            else if (reader.TokenType == JsonToken.StartObject)
-            {
-                // Handle object with AssetID property
-                JObject jo = JObject.Load(reader);
-                if (jo["AssetID"] != null)
-                {
-                    var assetIdProperty = objectType.GetProperty("AssetID");
-                    assetIdProperty.SetValue(reference, jo["AssetID"].ToObject<Guid>());
-                }
-            }
-
-            return reference;
-        }
-
-        public override void WriteJson(JsonWriter writer, object value, JsonSerializer serializer)
-        {
-            if (value == null)
-            {
-                writer.WriteNull();
-                return;
-            }
-
-            // Get the AssetID property value
-            var assetIdProperty = value.GetType().GetProperty("AssetID");
-            Guid assetId = (Guid)assetIdProperty.GetValue(value);
-
-            // Write just the GUID as a string
-            writer.WriteValue(assetId.ToString());
         }
     }
 }

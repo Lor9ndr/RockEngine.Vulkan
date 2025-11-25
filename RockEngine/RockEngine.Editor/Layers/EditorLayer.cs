@@ -32,8 +32,8 @@ namespace RockEngine.Editor.Layers
 
         private readonly World _world;
         private readonly VulkanContext _context;
-        private readonly GraphicsEngine _graphicsEngine;
-        private readonly Renderer _renderer;
+        private readonly GraphicsContext _graphicsEngine;
+        private readonly WorldRenderer _renderer;
         private readonly IInputContext _inputContext;
         private readonly AssetManager _assetManager;
         private readonly EditorConsole _editorConsole;
@@ -53,8 +53,8 @@ namespace RockEngine.Editor.Layers
         public EditorLayer(
             World world,
             VulkanContext context,
-            GraphicsEngine graphicsEngine,
-            Renderer renderer,
+            GraphicsContext graphicsEngine,
+            WorldRenderer renderer,
             IInputContext inputContext,
             AssetManager assetManager,
             EditorConsole editorConsole,
@@ -86,7 +86,7 @@ namespace RockEngine.Editor.Layers
 
             // Apply theme and initialize
             EditorTheme.ApplyModernDarkTheme();
-            DefaultMeshes.Initalize(_assetManager);
+          
         }
 
         private void OnViewToggled(string viewName, bool isVisible)
@@ -106,14 +106,15 @@ namespace RockEngine.Editor.Layers
         {
             CreateSolidPipeline();
             // Uncomment to load assets when needed
-            // await LoadOrCreateAssets();
+            await LoadOrCreateAssets();
+
         }
 
         private async Task LoadOrCreateAssets()
         {
             bool loadFromProject = false;
 
-            if (loadFromProject)
+          /*  if (loadFromProject)
             {
                 await LoadAssetsFromProject(
                     @"X:\RockEngine.Vulkan\RockEngine\RockEngine.Editor\bin\Debug\net9.0\Project\TestAssetSystem\DebugProject\DebugProject.rockproj");
@@ -121,7 +122,7 @@ namespace RockEngine.Editor.Layers
             else
             {
                 await CreateAssetsProgrammatically();
-            }
+            }*/
         }
 
         private async Task LoadAssetsFromProject(string projectPath)
@@ -129,11 +130,11 @@ namespace RockEngine.Editor.Layers
             try
             {
                 _logger.Info($"Loading assets from project: {projectPath}");
-                await _assetManager.LoadProjectAsync(projectPath);
+                await _assetManager.LoadAssetAsync<ProjectAsset>(projectPath);
 
                 var scene = await _assetManager.LoadAsync<SceneData>(new AssetPath("Scenes", "DebugScene"));
                 await scene.LoadDataAsync();
-                ((SceneAsset)scene).InstantiateEntities();
+                await ((SceneAsset)scene).InstantiateEntities();
 
                 _logger.Info("Project assets loaded successfully");
             }
@@ -150,8 +151,7 @@ namespace RockEngine.Editor.Layers
             {
                 _logger.Info("Creating assets programmatically");
 
-                var project = await _assetManager.CreateProjectAsync("DebugProject",
-                    "X:\\RockEngine.Vulkan\\RockEngine\\RockEngine.Editor\\bin\\Debug\\net9.0\\Project\\TestAssetSystem");
+                var project = await _assetManager.CreateProjectAsync("X:\\RockEngine.Vulkan\\RockEngine\\RockEngine.Editor\\TestProject", "DebugProject");
 
                 var scene = _assetManager.Create<SceneAsset>(new AssetPath("Scenes", "DebugScene"));
                 scene.SetData(new SceneData());
@@ -163,7 +163,7 @@ namespace RockEngine.Editor.Layers
                 ], TextureType.TextureCube);
 
                 var cubeMesh = _assetManager.GetAsset<MeshAsset>(DefaultMeshes.CubeAssetID);
-                await CreateSceneEntities(scene, cubeMesh, skyboxAsset);
+                await CreateSceneEntities(scene, cubeMesh, skyboxAsset).ConfigureAwait(false);
 
                 var sponza = await _assetManager.LoadModelAsync("Resources\\Models\\SponzaAtrium\\scene.gltf", "Sponza");
                 CreateModelEntities(scene, sponza, new Vector3(0), new Vector3(0.1f));
@@ -306,7 +306,7 @@ namespace RockEngine.Editor.Layers
 
         public void OnDetach() { }
 
-        public async Task OnImGuiRender(VkCommandBuffer vkCommandBuffer)
+        public async ValueTask OnImGuiRender(VkCommandBuffer vkCommandBuffer)
         {
             _dockSpace.Begin();
             _mainMenuBar.Draw();

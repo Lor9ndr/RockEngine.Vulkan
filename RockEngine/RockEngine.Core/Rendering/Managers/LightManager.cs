@@ -4,6 +4,8 @@ using RockEngine.Core.Rendering.RenderTargets;
 using RockEngine.Core.Rendering.ResourceBindings;
 using RockEngine.Vulkan;
 
+using ZLinq;
+
 namespace RockEngine.Core.Rendering.Managers
 {
     public class LightManager : IDisposable
@@ -34,7 +36,7 @@ namespace RockEngine.Core.Rendering.Managers
                 );
             }
 
-            _countLightUbo = new UniformBuffer(1, sizeof(uint));
+            _countLightUbo = new UniformBuffer(sizeof(uint));
 
             _countLightBinding = new UniformBufferBinding(_countLightUbo, 1, 1);
         }
@@ -85,6 +87,7 @@ namespace RockEngine.Core.Rendering.Managers
             _currentFrameIndex = (_currentFrameIndex + 1) % _lightBuffers.Length;
             return ValueTask.CompletedTask;
         }
+        public IEnumerable<Light> GetShadowCastingLights() => _activeLights.AsValueEnumerable().Where(s => s.CastShadows == true).ToList();
 
         public void Dispose()
         {
@@ -104,6 +107,8 @@ namespace RockEngine.Core.Rendering.Managers
         {
             return _lightBindings[_currentFrameIndex];
         }
+
+      
     }
 
 }

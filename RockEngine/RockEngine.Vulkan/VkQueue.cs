@@ -9,7 +9,6 @@ namespace RockEngine.Vulkan
     {
         private readonly VulkanContext _context;
         public uint FamilyIndex { get; private set; }
-        private Lock _lock = new Lock();
 
         public VkQueue(VulkanContext context, in Queue vkObject, uint familyIndex)
             : base(vkObject)
@@ -122,15 +121,12 @@ namespace RockEngine.Vulkan
 
         internal void SubmitUnsafe(in SubmitInfo submitInfo, VkFence? fence = null)
         {
-            lock (_lock)
-            {
-                VulkanContext.Vk.QueueSubmit(
-                   this,
-                   1,
-                   in submitInfo,
-                   fence ?? default(Fence)
-                    ).VkAssertResult("Failed to submit to queue");
-            }
+            VulkanContext.Vk.QueueSubmit(
+               this,
+               1,
+               in submitInfo,
+               fence ?? default(Fence)
+                ).VkAssertResult("Failed to submit to queue");
         }
 
         public void WaitIdle()

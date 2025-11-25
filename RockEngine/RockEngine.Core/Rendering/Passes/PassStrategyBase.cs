@@ -68,7 +68,7 @@ namespace RockEngine.Core.Rendering.Passes
         {
         }
 
-        public abstract Task Execute(SubmitContext submitContext, CameraManager cameraManager, Renderer renderer);
+        public abstract ValueTask Execute(SubmitContext submitContext, CameraManager cameraManager, WorldRenderer renderer);
 
         public virtual void InitializeSubPasses()
         {

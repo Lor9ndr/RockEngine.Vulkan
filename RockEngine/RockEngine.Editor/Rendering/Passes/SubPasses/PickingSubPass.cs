@@ -25,7 +25,7 @@ namespace RockEngine.Editor.Rendering.Passes.SubPasses
     public class PickingSubPass : IRenderSubPass
     {
         private readonly VulkanContext _context;
-        private readonly GraphicsEngine _graphicsEngine;
+        private readonly GraphicsContext _graphicsEngine;
         private readonly BindingManager _bindingManager;
         private readonly TransformManager _transformManager;
         private readonly IndirectCommandManager _indirectCommands;
@@ -38,7 +38,7 @@ namespace RockEngine.Editor.Rendering.Passes.SubPasses
 
         public PickingSubPass(
             VulkanContext context,
-            GraphicsEngine graphicsEngine,
+            GraphicsContext graphicsEngine,
             BindingManager bindingManager,
             TransformManager transformManager,
             IndirectCommandManager indirectCommands,
@@ -62,6 +62,7 @@ namespace RockEngine.Editor.Rendering.Passes.SubPasses
 
         public void Execute(VkCommandBuffer cmd, params object[] args)
         {
+
             using (PerformanceTracer.BeginSection(nameof(PickingSubPass)))
             {
                 uint frameIndex = (uint)args[0];
@@ -75,13 +76,13 @@ namespace RockEngine.Editor.Rendering.Passes.SubPasses
                 var matrixBinding = _transformManager.GetCurrentBinding(frameIndex);
                 var globalUboBinding = _globalUbo.GetBinding((uint)camIndex);
                 var drawGroups = _indirectCommands.GetDrawGroups(GeometryPass.Name);
-                drawGroups.AddRange(_indirectCommands.GetDrawGroups(PostLightPass.Name));
+                var lightDrawGroups = _indirectCommands.GetDrawGroups(PostLightPass.Name);
+                drawGroups.AddRange(lightDrawGroups);
                 var pickingGroups = _indirectCommands.GetDrawGroups(PickingSubPass.Name);
-
                 var drawGroupsSpan = CollectionsMarshal.AsSpan(drawGroups
-                    .AsValueEnumerable()
-                    .Where(s => !pickingGroups.Any(x => x.MeshRenderer == s.MeshRenderer))
-                    .ToList());
+                .AsValueEnumerable()
+                .Where(s => !pickingGroups.Any(x => x.MeshRenderer == s.MeshRenderer))
+                .ToList());
                 var indirectBuffer = _indirectCommands.IndirectBuffer.Buffer;
                 if (drawGroups.Count == 0 && pickingGroups.Count == 0)
                 {
@@ -171,7 +172,7 @@ namespace RockEngine.Editor.Rendering.Passes.SubPasses
                     }
 
                     // Issue draw command
-                    if (_supportsMultiDraw)
+                    if (drawGroup.IsMultiDraw && _supportsMultiDraw)
                     {
                         VulkanContext.Vk.CmdDrawIndexedIndirect(
                             cmd,
@@ -193,6 +194,8 @@ namespace RockEngine.Editor.Rendering.Passes.SubPasses
                         }
                     }
                 }
+
+
 
             }
         }

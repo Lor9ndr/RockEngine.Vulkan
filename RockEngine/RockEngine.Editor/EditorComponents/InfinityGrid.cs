@@ -55,14 +55,14 @@ namespace RockEngine.Editor.EditorComponents
 
         private UniformBuffer _uniformBuffer;
 
-        public override async ValueTask OnStart(Renderer renderer)
+        public override async ValueTask OnStart(WorldRenderer renderer)
         {
             await InitializeGrid(renderer);
             Entity.Layer = IoC.Container.GetInstance<RenderLayerSystem>().Debug;
             _isInitialized = true;
         }
 
-        public override async ValueTask Update(Renderer renderer)
+        public override async ValueTask Update(WorldRenderer renderer)
         {
             if (!_isInitialized)
             {
@@ -97,7 +97,7 @@ namespace RockEngine.Editor.EditorComponents
             });
         }
 
-        private async ValueTask InitializeGrid(Renderer renderer)
+        private async ValueTask InitializeGrid(WorldRenderer renderer)
         {
             // Simple quad geometry - the grid will be generated in the shader
             var (vertices, indices) = GenerateQuadGeometry();
@@ -111,7 +111,7 @@ namespace RockEngine.Editor.EditorComponents
             var pipeline = CreateGridPipeline(renderer, vertShader, fragShader);
             _material.AddPass(PostLightPass.Name, new MaterialPass(pipeline));
 
-            _uniformBuffer = new UniformBuffer(renderer.Context, 0, (ulong)Marshal.SizeOf<GridMaterial>(), false);
+            _uniformBuffer = new UniformBuffer(renderer.Context, (ulong)Marshal.SizeOf<GridMaterial>(), false);
 
             await _uniformBuffer.UpdateAsync(new GridMaterial()
             {
@@ -131,7 +131,7 @@ namespace RockEngine.Editor.EditorComponents
                 new MaterialProvider(_material));
         }
 
-        private RckPipeline CreateGridPipeline(Renderer renderer, VkShaderModule vertShader, VkShaderModule fragShader)
+        private RckPipeline CreateGridPipeline(WorldRenderer renderer, VkShaderModule vertShader, VkShaderModule fragShader)
         {
             using var pipelineBuilder = GraphicsPipelineBuilder.CreateDefault(VulkanContext.GetCurrent(), "InfinityGrid", renderer.RenderPass, [vertShader, fragShader]);
 

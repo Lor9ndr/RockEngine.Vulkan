@@ -9,7 +9,7 @@ using RockEngine.Core.Rendering.RenderTargets;
 using RockEngine.Core.Rendering.ResourceBindings;
 using RockEngine.Core.Rendering.Texturing;
 using RockEngine.Editor.EditorUI.EditorWindows;
-using RockEngine.Editor.SubPasses;
+using RockEngine.Editor.Rendering.Passes.SubPasses;
 using RockEngine.Vulkan;
 
 using Silk.NET.Input;
@@ -26,14 +26,14 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
     {
         private const string ImguiRenderPass = "ImGuiPass";
         private readonly VulkanContext _vkContext;
-        private readonly GraphicsEngine _graphicsEngine;
+        private readonly GraphicsContext _graphicsContext;
         private readonly IInputContext _input;
         private VkPipelineLayout _pipelineLayout;
         private VkDescriptorSetLayout _descriptorSetLayout;
         private readonly VkBuffer?[] _vertexBuffers;
         private readonly VkBuffer?[] _indexBuffers;
         private bool _frameBegun;
-        private RckRenderPass _renderPass;
+        private readonly RckRenderPass _renderPass;
         private readonly BindingManager _bindingManager;
         private VkPipeline _pipeline;
         private readonly Queue<char> _pressedChars = new Queue<char>();
@@ -53,11 +53,11 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
 
         public ImFontPtr IconFont { get => _iconFont; set => _iconFont = value; }
 
-        public unsafe ImGuiController(VulkanContext vkContext, GraphicsEngine graphicsEngine, BindingManager bindingManager, IInputContext inputContext, Renderer renderer)
+        public unsafe ImGuiController(VulkanContext vkContext, GraphicsContext graphicsEngine, BindingManager bindingManager, IInputContext inputContext, WorldRenderer renderer)
         {
             _vkContext = vkContext;
             _bindingManager = bindingManager;
-            _graphicsEngine = graphicsEngine;
+            _graphicsContext = graphicsEngine;
             _input = inputContext;
             _uiRenderTarget = renderer.SwapchainTarget;
             _renderPass = _uiRenderTarget.RenderPass;
@@ -209,9 +209,9 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
         private void SetPerFrameImGuiData(float deltaSeconds)
         {
             var io = ImGui.GetIO();
-            io.DisplaySize = new Vector2(_graphicsEngine.Swapchain.Surface.Size.X, _graphicsEngine.Swapchain.Surface.Size.Y);
+            io.DisplaySize = new Vector2(_graphicsContext.Swapchain.Surface.Size.X, _graphicsContext.Swapchain.Surface.Size.Y);
 
-            if (_graphicsEngine.Swapchain.Surface.Size.X > 0 && _graphicsEngine.Swapchain.Surface.Size.Y > 0)
+            if (_graphicsContext.Swapchain.Surface.Size.X > 0 && _graphicsContext.Swapchain.Surface.Size.Y > 0)
             {
                 io.DisplayFramebufferScale = new Vector2(1, 1);
             }
@@ -313,8 +313,8 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
             Viewport viewport;
             viewport.X = 0;
             viewport.Y = 0;
-            viewport.Width = _graphicsEngine.Swapchain.Extent.Width;
-            viewport.Height = _graphicsEngine.Swapchain.Extent.Height;
+            viewport.Width = _graphicsContext.Swapchain.Extent.Width;
+            viewport.Height = _graphicsContext.Swapchain.Extent.Height;
             viewport.MinDepth = 0.0f;
             viewport.MaxDepth = 1.0f;
             commandBuffer.SetViewport(in viewport);
@@ -335,7 +335,8 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
             
             int global_vtx_offset = 0;
             int global_idx_offset = 0;
-            
+
+
             for (int n = 0; n < drawData.CmdListsCount; n++)
             {
                 var cmd_list = drawData.CmdListsRange[n];
@@ -367,7 +368,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
                         clipRect.Z = (pcmd.ClipRect.Z - clipOff.X) * clipScale.X;
                         clipRect.W = (pcmd.ClipRect.W - clipOff.Y) * clipScale.Y;
 
-                        if (clipRect.X < _graphicsEngine.Swapchain.Extent.Width && clipRect.Y < _graphicsEngine.Swapchain.Extent.Height && clipRect.Z >= 0.0f && clipRect.W >= 0.0f)
+                        if (clipRect.X < _graphicsContext.Swapchain.Extent.Width && clipRect.Y < _graphicsContext.Swapchain.Extent.Height && clipRect.Z >= 0.0f && clipRect.W >= 0.0f)
                         {
                             if (clipRect.X < 0.0f)
                             {
@@ -720,7 +721,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
                         }
                          ]))
                  .WithViewportState(new VulkanViewportStateInfoBuilder()
-                     .AddViewport(new Viewport() { Height = _graphicsEngine.Swapchain.Surface.Size.X, Width = _graphicsEngine.Swapchain.Surface.Size.Y })
+                     .AddViewport(new Viewport() { Height = _graphicsContext.Swapchain.Surface.Size.X, Width = _graphicsContext.Swapchain.Surface.Size.Y })
                      .AddScissors(new Rect2D()))
                  .WithMultisampleState(new VulkanMultisampleStateInfoBuilder().Configure(false, SampleCountFlags.Count1Bit))
                  .WithColorBlendState(new VulkanColorBlendStateBuilder()

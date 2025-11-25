@@ -52,23 +52,64 @@ namespace RockEngine.Core.Internal
             }
 
         }
-        public unsafe void RemoveAll(Func<ResourceBinding, bool> value)
+        public void RemoveAll(Func<ResourceBinding, bool> predicate)
         {
-            var locations = stackalloc UIntRange[Count];
-            int i = 0;
+            // Use list instead of stackalloc for better memory management
+            var keysToRemove = new List<UIntRange>();
+
             foreach (var item in _bindings)
             {
-                if (value.Invoke(item.Value))
+                if (predicate.Invoke(item.Value))
                 {
-                    locations[i] = item.Key;
-                    i++;
+                    keysToRemove.Add(item.Key);
                 }
             }
-            while(i > 0)
+
+            foreach (var key in keysToRemove)
             {
-                _bindings.Remove(locations[i]);
-                i--;
+                _bindings.Remove(key);
             }
+
+            CheckForUpdates();
+        }
+        public unsafe void RemoveAllUnsafe(Func<ResourceBinding, bool> predicate)
+        {
+            if (Count == 0) return;
+
+            // Limit stack allocation to reasonable size
+            const int MAX_STACK_ALLOC = 64;
+            var useStackAlloc = Count <= MAX_STACK_ALLOC;
+
+            if (useStackAlloc)
+            {
+                var locations = stackalloc UIntRange[Count];
+                int i = 0;
+
+                foreach (var item in _bindings)
+                {
+                    if (predicate.Invoke(item.Value))
+                    {
+                        if (i < Count) // Safety check
+                        {
+                            locations[i] = item.Key;
+                            i++;
+                        }
+                    }
+                }
+
+                while (i > 0)
+                {
+                    i--;
+                    _bindings.Remove(locations[i]);
+                }
+            }
+            else
+            {
+                // Fallback to heap allocation for large collections
+                RemoveAll(predicate);
+            }
+
+            CheckForUpdates();
         }
 
         public IEnumerator<ResourceBinding> GetEnumerator() => _bindings.Values.GetEnumerator();

@@ -119,7 +119,7 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
                     }
 
                     // Issue draw command
-                    if (_supportsMultiDraw)
+                    if (drawGroup.IsMultiDraw && _supportsMultiDraw)
                     {
                         VulkanContext.Vk.CmdDrawIndexedIndirect(
                             cmd,

@@ -18,8 +18,8 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
         private readonly BindingManager _bindingManager;
         private readonly PipelineManager _pipelineManager;
         private readonly RenderPassManager _renderPassManager;
-        private readonly GraphicsEngine _graphicsEngine;
-        private readonly Renderer _renderer;
+        private readonly GraphicsContext _graphicsEngine;
+        private readonly WorldRenderer _renderer;
         private MaterialPass _screenMaterialPass;
         protected Dictionary<Texture, TextureBinding> Bindings = new Dictionary<Texture, TextureBinding>();
         private RckPipeline _screenPipeline;
@@ -35,8 +35,8 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
             BindingManager bindingManager,
             PipelineManager pipelineManager,
             RenderPassManager renderPassManager,
-            GraphicsEngine graphicsEngine,
-            Renderer renderer)
+            GraphicsContext graphicsEngine,
+            WorldRenderer renderer)
         {
             _context = context;
             _bindingManager = bindingManager;
@@ -54,7 +54,7 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
         {
             using (PerformanceTracer.BeginSection(nameof(ScreenPass)))
             {
-                var renderer = args[0] as Renderer ?? throw new ArgumentNullException(nameof(Renderer));
+                var renderer = args[0] as WorldRenderer ?? throw new ArgumentNullException(nameof(WorldRenderer));
                 if (args[1] is not Camera camera)
                 {
                     return;
@@ -151,7 +151,7 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
             // Dependency to external (presentation)
             builder.AddDependency()
                 .FromSubpass(subpassIndex)
-                .ToExtenral()
+                .ToExternal()
                 .WithStages(
                     PipelineStageFlags.ColorAttachmentOutputBit,
                     PipelineStageFlags.BottomOfPipeBit)

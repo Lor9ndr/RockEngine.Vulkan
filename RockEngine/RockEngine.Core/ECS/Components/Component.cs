@@ -19,12 +19,12 @@ namespace RockEngine.Core.ECS.Components
             Entity = entity;
         }
 
-        public virtual ValueTask OnStart(Renderer renderer)
+        public virtual ValueTask OnStart(WorldRenderer renderer)
         {
             return default;
         }
 
-        public virtual ValueTask Update(Renderer renderer)
+        public virtual ValueTask Update(WorldRenderer renderer)
         {
             return default;
         }

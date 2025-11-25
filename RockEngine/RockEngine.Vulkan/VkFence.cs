@@ -37,12 +37,12 @@ namespace RockEngine.Vulkan
             Vk.ResetFences(_context.Device, 1, in _vkObject);
         }
 
-        public void Wait()
+        public void Wait(ulong timeoutMs = 10_000_000_000)
         {
             /*var status = GetFenceStatus();
             if (status == Result.Success) return; // Уже сигнален*/
 
-            Vk.WaitForFences(_context.Device, 1, in _vkObject, true, 10_000_000_000) // 10 сек
+            Vk.WaitForFences(_context.Device, 1, in _vkObject, true, timeoutMs) // 10 сек
                 .VkAssertResult("Failed to wait fence");
         }
         public void Signal(VkQueue queue)

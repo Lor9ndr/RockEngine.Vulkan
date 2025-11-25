@@ -118,7 +118,7 @@ namespace RockEngine.Core.Rendering.Materials
                 return true;
             }
 
-            _logger.Warn($"Binding doesn't fit into pipeline layout. Set: {binding.SetLocation}, Binding: {binding.BindingLocation}, Type: {binding.DescriptorType}");
+            _logger.Warn($"Binding doesn't fit into pipeline layout, pipeline name:{Pipeline.Name}, Set: {binding.SetLocation}, Binding: {binding.BindingLocation}, Type: {binding.DescriptorType}");
             return false;
         }
 
@@ -132,7 +132,7 @@ namespace RockEngine.Core.Rendering.Materials
                    });
         }
 
-        public void PushConstant<T>(string name, T value) where T : unmanaged
+        public void PushConstant<T>(string name, in T value) where T:unmanaged
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
 

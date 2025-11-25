@@ -10,14 +10,17 @@ namespace RockEngine.Core.ECS.Components
     {
         public AssetReference<TextureAsset> Cubemap { get; set; }
 
-        public override async ValueTask OnStart(Renderer renderer)
+        public override async ValueTask OnStart(WorldRenderer renderer)
         {
+            var assetFactory = IoC.Container.GetInstance<AssetFactory>();
             var assetManager = IoC.Container.GetInstance<AssetManager>();
 
 
-            var tmpAsset = assetManager.Create<MeshAsset>(new AssetPath("tmp", "tmpMesh"));
-            var tmpMatAsset = assetManager.Create<MaterialAsset>(new AssetPath("tmp", "tmpMeshMat"));
-            await assetManager.SaveAsync(await Cubemap.GetAssetAsync());
+            var tmpAsset = assetFactory.Create<MeshAsset>(new AssetPath("tmp", "tmpMesh"));
+            var tmpMatAsset = assetFactory.Create<MaterialAsset>(new AssetPath("tmp", "tmpMeshMat"));
+            var texAsset = await Cubemap.GetAssetAsync();
+            await texAsset.LoadDataAsync();
+            await assetManager.SaveAsync(texAsset);
             tmpMatAsset.SetData(new MaterialData()
             {
                 PipelineName = "Skybox",
@@ -37,16 +40,9 @@ namespace RockEngine.Core.ECS.Components
 
             await Cubemap.Asset.LoadGpuResourcesAsync().ConfigureAwait(false);
             // Ожидаем генерацию всех IBL текстур
-            var textures = await Task.WhenAll(
-                renderer.IBLManager.GenerateIrradianceMap(Cubemap.Asset.Texture, 128),
-                renderer.IBLManager.GeneratePrefilterMap(Cubemap.Asset.Texture, 512),
-                renderer.IBLManager.GenerateBRDFLUT(512)
-            ).ConfigureAwait(false);
-
-
-            var irradiance = textures[0];
-            var prefilter = textures[1];
-            var brdfLUT = textures[2];
+            var irradiance = await renderer.IBLManager.GenerateIrradianceMap(Cubemap.Asset.Texture, 128);
+            var prefilter = await renderer.IBLManager.GeneratePrefilterMap(Cubemap.Asset.Texture, 512);
+            var brdfLUT = await renderer.IBLManager.GenerateBRDFLUT(512);
 
             irradiance.Image.LabelObject("Irradiance");
             prefilter.Image.LabelObject("Prefilter");
@@ -56,7 +52,7 @@ namespace RockEngine.Core.ECS.Components
             lightingPass.SetIBLTextures(irradiance, prefilter, brdfLUT);
         }
 
-        public override ValueTask Update(Renderer renderer)
+        public override ValueTask Update(WorldRenderer renderer)
         {
             Entity.Transform.Scale = new System.Numerics.Vector3(10000, 10000, 10000);
 

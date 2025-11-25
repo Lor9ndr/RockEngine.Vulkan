@@ -4,10 +4,6 @@ using RockEngine.Core.Rendering.Passes;
 using RockEngine.Core.Rendering.Passes.SubPasses;
 using RockEngine.Vulkan;
 
-using Silk.NET.Vulkan;
-
-using System.Net.Mail;
-
 namespace RockEngine.Core.Rendering.Managers
 {
     public class RenderPassManager : IDisposable

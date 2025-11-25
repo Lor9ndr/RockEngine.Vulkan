@@ -230,8 +230,8 @@ namespace RockEngine.Core.ECS.Components
             SetDirty();
         }
 
-        public override ValueTask OnStart(Renderer renderer) => default;
-        public override ValueTask Update(Renderer renderer) => default;
+        public override ValueTask OnStart(WorldRenderer renderer) => default;
+        public override ValueTask Update(WorldRenderer renderer) => default;
     }
 
     public enum Space

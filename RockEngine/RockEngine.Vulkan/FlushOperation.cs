@@ -2,6 +2,7 @@
 
 namespace RockEngine.Vulkan
 {
+
     /// <summary>
     /// Represents a completed GPU operation that can be waited on and manages resource cleanup
     /// Supports <see cref="TaskAwaiter"/>
@@ -16,7 +17,6 @@ namespace RockEngine.Vulkan
 
         public VkFence Fence => _fence;
         public bool IsCompleted => _completed;
-
 
         internal FlushOperation(
             SubmitContext context,
@@ -37,9 +37,9 @@ namespace RockEngine.Vulkan
                 return;
             }
 
-            if (_fence is not null && !Fence.IsDisposed)
+            if (_fence is not null && !_fence.IsDisposed)
             {
-                _fence?.Wait();
+                _fence.Wait();
             }
             Complete();
         }
@@ -51,7 +51,7 @@ namespace RockEngine.Vulkan
                 return;
             }
 
-            if (_fence is not null && !Fence.IsDisposed)
+            if (_fence is not null && !_fence.IsDisposed)
             {
                 await _fence.WaitAsync(cancellationToken).ConfigureAwait(false);
             }
@@ -84,7 +84,11 @@ namespace RockEngine.Vulkan
 
         public void Dispose()
         {
-            Wait();
+            if (!_completed)
+            {
+                Wait();
+            }
+
             _batches.Clear();
             _disposables.Clear();
             GC.SuppressFinalize(this);
@@ -99,13 +103,23 @@ namespace RockEngine.Vulkan
 
             _batches.Clear();
             _disposables.Clear();
-
             GC.SuppressFinalize(this);
         }
 
         ~FlushOperation()
         {
-            Dispose();
+            if (!_completed)
+            {
+                try
+                {
+                    _fence?.Wait();
+                    Complete();
+                }
+                catch
+                {
+                    // Ignore exceptions in finalizer
+                }
+            }
         }
     }
 }

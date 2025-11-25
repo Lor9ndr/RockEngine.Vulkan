@@ -1,18 +1,20 @@
-﻿using Newtonsoft.Json;
+﻿using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace RockEngine.Core.Assets.Converters
 {
-    public class AssetPathConverter : JsonConverter<AssetPath>
+    public class AssetPathConverter2 : JsonConverter<AssetPath>
     {
-        public override void WriteJson(JsonWriter writer, AssetPath value, JsonSerializer serializer)
+        public override AssetPath Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
         {
-            writer.WriteValue(value.FullPath);
+            return new AssetPath(reader.GetString() ?? string.Empty);
         }
 
-        public override AssetPath ReadJson(JsonReader reader, Type objectType, AssetPath existingValue,
-            bool hasExistingValue, JsonSerializer serializer)
+        public override void Write(Utf8JsonWriter writer, AssetPath value, JsonSerializerOptions options)
         {
-            return new AssetPath(reader.Value?.ToString() ?? string.Empty);
+            writer.WriteStringValue(value.FullPath);
         }
     }
 }
+
+

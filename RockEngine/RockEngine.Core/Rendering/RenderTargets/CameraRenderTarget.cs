@@ -11,7 +11,7 @@ namespace RockEngine.Core.Rendering.RenderTargets
     {
         private readonly GBuffer _gBuffer;
         private readonly VulkanContext _context;
-        private readonly GraphicsEngine _engine;
+        private readonly GraphicsContext _engine;
 
         public GBuffer GBuffer => _gBuffer;
         public override Viewport Viewport => new Viewport()
@@ -29,7 +29,7 @@ namespace RockEngine.Core.Rendering.RenderTargets
             Extent = Size
         };
 
-        public CameraRenderTarget(VulkanContext context, GraphicsEngine engine, Extent2D size)
+        public CameraRenderTarget(VulkanContext context, GraphicsContext engine, Extent2D size)
             : base(context, size, engine.Swapchain.Format, ImageUsageFlags.ColorAttachmentBit | ImageUsageFlags.TransientAttachmentBit | ImageUsageFlags.SampledBit)
         {
             _context = context;

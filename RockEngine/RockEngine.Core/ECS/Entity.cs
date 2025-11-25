@@ -107,7 +107,7 @@ namespace RockEngine.Core.ECS
             return true;
         }
 
-        public async ValueTask Update(Renderer renderer)
+        public async ValueTask Update(WorldRenderer renderer)
         {
             IComponent[] array;
             lock (_componentsLock)
@@ -124,7 +124,7 @@ namespace RockEngine.Core.ECS
             }
         }
 
-        public async Task OnStart(Renderer renderer)
+        public async Task OnStart(WorldRenderer renderer)
         {
             IComponent[] array;
             lock (_componentsLock)

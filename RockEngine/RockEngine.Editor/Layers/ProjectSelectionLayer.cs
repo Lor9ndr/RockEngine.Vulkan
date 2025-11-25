@@ -4,6 +4,7 @@ using NLog;
 
 using RockEngine.Core.Rendering;
 using RockEngine.Editor.EditorUI;
+using RockEngine.Editor.EditorUI.ImGuiRendering;
 using RockEngine.Vulkan;
 
 using Silk.NET.Windowing;
@@ -52,7 +53,7 @@ namespace RockEngine.Editor.Layers
             // No rendering logic needed for this layer
         }
 
-        public async Task OnImGuiRender(VkCommandBuffer vkCommandBuffer)
+        public async ValueTask OnImGuiRender(VkCommandBuffer vkCommandBuffer)
         {
             // Show progress modal if an operation is in progress
             if (_isOperationInProgress)
@@ -78,7 +79,7 @@ namespace RockEngine.Editor.Layers
                     );
 
                     // Draw the spinner at the calculated center position
-                    ImGuiSpinnerExtension.Spinner(centerPos, spinnerRadius, spinnerThickness, spinnerColor);
+                    ImguiExtensions.Spinner(centerPos, spinnerRadius, spinnerThickness, spinnerColor);
 
                     ImGui.EndPopup();
                 }

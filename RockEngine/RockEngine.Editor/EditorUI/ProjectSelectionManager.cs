@@ -1,10 +1,12 @@
-﻿using Newtonsoft.Json;
-
+﻿
 using NLog;
 
 using RockEngine.Core.Assets;
 using RockEngine.Core.DI;
 using RockEngine.Core.Rendering;
+
+using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace RockEngine.Editor.EditorUI
 {
@@ -62,7 +64,7 @@ namespace RockEngine.Editor.EditorUI
             try
             {
                 // Create project using AssetManager
-                var project = await _assetManager.CreateProjectAsync(name, Path.GetDirectoryName(path));
+                var project = _assetManager.Create<ProjectAsset>(path, name);
 
                 // Add to recent projects
                 AddToRecentProjects(new ProjectInfo
@@ -71,6 +73,7 @@ namespace RockEngine.Editor.EditorUI
                     Path = path,
                     LastOpened = DateTime.Now
                 });
+                await _assetManager.SaveAsync(project);
 
                 _logger.Info($"Project created: {name}");
                 return true;
@@ -107,7 +110,7 @@ namespace RockEngine.Editor.EditorUI
                 if (File.Exists(RecentProjectsFile))
                 {
                     var json = File.ReadAllText(RecentProjectsFile);
-                    _recentProjects = JsonConvert.DeserializeObject<List<ProjectInfo>>(json) ?? new List<ProjectInfo>();
+                    _recentProjects = JsonSerializer.Deserialize<List<ProjectInfo>>(json) ?? new List<ProjectInfo>();
 
                     // Sort by last opened date (newest first)
                     _recentProjects = [.. _recentProjects
@@ -125,7 +128,7 @@ namespace RockEngine.Editor.EditorUI
         {
             try
             {
-                var json = JsonConvert.SerializeObject(_recentProjects, Formatting.Indented);
+                var json = JsonSerializer.Serialize(_recentProjects, new JsonSerializerOptions() { WriteIndented = true});
                 File.WriteAllText(RecentProjectsFile, json);
             }
             catch (Exception ex)

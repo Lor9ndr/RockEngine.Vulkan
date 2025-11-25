@@ -1,4 +1,6 @@
-﻿using SimpleInjector;
+﻿using RockEngine.Vulkan;
+
+using SimpleInjector;
 
 namespace RockEngine.Core.DI
 {
@@ -9,8 +11,11 @@ namespace RockEngine.Core.DI.Modules
         {
             public void RegisterDependencies(Container container)
             {
-                var config = ConfigLoader.LoadConfig();
-                container.RegisterInstance(config);
+                container.Register<AppSettings>(()=>
+                {
+                    var cfg =  ConfigLoader.LoadConfig(container);
+                    return cfg;
+                }, Lifestyle.Singleton);
             }
         }
     }

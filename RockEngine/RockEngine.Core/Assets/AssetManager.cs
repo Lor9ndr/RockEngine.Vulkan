@@ -1,4 +1,7 @@
-﻿using NLog;
+﻿using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.ObjectPool;
+
+using NLog;
 
 using RockEngine.Core.Assets.AssetData;
 using RockEngine.Core.Assets.RockEngine.Core.Assets;
@@ -6,512 +9,222 @@ using RockEngine.Core.Assets.Serializers;
 using RockEngine.Core.DI;
 
 using System.Collections.Concurrent;
-using System.Text;
+using System.ComponentModel.DataAnnotations;
 using System.IO.MemoryMappedFiles;
-using Microsoft.Extensions.Caching.Memory;
-using Microsoft.Extensions.ObjectPool;
+using System.Text;
 
 namespace RockEngine.Core.Assets
 {
-    public sealed class AssetManager : IDisposable
+    // Strategy Pattern for asset loading with separate metadata/data
+    public interface IAssetLoadStrategy
     {
-        private static readonly Logger _logger = LogManager.GetCurrentClassLogger();
-        private const string ProjectExtension = ".rockproj";
-        private const string AssetExtension = ".asset";
-        private const string MetaExtension = ".meta";
-        private const int MetaFileBufferSize = 8192;
-        private const int OptimalBufferSize = 65536; // 64KB aligned with disk sectors
-        private const long MaxCacheSize = 1024 * 1024 * 128; // 128MB limit
+        bool CanHandle(long fileSize);
+        Task<AssetMetadata> LoadMetadataAsync(string filePath, IAssetSerializer serializer);
+        Task<IAsset> LoadAssetAsync(string filePath, AssetMetadata assetMetadata, IAssetSerializer serializer);
+        Task LoadDataAsync<T>(IAsset<T> asset, string filePath, IAssetSerializer serializer) where T : class;
+        Task LoadDataAsync(IAsset asset, Type dataType, string filePath, IAssetSerializer serializer);
+    }
 
-        // Memory cache for assets
-        private readonly MemoryCache _assetCache = new MemoryCache(new MemoryCacheOptions
+    public class MemoryMappedLoadStrategy : IAssetLoadStrategy
+    {
+        public bool CanHandle(long fileSize) => fileSize > 1024 * 1024;
+
+        public async Task<AssetMetadata> LoadMetadataAsync(string filePath, IAssetSerializer serializer)
         {
-            SizeLimit = MaxCacheSize,
-            CompactionPercentage = 0.25
-        });
+            var fileInfo = new FileInfo(filePath);
+            using var mmf = MemoryMappedFile.CreateFromFile(filePath, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
+            using var stream = mmf.CreateViewStream(0, fileInfo.Length, MemoryMappedFileAccess.Read);
 
-        // Object pools for common types
+            return await serializer.DeserializeMetadataAsync(stream);
+        }
+
+        public async Task LoadDataAsync<T>(IAsset<T> asset, string filePath, IAssetSerializer serializer) where T : class
+        {
+            await LoadDataAsync(asset, typeof(T), filePath, serializer);
+        }
+
+        private static async Task LoadDataForAssetAsync(IAsset asset, Type dataType, Stream stream, IAssetSerializer serializer)
+        {
+            var data = await serializer.DeserializeDataAsync(stream, dataType);
+            asset.SetData(data);
+        }
+
+        public async Task LoadDataAsync(IAsset asset, Type dataType, string filePath, IAssetSerializer serializer)
+        {
+            var fileInfo = new FileInfo(filePath);
+            using var mmf = MemoryMappedFile.CreateFromFile(filePath, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
+            using var stream = mmf.CreateViewStream(0, fileInfo.Length, MemoryMappedFileAccess.Read);
+
+            await LoadDataForAssetAsync(asset, dataType, stream, serializer);
+        }
+
+        public async Task<IAsset> LoadAssetAsync(string filePath, AssetMetadata assetMetadata, IAssetSerializer serializer)
+        {
+            var fileInfo = new FileInfo(filePath);
+            using var mmf = MemoryMappedFile.CreateFromFile(filePath, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
+            using var stream = mmf.CreateViewStream(0, fileInfo.Length, MemoryMappedFileAccess.Read);
+            return (IAsset)await serializer.DeserializeAssetAsync(stream, assetMetadata.AssetType);
+        }
+    }
+
+    public class StreamLoadStrategy : IAssetLoadStrategy
+    {
         private readonly ObjectPool<MemoryStream> _memoryStreamPool;
-        private readonly ObjectPool<byte[]> _bufferPool;
+        private const int OptimalBufferSize = 65536;
 
-        private sealed class AssetMetadata
+        public StreamLoadStrategy(ObjectPool<MemoryStream> memoryStreamPool)
         {
-            public Guid ID { get; set; }
-            public string Name { get; set; }
-            public AssetPath Path { get; set; }
-            public Type AssetType { get; set; }
-            public DateTime LastModified { get; set; }
-            public long FileSize { get; set; }
-            public int AccessCount { get; set; }
+            _memoryStreamPool = memoryStreamPool;
+        }
 
-            public AssetMetadata() { }
+        public bool CanHandle(long fileSize) => true; // Fallback strategy
 
-            public AssetMetadata(IAsset asset)
+        public async Task<AssetMetadata> LoadMetadataAsync(string filePath, IAssetSerializer serializer)
+        {
+            using var fileStream = new FileStream(filePath, FileMode.Open, FileAccess.Read,
+                FileShare.Read, OptimalBufferSize, FileOptions.SequentialScan);
+
+            return await serializer.DeserializeMetadataAsync(fileStream);
+        }
+
+        public async Task LoadDataAsync<T>(IAsset<T> asset, string filePath, IAssetSerializer serializer) where T : class
+        {
+            await LoadDataAsync(asset, typeof(T), filePath, serializer);
+        }
+
+        private static async Task LoadDataForAssetAsync(IAsset asset, Type dataType, Stream stream, IAssetSerializer serializer)
+        {
+            var data = await serializer.DeserializeDataAsync(stream, dataType);
+            asset.SetData(data);
+        }
+
+        public async Task LoadDataAsync(IAsset asset, Type dataType, string filePath, IAssetSerializer serializer)
+        {
+            var memoryStream = _memoryStreamPool.Get();
+            try
             {
-                ID = asset.ID;
-                Name = asset.Name;
-                Path = asset.Path;
-                AssetType = asset.GetType();
-                LastModified = DateTime.UtcNow;
+                using var fileStream = new FileStream(filePath, FileMode.Open, FileAccess.Read,
+                    FileShare.Read, OptimalBufferSize, FileOptions.SequentialScan);
+
+                await fileStream.CopyToAsync(memoryStream);
+                memoryStream.Position = 0;
+
+                await LoadDataForAssetAsync(asset, dataType, memoryStream, serializer);
             }
-
-            public byte[] ToBytes()
+            finally
             {
-                using var ms = new MemoryStream();
-                using var writer = new BinaryWriter(ms, Encoding.UTF8);
-
-                writer.Write(ID.ToByteArray());
-                writer.Write(Name);
-                writer.Write(Path.ToString());
-                writer.Write(AssetType.AssemblyQualifiedName);
-                writer.Write(LastModified.ToBinary());
-                writer.Write(FileSize);
-
-                return ms.ToArray();
-            }
-
-            public static AssetMetadata FromBytes(byte[] data)
-            {
-                using var ms = new MemoryStream(data);
-                using var reader = new BinaryReader(ms, Encoding.UTF8);
-
-                try
-                {
-                    var id = new Guid(reader.ReadBytes(16));
-                    var name = reader.ReadString();
-                    var pathStr = reader.ReadString();
-                    var assetType = Type.GetType(reader.ReadString());
-                    var lastModified = DateTime.FromBinary(reader.ReadInt64());
-
-                    // Only read FileSize if there's more data available
-                    long fileSize = 0;
-                    if (ms.Position < ms.Length)
-                    {
-                        fileSize = reader.ReadInt64();
-                    }
-
-                    return new AssetMetadata
-                    {
-                        ID = id,
-                        Name = name,
-                        Path = new AssetPath(pathStr),
-                        AssetType = assetType,
-                        LastModified = lastModified,
-                        FileSize = fileSize
-                    };
-                }
-                catch (EndOfStreamException ex)
-                {
-                    throw new InvalidDataException("Meta file data is incomplete", ex);
-                }
+                memoryStream.SetLength(0);
+                _memoryStreamPool.Return(memoryStream);
             }
         }
 
-        // Memory-mapped files management
-        private readonly ConcurrentDictionary<string, (MemoryMappedFile MappedFile, MemoryMappedViewAccessor Accessor)> _mappedFiles = new();
-        private readonly ConcurrentDictionary<Guid, Lazy<Task<IAsset>>> _lazyAssets = new();
-        private readonly PriorityQueue<AssetLoadRequest, int> _prefetchQueue = new();
-        private readonly CancellationTokenSource _prefetchCancellation = new();
-        private readonly Task _prefetchWorker;
+        public async Task<IAsset> LoadAssetAsync(string filePath, AssetMetadata assetMetadata, IAssetSerializer serializer)
+        {
+            var memoryStream = _memoryStreamPool.Get();
+            try
+            {
+                using var fileStream = new FileStream(filePath, FileMode.Open, FileAccess.Read,
+                    FileShare.Read, OptimalBufferSize, FileOptions.SequentialScan);
 
-        private readonly IAssetSerializer _serializer;
-        private readonly AssimpLoader _assimpLoader;
+                await fileStream.CopyToAsync(memoryStream);
+                memoryStream.Position = 0;
+                return (IAsset)await serializer.DeserializeAssetAsync(memoryStream, assetMetadata.AssetType);
 
-        // Metadata storage
-        private readonly ConcurrentDictionary<Guid, AssetMetadata> _metadataById = new();
-        private readonly ConcurrentDictionary<string, AssetMetadata> _metadataByPath = new(StringComparer.OrdinalIgnoreCase);
+            }
+            finally
+            {
+                memoryStream.SetLength(0);
+                _memoryStreamPool.Return(memoryStream);
+            }
+        }
+    }
 
-        // In-memory asset storage
+    // Repository Pattern for asset storage
+    public interface IAssetRepository
+    {
+        void Add(IAsset asset);
+        bool TryGet(Guid id, out IAsset asset);
+        bool TryGet(string path, out IAsset asset);
+        void Remove(Guid id);
+        void Remove(string path);
+        IEnumerable<IAsset> GetAll();
+        void Clear();
+    }
+
+    public class AssetRepository : IAssetRepository
+    {
         private readonly ConcurrentDictionary<Guid, IAsset> _assetsById = new();
         private readonly ConcurrentDictionary<string, IAsset> _assetsByPath = new(StringComparer.OrdinalIgnoreCase);
-        private readonly ConcurrentDictionary<string, SemaphoreSlim> _assetLocks = new(StringComparer.OrdinalIgnoreCase);
 
-        private string _basePath = string.Empty;
-        private ProjectAsset _project;
-        private FileSystemWatcher _fileWatcher;
-
-        public string BasePath => _basePath;
-        public event Action<Guid>? OnAssetRemoved;
-        public event Action<IAsset>? OnAssetRegistered;
-        public event Action? OnAssetsChanged;
-
-        public AssetManager(IAssetSerializer serializer, AssimpLoader assimpLoader)
+        public void Add(IAsset asset)
         {
-            _logger.Info("AssetManager initializing...");
-            _serializer = serializer;
+            var pathKey = AssetPathNormalizer.Normalize(asset.Path.ToString());
+            if (_assetsById.ContainsKey(asset.ID))
+            {
+                throw new InvalidOperationException("Same assetID already added");
+            }
+            _assetsById[asset.ID] = asset;
+            if (_assetsByPath.ContainsKey(pathKey))
+            {
+                throw new InvalidOperationException("Same asset path already added");
+            }
+            _assetsByPath[pathKey] = asset;
+        }
+
+        public bool TryGet(Guid id, out IAsset asset) => _assetsById.TryGetValue(id, out asset);
+        public bool TryGet(string path, out IAsset asset) => _assetsByPath.TryGetValue(AssetPathNormalizer.Normalize(path), out asset);
+
+        public void Remove(Guid id)
+        {
+            if (_assetsById.TryRemove(id, out var asset))
+            {
+                _assetsByPath.TryRemove(AssetPathNormalizer.Normalize(asset.Path.ToString()), out _);
+            }
+        }
+
+        public void Remove(string path)
+        {
+            var normalizedPath = AssetPathNormalizer.Normalize(path);
+            if (_assetsByPath.TryRemove(normalizedPath, out var asset))
+            {
+                _assetsById.TryRemove(asset.ID, out _);
+            }
+        }
+
+        public IEnumerable<IAsset> GetAll() => _assetsById.Values;
+
+        public void Clear()
+        {
+            _assetsById.Clear();
+            _assetsByPath.Clear();
+        }
+    }
+
+    // Factory Pattern for asset creation
+    public interface IAssetFactory
+    {
+        T Create<T>(AssetPath path, string? name = null) where T : IAsset;
+        Task<ModelAsset> CreateModelFromFileAsync(string filePath, string? modelName = null, string parentPath = "Models");
+        MaterialAsset CreateMaterial(string name, string template, List<AssetReference<TextureAsset>>? textures = null, Dictionary<string, object>? parameters = null);
+    }
+
+    public class AssetFactory : IAssetFactory
+    {
+        private readonly AssimpLoader _assimpLoader;
+        private readonly IAssetRepository _assetRepository;
+
+        public AssetFactory(AssimpLoader assimpLoader, IAssetRepository assetRepository)
+        {
             _assimpLoader = assimpLoader;
-
-            // Initialize object pools
-            _memoryStreamPool = new DefaultObjectPool<MemoryStream>(
-                new MemoryStreamPooledObjectPolicy(),
-                Environment.ProcessorCount );
-
-            _bufferPool = new DefaultObjectPool<byte[]>(
-                new BufferPooledObjectPolicy(OptimalBufferSize),
-                Environment.ProcessorCount * 4);
-
-            // Start background prefetch worker
-            _prefetchWorker = StartPrefetchWorker();
-
+            _assetRepository = assetRepository;
         }
 
-        private async Task StartPrefetchWorker()
+        public T Create<T>(AssetPath path, string? name = null) where T : IAsset
         {
-            while (!_prefetchCancellation.Token.IsCancellationRequested)
-            {
-                try
-                {
-                    await Task.Delay(100, _prefetchCancellation.Token);
-                    await ProcessPrefetchQueueAsync();
-                }
-                catch (OperationCanceledException)
-                {
-                    break;
-                }
-            }
-        }
-
-        private async Task ProcessPrefetchQueueAsync()
-        {
-            const int maxConcurrentLoads = 4;
-            var loadTasks = new List<Task>();
-
-            while (_prefetchQueue.TryDequeue(out var request, out _) &&
-                   loadTasks.Count < maxConcurrentLoads)
-            {
-                loadTasks.Add(LoadAssetBackgroundAsync(request.AssetId));
-            }
-
-            await Task.WhenAll(loadTasks);
-        }
-
-        public void PrefetchAsset(Guid assetId, int priority = 0)
-        {
-            if (!_assetsById.ContainsKey(assetId) && _metadataById.ContainsKey(assetId))
-            {
-                _prefetchQueue.Enqueue(new AssetLoadRequest(assetId), priority);
-                _logger.Debug($"Prefetch queued for asset: {assetId}");
-            }
-        }
-
-        private async Task LoadAssetBackgroundAsync(Guid assetId)
-        {
-            try
-            {
-                if (!_metadataById.TryGetValue(assetId, out var metadata))
-                {
-                    return;
-                }
-
-                // Use lazy loading to avoid duplicate loads
-                var lazyTask = _lazyAssets.GetOrAdd(assetId, id => new Lazy<Task<IAsset>>(
-                    () => LoadAssetWithOptimizationsAsync(metadata),
-                    LazyThreadSafetyMode.ExecutionAndPublication));
-
-                await lazyTask.Value;
-                _logger.Debug($"Background prefetch completed for asset: {assetId}");
-            }
-            catch (Exception ex)
-            {
-                _logger.Warn(ex, $"Background prefetch failed for asset: {assetId}");
-            }
-        }
-
-        private void SetupFileWatching()
-        {
-            try
-            {
-                _fileWatcher = new FileSystemWatcher(_basePath)
-                {
-                    IncludeSubdirectories = true,
-                    NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName | NotifyFilters.Size,
-                    EnableRaisingEvents = !string.IsNullOrEmpty(_basePath)
-                };
-                _fileWatcher.Changed += OnAssetFileChanged;
-                _fileWatcher.Deleted += OnAssetFileDeleted;
-                _fileWatcher.Renamed += OnAssetFileRenamed;
-            }
-            catch (Exception ex)
-            {
-                _logger.Warn(ex, "Failed to setup file system watcher");
-            }
-        }
-
-        private void OnAssetFileChanged(object sender, FileSystemEventArgs e)
-        {
-            var normalizedPath = NormalizePath(e.FullPath);
-
-            // Invalidate cache when files change
-            if (_metadataByPath.TryGetValue(normalizedPath, out var metadata))
-            {
-                _assetCache.Remove(metadata.ID);
-                _assetsById.TryRemove(metadata.ID, out _);
-                _assetsByPath.TryRemove(normalizedPath, out _);
-                _lazyAssets.TryRemove(metadata.ID, out _);
-
-                _logger.Debug($"Invalidated cache for modified asset: {normalizedPath}");
-            }
-        }
-
-        private void OnAssetFileDeleted(object sender, FileSystemEventArgs e)
-        {
-            var normalizedPath = NormalizePath(e.FullPath);
-            if (_metadataByPath.TryGetValue(normalizedPath, out var metadata))
-            {
-                RemoveFromCache(metadata.ID);
-                _logger.Debug($"Removed deleted asset from cache: {normalizedPath}");
-            }
-        }
-
-        private void OnAssetFileRenamed(object sender, RenamedEventArgs e)
-        {
-            var oldNormalizedPath = NormalizePath(e.OldFullPath);
-            var newNormalizedPath = NormalizePath(e.FullPath);
-
-            if (_metadataByPath.TryGetValue(oldNormalizedPath, out var metadata))
-            {
-                _metadataByPath.TryRemove(oldNormalizedPath, out _);
-                _metadataByPath[newNormalizedPath] = metadata;
-
-                if (_assetsByPath.TryRemove(oldNormalizedPath, out var asset))
-                {
-                    _assetsByPath[newNormalizedPath] = asset;
-                }
-
-                _logger.Debug($"Updated paths for renamed asset: {oldNormalizedPath} -> {newNormalizedPath}");
-            }
-        }
-
-        private async Task InitializeAsync(ProjectAsset project)
-        {
-            _basePath = project.Data.RootPath;
-            _project = project;
-            SetupFileWatching();
-            await IndexProjectAssetsAsync();
-            GC.Collect();
-
-            // Update file watcher with new base path
-            if (_fileWatcher != null)
-            {
-                _fileWatcher.Path = _basePath;
-                _fileWatcher.EnableRaisingEvents = true;
-            }
-        }
-
-        private async Task IndexProjectAssetsAsync()
-        {
-            // Use optimized file enumeration
-            var enumerationOptions = new EnumerationOptions
-            {
-                RecurseSubdirectories = true,
-                IgnoreInaccessible = true,
-                BufferSize = OptimalBufferSize,
-                AttributesToSkip = FileAttributes.System | FileAttributes.Temporary
-            };
-
-            var metaFiles = Directory.EnumerateFiles(_basePath, $"*{MetaExtension}", enumerationOptions);
-
-            // Process meta files in parallel with optimal degree of parallelism
-            var options = new ParallelOptions
-            {
-                MaxDegreeOfParallelism = Environment.ProcessorCount
-            };
-
-            await Parallel.ForEachAsync(metaFiles, options, async (metaFile, ct) =>
-            {
-                await ProcessMetaFileAsync(metaFile);
-            });
-
-            // Check for assets without meta files using parallel processing
-            var assetFiles = Directory.EnumerateFiles(_basePath, $"*{AssetExtension}", enumerationOptions);
-            var missingMetaTasks = new List<Task>();
-
-            await Parallel.ForEachAsync(assetFiles, options, async (assetFile, ct) =>
-            {
-                var metaFile = GetMetaPath(assetFile);
-                if (!File.Exists(metaFile))
-                {
-                    await CreateMetaFromAssetAsync(assetFile);
-                }
-            });
-
-            // Prefetch frequently used assets in background
-            PrefetchCommonAssets();
-        }
-
-        private void PrefetchCommonAssets()
-        {
-            // Prefetch project file and commonly used assets
-            if (_project != null)
-            {
-                PrefetchAsset(_project.ID, 10);
-            }
-
-            // Prefetch small assets that are likely to be used soon
-            foreach (var metadata in _metadataById.Values.Where(m => m.FileSize < 1024 * 1024))
-            {
-                PrefetchAsset(metadata.ID, 5);
-            }
-        }
-
-        private async Task ProcessMetaFileAsync(string metaFilePath)
-        {
-            try
-            {
-                var fileInfo = new FileInfo(metaFilePath);
-
-                // Read the exact file size instead of fixed buffer
-                byte[] fileBytes = await File.ReadAllBytesAsync(metaFilePath);
-
-                // Use the exact file content for deserialization
-                var metadata = AssetMetadata.FromBytes(fileBytes);
-
-                // Update file size information
-                var assetPath = GetFullPath(metadata.Path);
-                if (File.Exists(assetPath))
-                {
-                    metadata.FileSize = new FileInfo(assetPath).Length;
-                }
-
-                var normalizedPath = NormalizePath(metadata.Path.ToString());
-                _metadataByPath[normalizedPath] = metadata;
-                _metadataById[metadata.ID] = metadata;
-
-                _logger.Debug($"Processed meta file: {metaFilePath}");
-            }
-            catch (EndOfStreamException ex)
-            {
-                _logger.Warn(ex, $"Meta file is shorter than expected: {metaFilePath}");
-            }
-            catch (Exception ex)
-            {
-                _logger.Warn(ex, $"Skipping corrupt meta file: {metaFilePath}");
-            }
-        }
-
-        private async Task CreateMetaFromAssetAsync(string assetFilePath)
-        {
-            try
-            {
-                using var stream = new FileStream(assetFilePath, FileMode.Open, FileAccess.Read,
-                    FileShare.Read, OptimalBufferSize, FileOptions.SequentialScan);
-                var asset = await _serializer.DeserializeMetadataAsync(stream);
-                await SaveMetadataAsync(asset);
-            }
-            catch (Exception ex)
-            {
-                _logger.Warn(ex, $"Failed to create meta file for asset: {assetFilePath}");
-            }
-        }
-
-        private async Task SaveMetadataAsync(IAsset asset)
-        {
-            var metadata = new AssetMetadata(asset);
-            var metaPath = GetMetaPath(GetFullPath(asset.Path));
-            var directory = Path.GetDirectoryName(metaPath);
-
-            if (!string.IsNullOrEmpty(directory))
-            {
-                Directory.CreateDirectory(directory);
-            }
-
-            await SaveMetadataToDiskAsync(metadata);
-
-            var normalizedPath = NormalizePath(asset.Path.ToString());
-            _metadataByPath[normalizedPath] = metadata;
-            _metadataById[asset.ID] = metadata;
-        }
-
-        public async Task<ProjectAsset> CreateProjectAsync(string projectName, string basePath)
-        {
-            var projectDir = Path.Combine(basePath, projectName);
-            Directory.CreateDirectory(projectDir);
-
-            var projectPath = new AssetPath(projectDir, projectName, ProjectExtension);
-            var project = Create<ProjectAsset>(projectPath);
-            project.SetData(new ProjectData { Name = projectName, RootPath = projectDir });
-
-            _basePath = projectDir;
-            _project = project;
-
-            RegisterAsset(project);
-            await SaveAsync(project);
-            await InitializeAsync(project);
-
-            return project;
-        }
-
-        public async Task<ModelAsset> LoadModelAsync(string filePath, string? modelName = null, string parentPath = "Models")
-        {
-            modelName ??= Path.GetFileNameWithoutExtension(filePath);
-            var modelPathKey = NormalizePath(Path.Combine(parentPath, modelName));
-
-            if (TryGetAsset<ModelAsset>(modelPathKey, out var existing))
-            {
-                return existing;
-            }
-
-            var meshesData = await _assimpLoader.LoadMeshesAsync(filePath);
-            var modelAsset = Create<ModelAsset>(new AssetPath(parentPath, modelName));
-
-            var saveTasks = new List<Task>(meshesData.Count * 3 + 1);
-            var textureCache = new Dictionary<string, TextureAsset>(StringComparer.OrdinalIgnoreCase);
-
-            foreach (var meshData in meshesData)
-            {
-                var meshName = !string.IsNullOrEmpty(meshData.Name) ? meshData.Name : $"Mesh_{Guid.NewGuid()}";
-                var meshAsset = Create<MeshAsset>(
-                    new AssetPath($"{parentPath}/{modelName}/Meshes", meshName),
-                    meshName);
-
-                // Use pooled arrays for mesh data
-                meshAsset.SetGeometry(meshData.Vertices, meshData.Indices);
-
-                var materialAsset = Create<MaterialAsset>(
-                    new AssetPath($"{parentPath}/{modelName}/Materials", meshName),
-                    meshName);
-
-                var textureIDs = new Guid[meshData.Textures.Count];
-                for (int i = 0; i < meshData.Textures.Count; i++)
-                {
-                    var texturePath = meshData.Textures[i];
-                    if (!textureCache.TryGetValue(texturePath, out var textureAsset))
-                    {
-                        var textureName = Path.GetFileName(texturePath);
-                        textureAsset = Create<TextureAsset>(
-                            new AssetPath($"{parentPath}/{modelName}/Textures", textureName));
-                        textureAsset.SetData(new TextureData
-                        {
-                            FilePaths = [texturePath],
-                            GenerateMipmaps = true,
-                            Type = TextureType.Texture2D
-                        });
-                        textureCache[texturePath] = textureAsset;
-                        RegisterAsset(textureAsset);
-                        saveTasks.Add(SaveAsync(textureAsset));
-                    }
-                    textureIDs[i] = textureAsset.ID;
-                }
-
-                materialAsset.SetData(new MaterialData
-                {
-                    PipelineName = "Geometry",
-                    Textures = [.. textureIDs.Select(s => new AssetReference<TextureAsset>(s))]
-                });
-
-                modelAsset.AddPart(new ModelPart { Mesh = meshAsset, Material = materialAsset });
-
-                RegisterAsset(meshAsset);
-                RegisterAsset(materialAsset);
-                saveTasks.Add(SaveAsync(meshAsset));
-                saveTasks.Add(SaveAsync(materialAsset));
-            }
-
-            RegisterAsset(modelAsset);
-            saveTasks.Add(SaveAsync(modelAsset));
-            await Task.WhenAll(saveTasks);
-
-            return modelAsset;
+            var asset = (T)IoC.Container.GetInstance(typeof(T));
+            asset.Path = path;
+            asset.Name = name ?? Path.GetFileNameWithoutExtension(path.FullPath);
+            return asset;
         }
 
         public MaterialAsset CreateMaterial(string name, string template, List<AssetReference<TextureAsset>>? textures = null, Dictionary<string, object>? parameters = null)
@@ -526,79 +239,268 @@ namespace RockEngine.Core.Assets
             return material;
         }
 
-        public async Task<MaterialAsset> CreateAndSaveMaterial(string name, string template, List<AssetReference<TextureAsset>>? textures = null, Dictionary<string, object>? parameters = null)
+        public async Task<ModelAsset> CreateModelFromFileAsync(string filePath, string? modelName = null, string parentPath = "Models")
         {
-            var material = CreateMaterial(name, template, textures, parameters);
-            await SaveAsync(material);
-            return material;
+            modelName ??= Path.GetFileNameWithoutExtension(filePath);
+            var meshesData = await _assimpLoader.LoadMeshesAsync(filePath);
+            var modelAsset = Create<ModelAsset>(new AssetPath(parentPath, modelName));
+
+            var textureCache = new Dictionary<string, TextureAsset>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var meshData in meshesData)
+            {
+                var meshName = !string.IsNullOrEmpty(meshData.Name) ? meshData.Name : $"Mesh_{Guid.NewGuid()}";
+                var meshAsset = Create<MeshAsset>(
+                    new AssetPath($"{parentPath}/{modelName}/Meshes", meshName),
+                    meshName);
+
+                meshAsset.SetGeometry(meshData.Vertices, meshData.Indices);
+
+                var materialAsset = Create<MaterialAsset>(
+                    new AssetPath($"{parentPath}/{modelName}/Materials", meshName),
+                    meshName);
+
+                var textureIDs = await CreateTexturesAsync(meshData.Textures, $"{parentPath}/{modelName}/Textures", textureCache);
+
+                materialAsset.SetData(new MaterialData
+                {
+                    PipelineName = "Geometry",
+                    Textures = textureIDs.Select(id => new AssetReference<TextureAsset>(id)).ToList()
+                });
+
+                modelAsset.AddPart(new ModelPart { Mesh = meshAsset, Material = materialAsset });
+                _assetRepository.Add(meshAsset);
+                _assetRepository.Add(materialAsset);
+            }
+
+            _assetRepository.Add(modelAsset);
+            return modelAsset;
         }
 
-        public T Create<T>(AssetPath path, string? name = null) where T : IAsset
+        private async Task<List<Guid>> CreateTexturesAsync(List<string> texturePaths, string textureFolder, Dictionary<string, TextureAsset> textureCache)
         {
-            var asset = (T)IoC.Container.GetInstance(typeof(T));
-            asset.Path = path;
-            asset.Name = name ?? Path.GetFileNameWithoutExtension(path.FullPath);
-            RegisterAsset(asset);
+            var textureIDs = new List<Guid>();
+
+            foreach (var texturePath in texturePaths)
+            {
+                if (!textureCache.TryGetValue(texturePath, out var textureAsset))
+                {
+                    var textureName = Path.GetFileName(texturePath);
+                    textureAsset = Create<TextureAsset>(new AssetPath(textureFolder, textureName));
+                    textureAsset.SetData(new TextureData
+                    {
+                        FilePaths = [texturePath],
+                        GenerateMipmaps = true,
+                        Type = TextureType.Texture2D
+                    });
+                    textureCache[texturePath] = textureAsset;
+                    _assetRepository.Add(textureAsset);
+                }
+                textureIDs.Add(textureAsset.ID);
+            }
+
+            return textureIDs;
+        }
+    }
+
+    // Metadata management
+    public interface IMetadataManager
+    {
+        Task<AssetMetadata> GetOrCreateMetadataAsync(string assetFilePath);
+        Task SaveMetadataAsync(IAsset asset);
+        bool TryGetMetadata(Guid id, out AssetMetadata metadata);
+        bool TryGetMetadata(string path, out AssetMetadata metadata);
+        AssetMetadata? GetMetadata(Guid id);
+        AssetMetadata? GetMetadata(string path);
+        void Clear();
+    }
+
+    public class MetadataManager : IMetadataManager
+    {
+        private readonly ConcurrentDictionary<Guid, AssetMetadata> _metadataById = new();
+        private readonly ConcurrentDictionary<string, AssetMetadata> _metadataByPath = new(StringComparer.OrdinalIgnoreCase);
+        private readonly IAssetSerializer _serializer;
+        private string _basePath;
+
+        public MetadataManager(IAssetSerializer serializer)
+        {
+            _serializer = serializer;
+        }
+
+        public void SetBasePath(string basePath)
+        {
+            _basePath = basePath;
+            Clear(); // Clear metadata when base path changes
+        }
+
+        public async Task<AssetMetadata> GetOrCreateMetadataAsync(string assetFilePath)
+        {
+            var metaFilePath = GetMetaPath(assetFilePath);
+
+           AssetMetadata assetMetadata;
+            if (File.Exists(metaFilePath))
+            {
+                assetMetadata =  await LoadMetadataFromFileAsync(metaFilePath);
+            }
+            else
+            {
+                assetMetadata = await CreateMetadataFromAssetAsync(assetFilePath);
+            }
+            _metadataByPath[assetFilePath] = assetMetadata;
+            _metadataById[assetMetadata.ID] = assetMetadata;
+            return assetMetadata;
+        }
+
+        public async Task SaveMetadataAsync(IAsset asset)
+        {
+            var metadata = new AssetMetadata(asset);
+            await SaveMetadataToDiskAsync(metadata);
+
+            var normalizedPath = AssetPathNormalizer.Normalize(asset.Path.ToString());
+            _metadataByPath[normalizedPath] = metadata;
+            _metadataById[asset.ID] = metadata;
+        }
+
+        public bool TryGetMetadata(Guid id, out AssetMetadata metadata) => _metadataById.TryGetValue(id, out metadata);
+        public bool TryGetMetadata(string path, out AssetMetadata metadata) => _metadataByPath.TryGetValue(AssetPathNormalizer.Normalize(path), out metadata);
+
+        public AssetMetadata? GetMetadata(Guid id) => _metadataById.TryGetValue(id, out var metadata) ? metadata : null;
+        public AssetMetadata? GetMetadata(string path) => _metadataByPath.TryGetValue(AssetPathNormalizer.Normalize(path), out var metadata) ? metadata : null;
+
+        public void Clear()
+        {
+            _metadataById.Clear();
+            _metadataByPath.Clear();
+        }
+
+        private async Task<AssetMetadata> LoadMetadataFromFileAsync(string metaFilePath)
+        {
+            byte[] fileBytes = await File.ReadAllBytesAsync(metaFilePath);
+            return AssetMetadata.FromBytes(fileBytes);
+        }
+
+        private async Task<AssetMetadata> CreateMetadataFromAssetAsync(string assetFilePath)
+        {
+            using var stream = new FileStream(assetFilePath, FileMode.Open, FileAccess.Read,
+                FileShare.Read, AssetConstants.OptimalBufferSize, FileOptions.SequentialScan);
+            var asset = await _serializer.DeserializeMetadataAsync(stream);
             return asset;
         }
 
-        public async Task<ProjectAsset> LoadProjectAsync(string projectName, string basePath)
+        private async Task SaveMetadataToDiskAsync(AssetMetadata metadata)
         {
-            var projectFile = Path.Combine(basePath, projectName, $"{projectName}{ProjectExtension}");
-            return await LoadProjectAsync(projectFile);
+            var metaPath = GetMetaPath(GetFullPath(metadata.Path));
+            var directory = Path.GetDirectoryName(metaPath);
+
+            if (!string.IsNullOrEmpty(directory))
+            {
+                Directory.CreateDirectory(directory);
+            }
+
+            await File.WriteAllBytesAsync(metaPath, metadata.ToBytes());
         }
 
-        public async Task<ProjectAsset> LoadProjectAsync(string projectPath)
-        {
-            var project = await LoadAssetFromDisk<ProjectData>(new AssetPath(projectPath));
-            _basePath = project.Data.RootPath;
+        private string GetMetaPath(string assetPath) => assetPath + AssetConstants.MetaExtension;
+        private string GetFullPath(AssetPath path) => Path.Combine(_basePath, path.ToString());
+    }
 
-            await IndexProjectAssetsAsync();
-            return (ProjectAsset)project;
+    // Asset loading service
+    public interface IAssetLoader
+    {
+        Task<IAsset> LoadAssetAsync(Guid assetId);
+        Task<IAsset> LoadAssetAsync(string assetPath);
+        Task LoadAssetDataAsync<T>(IAsset<T> asset) where T : class;
+        Task LoadAssetDataAsync(IAsset asset, Type dataType);
+        Task<T> LoadAssetAsync<T>(Guid assetId) where T : class, IAsset;
+        Task<T> LoadAssetAsync<T>(string assetPath) where T : class, IAsset;
+        void SetBasePath(string basePath);
+    }
+
+    public class AssetLoader : IAssetLoader
+    {
+        private readonly IMetadataManager _metadataManager;
+        private readonly IAssetRepository _assetRepository;
+        private readonly IAssetSerializer _serializer;
+        private readonly IAssetLoadStrategy[] _loadStrategies;
+        private readonly ConcurrentDictionary<string, SemaphoreSlim> _assetLocks;
+        private string _basePath;
+
+        public AssetLoader(IMetadataManager metadataManager, IAssetRepository assetRepository,
+                         IAssetSerializer serializer, IAssetLoadStrategy[] loadStrategies,
+                         ConcurrentDictionary<string, SemaphoreSlim> assetLocks)
+        {
+            _metadataManager = metadataManager;
+            _assetRepository = assetRepository;
+            _serializer = serializer;
+            _loadStrategies = loadStrategies;
+            _assetLocks = assetLocks;
         }
 
-        private async Task<IAsset<T>> LoadAssetFromDisk<T>(AssetPath path) where T : class
+        public void SetBasePath(string basePath)
         {
-            var fullPath = GetFullPath(path);
+            _basePath = basePath;
+            if (_metadataManager is MetadataManager mm)
+            {
+                mm.SetBasePath(basePath);
+            }
+        }
+
+        public async Task<IAsset> LoadAssetAsync(Guid assetId)
+        {
+            if (_assetRepository.TryGet(assetId, out var cachedAsset))
+            {
+                return cachedAsset;
+            }
+
+            var metadata = _metadataManager.GetMetadata(assetId) ?? throw new FileNotFoundException($"Asset metadata not found: {assetId}");
+            return await LoadAssetInternalAsync(metadata);
+        }
+
+        public async Task<IAsset> LoadAssetAsync(string assetPath)
+        {
+            var normalizedPath = AssetPathNormalizer.Normalize(assetPath);
+            if (_assetRepository.TryGet(normalizedPath, out var cachedAsset))
+            {
+                return cachedAsset;
+            }
+
+            var metadata = await _metadataManager.GetOrCreateMetadataAsync(normalizedPath);
+            return metadata == null
+                ? throw new FileNotFoundException($"Asset metadata not found: {assetPath}")
+                : await LoadAssetInternalAsync(metadata);
+        }
+
+        public async Task<T> LoadAssetAsync<T>(Guid assetId) where T : class, IAsset
+        {
+            var asset = await LoadAssetAsync(assetId);
+            return asset as T ?? throw new InvalidCastException($"Asset {assetId} is not of type {typeof(T).Name}");
+        }
+
+        public async Task<T> LoadAssetAsync<T>(string assetPath) where T : class, IAsset
+        {
+            var asset = await LoadAssetAsync(assetPath);
+            return asset as T ?? throw new InvalidCastException($"Asset {assetPath} is not of type {typeof(T).Name}");
+        }
+
+        public async Task LoadAssetDataAsync<T>(IAsset<T> asset) where T : class
+        {
+            await LoadAssetDataAsync(asset, typeof(T));
+        }
+        public async Task LoadAssetDataAsync(IAsset asset, Type dataType)
+        {
+            if (asset.IsDataLoaded) return;
+
+            var fullPath = GetFullPath(asset.Path);
             var assetLock = _assetLocks.GetOrAdd(fullPath, _ => new SemaphoreSlim(1, 1));
-            await assetLock.WaitAsync();
 
+            await assetLock.WaitAsync();
             try
             {
-                // Check cache first
-                if (_assetCache.TryGetValue<IAsset<T>>(path.ToString(), out var cachedAsset))
+                if (!asset.IsDataLoaded)
                 {
-                    return cachedAsset;
+                    var strategy = GetLoadStrategy(new FileInfo(fullPath).Length);
+                    await strategy.LoadDataAsync(asset, dataType, fullPath, _serializer);
                 }
-
-                var fileInfo = new FileInfo(fullPath);
-                IAsset asset;
-
-                // Use memory mapping for large files
-                if (fileInfo.Length > 1024 * 1024) // 1MB threshold
-                {
-                    asset = await LoadAssetWithMemoryMapping(fullPath);
-                }
-                else
-                {
-                    // Use optimized file streaming for small files
-                    using var stream = new FileStream(fullPath, FileMode.Open, FileAccess.Read,
-                        FileShare.Read, OptimalBufferSize, FileOptions.SequentialScan | FileOptions.Asynchronous);
-                    asset = await _serializer.DeserializeMetadataAsync(stream);
-                    stream.Position = 0;
-                    await LoadDataForAssetAsync(asset, stream);
-                }
-
-                RegisterAsset(asset);
-
-                // Add to cache with size-based expiration
-                var cacheEntryOptions = new MemoryCacheEntryOptions()
-                    .SetSize(((IAsset<T>)asset).GetData()?.GetHashCode() ?? 0)
-                    .SetSlidingExpiration(TimeSpan.FromMinutes(30));
-
-                _assetCache.Set(path.ToString(), asset, cacheEntryOptions);
-
-                return (IAsset<T>)asset;
             }
             finally
             {
@@ -606,85 +508,365 @@ namespace RockEngine.Core.Assets
             }
         }
 
-        private async Task<IAsset> LoadAssetWithMemoryMapping(string fullPath)
+        private async Task<IAsset> LoadAssetInternalAsync(AssetMetadata metadata)
         {
-            var fileInfo = new FileInfo(fullPath);
-            using var mmf = MemoryMappedFile.CreateFromFile(fullPath, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
-            using var stream = mmf.CreateViewStream(0, fileInfo.Length, MemoryMappedFileAccess.Read);
+            
+            var fullPath = GetFullPath(metadata.Path);
+            var assetLock = _assetLocks.GetOrAdd(fullPath, _ => new SemaphoreSlim(1, 1));
 
-            var asset = await _serializer.DeserializeMetadataAsync(stream);
-            stream.Position = 0;
-            await LoadDataForAssetAsync(asset, stream);
-            return asset;
+            await assetLock.WaitAsync();
+            try
+            {
+                // Check cache again after acquiring lock
+                if (_assetRepository.TryGet(metadata.ID, out var cachedAsset))
+                {
+                    return cachedAsset;
+                }
+
+                var strategy = GetLoadStrategy(metadata.FileSize);
+                var asset = await strategy.LoadAssetAsync(fullPath, metadata, _serializer);
+                _assetRepository.Add(asset);
+                return asset;
+            }
+            finally
+            {
+                assetLock.Release();
+            }
         }
 
-        private async Task<IAsset> LoadAssetWithOptimizationsAsync(AssetMetadata metadata)
+        private IAssetLoadStrategy GetLoadStrategy(long fileSize)
         {
-            var fullPath = GetFullPath(metadata.Path);
+            return _loadStrategies.FirstOrDefault(s => s.CanHandle(fileSize))
+                ?? _loadStrategies.Last(); // Use last as fallback
+        }
 
-            // Use memory mapping for large assets
-            if (metadata.FileSize > 1024 * 1024)
+        private string GetFullPath(AssetPath path)
+        {
+            if (!string.IsNullOrEmpty(_basePath))
             {
-                return await LoadAssetWithMemoryMapping(fullPath);
-            }
-            else
-            {
-                // Use pooled memory stream for small assets
-                var memoryStream = _memoryStreamPool.Get();
-                try
+                var combinedPath = Path.Combine(_basePath, path.ToString());
+                if (File.Exists(combinedPath))
                 {
-                    using var fileStream = new FileStream(fullPath, FileMode.Open, FileAccess.Read,
-                        FileShare.Read, OptimalBufferSize, FileOptions.SequentialScan);
-
-                    await fileStream.CopyToAsync(memoryStream);
-                    memoryStream.Position = 0;
-
-                    var asset = await _serializer.DeserializeMetadataAsync(memoryStream);
-                    memoryStream.Position = 0;
-                    await LoadDataForAssetAsync(asset, memoryStream);
-
-                    return asset;
-                }
-                finally
-                {
-                    memoryStream.SetLength(0); // Reset for reuse
-                    _memoryStreamPool.Return(memoryStream);
+                    return combinedPath;
                 }
             }
+           
+            if(File.Exists(path.FullPath))
+                return path.FullPath;
+            throw new InvalidOperationException($"Failed to find asset by path {path}");
+        }
+    }
+
+    // Utility classes
+    public static class AssetPathNormalizer
+    {
+        public static string Normalize(string path) => path.Replace('\\', '/').TrimEnd('/').ToLowerInvariant();
+    }
+
+    public static class AssetConstants
+    {
+        public const string ProjectExtension = ".rockproj";
+        public const string AssetExtension = ".asset";
+        public const string MetaExtension = ".meta";
+        public const int MetaFileBufferSize = 8192;
+        public const int OptimalBufferSize = 65536;
+        public const long MaxCacheSize = 1024 * 1024 * 128;
+    }
+
+    // Project management
+    public interface IProjectManager
+    {
+        ProjectAsset? CurrentProject { get; }
+        Task<ProjectAsset> CreateProjectAsync(string projectPath, string projectName);
+        Task<ProjectAsset> LoadProjectAsync(string projectFilePath);
+        void UnloadProject();
+        bool IsProjectLoaded { get; }
+    }
+
+    // Main AssetManager class (refactored)
+    public sealed class AssetManager : IDisposable, IProjectManager
+    {
+        private static readonly Logger _logger = LogManager.GetCurrentClassLogger();
+
+        private readonly MemoryCache _assetCache = new(new MemoryCacheOptions
+        {
+            SizeLimit = AssetConstants.MaxCacheSize,
+            CompactionPercentage = 0.25
+        });
+
+        private readonly ObjectPool<MemoryStream> _memoryStreamPool;
+        private readonly ObjectPool<byte[]> _bufferPool;
+        private readonly ConcurrentDictionary<string, SemaphoreSlim> _assetLocks = new(StringComparer.OrdinalIgnoreCase);
+        private readonly ConcurrentDictionary<Guid, Lazy<Task<IAsset>>> _lazyAssets = new();
+
+        private readonly IAssetSerializer _serializer;
+        private readonly IAssetRepository _assetRepository;
+        private readonly IAssetFactory _assetFactory;
+        private readonly IMetadataManager _metadataManager;
+        private readonly IAssetLoader _assetLoader;
+
+        private ProjectAsset? _currentProject;
+        private FileSystemWatcher? _fileWatcher;
+
+        public ProjectAsset? CurrentProject => _currentProject;
+        public bool IsProjectLoaded => _currentProject != null;
+
+        public string BasePath => _currentProject?.Path.RelativePath ?? string.Empty;
+        public event Action<Guid>? OnAssetRemoved;
+        public event Action<IAsset>? OnAssetRegistered;
+        public event Action? OnAssetsChanged;
+        public event Action<ProjectAsset>? OnProjectLoaded;
+        public event Action? OnProjectUnloaded;
+
+        public AssetManager(IAssetSerializer serializer, AssimpLoader assimpLoader)
+        {
+            _logger.Info("AssetManager initializing...");
+            _serializer = serializer;
+
+            // Initialize object pools
+            _memoryStreamPool = CreateMemoryStreamPool();
+            _bufferPool = CreateBufferPool();
+
+            // Initialize repository and factory
+            _assetRepository = new AssetRepository();
+            _assetFactory = new AssetFactory(assimpLoader, _assetRepository);
+
+            // Initialize metadata manager and loader (base path will be set when project is loaded)
+            _metadataManager = new MetadataManager(serializer);
+
+            var loadStrategies = new IAssetLoadStrategy[]
+            {
+                new MemoryMappedLoadStrategy(),
+                new StreamLoadStrategy(_memoryStreamPool)
+            };
+
+            _assetLoader = new AssetLoader(_metadataManager, _assetRepository, _serializer,
+                                         loadStrategies, _assetLocks);
+        }
+
+        private static ObjectPool<MemoryStream> CreateMemoryStreamPool() =>
+            new DefaultObjectPool<MemoryStream>(
+                new MemoryStreamPooledObjectPolicy(),
+                Environment.ProcessorCount);
+
+        private static ObjectPool<byte[]> CreateBufferPool() =>
+            new DefaultObjectPool<byte[]>(
+                new BufferPooledObjectPolicy(AssetConstants.OptimalBufferSize),
+                Environment.ProcessorCount * 4);
+
+        // Project management
+        public async Task<ProjectAsset> CreateProjectAsync(string projectPath, string projectName)
+        {
+            if (IsProjectLoaded)
+            {
+                UnloadProject();
+            }
+
+            var projectDir = Path.Combine(projectPath, projectName);
+            if (!Directory.Exists(projectDir))
+            {
+                Directory.CreateDirectory(projectDir);
+            }
+
+            var projectAssetPath = new AssetPath(projectDir, projectName, AssetConstants.ProjectExtension);
+            var project = _assetFactory.Create<ProjectAsset>(projectAssetPath, projectName);
+
+            await SetCurrentProjectAsync(project);
+            await SaveAsync(project); // Save the project file
+
+            return project;
+        }
+
+        public async Task<ProjectAsset> LoadProjectAsync(string projectFilePath)
+        {
+            if (IsProjectLoaded)
+            {
+                UnloadProject();
+            }
+
+            if (!File.Exists(projectFilePath))
+            {
+                throw new FileNotFoundException($"Project file not found: {projectFilePath}");
+            }
+
+            // Load project asset
+            var project = await _assetLoader.LoadAssetAsync<ProjectAsset>(projectFilePath);
+            await SetCurrentProjectAsync(project);
+
+            return project;
+        }
+
+        public void UnloadProject()
+        {
+            if (!IsProjectLoaded) return;
+
+            _logger.Info("Unloading project: {ProjectName}", _currentProject!.Name);
+
+            // Clear all asset references
+            _assetRepository.Clear();
+            _metadataManager.Clear();
+            _assetCache.Compact(100); // Clear entire cache
+            _lazyAssets.Clear();
+
+            // Dispose and clear asset locks
+            foreach (var lockObj in _assetLocks.Values)
+            {
+                lockObj.Dispose();
+            }
+            _assetLocks.Clear();
+
+            _fileWatcher?.Dispose();
+            _fileWatcher = null;
+
+            var oldProject = _currentProject;
+            _currentProject = null;
+
+            OnProjectUnloaded?.Invoke();
+            _logger.Info("Project unloaded: {ProjectName}", oldProject!.Name);
+        }
+
+        private async Task SetCurrentProjectAsync(ProjectAsset project)
+        {
+            _currentProject = project;
+            _assetLoader.SetBasePath(BasePath);
+
+            // Initialize file watcher for project directory
+            InitializeFileWatcher();
+
+            // Register project asset
+            RegisterAsset(project);
+
+            _logger.Info("Project loaded: {ProjectName} at {BasePath}", project.Name, BasePath);
+            OnProjectLoaded?.Invoke(project);
+            var files = Directory.EnumerateFiles(BasePath, "*.asset", SearchOption.AllDirectories);
+            foreach (var item in files)
+            {
+                await _metadataManager.GetOrCreateMetadataAsync(item);
+            }
+        }
+
+        private void InitializeFileWatcher()
+        {
+            if (string.IsNullOrEmpty(BasePath) || !Directory.Exists(BasePath)) return;
+
+            _fileWatcher = new FileSystemWatcher(BasePath)
+            {
+                IncludeSubdirectories = true,
+                NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.CreationTime
+            };
+
+            _fileWatcher.Changed += OnFileChanged;
+            _fileWatcher.Created += OnFileCreated;
+            _fileWatcher.Deleted += OnFileDeleted;
+            _fileWatcher.Renamed += OnFileRenamed;
+
+            _fileWatcher.EnableRaisingEvents = true;
+        }
+
+        private void OnFileChanged(object sender, FileSystemEventArgs e)
+        {
+            // Handle file changes
+        }
+
+        private void OnFileCreated(object sender, FileSystemEventArgs e)
+        {
+            // Handle file creation
+        }
+
+        private void OnFileDeleted(object sender, FileSystemEventArgs e)
+        {
+            // Handle file deletion
+        }
+
+        private void OnFileRenamed(object sender, RenamedEventArgs e)
+        {
+            // Handle file renaming
+        }
+
+        // Core asset loading methods with project validation
+        public async Task<T?> GetAssetAsync<T>(Guid assetId) where T : class, IAsset
+        {
+            EnsureProjectLoaded();
+            if (_assetRepository.TryGet(assetId, out var asset) && asset is T typedAsset)
+            {
+                if (!typedAsset.IsDataLoaded)
+                {
+                    await _assetLoader.LoadAssetDataAsync(typedAsset, typedAsset.GetDataType());
+                }
+                return typedAsset;
+            }
+
+            return await _assetLoader.LoadAssetAsync<T>(assetId);
+        }
+
+        public async Task<T?> LoadAssetAsync<T>(string assetPath) where T : class, IAsset
+        {
+            EnsureProjectLoaded();
+            return await _assetLoader.LoadAssetAsync<T>(assetPath);
+        }
+
+        public async Task LoadAssetDataAsync(IAsset asset)
+        {
+            EnsureProjectLoaded();
+            await _assetLoader.LoadAssetDataAsync(asset, asset.GetDataType());
+        }
+
+        public async Task<IAsset<T>> LoadAsync<T>(AssetPath path) where T : class
+        {
+            EnsureProjectLoaded();
+            var pathKey = AssetPathNormalizer.Normalize(path.ToString());
+
+            if (_assetRepository.TryGet(pathKey, out var existingAsset) && existingAsset is IAsset<T> typedAsset)
+            {
+                if (!typedAsset.IsDataLoaded)
+                {
+                    await _assetLoader.LoadAssetDataAsync(typedAsset);
+                }
+                return typedAsset;
+            }
+
+            return await _assetLoader.LoadAssetAsync<IAsset<T>>(pathKey);
         }
 
         public async Task SaveAsync(IAsset asset)
         {
+            EnsureProjectLoaded();
             asset.BeforeSaving();
-            await SaveAsync(asset, GetFullPath(asset.Path));
+            if (asset is MeshAsset mesh)
+            {
+
+            }
+            await SaveAssetToDiskAsync(asset);
+            
             asset.AfterSaving();
-            await SaveMetadataAsync(asset);
+            await _metadataManager.SaveMetadataAsync(asset);
 
-            // Update cache
-            var cacheEntryOptions = new MemoryCacheEntryOptions()
-                .SetSize(asset.GetData()?.GetHashCode() ?? 0)
-                .SetSlidingExpiration(TimeSpan.FromMinutes(30));
-
-            _assetCache.Set(asset.Path.ToString(), asset, cacheEntryOptions);
+            UpdateCache(asset);
         }
 
-        private async Task SaveAsync(IAsset asset, string fullPath)
+        private async Task SaveAssetToDiskAsync(IAsset asset)
         {
-            var assetLock = _assetLocks.GetOrAdd(fullPath, _ => new SemaphoreSlim(1, 1));
-            await assetLock.WaitAsync();
+            if (!asset.Path.IsValid)
+            {
+                _logger.Warn("Failed to save asset, because of it's path:{asset.ID}", asset.ID);
+                //return;
+            }
 
+            var fullPath = GetFullPath(asset.Path);
+            var assetLock = _assetLocks.GetOrAdd(fullPath, _ => new SemaphoreSlim(1, 1));
+
+            await assetLock.WaitAsync();
             try
             {
                 asset.UpdateModified();
                 var directory = Path.GetDirectoryName(fullPath);
-                if (!string.IsNullOrEmpty(directory))
+                if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
                 {
                     Directory.CreateDirectory(directory);
                 }
 
-                // Use optimized file writing with write-through caching
                 using var stream = new FileStream(fullPath, FileMode.Create, FileAccess.Write,
-                    FileShare.None, OptimalBufferSize, FileOptions.WriteThrough | FileOptions.Asynchronous);
+                    FileShare.None, AssetConstants.OptimalBufferSize, FileOptions.WriteThrough | FileOptions.Asynchronous);
                 await _serializer.SerializeAsync(asset, stream);
             }
             finally
@@ -693,52 +875,100 @@ namespace RockEngine.Core.Assets
             }
         }
 
-        private async Task LoadDataForAssetAsync(IAsset asset, Stream stream)
+        private void UpdateCache(IAsset asset)
         {
-            if (asset.IsDataLoaded)
-            {
-                return;
-            }
-
-            var data = await _serializer.DeserializeDataAsync(stream, asset.GetDataType());
-            asset.SetData(data);
-        }
-
-        public void RegisterAsset(IAsset asset)
-        {
-            var metadata = new AssetMetadata(asset);
-            var pathKey = NormalizePath(asset.Path.ToString());
-            if (!string.IsNullOrEmpty(pathKey))
-            {
-                _metadataByPath[pathKey] = metadata;
-                _assetsByPath[pathKey] = asset;
-            }
-
-            _metadataById[asset.ID] = metadata;
-            _assetsById[asset.ID] = asset;
-
-            // Add to cache
             var cacheEntryOptions = new MemoryCacheEntryOptions()
                 .SetSize(asset.GetData()?.GetHashCode() ?? 0)
                 .SetSlidingExpiration(TimeSpan.FromMinutes(30));
 
+            _assetCache.Set(asset.Path.ToString(), asset, cacheEntryOptions);
             _assetCache.Set(asset.ID.ToString(), asset, cacheEntryOptions);
-            _assetCache.Set(pathKey, asset, cacheEntryOptions);
+        }
 
+        public void RegisterAsset(IAsset asset)
+        {
+            EnsureProjectLoaded();
+            try
+            {
+                _assetRepository.Add(asset);
+            }
+            catch (InvalidOperationException _)
+            {
+
+            }
+            UpdateCache(asset);
             OnAssetRegistered?.Invoke(asset);
             OnAssetsChanged?.Invoke();
         }
 
+        public T Create<T>(AssetPath path, string? name = null) where T : IAsset
+        {
+            EnsureProjectLoaded();
+            if (typeof(T) == typeof(ProjectAsset))
+            {
+                throw new InvalidOperationException($"For project creation use {nameof(CreateProjectAsync)} method");
+            }
+            return _assetFactory.Create<T>(path, name);
+        }
+
+        public async Task<ModelAsset> LoadModelAsync(string filePath, string? modelName = null, string parentPath = "Models")
+        {
+            EnsureProjectLoaded();
+            var model = await _assetFactory.CreateModelFromFileAsync(filePath, modelName, parentPath);
+
+            // Save all created assets
+            var saveTasks = new List<Task>();
+            foreach (var asset in _assetRepository.GetAll())
+            {
+                saveTasks.Add(SaveAsync(asset));
+            }
+
+            await Task.WhenAll(saveTasks);
+            return model;
+        }
+
+        private string GetFullPath(AssetPath path)
+        {
+            EnsureProjectLoaded();
+            return Path.Combine(BasePath, path.ToString());
+        }
+
+        private void EnsureProjectLoaded()
+        {
+            if (!IsProjectLoaded)
+            {
+                throw new InvalidOperationException("No project is currently loaded. Please load or create a project first.");
+            }
+        }
+
+        public void Dispose()
+        {
+            UnloadProject();
+            _assetCache.Dispose();
+            _fileWatcher?.Dispose();
+
+            foreach (var lockObj in _assetLocks.Values)
+            {
+                lockObj.Dispose();
+            }
+        }
+
+        // Maintain original methods for compatibility
         public bool TryGetAsset<T>(Guid assetID, out T asset) where T : class, IAsset
         {
-            // Check cache first
+            if (!IsProjectLoaded)
+            {
+                asset = null!;
+                return false;
+            }
+
             if (_assetCache.TryGetValue<T>(assetID.ToString(), out var cachedAsset))
             {
                 asset = cachedAsset;
                 return true;
             }
 
-            if (_assetsById.TryGetValue(assetID, out var foundAsset) && foundAsset is T typedAsset)
+            if (_assetRepository.TryGet(assetID, out var foundAsset) && foundAsset is T typedAsset)
             {
                 asset = typedAsset;
                 return true;
@@ -750,16 +980,21 @@ namespace RockEngine.Core.Assets
 
         public bool TryGetAsset<T>(string pathKey, out T asset) where T : class, IAsset
         {
-            var normalizedPath = NormalizePath(pathKey);
+            if (!IsProjectLoaded)
+            {
+                asset = null!;
+                return false;
+            }
 
-            // Check cache first
+            var normalizedPath = AssetPathNormalizer.Normalize(pathKey);
+
             if (_assetCache.TryGetValue<T>(normalizedPath, out var cachedAsset))
             {
                 asset = cachedAsset;
                 return true;
             }
 
-            if (_assetsByPath.TryGetValue(normalizedPath, out var foundAsset) && foundAsset is T typedAsset)
+            if (_assetRepository.TryGet(normalizedPath, out var foundAsset) && foundAsset is T typedAsset)
             {
                 asset = typedAsset;
                 return true;
@@ -769,381 +1004,24 @@ namespace RockEngine.Core.Assets
             return false;
         }
 
-        public async Task<T?> GetAssetAsync<T>(Guid assetId) where T : class, IAsset
+        public T? GetAsset<T>(Guid assetId) where T : class, IAsset
         {
-            if (TryGetAsset<T>(assetId, out var asset))
+            if (!IsProjectLoaded) return null;
+
+            if (_assetRepository.TryGet(assetId, out var cachedAsset))
             {
-                return asset;
-            }
-
-            if (!_metadataById.TryGetValue(assetId, out var metadata))
-            {
-                throw new FileNotFoundException($"Asset not found: {assetId}");
-            }
-
-            var lazyTask = _lazyAssets.GetOrAdd(assetId, id => new Lazy<Task<IAsset>>(
-                () => LoadAssetWithOptimizationsAsync(metadata),
-                LazyThreadSafetyMode.ExecutionAndPublication));
-
-            var result = await lazyTask.Value;
-            return result as T;
-        }
-
-        private string GetFullPath(AssetPath assetPath)
-        {
-            if (Path.IsPathRooted(assetPath.ToString()))
-            {
-                return assetPath.ToString();
-            }
-
-            return Path.Combine(_basePath, assetPath.ToString());
-        }
-
-        private string GetMetaPath(string assetPath) => assetPath + MetaExtension;
-
-        private static string NormalizePath(string path)
-        {
-            return path.Replace('\\', '/').TrimEnd('/').ToLowerInvariant();
-        }
-
-        public void Dispose()
-        {
-            _prefetchCancellation.Cancel();
-            _prefetchWorker?.Wait(5000);
-
-            foreach (var lockObj in _assetLocks.Values)
-            {
-                lockObj.Dispose();
-            }
-
-            foreach (var (mmf, accessor) in _mappedFiles.Values)
-            {
-                accessor.Dispose();
-                mmf.Dispose();
-            }
-
-            _assetCache.Dispose();
-            _fileWatcher?.Dispose();
-            _prefetchCancellation.Dispose();
-        }
-
-        public async Task<IAsset<TData>> LoadAsync<TAsset, TData>(AssetPath path) where TAsset : IAsset<TData> where TData : class
-        {
-            var pathKey = NormalizePath(path.ToString());
-            if (_assetsByPath.TryGetValue(pathKey, out var asset) && asset is IAsset<TData> typedAsset)
-            {
-                return typedAsset;
-            }
-            return await LoadAssetFromDisk<TData>(path);
-        }
-
-        public async Task<IAsset<T>> LoadAsync<T>(AssetPath path) where T : class
-        {
-            var pathKey = NormalizePath(path.ToString());
-            if (_assetsByPath.TryGetValue(pathKey, out var asset) && asset is IAsset<T> typedAsset)
-            {
-                return typedAsset;
-            }
-            return await LoadAssetFromDisk<T>(path);
-        }
-
-        public async Task SaveProjectAsync(ProjectAsset project) => await SaveAsync(project);
-
-        public bool Exists(AssetPath path) => _metadataByPath.ContainsKey(NormalizePath(path.ToString()));
-
-        public T? GetAsset<T>(Guid assetID) where T : class, IAsset
-        {
-            return GetAsset(assetID) as T;
-        }
-        public IAsset? GetAsset(Guid assetID)
-        {
-            return _assetsById.TryGetValue(assetID, out var asset) ? asset: null;
-        }
-
-        public async Task<T?> LoadAssetByIdAsync<T>(Guid assetId, CancellationToken ct = default) where T : class, IAsset
-        {
-            if (TryGetAsset(assetId, out T? asset))
-            {
-                return asset;
-            }
-
-            if (!_metadataById.TryGetValue(assetId, out var metadata))
-            {
-                _logger.Warn($"Metadata not found for asset ID: {assetId}");
-                return null;
-            }
-
-            try
-            {
-                return (T?)await LoadAssetWithOptimizationsAsync(metadata);
-            }
-            catch (Exception ex)
-            {
-                _logger.Error(ex, $"Failed to load asset with ID {assetId}");
-                throw;
-            }
-        }
-
-        public AssetMetadataInfo? GetMetadataByPath(string assetPath)
-        {
-            var normalizedPath = NormalizePath(assetPath);
-            if (_metadataByPath.TryGetValue(normalizedPath, out var metadata))
-            {
-                return new AssetMetadataInfo(metadata.ID, metadata.Name, metadata.AssetType.Name);
+                return (T)cachedAsset;
             }
             return null;
-        }
-
-        public AssetMetadataInfo? GetMetadataById(Guid assetId)
-        {
-            if (_metadataById.TryGetValue(assetId, out var metadata))
-            {
-                return new AssetMetadataInfo(metadata.ID, metadata.Name, metadata.AssetType.Name);
-            }
-            return null;
-        }
-
-        public async Task<bool> RemoveAssetAsync(Guid assetId, bool removeFile = false)
-        {
-            if (!_metadataById.TryGetValue(assetId, out var metadata))
-            {
-                _logger.Warn($"Attempted to remove non-existent asset with ID: {assetId}");
-                return false;
-            }
-
-            return await RemoveAssetInternalAsync(metadata, removeFile);
-        }
-
-        public async Task<bool> RenameAssetAsync(Guid assetId, string newName)
-        {
-            if (!_metadataById.TryGetValue(assetId, out var metadata))
-            {
-                return false;
-            }
-
-            if (_assetsById.TryGetValue(assetId, out var asset))
-            {
-                asset.Name = newName;
-            }
-
-            var newPath = new AssetPath(metadata.Path.Folder, newName, metadata.Path.Extension);
-            return await MoveAssetInternalAsync(metadata, newPath);
-        }
-
-        private async Task<bool> MoveAssetInternalAsync(AssetMetadata metadata, AssetPath newPath)
-        {
-            var newNormalizedPath = NormalizePath(newPath.ToString());
-            var oldNormalizedPath = NormalizePath(metadata.Path.ToString());
-
-            if (oldNormalizedPath.Equals(newNormalizedPath, StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-
-            if (_metadataByPath.ContainsKey(newNormalizedPath))
-            {
-                return false;
-            }
-
-            var oldFullPath = GetFullPath(metadata.Path);
-            var newFullPath = GetFullPath(newPath);
-
-            var oldLock = _assetLocks.GetOrAdd(oldFullPath, _ => new SemaphoreSlim(1, 1));
-            var newLock = _assetLocks.GetOrAdd(newFullPath, _ => new SemaphoreSlim(1, 1));
-
-            await oldLock.WaitAsync();
-            await newLock.WaitAsync();
-
-            try
-            {
-                if (File.Exists(oldFullPath))
-                {
-                    Directory.CreateDirectory(Path.GetDirectoryName(newFullPath));
-                    File.Move(oldFullPath, newFullPath);
-                }
-
-                var oldMetaPath = GetMetaPath(oldFullPath);
-                if (File.Exists(oldMetaPath))
-                {
-                    File.Delete(oldMetaPath);
-                }
-
-                metadata.Path = newPath;
-                metadata.LastModified = DateTime.UtcNow;
-
-                if (_assetsById.TryGetValue(metadata.ID, out var asset))
-                {
-                    asset.Path = newPath;
-                }
-
-                _metadataByPath.TryRemove(oldNormalizedPath, out _);
-                _metadataByPath[newNormalizedPath] = metadata;
-
-                _assetsByPath.TryRemove(oldNormalizedPath, out _);
-                if (_assetsById.TryGetValue(metadata.ID, out var loadedAsset))
-                {
-                    _assetsByPath[newNormalizedPath] = loadedAsset;
-                }
-
-                // Update cache
-                _assetCache.Remove(oldNormalizedPath);
-                _assetCache.Remove(metadata.ID.ToString());
-
-                var cacheEntryOptions = new MemoryCacheEntryOptions()
-                    .SetSize(loadedAsset?.GetData()?.GetHashCode() ?? 0)
-                    .SetSlidingExpiration(TimeSpan.FromMinutes(30));
-
-                _assetCache.Set(newNormalizedPath, loadedAsset, cacheEntryOptions);
-                _assetCache.Set(metadata.ID.ToString(), loadedAsset, cacheEntryOptions);
-
-                await SaveMetadataToDiskAsync(metadata);
-                return true;
-            }
-            catch (Exception ex)
-            {
-                _logger.Error(ex, $"Failed to move asset from {oldNormalizedPath} to {newNormalizedPath}");
-                return false;
-            }
-            finally
-            {
-                oldLock.Release();
-                newLock.Release();
-            }
-        }
-
-        private async Task SaveMetadataToDiskAsync(AssetMetadata metadata)
-        {
-            var metaPath = GetMetaPath(GetFullPath(metadata.Path));
-            var directory = Path.GetDirectoryName(metaPath);
-            if (!string.IsNullOrEmpty(directory))
-            {
-                Directory.CreateDirectory(directory);
-            }
-
-            using var stream = new FileStream(metaPath, FileMode.Create, FileAccess.Write, FileShare.None);
-            var metadataBytes = metadata.ToBytes();
-            await stream.WriteAsync(metadataBytes);
-        }
-
-        public async Task<bool> MoveAssetAsync(string currentAssetPath, AssetPath newPath)
-        {
-            var normalizedPath = NormalizePath(currentAssetPath);
-            if (!_metadataByPath.TryGetValue(normalizedPath, out var metadata))
-            {
-                return false;
-            }
-
-            return await MoveAssetInternalAsync(metadata, newPath);
-        }
-
-        public async Task<bool> MoveAssetAsync(Guid assetId, AssetPath newPath)
-        {
-            if (!_metadataById.TryGetValue(assetId, out var metadata))
-            {
-                return false;
-            }
-
-            return await MoveAssetInternalAsync(metadata, newPath);
-        }
-
-        public async Task<bool> RemoveAssetAsync(string assetPath, bool removeFile = false)
-        {
-            var normalizedPath = NormalizePath(assetPath);
-            if (!_metadataByPath.TryGetValue(normalizedPath, out var metadata))
-            {
-                _logger.Warn($"Attempted to remove non-existent asset with path: {assetPath}");
-                return false;
-            }
-
-            return await RemoveAssetInternalAsync(metadata, removeFile);
-        }
-
-        private async Task<bool> RemoveAssetInternalAsync(AssetMetadata metadata, bool removeFile)
-        {
-            try
-            {
-                _metadataById.TryRemove(metadata.ID, out _);
-                _metadataByPath.TryRemove(NormalizePath(metadata.Path.ToString()), out _);
-                _assetsById.TryRemove(metadata.ID, out _);
-                _assetsByPath.TryRemove(NormalizePath(metadata.Path.ToString()), out _);
-                _lazyAssets.TryRemove(metadata.ID, out _);
-
-                // Remove from cache
-                _assetCache.Remove(metadata.ID.ToString());
-                _assetCache.Remove(NormalizePath(metadata.Path.ToString()));
-
-                if (removeFile)
-                {
-                    var fullPath = GetFullPath(metadata.Path);
-                    var metaPath = GetMetaPath(fullPath);
-
-                    if (File.Exists(fullPath))
-                    {
-                        File.Delete(fullPath);
-                    }
-
-                    if (File.Exists(metaPath))
-                    {
-                        File.Delete(metaPath);
-                    }
-                }
-
-                OnAssetRemoved?.Invoke(metadata.ID);
-                OnAssetsChanged?.Invoke();
-
-                _logger.Info($"Removed asset: {metadata.Name} (ID: {metadata.ID})");
-                return true;
-            }
-            catch (Exception ex)
-            {
-                _logger.Error(ex, $"Failed to remove asset: {metadata.Name} (ID: {metadata.ID})");
-                return false;
-            }
-        }
-
-        public void ClearCache()
-        {
-            _assetsById.Clear();
-            _assetsByPath.Clear();
-            _assetCache.Clear();
-            _lazyAssets.Clear();
-            _logger.Info("Asset cache cleared");
-        }
-
-        public void RemoveFromCache(Guid assetId)
-        {
-            if (_metadataById.TryGetValue(assetId, out var metadata))
-            {
-                _assetsById.TryRemove(assetId, out _);
-                _assetsByPath.TryRemove(NormalizePath(metadata.Path.ToString()), out _);
-                _assetCache.Remove(assetId.ToString());
-                _assetCache.Remove(NormalizePath(metadata.Path.ToString()));
-                _lazyAssets.TryRemove(assetId, out _);
-                _logger.Debug($"Removed asset {assetId} from cache");
-            }
-        }
-
-        public void RemoveFromCache(string assetPath)
-        {
-            var normalizedPath = NormalizePath(assetPath);
-            if (_metadataByPath.TryGetValue(normalizedPath, out var metadata))
-            {
-                RemoveFromCache(metadata.ID);
-            }
         }
     }
 
     // Supporting classes
     public record struct AssetLoadRequest(Guid AssetId);
 
-    // Object pool policies
     public class MemoryStreamPooledObjectPolicy : IPooledObjectPolicy<MemoryStream>
     {
-        public MemoryStream Create()
-        {
-            return new MemoryStream();
-        }
-
+        public MemoryStream Create() => new MemoryStream();
         public bool Return(MemoryStream obj)
         {
             obj.SetLength(0);
@@ -1154,21 +1032,85 @@ namespace RockEngine.Core.Assets
     public class BufferPooledObjectPolicy : IPooledObjectPolicy<byte[]>
     {
         private readonly int _bufferSize;
-
-        public BufferPooledObjectPolicy(int bufferSize)
-        {
-            _bufferSize = bufferSize;
-        }
-
-        public byte[] Create()
-        {
-            return new byte[_bufferSize];
-        }
-
+        public BufferPooledObjectPolicy(int bufferSize) => _bufferSize = bufferSize;
+        public byte[] Create() => new byte[_bufferSize];
         public bool Return(byte[] obj)
         {
             Array.Clear(obj, 0, obj.Length);
             return true;
+        }
+    }
+
+    // AssetMetadata class (maintained from original)
+    public sealed class AssetMetadata
+    {
+        public Guid ID { get; set; }
+        public string Name { get; set; }
+        public AssetPath Path { get; set; }
+        public Type AssetType { get; set; }
+        public DateTime LastModified { get; set; }
+        public long FileSize { get; set; }
+        public int AccessCount { get; set; }
+
+        public AssetMetadata() { }
+
+        public AssetMetadata(IAsset asset)
+        {
+            ID = asset.ID;
+            Name = asset.Name;
+            Path = asset.Path;
+            AssetType = asset.GetType();
+            LastModified = DateTime.UtcNow;
+        }
+
+        public byte[] ToBytes()
+        {
+            using var ms = new MemoryStream();
+            using var writer = new BinaryWriter(ms, Encoding.UTF8);
+
+            writer.Write(ID.ToByteArray());
+            writer.Write(Name);
+            writer.Write(Path.ToString());
+            writer.Write(AssetType.AssemblyQualifiedName);
+            writer.Write(LastModified.ToBinary());
+            writer.Write(FileSize);
+
+            return ms.ToArray();
+        }
+
+        public static AssetMetadata FromBytes(byte[] data)
+        {
+            using var ms = new MemoryStream(data);
+            using var reader = new BinaryReader(ms, Encoding.UTF8);
+
+            try
+            {
+                var id = new Guid(reader.ReadBytes(16));
+                var name = reader.ReadString();
+                var pathStr = reader.ReadString();
+                var assetType = Type.GetType(reader.ReadString());
+                var lastModified = DateTime.FromBinary(reader.ReadInt64());
+
+                long fileSize = 0;
+                if (ms.Position < ms.Length)
+                {
+                    fileSize = reader.ReadInt64();
+                }
+
+                return new AssetMetadata
+                {
+                    ID = id,
+                    Name = name,
+                    Path = new AssetPath(pathStr),
+                    AssetType = assetType,
+                    LastModified = lastModified,
+                    FileSize = fileSize
+                };
+            }
+            catch (EndOfStreamException ex)
+            {
+                throw new InvalidDataException("Meta file data is incomplete", ex);
+            }
         }
     }
 }

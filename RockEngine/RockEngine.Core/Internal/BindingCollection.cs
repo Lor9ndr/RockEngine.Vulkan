@@ -20,11 +20,12 @@ namespace RockEngine.Core.Internal
         {
             if (!_setBindings.TryGetValue(binding.SetLocation, out var setBindings))
             {
+                // Only create PerSetBindings when we actually have a binding to add
                 setBindings = new PerSetBindings(binding.SetLocation);
                 _setBindings[binding.SetLocation] = setBindings;
             }
 
-             setBindings.Add(binding);
+            setBindings.Add(binding);
 
             if (binding is UniformBufferBinding ubo && ubo.Buffer.IsDynamic)
             {
@@ -32,31 +33,33 @@ namespace RockEngine.Core.Internal
             }
         }
 
+
         public bool Remove(ResourceBinding binding)
         {
-            if (binding is null)
-            {
-                return false;
-            }
+            if (binding is null) return false;
+
             if (!_setBindings.TryGetValue(binding.SetLocation, out var setBindings))
-            {
                 return false;
-            }
 
             var removed = setBindings.Remove(binding);
 
-            if (removed && binding is UniformBufferBinding ubo && ubo.Buffer.IsDynamic)
+            if (removed)
             {
-                _dynamicOffsets.Remove((uint)ubo.Offset);
-            }
+                if (binding is UniformBufferBinding ubo && ubo.Buffer.IsDynamic)
+                {
+                    _dynamicOffsets.Remove((uint)ubo.Offset);
+                }
 
-            if (setBindings.Count == 0)
-            {
-                _setBindings.Remove(binding.SetLocation);
+                // Remove the entire PerSetBindings if it's now empty
+                if (setBindings.Count == 0)
+                {
+                    _setBindings.Remove(binding.SetLocation);
+                }
             }
 
             return removed;
         }
+
         public Enumerator GetEnumerator() => new Enumerator(_setBindings);
 
         IEnumerator<(uint Set, PerSetBindings)> IEnumerable<(uint Set, PerSetBindings)>.GetEnumerator()

@@ -1,4 +1,7 @@
-﻿using RockEngine.Core.Rendering.Buffers;
+﻿using NLog;
+
+using RockEngine.Core.Rendering.Buffers;
+using RockEngine.Core.Rendering.Materials;
 using RockEngine.Core.Rendering.ResourceBindings;
 using RockEngine.Vulkan;
 
@@ -8,10 +11,6 @@ using System.Numerics;
 
 namespace RockEngine.Core.Rendering.Managers
 {
-    /// <summary>
-    /// Manages transformation matrices storage and updates for Vulkan rendering
-    /// Optimized to only update GPU buffers when changes occur
-    /// </summary>
     public sealed class TransformManager : IDisposable
     {
         public const int INITIAL_CAPACITY = 10_000;
@@ -30,6 +29,12 @@ namespace RockEngine.Core.Rendering.Managers
         private readonly HashSet<int> _activeIndices = new HashSet<int>();
         private readonly Dictionary<int, int> _versionTracker = new Dictionary<int, int>();
 
+        // NEW: Track mesh groups for consecutive allocation
+        private readonly Dictionary<(Material Material, IMesh Mesh), List<int>> _meshGroupIndices = new Dictionary<(Material, IMesh), List<int>>();
+        private readonly Dictionary<int, (Material Material, IMesh Mesh)> _indexToMeshGroup = new Dictionary<int, (Material, IMesh)>();
+
+        private static readonly Logger _logger = LogManager.GetCurrentClassLogger();
+
         public TransformManager(VulkanContext context, uint maxFramesInFlight)
         {
             _context = context;
@@ -37,7 +42,6 @@ namespace RockEngine.Core.Rendering.Managers
             _transformBindings = new StorageBufferBinding<Matrix4x4>[maxFramesInFlight];
             _frameVersions = new int[maxFramesInFlight];
 
-            // Initialize buffers for each frame context
             for (int i = 0; i < maxFramesInFlight; i++)
             {
                 _transformBuffers[i] = new StorageBuffer<Matrix4x4>(context, INITIAL_CAPACITY);
@@ -50,19 +54,18 @@ namespace RockEngine.Core.Rendering.Managers
         }
 
         /// <summary>
-        /// Adds multiple transforms and marks data as dirty
+        /// NEW: Allocate transform indices that are consecutive for the same mesh group
         /// </summary>
-        public void AddTransforms(IEnumerable<Matrix4x4> transforms)
+        public int AllocateTransformForMesh(Matrix4x4 transform, Material material, IMesh mesh)
         {
-            _transforms.AddRange(transforms);
-            _globalVersion++;
-        }
+            var groupKey = (material, mesh);
 
-        /// <summary>
-        /// Adds single transform and returns its index
-        /// </summary>
-        public int AddTransform(Matrix4x4 transform)
-        {
+            if (!_meshGroupIndices.TryGetValue(groupKey, out var indices))
+            {
+                indices = new List<int>();
+                _meshGroupIndices[groupKey] = indices;
+            }
+
             int index;
 
             // Try to reuse free indices first
@@ -84,10 +87,19 @@ namespace RockEngine.Core.Rendering.Managers
 
             _activeIndices.Add(index);
             _versionTracker[index] = _globalVersion;
+            indices.Add(index);
+            _indexToMeshGroup[index] = groupKey;
+
             _globalVersion++;
+
+            // Sort indices to maintain consecutive ordering where possible
+            indices.Sort();
+
+            _logger.Debug($"Allocated transform index {index} for mesh {mesh.ID} with material {material.Name}");
 
             return index;
         }
+
         /// <summary>
         /// Removes a transform and makes its index available for reuse
         /// </summary>
@@ -95,16 +107,59 @@ namespace RockEngine.Core.Rendering.Managers
         {
             if (index < 0 || index >= _transforms.Count || !_activeIndices.Contains(index))
             {
-                return; // Already removed or invalid
+                return;
             }
 
             _activeIndices.Remove(index);
             _freeIndices.Enqueue(index);
             _versionTracker.Remove(index);
 
-            _transforms[index] = Matrix4x4.Identity;
+            // Remove from mesh group tracking
+            if (_indexToMeshGroup.TryGetValue(index, out var groupKey))
+            {
+                if (_meshGroupIndices.TryGetValue(groupKey, out var indices))
+                {
+                    indices.Remove(index);
+                    if (indices.Count == 0)
+                    {
+                        _meshGroupIndices.Remove(groupKey);
+                    }
+                }
+                _indexToMeshGroup.Remove(index);
+            }
 
+            _transforms[index] = Matrix4x4.Identity;
             _globalVersion++;
+        }
+
+        /// <summary>
+        /// Gets consecutive transform indices for a mesh group
+        /// </summary>
+        public List<int> GetConsecutiveIndicesForMeshGroup(Material material, IMesh mesh)
+        {
+            var groupKey = (material, mesh);
+            if (_meshGroupIndices.TryGetValue(groupKey, out var indices))
+            {
+                // Return sorted indices (they should already be sorted, but ensure it)
+                return indices.OrderBy(x => x).ToList();
+            }
+            return new List<int>();
+        }
+
+        /// <summary>
+        /// Checks if transform indices for a mesh group are consecutive
+        /// </summary>
+        public bool AreMeshGroupIndicesConsecutive(Material material, IMesh mesh)
+        {
+            var indices = GetConsecutiveIndicesForMeshGroup(material, mesh);
+            if (indices.Count <= 1) return true;
+
+            for (int i = 1; i < indices.Count; i++)
+            {
+                if (indices[i] != indices[i - 1] + 1)
+                    return false;
+            }
+            return true;
         }
 
         /// <summary>
@@ -114,13 +169,14 @@ namespace RockEngine.Core.Rendering.Managers
         {
             if (index < 0 || index >= _transforms.Count || !_activeIndices.Contains(index))
             {
-                return; // Invalid or removed index
+                return;
             }
 
             _transforms[index] = newTransform;
             _versionTracker[index] = _globalVersion;
             _globalVersion++;
         }
+
         /// <summary>
         /// Gets only the active transforms for buffer updates
         /// </summary>
@@ -133,7 +189,6 @@ namespace RockEngine.Core.Rendering.Managers
             }
             return activeTransforms;
         }
-
 
         /// <summary>
         /// Updates GPU buffers only if changes exist for current frame
@@ -150,12 +205,11 @@ namespace RockEngine.Core.Rendering.Managers
             var activeTransforms = GetActiveTransforms();
 
             var batch = _context.GraphicsSubmitContext.CreateBatch();
-            // Ensure buffer is large enough
+
             if (buffer.Capacity < (ulong)activeTransforms.Count)
             {
-                buffer.Resize((ulong)Math.Max(activeTransforms.Count * 2, INITIAL_CAPACITY),batch);
+                buffer.Resize((ulong)Math.Max(activeTransforms.Count * 2, INITIAL_CAPACITY), batch);
             }
-
 
             // Barrier before update
             var preBarrier = new BufferMemoryBarrier
@@ -204,7 +258,6 @@ namespace RockEngine.Core.Rendering.Managers
         {
             return index >= 0 && index < _transforms.Count && _activeIndices.Contains(index);
         }
-
 
         /// <summary>
         /// Gets binding information for current frame

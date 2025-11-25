@@ -332,10 +332,7 @@ namespace RockEngine.Core.Rendering.Texturing
                 graphicsBatch.AddSignalSemaphore(graphicsComplete);
 
                 // Submit graphics operations
-                using (var graphicsOp = context.GraphicsSubmitContext.FlushSingle(graphicsBatch, VkFence.CreateNotSignaled(context)))
-                {
-                    graphicsOp.Wait();
-                }
+                context.GraphicsSubmitContext.FlushSingle(graphicsBatch, VkFence.CreateNotSignaled(context)).Wait();
 
                 // Create sampler
                 var sampler = CreateSampler(context, mipLevels);

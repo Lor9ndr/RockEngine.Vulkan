@@ -13,15 +13,15 @@ namespace RockEngine.Core.ECS.Components
     {
         private static readonly Logger _logger = LogManager.GetCurrentClassLogger();
 
-        public MeshProvider _meshProvider
+        public MeshProvider MeshProvider
         {
-            get => m_meshProvider;
-            set => SetProviders(value, _materialProvider);
+            get => _meshProvider;
+            set => SetProviders(value, MaterialProvider);
         }
-        public MaterialProvider _materialProvider
+        public MaterialProvider MaterialProvider
         {
-            get => m_materialProvider;
-            set => SetProviders(m_meshProvider, value);
+            get => _materialProvider;
+            set => SetProviders(_meshProvider, value);
         }
 
         [SerializeIgnore]
@@ -39,12 +39,14 @@ namespace RockEngine.Core.ECS.Components
         [SerializeIgnore]
         public uint VerticesCount => Mesh?.VerticesCount ?? 0;
 
+        public bool CastShadows { get; set; } = true;
+
         // Track transform index and event handler
         private int _transformIndex = -1;
         private Action<Transform> _transformChangedHandler;
         private bool _isRegistered = false;
-        private MeshProvider m_meshProvider;
-        private MaterialProvider m_materialProvider;
+        private MeshProvider _meshProvider;
+        private MaterialProvider _materialProvider;
 
         public MeshRenderer()
         {
@@ -54,35 +56,35 @@ namespace RockEngine.Core.ECS.Components
         {
            
             CleanupExisting();
-            m_meshProvider = new MeshProvider(meshAsset);
-            m_materialProvider = new MaterialProvider(materialAsset);
+            _meshProvider = new MeshProvider(meshAsset);
+            _materialProvider = new MaterialProvider(materialAsset);
             World.GetCurrent().EnqueueForStart(this);
         }
 
         public void SetProviders(IMesh mesh, Material material)
         {
             CleanupExisting();
-            m_meshProvider = new MeshProvider(mesh);
-            m_materialProvider = new MaterialProvider(material);
+            _meshProvider = new MeshProvider(mesh);
+            _materialProvider = new MaterialProvider(material);
             World.GetCurrent().EnqueueForStart(this);
         }
 
         public void SetProviders(MeshProvider mesh, MaterialProvider material)
         {
             CleanupExisting();
-            m_meshProvider = mesh;
-            m_materialProvider = material;
+            _meshProvider = mesh;
+            _materialProvider = material;
             World.GetCurrent().EnqueueForStart(this);
         }
 
-        public override async ValueTask OnStart(Renderer renderer)
+        public override async ValueTask OnStart(WorldRenderer renderer)
         {
-            if (_meshProvider != null && _materialProvider != null && !_isRegistered)
+            if (MeshProvider != null && MaterialProvider != null && !_isRegistered)
             {
                 try
                 {
-                    Mesh = await _meshProvider.GetAsync();
-                    Material = await _materialProvider.GetAsync();
+                    Mesh = await MeshProvider.GetAsync();
+                    Material = await MaterialProvider.GetAsync();
                     renderer.Draw(this);
                     _isRegistered = true;
                 }
@@ -105,11 +107,8 @@ namespace RockEngine.Core.ECS.Components
                 Dispose();
             }
 
-           /* MeshProvider?.Dispose();
-            MaterialProvider?.Dispose();*/
-
-            m_meshProvider = null;
-            m_materialProvider = null;
+            _meshProvider = null;
+            _materialProvider = null;
             Material = null;
             Mesh = null;
         }
@@ -128,7 +127,7 @@ namespace RockEngine.Core.ECS.Components
         {
             if (_isRegistered)
             {
-                var renderer = IoC.Container.GetInstance<Renderer>();
+                var renderer = IoC.Container.GetInstance<WorldRenderer>();
                 renderer.StopDrawing(this);
                 _isRegistered = false;
             }
@@ -145,8 +144,8 @@ namespace RockEngine.Core.ECS.Components
            /* MeshProvider?.Dispose();
             MaterialProvider?.Dispose();*/
 
-            _meshProvider = null;
-            _materialProvider = null;
+            MeshProvider = null;
+            MaterialProvider = null;
             Material = null;
             Mesh = null;
         }

@@ -8,7 +8,6 @@ using RockEngine.Editor.Layers;
 using RockEngine.Editor.Rendering.Passes;
 using RockEngine.Editor.Rendering.Passes.SubPasses;
 using RockEngine.Editor.Selection;
-using RockEngine.Editor.SubPasses;
 
 using SimpleInjector;
 
@@ -23,6 +22,7 @@ namespace RockEngine.Editor.Modules
             container.Collection.Append<ILayer, EditorLayer>();
             container.Collection.Append<ILayer, AssetBrowserLayer>();
             container.Collection.Append<ILayer, DebugCamLayer>();
+            //container.Collection.Append<ILayer, TitleBarLayer>();
             container.RegisterRenderSubPass<ImGuiPass, SwapchainPassStrategy>();
             container.RegisterRenderPassStrategy<PickingPassStrategy>();
             container.RegisterRenderSubPass<PickingSubPass, PickingPassStrategy>();

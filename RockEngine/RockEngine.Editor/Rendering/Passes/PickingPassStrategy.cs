@@ -30,7 +30,7 @@ namespace RockEngine.Editor.Rendering.Passes
             _pickingRenderTarget = new PickingRenderTarget(context, new Extent2D(1280, 720));
         }
 
-        public override Task Execute(SubmitContext submitContext, CameraManager cameraManager, Renderer renderer)
+        public override async ValueTask Execute(SubmitContext submitContext, CameraManager cameraManager, WorldRenderer renderer)
         {
             uint frameIndex = renderer.FrameIndex;
             var cams = cameraManager.RegisteredCameras;
@@ -45,10 +45,10 @@ namespace RockEngine.Editor.Rendering.Passes
                 }
                 tasks.Add(ExecuteCameraPass(submitContext, debugCamera, renderer, i, frameIndex));
             }
-            return Task.WhenAll(tasks);
+            await Task.WhenAll(tasks);
         }
 
-        private Task ExecuteCameraPass(SubmitContext submitContext, DebugCamera camera, Renderer renderer, int camIndex, uint frameIndex)
+        private Task ExecuteCameraPass(SubmitContext submitContext, DebugCamera camera, WorldRenderer renderer, int camIndex, uint frameIndex)
         {
             using (PerformanceTracer.BeginSection($"Picking Camera - {camera.Entity.Name}"))
             {
@@ -79,7 +79,7 @@ namespace RockEngine.Editor.Rendering.Passes
             }
         }
 
-        private unsafe static void BeginRenderPass(PickingRenderTarget pickingRenderTarget, Renderer renderer, VkCommandBuffer cmd)
+        private unsafe static void BeginRenderPass(PickingRenderTarget pickingRenderTarget, WorldRenderer renderer, VkCommandBuffer cmd)
         {
             fixed (ClearValue* pClearValue = pickingRenderTarget.ClearValues)
             {

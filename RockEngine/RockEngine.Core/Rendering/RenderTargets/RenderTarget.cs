@@ -1,5 +1,4 @@
-﻿using RockEngine.Core.Rendering.Managers;
-using RockEngine.Core.Rendering.Materials;
+﻿using RockEngine.Core.Rendering.Materials;
 using RockEngine.Core.Rendering.Objects;
 using RockEngine.Core.Rendering.Texturing;
 using RockEngine.Vulkan;
@@ -10,7 +9,7 @@ namespace RockEngine.Core.Rendering.RenderTargets
 {
     public abstract class RenderTarget : IDisposable, IRenderTarget
     {
-        public Extent2D Size { get; protected set; }
+        public virtual Extent2D Size { get; protected set; }
         public Format Format { get; protected set; }
         public VkFrameBuffer[] Framebuffers { get; protected set; }
         public RckRenderPass RenderPass { get; protected set; }

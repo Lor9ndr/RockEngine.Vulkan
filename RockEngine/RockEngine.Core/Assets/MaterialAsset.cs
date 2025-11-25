@@ -1,6 +1,7 @@
 ﻿using NLog;
 
 using RockEngine.Core.Assets.AssetData;
+using RockEngine.Core.Attributes;
 using RockEngine.Core.DI;
 using RockEngine.Core.Rendering;
 using RockEngine.Core.Rendering.Materials;
@@ -14,6 +15,7 @@ namespace RockEngine.Core.Assets
     {
         public override string Type => "Material";
         public bool GpuReady => MaterialInstance is not null;
+        [SerializeIgnore]
         public Material? MaterialInstance { get; private set; }
 
         private static readonly Logger _logger = LogManager.GetCurrentClassLogger();

@@ -1,10 +1,15 @@
 ﻿using ImGuiNET;
+
+using NLog;
+
 using RockEngine.Vulkan;
+
 using Silk.NET.Vulkan;
+
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Numerics;
-using System.Collections.Concurrent;
-using NLog;
+using System.Text;
 
 namespace RockEngine.Core
 {
@@ -17,9 +22,11 @@ namespace RockEngine.Core
         private const int MAX_SAMPLES = 300;
         private const int CLEANUP_INTERVAL = 300;
         private const int UNUSED_FRAME_THRESHOLD = 600;
+        private static long _lastScopeId = 1000;
 
-        // Thread-safe scope tracking with object pooling
-        private static readonly ConcurrentDictionary<string, ScopeInfo> _scopesByPath = new();
+        // String interning and pooling
+        private static readonly ConcurrentDictionary<string, string> _stringPool = new();
+        private static readonly ConcurrentDictionary<StringKey, ScopeInfo> _scopesByPath = new();
         private static readonly WeakReference<ScopeInfo>[] _scopesById = new WeakReference<ScopeInfo>[10000];
         private static readonly ScopeData[] _scopeDataArray = new ScopeData[10000];
         private static readonly ConcurrentDictionary<int, List<int>> _childScopesByParentId = new();
@@ -51,13 +58,49 @@ namespace RockEngine.Core
         // Track if GPU timestamps are supported
         private static bool _gpuTimestampsSupported = false;
 
+        // String interning helper
+        private static string InternString(string str)
+        {
+            return _stringPool.GetOrAdd(str, str);
+        }
+
+        // Struct for efficient string comparison in dictionary
+        private readonly struct StringKey : IEquatable<StringKey>
+        {
+            public readonly string Value;
+            private readonly int _hashCode;
+
+            public StringKey(string value)
+            {
+                Value = value;
+                _hashCode = value?.GetHashCode() ?? 0;
+            }
+
+            public bool Equals(StringKey other)
+            {
+                return ReferenceEquals(Value, other.Value) || string.Equals(Value, other.Value);
+            }
+
+            public override bool Equals(object obj)
+            {
+                return obj is StringKey other && Equals(other);
+            }
+
+            public override int GetHashCode() => _hashCode;
+
+            public static implicit operator StringKey(string value) => new(value);
+        }
+
         static PerformanceTracer()
         {
-            _cpuRoot = new ScopeInfo(1, "CPU", null, "CPU");
-            _gpuRoot = new ScopeInfo(2, "GPU", null, "GPU");
+            var cpuRootName = InternString("CPU");
+            var gpuRootName = InternString("GPU");
 
-            _scopesByPath["CPU"] = _cpuRoot;
-            _scopesByPath["GPU"] = _gpuRoot;
+            _cpuRoot = new ScopeInfo(1, cpuRootName, null, cpuRootName);
+            _gpuRoot = new ScopeInfo(2, gpuRootName, null, gpuRootName);
+
+            _scopesByPath[cpuRootName] = _cpuRoot;
+            _scopesByPath[gpuRootName] = _gpuRoot;
             _scopesById[1] = new WeakReference<ScopeInfo>(_cpuRoot);
             _scopesById[2] = new WeakReference<ScopeInfo>(_gpuRoot);
             _scopeDataArray[1] = new ScopeData();
@@ -117,7 +160,6 @@ namespace RockEngine.Core
             {
                 return new GpuSectionTracker(); // Return a disabled tracker
             }
-            //Debug.Write($"BeginSection frame :{ frameIndex }");
             var frame = _frameData[frameIndex];
             return new GpuSectionTracker(name, cmd, frame);
         }
@@ -129,9 +171,10 @@ namespace RockEngine.Core
                 return;
             }
 
-            //Debug.Write($"BeginFrame frame :{ frameIndex }");
             var frame = _frameData[frameIndex];
             frame.BeginFrame();
+            // Reset the query pool immediately
+            frame.ResetQueryPool();
         }
 
         public static void ProcessQueries(VulkanContext context, uint frameIndex)
@@ -141,8 +184,14 @@ namespace RockEngine.Core
                 return;
             }
 
-            //Debug.Write($"ProcessQueries frame :{ frameIndex }");
             var frame = _frameData[frameIndex];
+
+            // Ensure the frame has started and has queries to process
+            if (!frame.FrameStarted || frame.QueryCount == 0)
+            {
+                return;
+            }
+
             frame.Process(context);
             Interlocked.Increment(ref _currentFrameCount);
 
@@ -168,7 +217,6 @@ namespace RockEngine.Core
         {
             long currentFrame = Interlocked.Read(ref _currentFrameCount);
 
-            // Only clean up when we have many scopes to avoid unnecessary work
             if (_scopesByPath.Count <= 100)
             {
                 return;
@@ -218,7 +266,6 @@ namespace RockEngine.Core
 
         public static void DrawMetrics()
         {
-
             double elapsedSeconds = _updateTimer.Elapsed.TotalSeconds;
             if (elapsedSeconds > UPDATE_INTERVAL_SECONDS)
             {
@@ -259,7 +306,6 @@ namespace RockEngine.Core
                     ImGui.Text("GPU timestamps not supported on this device");
                 }
             }
-
         }
 
         private static void DrawChildScopes(int parentId)
@@ -362,20 +408,37 @@ namespace RockEngine.Core
 
         private static ScopeInfo GetOrCreateScope(string name, ScopeInfo parent)
         {
-            string fullPath = parent != null ? $"{parent.FullPath}/{name}" : name;
+            // Intern the name first
+            string internedName = InternString(name);
 
-            // Check if scope already exists
-            if (_scopesByPath.TryGetValue(fullPath, out var existing))
+            string fullPath;
+            if (parent != null)
+            {
+                // Use StringBuilder for path construction to avoid intermediate strings
+                var sb = new StringBuilder(parent.FullPath.Length + internedName.Length + 1);
+                sb.Append(parent.FullPath);
+                sb.Append('/');
+                sb.Append(internedName);
+                fullPath = InternString(sb.ToString());
+            }
+            else
+            {
+                fullPath = internedName;
+            }
+
+            // Check if scope already exists using our optimized StringKey
+            var key = new StringKey(fullPath);
+            if (_scopesByPath.TryGetValue(key, out var existing))
             {
                 return existing;
             }
 
-            // Create new scope
+            // Create new scope with interned strings
             int newId = (int)Interlocked.Increment(ref _lastScopeId);
-            var newScope = new ScopeInfo(newId, name, parent?.Id, fullPath);
+            var newScope = new ScopeInfo(newId, internedName, parent?.Id, fullPath);
 
             // Add to dictionaries
-            _scopesByPath[fullPath] = newScope;
+            _scopesByPath[key] = newScope;
             _scopesById[newId] = new WeakReference<ScopeInfo>(newScope);
             _scopeDataArray[newId] = new ScopeData();
 
@@ -391,8 +454,6 @@ namespace RockEngine.Core
 
             return newScope;
         }
-
-        private static long _lastScopeId = 1000;
 
         private struct ValueStopwatch
         {
@@ -539,10 +600,8 @@ namespace RockEngine.Core
 
                 // Reserve queries first to get the start index
                 _startIndex = frame.ReserveQueries(_scopeId, 2);
-                //Console.WriteLine(scopeInfo.Name +  $" Query {_startIndex}");
 
                 var vk = VulkanContext.Vk;
-
 
                 // Write start timestamp
                 unsafe
@@ -579,7 +638,10 @@ namespace RockEngine.Core
             private readonly List<GpuQuery> _queries = new();
             private uint _nextQueryIndex = 0;
             private bool _frameStarted = false;
+            private bool _queriesUsedInFrame = false; // Track if queries were used
 
+            public bool FrameStarted => _frameStarted;
+            public uint QueryCount => _nextQueryIndex;
             public VkQueryPool QueryPool { get; private set; }
             private readonly Lock _queryLock = new Lock();
 
@@ -587,20 +649,22 @@ namespace RockEngine.Core
             {
                 _context = context;
 
-                if (_gpuTimestampsSupported)
+                if (!_gpuTimestampsSupported)
                 {
-                    var createInfo = new QueryPoolCreateInfo
-                    {
-                        SType = StructureType.QueryPoolCreateInfo,
-                        QueryType = QueryType.Timestamp,
-                        QueryCount = QUERIES_PER_FRAME
-                    };
-
-                    QueryPool = VkQueryPool.Create(context, createInfo);
-
-                    // Reset the entire query pool initially
-                    QueryPool.Reset(0, QUERIES_PER_FRAME);
+                    return;
                 }
+
+                var createInfo = new QueryPoolCreateInfo
+                {
+                    SType = StructureType.QueryPoolCreateInfo,
+                    QueryType = QueryType.Timestamp,
+                    QueryCount = QUERIES_PER_FRAME
+                };
+
+                QueryPool = VkQueryPool.Create(context, createInfo);
+
+                // Reset the entire query pool initially
+                ResetQueryPool();
             }
 
             public void Dispose()
@@ -615,9 +679,35 @@ namespace RockEngine.Core
                     return;
                 }
 
+                // Reset query pool at the beginning of the frame if queries were used in previous frame
+                if (_queriesUsedInFrame)
+                {
+                    ResetQueryPool();
+                }
+
                 _nextQueryIndex = 0;
                 _queries.Clear();
                 _frameStarted = true;
+                _queriesUsedInFrame = false; // Reset for this frame
+            }
+
+            public void ResetQueryPool()
+            {
+                if (QueryPool != null && QueryPool.VkObjectNative.Handle != 0)
+                {
+                    var vk = VulkanContext.Vk;
+                    unsafe
+                    {
+                        // Use vkCmdResetQueryPool for better performance (reset in command buffer)
+                        // Or use vkResetQueryPool for host reset
+                        vk.ResetQueryPool(
+                            _context.Device,
+                            QueryPool.VkObjectNative,
+                            0,
+                            QUERIES_PER_FRAME
+                        );
+                    }
+                }
             }
 
             public unsafe void Process(VulkanContext context)
@@ -652,7 +742,6 @@ namespace RockEngine.Core
                     }
                 }
 
-
                 // Process each query pair
                 foreach (var query in _queries)
                 {
@@ -676,11 +765,9 @@ namespace RockEngine.Core
                     var data = _scopeDataArray[query.ScopeId];
                     data?.AddDuration(duration, frameCount);
                 }
-                //Console.WriteLine("RESET");
-                QueryPool.Reset(0, QUERIES_PER_FRAME);
-                _queries.Clear();
-                _nextQueryIndex = 0;
+
                 _frameStarted = false;
+                // Don't reset here - reset will happen in BeginFrame of next frame
             }
 
             public uint ReserveQueries(int scopeId, uint count)
@@ -693,28 +780,35 @@ namespace RockEngine.Core
 
                 if (_nextQueryIndex + count > QUERIES_PER_FRAME)
                 {
-                    _logger.Warn("Query pool overflow - too many GPU scopes in one frame");
+                    _logger.Warn($"Query pool overflow - too many GPU scopes in one frame. Requested {count}, available {QUERIES_PER_FRAME - _nextQueryIndex}");
                     return 0;
                 }
+
                 lock (_queryLock)
                 {
+                    if (!_frameStarted || _nextQueryIndex + count > QUERIES_PER_FRAME)
+                    {
+                        return 0;
+                    }
+
                     uint startIndex = _nextQueryIndex;
                     _queries.Add(new GpuQuery(scopeId, (int)startIndex));
                     _nextQueryIndex += count;
+                    _queriesUsedInFrame = true; // Mark that queries were used this frame
                     return startIndex;
                 }
             }
-        }
 
-        private readonly struct GpuQuery
-        {
-            public readonly int ScopeId;
-            public readonly int StartIndex;
-
-            public GpuQuery(int scopeId, int startIndex)
+            private readonly struct GpuQuery
             {
-                ScopeId = scopeId;
-                StartIndex = startIndex;
+                public readonly int ScopeId;
+                public readonly int StartIndex;
+
+                public GpuQuery(int scopeId, int startIndex)
+                {
+                    ScopeId = scopeId;
+                    StartIndex = startIndex;
+                }
             }
         }
     }

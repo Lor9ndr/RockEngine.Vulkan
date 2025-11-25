@@ -1,8 +1,4 @@
-﻿// Updated SceneAsset.cs
-using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
-
-using NLog;
+﻿using NLog;
 
 using RockEngine.Core.Assets.Serializers;
 using RockEngine.Core.DI;
@@ -11,6 +7,8 @@ using RockEngine.Core.ECS.Components;
 using RockEngine.Core.Rendering;
 
 using System.Collections.Concurrent;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 
 using ZLinq;
 
@@ -20,12 +18,12 @@ namespace RockEngine.Core.Assets
     {
         private static readonly Logger _logger = LogManager.GetCurrentClassLogger();
 
-        [JsonIgnore]
+        [System.Text.Json.Serialization.JsonIgnore]
         public ConcurrentDictionary<ulong, Entity> Entities { get; private set; } = new();
 
         public override string Type => "Scene";
 
-        [JsonIgnore]
+        [System.Text.Json.Serialization.JsonIgnore]
         public bool IsLoaded { get; private set; }
 
         public Entity CreateEntity(string name = null, Entity parent = null)
@@ -33,10 +31,7 @@ namespace RockEngine.Core.Assets
             var entity = World.GetCurrent().CreateEntity(name);
             Entities[entity.ID] = entity;
 
-            if (parent != null)
-            {
-                parent.AddChild(entity);
-            }
+            parent?.AddChild(entity);
 
             return entity;
         }
@@ -75,18 +70,16 @@ namespace RockEngine.Core.Assets
 
         public override void BeforeSaving()
         {
-            var serializer = IoC.Container.GetInstance<IAssetSerializer>();
-
             // Convert entities to serializable data, starting from root entities
             var rootEntities = Entities.Values.Where(e => e.Parent == null).ToList();
 
             Data = new SceneData
             {
-                Entities = SerializeEntityHierarchy(rootEntities, serializer)
+                Entities = SerializeEntityHierarchy(rootEntities)
             };
         }
 
-        private List<SceneEntityData> SerializeEntityHierarchy(List<Entity> entities, IAssetSerializer serializer)
+        private List<SceneEntityData> SerializeEntityHierarchy(List<Entity> entities)
         {
             var result = new List<SceneEntityData>();
 
@@ -102,10 +95,14 @@ namespace RockEngine.Core.Assets
                     {
                         try
                         {
+                            // Use System.Text.Json to serialize the component to JsonNode
+                            var jsonString = JsonSerializer.Serialize(comp, comp.GetType(), IoC.Container.GetInstance<IAssetSerializer>().Options);
+                            var jsonNode = JsonNode.Parse(jsonString);
+
                             return new SceneComponentData
                             {
                                 TypeName = comp.GetType().AssemblyQualifiedName,
-                                Data = JObject.FromObject(comp, serializer.Serializer)
+                                Data = jsonNode
                             };
                         }
                         catch (Exception ex)
@@ -113,7 +110,7 @@ namespace RockEngine.Core.Assets
                             _logger.Warn(ex, $"Failed to serialize component {comp.GetType().Name} for entity {entity.Name}");
                             return null;
                         }
-                    }).Where(c => c!= null).ToList()
+                    }).Where(c => c != null).ToList()
                 };
 
                 result.Add(entityData);
@@ -121,7 +118,7 @@ namespace RockEngine.Core.Assets
                 // Recursively serialize children
                 if (entity.Children.Count > 0)
                 {
-                    result.AddRange(SerializeEntityHierarchy(entity.Children.ToList(), serializer));
+                    result.AddRange(SerializeEntityHierarchy(entity.Children.ToList()));
                 }
             }
 
@@ -130,11 +127,9 @@ namespace RockEngine.Core.Assets
 
         public override void AfterSaving()
         {
-            // Optional: Clear data after saving to free memory
-            // Data = null;
         }
 
-        public void InstantiateEntities()
+        public async Task InstantiateEntities()
         {
             if (Data == null || IsLoaded)
             {
@@ -143,11 +138,10 @@ namespace RockEngine.Core.Assets
 
             try
             {
-                var serializer = IoC.Container.GetInstance<IAssetSerializer>();
-                var entityMap = new Dictionary<ulong, Entity>();
-
+                var entityMap = new ConcurrentDictionary<ulong, Entity>();
+                var serializeOptions = IoC.Container.GetInstance<IAssetSerializer>().Options;
                 // First pass: create all entities without setting hierarchy
-                foreach (var entityData in Data.Entities)
+                await Parallel.ForEachAsync(Data.Entities, (entityData, ct) =>
                 {
                     var entity = CreateEntity(entityData.Name);
                     entityMap[entityData.ID] = entity;
@@ -160,14 +154,16 @@ namespace RockEngine.Core.Assets
                         {
                             try
                             {
-                                var component = (IComponent)componentData.Data.ToObject(componentType, serializer.Serializer);
+                                // Use System.Text.Json to deserialize the component
+                                var component = componentData.Data.AsObject().Deserialize(componentType, serializeOptions);
+
                                 if (component is Transform componentTransform)
                                 {
                                     entity.Transform.Position = componentTransform.Position;
                                     entity.Transform.Rotation = componentTransform.Rotation;
                                     entity.Transform.Scale = componentTransform.Scale;
                                 }
-                                entity.AddComponent(component);
+                                entity.AddComponent(component as IComponent);
                             }
                             catch (Exception ex)
                             {
@@ -176,7 +172,9 @@ namespace RockEngine.Core.Assets
                             }
                         }
                     }
-                }
+
+                    return new ValueTask();
+                });
 
                 // Second pass: establish parent-child relationships
                 foreach (var entityData in Data.Entities)
@@ -190,6 +188,7 @@ namespace RockEngine.Core.Assets
                 }
 
                 IsLoaded = true;
+                Data = null;
                 _logger.Debug($"Instantiated {Entities.Count} entities for scene: {Name}");
             }
             catch (Exception ex)
@@ -217,6 +216,6 @@ namespace RockEngine.Core.Assets
     public class SceneComponentData
     {
         public string TypeName { get; set; } = string.Empty;
-        public JObject Data { get; set; }
+        public JsonNode Data { get; set; }
     }
 }

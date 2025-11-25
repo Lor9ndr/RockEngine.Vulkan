@@ -1,5 +1,4 @@
-﻿using Newtonsoft.Json;
-
+﻿
 namespace RockEngine.Core.Assets.AssetData
 {
     public class MaterialData
@@ -13,7 +12,6 @@ namespace RockEngine.Core.Assets.AssetData
 
         public List<AssetReference<TextureAsset>> Textures { get; set; } = new List<AssetReference<TextureAsset>>();
 
-        [JsonProperty(DefaultValueHandling = DefaultValueHandling.Ignore)]
         public Dictionary<string, object>? Parameters { get; set; }
     }
 }

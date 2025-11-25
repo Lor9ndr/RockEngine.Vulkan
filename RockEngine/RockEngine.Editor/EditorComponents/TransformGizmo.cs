@@ -83,20 +83,20 @@ namespace RockEngine.Editor.EditorComponents
             }
         }
 
-        public override async ValueTask OnStart(Renderer renderer)
+        public override async ValueTask OnStart(WorldRenderer renderer)
         {
             await InitializeGizmo(renderer);
             Entity.Layer = IoC.Container.GetInstance<RenderLayerSystem>().Debug;
         }
 
-        private async ValueTask InitializeGizmo(Renderer renderer)
+        private async ValueTask InitializeGizmo(WorldRenderer renderer)
         {
             _gizmoMaterial = await CreateGizmoMaterial(renderer);
             _meshRenderer = Entity.AddComponent<MeshRenderer>();
             UpdateGizmoGeometry();
         }
 
-        public override ValueTask Update(Renderer renderer)
+        public override ValueTask Update(WorldRenderer renderer)
         {
             var pushConstants = new GizmoPushConstants
             {
@@ -514,7 +514,7 @@ namespace RockEngine.Editor.EditorComponents
             }
         }
 
-        private async Task<Material> CreateGizmoMaterial(Renderer renderer)
+        private async Task<Material> CreateGizmoMaterial(WorldRenderer renderer)
         {
             var material = new Material("Gizmo");
             var vertShader = await VkShaderModule.CreateAsync(renderer.Context, "Shaders/Gizmo.vert.spv", ShaderStageFlags.VertexBit);
@@ -537,7 +537,7 @@ namespace RockEngine.Editor.EditorComponents
             return material;
         }
 
-        private RckPipeline CreateGizmoPipeline<T>(Renderer renderer, RckRenderPass renderPass, VkShaderModule vertShader, VkShaderModule fragShader, string name) where T : IRenderSubPass
+        private RckPipeline CreateGizmoPipeline<T>(WorldRenderer renderer, RckRenderPass renderPass, VkShaderModule vertShader, VkShaderModule fragShader, string name) where T : IRenderSubPass
         {
             using var pipelineBuilder = GraphicsPipelineBuilder.CreateDefault(
                 VulkanContext.GetCurrent(),

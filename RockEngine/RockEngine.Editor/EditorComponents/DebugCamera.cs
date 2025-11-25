@@ -31,7 +31,7 @@ namespace RockEngine.Editor.EditorComponents
         }
 
     
-        public override ValueTask Update(Renderer renderer)
+        public override ValueTask Update(WorldRenderer renderer)
         {
             HandleKeyboardInput();
             return base.Update(renderer);
@@ -113,7 +113,7 @@ namespace RockEngine.Editor.EditorComponents
             UpdateVectors();
         }
 
-        public override ValueTask OnStart(Renderer renderer)
+        public override ValueTask OnStart(WorldRenderer renderer)
         {
             Entity.AddComponent<InfinityGrid>();
             World.GetCurrent().CreateEntity("GIZMO").AddComponent<TransformGizmo>();
