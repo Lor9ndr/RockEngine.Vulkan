@@ -29,9 +29,9 @@ namespace RockEngine.Core.Rendering.Managers
                 .WithShaderModule(shader));
         }
 
-        public void Dispatch(VkCommandBuffer cmd, uint groupX, uint groupY, uint groupZ)
+        public void Dispatch(UploadBatch cmd, uint groupX, uint groupY, uint groupZ)
         {
-            VulkanContext.Vk.CmdDispatch(cmd, groupX, groupY, groupZ);
+            cmd.Dispatch(groupX, groupY, groupZ);
         }
     }
 }

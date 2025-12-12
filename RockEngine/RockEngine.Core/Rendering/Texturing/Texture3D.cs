@@ -59,11 +59,11 @@ namespace RockEngine.Core.Rendering.Texturing
 
             // Transfer queue operations
             var transferBatch = context.TransferSubmitContext.CreateBatch();
-            transferBatch.CommandBuffer.LabelObject("CubeMap Transfer");
+            transferBatch.LabelObject("CubeMap Transfer");
 
             // Transition to TransferDstOptimal (even though we created it with this layout, this ensures tracking)
             image.TransitionImageLayout(
-                transferBatch.CommandBuffer,
+                transferBatch,
                 ImageLayout.TransferDstOptimal,
                 baseMipLevel: 0,
                 levelCount: 1,
@@ -113,11 +113,10 @@ namespace RockEngine.Core.Rendering.Texturing
                     ImageExtent = new Extent3D(width, height, 1)
                 };
 
-                transferBatch.CommandBuffer.CopyBufferToImage(
+                transferBatch.CopyBufferToImage(
                     srcBuffer: transferBatch.SubmitContext.StagingManager.StagingBuffer,
                     dstImage: image,
                     dstImageLayout: ImageLayout.TransferDstOptimal,
-                    regionCount: 1,
                     pRegions: in copyRegion
                 );
             }
@@ -130,14 +129,14 @@ namespace RockEngine.Core.Rendering.Texturing
 
             // Graphics queue operations
             var graphicsBatch = context.GraphicsSubmitContext.CreateBatch();
-            graphicsBatch.CommandBuffer.LabelObject("CubeMap Graphics");
+            graphicsBatch.LabelObject("CubeMap Graphics");
             graphicsBatch.AddWaitSemaphore(transferComplete, PipelineStageFlags.TransferBit);
 
             if (generateMipMaps)
             {
                 // Prepare base level for mipmap generation
                 image.TransitionImageLayout(
-                    graphicsBatch.CommandBuffer,
+                    graphicsBatch,
                     ImageLayout.TransferSrcOptimal,
                     baseMipLevel: 0,
                     levelCount: 1,
@@ -146,13 +145,13 @@ namespace RockEngine.Core.Rendering.Texturing
                 );
 
                 // Generate mipmaps
-                image.GenerateMipmaps(graphicsBatch.CommandBuffer);
+                image.GenerateMipmaps(graphicsBatch);
             }
             else
             {
                 // Transition directly to shader read layout
                 image.TransitionImageLayout(
-                    graphicsBatch.CommandBuffer,
+                    graphicsBatch,
                     ImageLayout.ShaderReadOnlyOptimal,
                     baseMipLevel: 0,
                     levelCount: 1,
@@ -265,11 +264,11 @@ namespace RockEngine.Core.Rendering.Texturing
 
                 // Transfer queue operations - only for copying data
                 var transferBatch = context.TransferSubmitContext.CreateBatch();
-                transferBatch.CommandBuffer.LabelObject("DefaultCubeMap Transfer");
+                transferBatch.LabelObject("DefaultCubeMap Transfer");
 
                 // Transition image to TransferDstOptimal on transfer queue
                 image.TransitionImageLayout(
-                    transferBatch.CommandBuffer,
+                    transferBatch,
                     ImageLayout.TransferDstOptimal,
                     baseMipLevel: 0,
                     levelCount: 1,
@@ -293,11 +292,10 @@ namespace RockEngine.Core.Rendering.Texturing
                         ImageExtent = new Extent3D(SIZE, SIZE, 1)
                     };
 
-                    transferBatch.CommandBuffer.CopyBufferToImage(
+                    transferBatch.CopyBufferToImage(
                         srcBuffer: stagingBuffer,
                         dstImage: image,
                         dstImageLayout: ImageLayout.TransferDstOptimal,
-                        regionCount: 1,
                         pRegions: in copyRegion
                     );
                 }
@@ -313,14 +311,14 @@ namespace RockEngine.Core.Rendering.Texturing
 
                 // Graphics queue operations - for layout transitions that require graphics pipeline stages
                 var graphicsBatch = context.GraphicsSubmitContext.CreateBatch();
-                graphicsBatch.CommandBuffer.LabelObject("DefaultCubeMap Graphics");
+                graphicsBatch.LabelObject("DefaultCubeMap Graphics");
 
                 // Wait for transfer to complete
                 graphicsBatch.AddWaitSemaphore(transferComplete, PipelineStageFlags.TransferBit);
 
                 // Transition to ShaderReadOnlyOptimal on graphics queue
                 image.TransitionImageLayout(
-                    graphicsBatch.CommandBuffer,
+                    graphicsBatch,
                     ImageLayout.ShaderReadOnlyOptimal,
                     baseMipLevel: 0,
                     levelCount: 1,

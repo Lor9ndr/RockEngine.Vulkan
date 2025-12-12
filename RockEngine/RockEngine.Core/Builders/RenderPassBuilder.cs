@@ -211,6 +211,11 @@ public class RenderPassBuilder : DisposableBuilder
             _dependency.DstAccessMask = dst;
             return this;
         }
+        public DependencyConfigurer ByRegion()
+        {
+            _dependency.DependencyFlags |= DependencyFlags.ByRegionBit;
+            return this;
+        }
 
         public RenderPassBuilder Add()
         {

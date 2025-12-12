@@ -1,5 +1,6 @@
 ﻿using ImGuiNET;
 
+using RockEngine.Core;
 using RockEngine.Core.Rendering;
 using RockEngine.Core.Rendering.Commands;
 using RockEngine.Editor.EditorUI.ImGuiRendering;
@@ -12,11 +13,13 @@ namespace RockEngine.Editor.Layers
     {
         private readonly ImGuiController _controller;
         private readonly WorldRenderer _renderer;
+        private readonly Application _app;
 
-        public ImGuiLayer(ImGuiController controller, WorldRenderer renderer)
+        public ImGuiLayer(ImGuiController controller, WorldRenderer renderer, Application app)
         {
             _controller = controller;
             _renderer = renderer;
+            _app = app;
         }
 
         public Task OnAttach()
@@ -28,19 +31,20 @@ namespace RockEngine.Editor.Layers
         {
         }
 
-        public ValueTask OnImGuiRender(VkCommandBuffer vkCommandBuffer)
+        public void OnImGuiRender(UploadBatch batch)
         {
-            ImGui.DockSpaceOverViewport(ImGui.GetMainViewport(), ImGuiDockNodeFlags.PassthruCentralNode);
-            return ValueTask.CompletedTask;
+
+            ImGui.DockSpaceOverViewport(0, ImGui.GetMainViewport(), ImGuiDockNodeFlags.PassthruCentralNode);
+
         }
 
-        public void OnRender(VkCommandBuffer vkCommandBuffer)
+        public void OnRender(UploadBatch batch)
         {
         }
 
         public void OnUpdate()
         {
-            _controller.Update();
+            _controller.Update(_renderer);
             _renderer.AddCommand(new ImguiRenderCommand(_controller.Render));
         }
     }

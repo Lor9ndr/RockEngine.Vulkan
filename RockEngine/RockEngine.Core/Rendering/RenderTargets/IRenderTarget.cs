@@ -14,8 +14,8 @@ namespace RockEngine.Core.Rendering.RenderTargets
         VkFrameBuffer[] Framebuffers { get; }
         RckRenderPass RenderPass { get; }
 
-        void PrepareForRender(VkCommandBuffer cmd);
-        void TransitionToRead(VkCommandBuffer cmd);
+        void PrepareForRender(UploadBatch batch);
+        void TransitionToRead(UploadBatch batch);
         public void Initialize(RckRenderPass renderPass);
     }
 }

@@ -18,6 +18,8 @@ using Silk.NET.Vulkan;
 using System.Numerics;
 using System.Runtime.InteropServices;
 
+using Plane = RockEngine.Core.Plane;
+
 namespace RockEngine.Editor.EditorComponents
 {
     public enum GizmoType : uint
@@ -63,6 +65,7 @@ namespace RockEngine.Editor.EditorComponents
 
         private Material _gizmoMaterial;
         private MeshRenderer _meshRenderer;
+        private Vector2 _viewportSize;
 
         // Colors for different axes
         private readonly Vector4 _colorX = new Vector4(0.9f, 0.2f, 0.2f, 1.0f);
@@ -105,6 +108,16 @@ namespace RockEngine.Editor.EditorComponents
             };
 
             _gizmoMaterial.PushConstant("push", pushConstants);
+
+            // Also push fragment constants for picking
+            var fragConstants = new GizmoPushFragConstants
+            {
+                GizmoType = (uint)_currentMode,
+                AxisMask = (uint)_selectedAxis
+            };
+
+            _gizmoMaterial.PushConstant("push_frag", fragConstants);
+
             return ValueTask.CompletedTask;
         }
 
@@ -447,17 +460,16 @@ namespace RockEngine.Editor.EditorComponents
                 -Vector3.UnitY, -Vector3.UnitY, -Vector3.UnitY, -Vector3.UnitY  // bottom
             };
 
-            uint[][] faceIndices = new uint[][]
-            {
-                [0, 1, 2, 2, 3, 0], // front
-                [5, 4, 7, 7, 6, 5], // back
-                [4, 0, 3, 3, 7, 4], // left
-                [1, 5, 6, 6, 2, 1], // right
-                [3, 2, 6, 6, 7, 3], // top
-                [4, 5, 1, 1, 0, 4]  // bottom
-            };
-
             uint baseIndex = currentIndex;
+            uint[][] faceIndices =
+            [
+                  [0, 1, 2, 2, 3, 0], // front
+                  [5, 4, 7, 7, 6, 5], // back
+                  [4, 0, 3, 3, 7, 4], // left
+                  [1, 5, 6, 6, 2, 1], // right
+                  [3, 2, 6, 6, 7, 3], // top
+                  [4, 5, 1, 1, 0, 4]  // bottom
+            ];
 
             // Add vertices for each face
             for (int face = 0; face < 6; face++)
@@ -537,7 +549,8 @@ namespace RockEngine.Editor.EditorComponents
             return material;
         }
 
-        private RckPipeline CreateGizmoPipeline<T>(WorldRenderer renderer, RckRenderPass renderPass, VkShaderModule vertShader, VkShaderModule fragShader, string name) where T : IRenderSubPass
+        private RckPipeline CreateGizmoPipeline<T>(WorldRenderer renderer, RckRenderPass renderPass,
+       VkShaderModule vertShader, VkShaderModule fragShader, string name) where T : IRenderSubPass
         {
             using var pipelineBuilder = GraphicsPipelineBuilder.CreateDefault(
                 VulkanContext.GetCurrent(),
@@ -545,7 +558,6 @@ namespace RockEngine.Editor.EditorComponents
                 renderPass,
                 [vertShader, fragShader]);
 
-            // Make sure the vertex input state matches your GizmoVertex structure
             pipelineBuilder
                 .WithVertexInputState(new VulkanPipelineVertexInputStateBuilder()
                     .Add(GizmoVertex.GetBindingDescription(), GizmoVertex.GetAttributeDescriptions()))
@@ -554,8 +566,8 @@ namespace RockEngine.Editor.EditorComponents
                 {
                     SType = StructureType.PipelineDepthStencilStateCreateInfo,
                     DepthTestEnable = true,
-                    DepthWriteEnable = false,
-                    DepthCompareOp = CompareOp.LessOrEqual,
+                    DepthWriteEnable = false, // Don't write depth to prevent occluding other objects
+                    DepthCompareOp = CompareOp.Always, // Render on top (reverse depth if using reversed Z)
                     DepthBoundsTestEnable = false,
                     StencilTestEnable = false,
                 })
@@ -563,20 +575,24 @@ namespace RockEngine.Editor.EditorComponents
                     .PolygonMode(PolygonMode.Fill)
                     .CullFace(CullModeFlags.None)
                     .FrontFace(FrontFace.Clockwise)
-                    .DepthBiasEnabe(false))
+                    .DepthBiasEnabe(true)
+                    .DepthBiasConstantFactor(-1.0f) // Negative bias to bring forward
+                    .DepthBiasClamp(0.0f)
+                    .DepthBiasSlopeFactor(-1.0f)) // Negative slope factor
                 .WithInputAssembly(new VulkanInputAssemblyBuilder()
                     .Configure(topology: PrimitiveTopology.TriangleList))
                 .WithColorBlendState(new VulkanColorBlendStateBuilder()
                     .AddAttachment(new PipelineColorBlendAttachmentState
                     {
-                        BlendEnable = false,
+                        BlendEnable = true,
                         SrcColorBlendFactor = BlendFactor.SrcAlpha,
                         DstColorBlendFactor = BlendFactor.OneMinusSrcAlpha,
                         ColorBlendOp = BlendOp.Add,
                         SrcAlphaBlendFactor = BlendFactor.One,
                         DstAlphaBlendFactor = BlendFactor.OneMinusSrcAlpha,
                         AlphaBlendOp = BlendOp.Add,
-                        ColorWriteMask = ColorComponentFlags.RBit | ColorComponentFlags.GBit | ColorComponentFlags.BBit | ColorComponentFlags.ABit
+                        ColorWriteMask = ColorComponentFlags.RBit | ColorComponentFlags.GBit |
+                                       ColorComponentFlags.BBit | ColorComponentFlags.ABit
                     }));
 
             return renderer.PipelineManager.Create(pipelineBuilder);
@@ -596,12 +612,14 @@ namespace RockEngine.Editor.EditorComponents
             _dragStartScale = Entity.Transform.Scale;
         }
 
-        public void UpdateDrag(Vector2 mousePos, Camera camera, Entity selectedEntity)
+        public void UpdateDrag(Vector2 mousePos, Camera camera, Entity selectedEntity, Vector2 viewportSize)
         {
             if (!_isDragging || selectedEntity == null)
             {
                 return;
             }
+
+            _viewportSize = viewportSize;
 
             var mouseDelta = _dragStartPosition - mousePos;
 
@@ -619,6 +637,7 @@ namespace RockEngine.Editor.EditorComponents
             }
         }
 
+
         public void EndDrag()
         {
             _isDragging = false;
@@ -628,51 +647,74 @@ namespace RockEngine.Editor.EditorComponents
         private void UpdateTranslation(Vector2 mouseDelta, Camera camera, Entity selectedEntity)
         {
             var transform = selectedEntity.Transform;
-
-            // Convert screen delta to world space movement
-            float worldSensitivity = CalculateWorldSensitivity(camera, transform.Position);
-
-            // Get the gizmo's transform to use its local axes
             var gizmoTransform = Entity.Transform;
+
+            // Simple screen-space to world-space conversion
+            // This approach works better for gizmos than ray-plane intersection
             Vector3 movement = Vector3.Zero;
+
+            // Calculate sensitivity based on distance from camera
+            float distance = Vector3.Distance(camera.Entity.Transform.Position, _dragStartWorldPos);
+            float sensitivity = distance * 0.002f; 
 
             if (_selectedAxis == GizmoAxis.X)
             {
-                // Move along X axis in world space
-                movement = gizmoTransform.Right * mouseDelta.X * worldSensitivity;
+                // Move along X axis (right vector)
+                Vector3 axisDir = gizmoTransform.Right;
+
+                // Get screen-space direction of the X axis
+                Vector3 screenDir = GetAxisScreenDirection(axisDir, camera);
+
+                // Use mouse delta in screen space along the axis direction
+                float axisMovement = (mouseDelta.X * screenDir.X + mouseDelta.Y * screenDir.Y) * sensitivity;
+                movement = axisDir * axisMovement;
             }
             else if (_selectedAxis == GizmoAxis.Y)
             {
-                // Move along Y axis in world space  
-                movement = gizmoTransform.Up * mouseDelta.Y * worldSensitivity;
+                // Move along Y axis (up vector)
+                Vector3 axisDir = gizmoTransform.Up;
+
+                // Get screen-space direction of the Y axis
+                Vector3 screenDir = GetAxisScreenDirection(axisDir, camera);
+
+                // Use mouse delta in screen space along the axis direction
+                float axisMovement = (mouseDelta.X * screenDir.X + mouseDelta.Y * screenDir.Y) * sensitivity;
+                movement = axisDir * axisMovement;
             }
             else if (_selectedAxis == GizmoAxis.Z)
             {
-                // Move along Z axis in world space
-                movement = gizmoTransform.Forward * mouseDelta.Y * worldSensitivity;
+                // Move along Z axis (forward vector)
+                Vector3 axisDir = gizmoTransform.Forward;
+
+                // Get screen-space direction of the Z axis
+                Vector3 screenDir = GetAxisScreenDirection(axisDir, camera);
+
+                // Use mouse delta in screen space along the axis direction
+                float axisMovement = (mouseDelta.X * screenDir.X + mouseDelta.Y * screenDir.Y) * sensitivity;
+                movement = axisDir * axisMovement;
             }
             else if (_selectedAxis == GizmoAxis.Uniform)
             {
-                // Move in view plane (screen space)
-                var cameraTransform = camera.Entity.Transform;
-                movement = (cameraTransform.Right * mouseDelta.X + cameraTransform.Up * -mouseDelta.Y) * worldSensitivity;
+                // For uniform movement in view plane
+                Vector3 cameraRight = camera.Entity.Transform.Right;
+                Vector3 cameraUp = camera.Entity.Transform.Up;
+
+                // Map mouse movement to camera plane
+                movement = (cameraRight * mouseDelta.X + cameraUp * -mouseDelta.Y) * sensitivity;
             }
 
             transform.Position = _dragStartWorldPos + movement;
         }
-
-        private float CalculateWorldSensitivity(Camera camera, Vector3 worldPosition)
+        private Vector3 GetAxisScreenDirection(Vector3 worldDir, Camera camera)
         {
-            // Calculate sensitivity based on distance from camera
-            float distance = Vector3.Distance(camera.Entity.Transform.Position, worldPosition);
+            // Project the world direction to screen space
+            // First, get the axis direction in view space
+            Matrix4x4 viewMatrix = camera.ViewMatrix;
+            Vector4 viewDir = Vector4.Transform(new Vector4(worldDir, 0), viewMatrix);
 
-            // Base sensitivity that works well at different distances
-            float baseSensitivity = 0.01f;
-
-            // Scale by distance but clamp to reasonable values
-            float sensitivity = baseSensitivity * Math.Max(distance * 0.1f, 0.1f);
-
-            return sensitivity;
+            // Convert to normalized screen direction
+            // We only care about X and Y components for screen movement
+            return  Vector3.Normalize(new Vector3(viewDir.X, viewDir.Y, 0));
         }
 
 

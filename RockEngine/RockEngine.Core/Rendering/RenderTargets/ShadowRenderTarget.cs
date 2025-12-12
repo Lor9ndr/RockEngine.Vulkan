@@ -78,7 +78,7 @@ namespace RockEngine.Core.Rendering.RenderTargets
             // Transition to optimal layout for depth attachment
             var batch = _context.GraphicsSubmitContext.CreateBatch();
             Image.TransitionImageLayout(
-                batch.CommandBuffer,
+                batch,
                 ImageLayout.Undefined,
                 ImageLayout.DepthStencilAttachmentOptimal,
                 PipelineStageFlags.TopOfPipeBit,
@@ -126,11 +126,11 @@ namespace RockEngine.Core.Rendering.RenderTargets
         }
 
       
-        public override void PrepareForRender(VkCommandBuffer cmd)
+        public override void PrepareForRender(UploadBatch batch)
         {
         }
 
-        public override void TransitionToRead(VkCommandBuffer cmd)
+        public override void TransitionToRead(UploadBatch batch)
         {
         }
 

@@ -14,7 +14,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.PropertyHandlers
 
         public bool CanHandle(Type propertyType) => propertyType.IsEnum;
 
-        public ValueTask Draw(IComponent component, UIPropertyAccessor accessor, object value, PropertyDrawer drawer)
+        public void Draw(IComponent component, UIPropertyAccessor accessor, object value, PropertyDrawer drawer)
         {
             Enum enumValue = (Enum)value;
             if (ImGui.BeginCombo(accessor.DisplayName, enumValue.ToString()))
@@ -33,7 +33,6 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.PropertyHandlers
                 }
                 ImGui.EndCombo();
             }
-            return ValueTask.CompletedTask;
         }
     }
 }

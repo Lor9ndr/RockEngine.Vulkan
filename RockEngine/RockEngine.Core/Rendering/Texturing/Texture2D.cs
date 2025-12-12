@@ -49,7 +49,7 @@ namespace RockEngine.Core.Rendering.Texturing
             {
                 var batch = context.GraphicsSubmitContext.CreateBatch();
                 image.TransitionImageLayout(
-                    batch.CommandBuffer,
+                    batch,
                     initialLayout,
                     baseMipLevel: 0,
                     levelCount: 1
@@ -137,7 +137,7 @@ namespace RockEngine.Core.Rendering.Texturing
             // Transition to shader read-only optimal
             var batch = context.GraphicsSubmitContext.CreateBatch();
             image.TransitionImageLayout(
-                batch.CommandBuffer,
+                batch,
                 ImageLayout.ShaderReadOnlyOptimal,
                 baseMipLevel: 0,
                 levelCount: 1
@@ -184,7 +184,7 @@ namespace RockEngine.Core.Rendering.Texturing
             // Transition to shader read-only optimal
             var batch = context.GraphicsSubmitContext.CreateBatch();
             image.TransitionImageLayout(
-                batch.CommandBuffer,
+                batch,
                 ImageLayout.ShaderReadOnlyOptimal,
                 baseMipLevel: 0,
                 levelCount: 1
@@ -355,12 +355,12 @@ namespace RockEngine.Core.Rendering.Texturing
 
             if (totalMipLevels > 1)
             {
-                image.GenerateMipmaps(graphicsBatch.CommandBuffer);
+                image.GenerateMipmaps(graphicsBatch);
             }
             else
             {
                 image.TransitionImageLayout(
-                    graphicsBatch.CommandBuffer,
+                    graphicsBatch,
                     ImageLayout.ShaderReadOnlyOptimal,
                     baseMipLevel: 0,
                     levelCount: 1
@@ -520,12 +520,11 @@ namespace RockEngine.Core.Rendering.Texturing
                 ImageExtent = new Extent3D(width, height, 1)
             };
 
-            batch.CommandBuffer.CopyBufferToImage(
+            batch.CopyBufferToImage(
                 srcBuffer: batch.SubmitContext.StagingManager.StagingBuffer,
                 dstImage: vkImage,
                 dstImageLayout: ImageLayout.TransferDstOptimal,
-                regionCount: 1,
-                pRegions: &copyRegion
+                pRegions: [copyRegion]
             );
         }
 
@@ -551,7 +550,7 @@ namespace RockEngine.Core.Rendering.Texturing
             var graphicsBatch = context.GraphicsSubmitContext.CreateBatch();
             graphicsBatch.AddWaitSemaphore(transferComplete, PipelineStageFlags.TransferBit);
             vkImage.TransitionImageLayout(
-                graphicsBatch.CommandBuffer,
+                graphicsBatch,
                 ImageLayout.ShaderReadOnlyOptimal,
                 PipelineStageFlags.TransferBit,
                 PipelineStageFlags.FragmentShaderBit
@@ -617,7 +616,7 @@ namespace RockEngine.Core.Rendering.Texturing
             var graphicsBatch = context.GraphicsSubmitContext.CreateBatch();
             graphicsBatch.AddWaitSemaphore(transferComplete, PipelineStageFlags.TransferBit);
             vkImage.TransitionImageLayout(
-                graphicsBatch.CommandBuffer,
+                graphicsBatch,
                 ImageLayout.ShaderReadOnlyOptimal,
                 PipelineStageFlags.TransferBit,
                 PipelineStageFlags.FragmentShaderBit
@@ -681,7 +680,7 @@ namespace RockEngine.Core.Rendering.Texturing
             // Transition ALL layers to shader read-only optimal
             var batch = context.GraphicsSubmitContext.CreateBatch();
             image.TransitionImageLayout(
-                batch.CommandBuffer,
+                batch,
                 ImageLayout.ShaderReadOnlyOptimal,
                 baseMipLevel: 0,
                 levelCount: 1,
@@ -749,7 +748,7 @@ namespace RockEngine.Core.Rendering.Texturing
             // Transition ALL layers to shader read-only optimal
             var batch = context.GraphicsSubmitContext.CreateBatch();
             image.TransitionImageLayout(
-                batch.CommandBuffer,
+                batch,
                 ImageLayout.ShaderReadOnlyOptimal,
                 baseMipLevel: 0,
                 levelCount: 1,

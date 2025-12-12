@@ -8,7 +8,6 @@ using RockEngine.Core.Rendering.Objects;
 using RockEngine.Core.Rendering.Passes;
 using RockEngine.Core.Rendering.Passes.SubPasses;
 using RockEngine.Core.Rendering.RenderTargets;
-using RockEngine.Core.TPL;
 using RockEngine.Vulkan;
 
 using Silk.NET.Vulkan;
@@ -93,7 +92,7 @@ namespace RockEngine.Core.Rendering
             _lightManager = lightManager;
             _indirectCommandManager = indirectCommandManager;
             _renderPassManager = renderPassManager;
-            SwapchainTarget = new SwapchainRenderTarget(context, graphicsEngine.Swapchain);
+            SwapchainTarget = new SwapchainRenderTarget(context, graphicsEngine.MainSwapchain);
           
             _iblManager = new IBLManager(
            context,

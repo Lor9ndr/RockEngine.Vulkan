@@ -58,7 +58,7 @@ namespace RockEngine.Core.Rendering.Managers
             }
 
             var batch = _context.GraphicsSubmitContext.CreateBatch();
-            batch.CommandBuffer.LabelObject("Lightmanager cmd");
+            batch.LabelObject("Lightmanager cmd");
             frameBuffer.StageData(batch, lightData);
 
             // Update light count UBO

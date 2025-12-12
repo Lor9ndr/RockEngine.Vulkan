@@ -57,8 +57,8 @@ namespace RockEngine.Core.Rendering
             for (int i = 0; i < ColorAttachments.Length; i++)
             {
                 ColorAttachments[i] = CreateColorAttachment(ColorAttachmentFormats[i]);
-                _context.DebugUtils.SetDebugUtilsObjectName(ColorAttachments[i].VkObjectNative, ObjectType.ImageView, debugNames[i] + "View");
-                _context.DebugUtils.SetDebugUtilsObjectName(ColorAttachments[i].Image.VkObjectNative, ObjectType.Image, debugNames[i]);
+                ColorAttachments[i].LabelObject(debugNames[i] + "View");
+                ColorAttachments[i].Image.LabelObject(debugNames[i]);
             }
             DepthAttachment = CreateDepthAttachment();
 
@@ -73,7 +73,6 @@ namespace RockEngine.Core.Rendering
                 format,
                 ImageTiling.Optimal,
                 ImageUsageFlags.ColorAttachmentBit |
-                    ImageUsageFlags.TransientAttachmentBit |
                     ImageUsageFlags.InputAttachmentBit ,
                 MemoryPropertyFlags.DeviceLocalBit, aspectFlags: ImageAspectFlags.ColorBit);
 

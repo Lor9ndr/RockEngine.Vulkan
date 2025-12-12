@@ -10,7 +10,6 @@ using RockEngine.Editor.EditorUI;
 using RockEngine.Editor.EditorUI.ImGuiRendering;
 using RockEngine.Vulkan;
 
-using Silk.NET.SDL;
 
 using System.Collections;
 using System.Diagnostics;
@@ -182,10 +181,9 @@ namespace RockEngine.Editor.Layers
             }
         }
 
-        public ValueTask OnImGuiRender(VkCommandBuffer vkCommandBuffer)
+        public void OnImGuiRender(UploadBatch vkCommandBuffer)
         {
             RenderMainWindow();
-            return ValueTask.CompletedTask;
         }
 
         private void RenderMainWindow()
@@ -321,7 +319,7 @@ namespace RockEngine.Editor.Layers
         private void DrawContentArea()
         {
             float contentHeight = ImGui.GetContentRegionAvail().Y;
-            ImGui.BeginChild("##AssetBrowserContent", new Vector2(0, contentHeight), true);
+            ImGui.BeginChild("##AssetBrowserContent", new Vector2(0, contentHeight));
 
             // Debug info
             ImGui.TextDisabled($"Path: {_basePath}");
@@ -378,7 +376,7 @@ namespace RockEngine.Editor.Layers
             int columns = Math.Max(1, (int)(availableWidth / itemWidth));
 
             // Use child window with horizontal scrolling if needed
-            ImGui.BeginChild("##AssetGridContainer", Vector2.Zero, false, ImGuiWindowFlags.HorizontalScrollbar);
+            ImGui.BeginChild("##AssetGridContainer", Vector2.Zero);
 
             float windowVisibleX = ImGui.GetWindowPos().X;
             float windowWidth = ImGui.GetWindowWidth();
@@ -1169,7 +1167,7 @@ namespace RockEngine.Editor.Layers
             // Coroutines are processed by the Application's CoroutineScheduler
         }
 
-        public void OnRender(VkCommandBuffer vkCommandBuffer)
+        public void OnRender(UploadBatch vkCommandBuffer)
         {
             // 3D rendering logic would go here if needed
         }

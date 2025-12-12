@@ -81,9 +81,9 @@ namespace RockEngine.Editor.EditorUI.EditorWindows
             // Tabs
             colors[(int)ImGuiCol.Tab] = darkColor;
             colors[(int)ImGuiCol.TabHovered] = accentColor;
-            colors[(int)ImGuiCol.TabActive] = accentHoverColor;
-            colors[(int)ImGuiCol.TabUnfocused] = darkColor;
-            colors[(int)ImGuiCol.TabUnfocusedActive] = new Vector4(0.14f, 0.14f, 0.14f, 1.00f);
+            //colors[(int)ImGuiCol.TabActive] = accentHoverColor;
+            //colors[(int)ImGuiCol.TabUnfocused] = darkColor;
+            //colors[(int)ImGuiCol.TabUnfocusedActive] = new Vector4(0.14f, 0.14f, 0.14f, 1.00f);
 
             // Docking
             colors[(int)ImGuiCol.DockingPreview] = accentColor * new Vector4(1.0f, 1.0f, 1.0f, 0.7f);
@@ -117,7 +117,7 @@ namespace RockEngine.Editor.EditorUI.EditorWindows
             colors[(int)ImGuiCol.DragDropTarget] = accentColor * new Vector4(1.0f, 1.0f, 1.0f, 0.7f);
 
             // Navigation
-            colors[(int)ImGuiCol.NavHighlight] = accentColor;
+            //colors[(int)ImGuiCol.NavWindowingHighlight] = accentColor;
             colors[(int)ImGuiCol.NavWindowingHighlight] = new Vector4(1.00f, 1.00f, 1.00f, 0.70f);
             colors[(int)ImGuiCol.NavWindowingDimBg] = new Vector4(0.80f, 0.80f, 0.80f, 0.20f);
 

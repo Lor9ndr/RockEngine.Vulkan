@@ -11,8 +11,8 @@ namespace RockEngine.Core.Rendering
         Task OnAttach();
         void OnDetach();
         void OnUpdate();
-        void OnRender(VkCommandBuffer vkCommandBuffer);
-        ValueTask OnImGuiRender(VkCommandBuffer vkCommandBuffer);
+        void OnRender(UploadBatch batch);
+        void OnImGuiRender(UploadBatch batch);
     }
 
     public class LayerStack : ILayerStack, IDisposable
@@ -95,7 +95,7 @@ namespace RockEngine.Core.Rendering
             // Process removals after all updates are complete
             ProcessRemovals();
         }
-        public void Render(VkCommandBuffer vkCommandBuffer)
+        public void Render(UploadBatch batch)
         {
             if (_disposed)
             {
@@ -109,11 +109,11 @@ namespace RockEngine.Core.Rendering
 
             for (int i = 0; i < layersToRender.Length; i++)
             {
-                layersToRender[i].OnRender(vkCommandBuffer);
+                layersToRender[i].OnRender(batch);
             }
         }
 
-        public async ValueTask RenderImGui(VkCommandBuffer commandBuffer)
+        public void RenderImGui(UploadBatch batch)
         {
             if (_disposed)
             {
@@ -126,7 +126,7 @@ namespace RockEngine.Core.Rendering
 
             for (int i = 0; i < _activeLayerCount; i++)
             {
-                 await _activeLayers[i].OnImGuiRender(commandBuffer);
+                 _activeLayers[i].OnImGuiRender(batch);
             }
         }
 

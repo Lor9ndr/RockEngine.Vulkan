@@ -21,7 +21,7 @@ namespace RockEngine.Vulkan
 
         public List<VkSemaphore> SignalSemaphores { get; } = new List<VkSemaphore>(2);
         public Dictionary<VkSemaphore, PipelineStageFlags> WaitSemaphores { get; } = new Dictionary<VkSemaphore, PipelineStageFlags>(2);
-        public VkCommandBuffer CommandBuffer => _commandBuffer;
+        internal VkCommandBuffer CommandBuffer => _commandBuffer;
         public IReadOnlyList<IDisposable> Disposables => _disposables;
         public SubmitContext SubmitContext => _submitContext;
         internal CommandPoolContext Context { get; }
@@ -269,15 +269,25 @@ namespace RockEngine.Vulkan
                 in copyRegion
             );
         }
+        public void CopyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, in BufferCopy copyRegion)
+        {
+            VulkanContext.Vk.CmdCopyBuffer(
+                _commandBuffer,
+                srcBuffer,
+                dstBuffer,
+                1,
+                in copyRegion
+            );
+        }
 
         public void CopyImage(
-    VkImage source,
-    ImageLayout srcLayout,
-    VkImage destination,
-    ImageLayout dstLayout,
-    uint srcLayer,
-    uint dstLayer,
-    uint layerCount)
+            VkImage source,
+            ImageLayout srcLayout,
+            VkImage destination,
+            ImageLayout dstLayout,
+            uint srcLayer,
+            uint dstLayer,
+            uint layerCount)
         {
             // Validate layer ranges
             if (srcLayer + layerCount > source.ArrayLayers)
@@ -348,6 +358,114 @@ namespace RockEngine.Vulkan
                 (uint)regions.Length,
                 regions
             );
+        }
+
+        public void WriteTimestamp(PipelineStageFlags pipelineStage, VkQueryPool queryPool, uint query) => VulkanContext.Vk.CmdWriteTimestamp(_commandBuffer, pipelineStage, queryPool, query);
+
+        public void LabelObject(string label)
+        {
+            _commandBuffer.LabelObject(label);
+        }
+
+        public unsafe void PushConstants(VkPipelineLayout layout, ShaderStageFlags stageFlags, uint offset, uint size, byte* dataPtr)
+        {
+            _commandBuffer.PushConstants(layout,stageFlags,offset,size,dataPtr);
+        }
+        public unsafe void PushConstants<T>(VkPipelineLayout layout, ShaderStageFlags stageFlags, uint offset, uint size, Span<T> data) where T:unmanaged
+        {
+            _commandBuffer.PushConstants(layout, stageFlags, offset, size, data);
+        }
+        public unsafe void PushConstants<T>(VkPipelineLayout layout, ShaderStageFlags stageFlags, uint offset, uint size, ref T data) where T : unmanaged
+        {
+            _commandBuffer.PushConstants(layout, stageFlags, offset, size, ref data);
+        }
+
+        public void BindDescriptorSets(PipelineBindPoint pipelineBindPoint, VkPipelineLayout pipelineLayout, uint minSetIndex,  Span<DescriptorSet> descriptorSets, Span<uint> dynamicOffsets)
+        {
+            _commandBuffer.BindDescriptorSet(pipelineBindPoint, pipelineLayout, minSetIndex, descriptorSets, dynamicOffsets);
+
+        }
+
+        public void BindPipeline(VkPipeline pipeline, PipelineBindPoint bindPoint = PipelineBindPoint.Graphics)
+        {
+            _commandBuffer.BindPipeline(pipeline, bindPoint);
+        }
+
+        public void Dispatch(uint groupsX, uint groupsY, uint groupsZ)
+        {
+            _commandBuffer.Dispatch(groupsX, groupsY, groupsZ);
+
+        }
+
+        public DebugLabelScope NameAction(string name, float[] value)
+        {
+            return _commandBuffer.NameAction(name, value);
+        }
+
+        public void BeginRenderPass(in RenderPassBeginInfo renderPassBeginInfo, SubpassContents subpassContents)
+        {
+            _commandBuffer.BeginRenderPass(renderPassBeginInfo, subpassContents);
+        }
+
+        public void NextSubpass(SubpassContents subpassContents)
+        {
+            _commandBuffer.NextSubpass(subpassContents);
+        }
+
+        public void EndRenderPass()
+        {
+            _commandBuffer.EndRenderPass();
+        }
+
+        public void CopyImageToBuffer(VkImage srcImage, ImageLayout srcImageLayout, VkBuffer dstBuffer, in BufferImageCopy pRegions)
+        {
+            _commandBuffer.CopyImageToBuffer(srcImage, srcImageLayout, dstBuffer,  pRegions);
+        }
+
+        public  void CopyBufferToImage(VkBuffer srcBuffer, VkImage dstImage, ImageLayout dstImageLayout,  Span<BufferImageCopy> pRegions)
+        {
+            _commandBuffer.CopyBufferToImage(srcBuffer,dstImage, dstImageLayout, (uint)pRegions.Length, pRegions);
+        }
+
+     
+        public void CopyBufferToImage(VkBuffer srcBuffer, VkImage dstImage, ImageLayout dstImageLayout, in BufferImageCopy pRegions)
+        {
+            _commandBuffer.CopyBufferToImage(srcBuffer, dstImage, dstImageLayout, 1, pRegions);
+        }
+
+        internal void BindVertexBuffer(VkBuffer vertexBuffer, in ulong offset = 0)
+        {
+            _commandBuffer.BindVertexBuffer(vertexBuffer, in offset);
+        }
+
+        internal void BindIndexBuffer(VkBuffer vkBuffer, ulong indexOffset, IndexType type)
+        {
+            _commandBuffer.BindIndexBuffer(vkBuffer, indexOffset, type);
+        }
+
+        public void SetViewport(in Viewport viewport)
+        {
+            _commandBuffer.SetViewport(in viewport);
+        }
+
+        public void SetScissor(in Rect2D scissor)
+        {
+            _commandBuffer.SetScissor(in scissor);
+        }
+
+        public void DrawIndexed(uint indexCount, uint instanceCount, uint firstIndex, int vertexOffset, uint firstInstance)
+        {
+            _commandBuffer.DrawIndexed(indexCount, instanceCount, firstIndex, vertexOffset, firstInstance);
+        }
+
+        public void DrawIndexedIndirect(VkBuffer buffer, uint drawCount, ulong offset, uint stride)
+        {
+            _commandBuffer.DrawIndirect(buffer,drawCount,offset,stride);
+        }
+
+        public void Draw(uint vertexCount, uint instanceCount, uint firstVertex, uint firstInstance)
+        {
+            _commandBuffer.Draw(vertexCount,instanceCount,firstVertex,firstInstance);
         }
     }
 }

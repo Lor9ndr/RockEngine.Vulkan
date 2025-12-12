@@ -52,7 +52,7 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
         {
             return new(Order, Name);
         }
-        public void Execute(VkCommandBuffer cmd, params object[] args)
+        public void Execute(UploadBatch batch, params object[] args)
         {
             using (PerformanceTracer.BeginSection(nameof(PostLightPass)))
             {
@@ -60,8 +60,8 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
                 var camera = args[1] as Camera ?? throw new ArgumentNullException(nameof(Camera));
                 var camIndex = (int)args[2];
 
-                cmd.SetViewport(camera.RenderTarget.Viewport);
-                cmd.SetScissor(camera.RenderTarget.Scissor);
+                batch.SetViewport(camera.RenderTarget.Viewport);
+                batch.SetScissor(camera.RenderTarget.Scissor);
 
                 var matrixBinding = _transformManager.GetCurrentBinding(frameIndex);
                 var globalUboBinding = _globalUbo.GetBinding((uint)camIndex);
@@ -83,7 +83,7 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
                 MaterialPass? lastMaterialPass = null;
 
                 // Привязываем общие буферы вершин и индексов
-                _geometryBufferManager.Bind(cmd);
+                _geometryBufferManager.Bind(batch);
 
                 for (int i = 0; i < drawGroupsSpan.Length; i++)
                 {
@@ -96,12 +96,12 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
                     // Pipeline state change
                     if (lastPipeline != drawGroup.MaterialPass.Pipeline)
                     {
-                        cmd.BindPipeline(drawGroup.MaterialPass.Pipeline);
+                        batch.BindPipeline(drawGroup.MaterialPass.Pipeline);
                         lastPipeline = drawGroup.MaterialPass.Pipeline;
 
                         // Bind global resources using the binding manager
-                        _bindingManager.BindResource(frameIndex, globalUboBinding, cmd, drawGroup.MaterialPass.Pipeline.Layout);
-                        _bindingManager.BindResource(frameIndex, matrixBinding, cmd, drawGroup.MaterialPass.Pipeline.Layout);
+                        _bindingManager.BindResource(frameIndex, globalUboBinding, batch, drawGroup.MaterialPass.Pipeline.Layout);
+                        _bindingManager.BindResource(frameIndex, matrixBinding, batch, drawGroup.MaterialPass.Pipeline.Layout);
                     }
 
                     // Material change
@@ -110,33 +110,31 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
                         _bindingManager.BindResourcesForMaterial(
                             frameIndex,
                             drawGroup.MaterialPass,
-                            cmd,
+                            batch,
                             false,
                             [matrixBinding.SetLocation, globalUboBinding.SetLocation]
                         );
                         lastMaterialPass = drawGroup.MaterialPass;
-                        lastMaterialPass.CmdPushConstants(cmd);
+                        lastMaterialPass.CmdPushConstants(batch);
                     }
 
                     // Issue draw command
                     if (drawGroup.IsMultiDraw && _supportsMultiDraw)
                     {
-                        VulkanContext.Vk.CmdDrawIndexedIndirect(
-                            cmd,
+                        batch.DrawIndexedIndirect(
                             indirectBuffer,
-                            drawGroup.ByteOffset,
                             drawGroup.Count,
+                            drawGroup.ByteOffset,
                             (uint)_indirectCommandStride);
                     }
                     else
                     {
                         for (uint j = 0; j < drawGroup.Count; j++)
                         {
-                            VulkanContext.Vk.CmdDrawIndexedIndirect(
-                                cmd,
+                            batch.DrawIndexedIndirect(
                                 indirectBuffer,
-                                drawGroup.ByteOffset + (ulong)(j * _indirectCommandStride),
                                 1,
+                                drawGroup.ByteOffset + (ulong)(j * _indirectCommandStride),
                                 (uint)_indirectCommandStride);
                         }
                     }

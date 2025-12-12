@@ -97,7 +97,7 @@ namespace RockEngine.Core.Rendering.Buffers
                 );
 
                 // Copy data
-                VulkanContext.Vk.CmdCopyBuffer(batch.CommandBuffer, _deviceBuffer, newBuffer, 1, in copyRegion);
+                batch.CopyBuffer(_deviceBuffer, newBuffer, in  copyRegion);
 
                 // Add barrier for destination buffer after copy
                 var postDstBarrier = new BufferMemoryBarrier

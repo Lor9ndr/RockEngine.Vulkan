@@ -4,7 +4,7 @@ using Silk.NET.Vulkan;
 
 namespace RockEngine.Vulkan
 {
-    public struct SwapChainSupportDetails
+    public ref struct SwapChainSupportDetails
     {
         public SurfaceCapabilitiesKHR Capabilities;
         public SurfaceFormatKHR[] Formats;
@@ -122,6 +122,7 @@ namespace RockEngine.Vulkan
                 MultiDrawIndirect = true,
                 ImageCubeArray = true,
                 GeometryShader = true,
+                DrawIndirectFirstInstance = true
             };
 
             vulkan11Features.SType = StructureType.PhysicalDeviceVulkan11Features;

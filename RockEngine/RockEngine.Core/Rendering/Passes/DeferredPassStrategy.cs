@@ -12,7 +12,6 @@ namespace RockEngine.Core.Rendering.Passes
     public class DeferredPassStrategy : PassStrategyBase
     {
         private readonly GlobalUbo _globalUbo;
-        private readonly List<Task> _renderTasks;
 
         public LightingPass LightingPass => SubPasses.OfType<LightingPass>().First();
         public override int Order => 0;
@@ -24,7 +23,6 @@ namespace RockEngine.Core.Rendering.Passes
              : base(context, subpasses)
         {
             _globalUbo = globalUbo;
-            _renderTasks =  new List<Task>(4);
 
         }
 
@@ -33,37 +31,39 @@ namespace RockEngine.Core.Rendering.Passes
             uint frameIndex = renderer.FrameIndex;
             var cams = cameraManager.RegisteredCameras;
 
-            for (int i = 0; i < cams.Count; i++)
+            await Parallel.ForAsync(0, cams.Count, new ParallelOptions
+            {
+                MaxDegreeOfParallelism = Environment.ProcessorCount
+            }, async(i, ct) =>
             {
                 Camera camera = cams[i];
                 if (camera.RenderTarget.RenderPass != RenderPass)
                 {
-                    continue;
+                    return;
                 }
                 if (camera.IsActive)
                 {
-                    _renderTasks.Add((ExecuteCameraPass(submitContext, camera, renderer, i, frameIndex)));
+                   await ExecuteCameraPass(submitContext, camera, renderer, i, frameIndex);
                 }
-            }
-            await Task.WhenAll(_renderTasks);
-            _renderTasks.Clear();
+            });
+           
         }
 
 
-        private Task ExecuteCameraPass(SubmitContext submitContext, Camera camera, WorldRenderer renderer, int camIndex, uint frameIndex)
+        private ValueTask ExecuteCameraPass(SubmitContext submitContext, Camera camera, WorldRenderer renderer, int camIndex, uint frameIndex)
         {
 
             var name = $"Camera - {camera.Entity.Name}";
             using (PerformanceTracer.BeginSection(name))
             {
                 var primaryBatch = submitContext.CreateBatch();
-                var cmd = primaryBatch.CommandBuffer;
-                using (cmd.NameAction(name, [0.5f, 0.8f, 0.9f, 1.0f]))
+                var batch = primaryBatch;
+                using (batch.NameAction(name, [0.5f, 0.8f, 0.9f, 1.0f]))
                 {
-                    using (PerformanceTracer.BeginSection(name, cmd, frameIndex))
+                    using (PerformanceTracer.BeginSection(name, batch, frameIndex))
                     {
-                        camera.RenderTarget.PrepareForRender(cmd);
-                        BeginRenderPass(camera, renderer, cmd);
+                        camera.RenderTarget.PrepareForRender(primaryBatch);
+                        BeginRenderPass(camera, renderer, batch);
 
                         // Precompute inheritance info
                         var inheritanceInfos = new CommandBufferInheritanceInfo[_subPasses.Length];
@@ -83,12 +83,13 @@ namespace RockEngine.Core.Rendering.Passes
 
                         // Record subpasses in parallel
                         var secondaryBatches = new UploadBatch[_subPasses.Length];
-                        var recordingTasks = new Task[_subPasses.Length];
+                        Task[] recordingTasks = new Task[_subPasses.Length];
 
                         for (int i = 0; i < _subPasses.Length; i++)
                         {
                             int subpassIndex = i;
-                            recordingTasks[subpassIndex] = Task.Run(() =>
+
+                            recordingTasks[i] = Task.Run(() =>
                             {
                                 var secondaryBatch = submitContext.CreateBatch(new BatchCreationParams
                                 {
@@ -100,11 +101,11 @@ namespace RockEngine.Core.Rendering.Passes
                                 // Only record if the batch is invalid or one-time submit
                                 RecordSubpassCommand(secondaryBatch, subpassIndex, camera, camIndex, frameIndex);
                             });
+                          
                         }
+                        
+                        Task.WhenAll(recordingTasks).GetAwaiter().GetResult();
 
-                        // TODO: MAKE IT FULLY ASYNC, CURRENTLY WE ARE BLOCKING THREAD BY THAT
-                        // Wait for all recordings to complete
-                        Task.WaitAll(recordingTasks);
 
                         // Execute secondary command buffers
                         for (int i = 0; i < secondaryBatches.Length; i++)
@@ -112,17 +113,17 @@ namespace RockEngine.Core.Rendering.Passes
                             primaryBatch.ExecuteCommands(secondaryBatches[i]);
                             if (i < _subPasses.Length - 1)
                             {
-                                cmd.NextSubpass(SubpassContents.SecondaryCommandBuffers);
+                                batch.NextSubpass(SubpassContents.SecondaryCommandBuffers);
                             }
                         }
 
-                        cmd.EndRenderPass();
-                        camera.RenderTarget.TransitionToRead(cmd);
+                        batch.EndRenderPass();
+                        camera.RenderTarget.TransitionToRead(primaryBatch);
                     }
                 }
 
                 primaryBatch.Submit();
-                return Task.CompletedTask;
+                return ValueTask.CompletedTask;
             }
         }
 
@@ -133,19 +134,18 @@ namespace RockEngine.Core.Rendering.Passes
             int camIndex,
             uint frameIndex)
         {
-            var cmd = batch.CommandBuffer;
             var subpass = _subPasses[subpassIndex];
             // Execute the subpass
-            using (PerformanceTracer.BeginSection(subpass.GetMetadata().Name, cmd, frameIndex))
+            using (PerformanceTracer.BeginSection(subpass.GetMetadata().Name, batch, frameIndex))
             {
-                subpass.Execute(cmd, frameIndex, camera, camIndex);
+                subpass.Execute(batch, frameIndex, camera, camIndex);
             }
 
             // End the batch after recording
             batch.End();
         }
 
-        private unsafe static void BeginRenderPass(Camera camera, WorldRenderer renderer, VkCommandBuffer cmd)
+        private unsafe static void BeginRenderPass(Camera camera, WorldRenderer renderer, UploadBatch batch)
         {
 
             fixed (ClearValue* pClearValue = camera.RenderTarget.ClearValues)
@@ -160,7 +160,7 @@ namespace RockEngine.Core.Rendering.Passes
                     PClearValues = pClearValue
                 };
 
-                cmd.BeginRenderPass(in renderPassBeginInfo, SubpassContents.SecondaryCommandBuffers);
+                batch.BeginRenderPass(in renderPassBeginInfo, SubpassContents.SecondaryCommandBuffers);
             }
         }
     }

@@ -11,7 +11,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.PropertyHandlers
     [PropertyHandler(typeof(Vector3))]
     public class Vector3PropertyHandler : BasePropertyHandler<Vector3>
     {
-        protected override ValueTask DrawProperty(IComponent component, UIPropertyAccessor accessor, Vector3 value, PropertyDrawer drawer)
+        protected override void DrawProperty(IComponent component, UIPropertyAccessor accessor, Vector3 value, PropertyDrawer drawer)
         {
             bool isColor = accessor.GetAttribute<ColorAttribute>() != null;
             var stepAttr = accessor.GetAttribute<StepAttribute>();
@@ -30,7 +30,6 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.PropertyHandlers
             {
                 accessor.SetValue(component, value);
             }
-            return ValueTask.CompletedTask;
         }
     }
 

@@ -22,21 +22,25 @@ namespace RockEngine.Core.ECS.Components
             set
             {
                 field = value;
-
-                switch (field)
-                {
-                    case LightType.Directional:
-                        GetShadowMatrix = GetDirectionalShadowMatrices; // Use CSM version
-                        break;
-                    case LightType.Point:
-                        GetShadowMatrix = GetPointShadowMatrices;
-                        break;
-                    case LightType.Spot:
-                        GetShadowMatrix = UpdateSpotShadowMatrices;
-                        break;
-                }
+                DefineShadowMatrixDelegate(field);
             }
         } = LightType.Point;
+
+        private void DefineShadowMatrixDelegate(LightType type)
+        {
+            switch (type)
+            {
+                case LightType.Directional:
+                    GetShadowMatrix = GetDirectionalShadowMatrices; // Use CSM version
+                    break;
+                case LightType.Point:
+                    GetShadowMatrix = GetPointShadowMatrices;
+                    break;
+                case LightType.Spot:
+                    GetShadowMatrix = UpdateSpotShadowMatrices;
+                    break;
+            }
+        }
 
         [Color]
         public Vector3 Color { get; set; } = Vector3.One;
@@ -103,7 +107,7 @@ namespace RockEngine.Core.ECS.Components
             set => OuterCutoff = MathF.Cos(MathHelper.DegreesToRadians(Math.Clamp(value, 5f, 85f)));
         }
 
-        public bool CastShadows { get; set; } = true;
+        public bool CastShadows { get; set; } = false;
 
         [Range(0.001f, 0.1f), Step(0.001f)]
         public float ShadowBias { get; set; } = 0.005f;
@@ -116,16 +120,6 @@ namespace RockEngine.Core.ECS.Components
         // Directional light specific shadow properties
         public float ShadowDistance { get; set; } = 100.0f;
         public Vector2 ShadowOrthoSize { get; set; } = new Vector2(200, 200);
-
-        [Range(0.1f, 100)]
-        public float ShadowNearPlane { get => field; set => field = Math.Clamp(value, 0.1f, ShadowFarPlane ); } = 0.1f;
-
-        [Range(1.1f, 1000.0f)]
-        public float ShadowFarPlane
-        {
-            get => field;
-            set => field = Math.Clamp(value, ShadowNearPlane + 0.1f, 1000);
-        } = 1000.0f;  // Should match or be less than Radius
 
 
         [Range(1,4)]
@@ -146,10 +140,10 @@ namespace RockEngine.Core.ECS.Components
         private LightData _lightData;
         private int _shadowMapIndex = -1;
 
-
         public override ValueTask OnStart(WorldRenderer renderer)
         {
             renderer.LightManager.RegisterLight(this);
+            DefineShadowMatrixDelegate(Type);
             return ValueTask.CompletedTask;
         }
 
@@ -159,6 +153,7 @@ namespace RockEngine.Core.ECS.Components
             {
                 GetShadowMatrix.Invoke();
             }
+            
             _lightData = new LightData
             {
                 PositionAndType = new Vector4(Entity.Transform.WorldPosition, (float)Type),
@@ -210,8 +205,8 @@ namespace RockEngine.Core.ECS.Components
             var projection = Matrix4x4.CreatePerspectiveFieldOfView(
                 fov,
                 1.0f, // Aspect ratio (square shadow map)
-                ShadowNearPlane,
-                ShadowFarPlane);
+                0.1f,
+                ShadowDistance);
 
            projection.M22 *= -1;
 
@@ -234,7 +229,7 @@ namespace RockEngine.Core.ECS.Components
 
             var matrices = new Matrix4x4[6];
             var position = Entity.Transform.Position;
-            var far = ShadowFarPlane;
+            var far = Radius;
 
             // Calculate the 6 view-projection matrices for cube map faces
             // +X, -X, +Y, -Y, +Z, -Z
@@ -438,7 +433,7 @@ namespace RockEngine.Core.ECS.Components
         public void UpdateCascadeSplits(float cameraFarPlane)
         {
             float near = 0.1f;
-            float far = Math.Min(cameraFarPlane, ShadowFarPlane);
+            float far = Math.Min(cameraFarPlane, ShadowDistance);
             float range = far - near;
             float ratio = far / near;
 

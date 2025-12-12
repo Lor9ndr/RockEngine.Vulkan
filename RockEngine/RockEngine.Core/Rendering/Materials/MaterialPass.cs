@@ -172,11 +172,11 @@ namespace RockEngine.Core.Rendering.Materials
             return false;
         }
 
-        public unsafe void CmdPushConstants(VkCommandBuffer cmd)
+        public unsafe void CmdPushConstants(UploadBatch batch)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
 
-            ArgumentNullException.ThrowIfNull(cmd);
+            ArgumentNullException.ThrowIfNull(batch);
 
             foreach (var (name, constant) in PushConstants)
             {
@@ -189,7 +189,7 @@ namespace RockEngine.Core.Rendering.Materials
 
                 fixed (byte* dataPtr = buffer)
                 {
-                    cmd.PushConstants(
+                    batch.PushConstants(
                         Pipeline.Layout,
                         constant.StageFlags,
                         constant.Offset,

@@ -60,7 +60,7 @@ namespace RockEngine.Editor.Rendering.Passes.SubPasses
 
         public static string Name => "picking";
 
-        public void Execute(VkCommandBuffer cmd, params object[] args)
+        public void Execute(UploadBatch cmd, params object[] args)
         {
 
             using (PerformanceTracer.BeginSection(nameof(PickingSubPass)))
@@ -86,7 +86,7 @@ namespace RockEngine.Editor.Rendering.Passes.SubPasses
                 var indirectBuffer = _indirectCommands.IndirectBuffer.Buffer;
                 if (drawGroups.Count == 0 && pickingGroups.Count == 0)
                 {
-                    return;
+                    return ;
                 }
 
                 _globalGeometryBuffer.Bind(cmd);
@@ -118,16 +118,19 @@ namespace RockEngine.Editor.Rendering.Passes.SubPasses
                     // Issue draw command
                     if (_supportsMultiDraw)
                     {
-                        VulkanContext.Vk.CmdDrawIndexedIndirect(cmd, indirectBuffer, drawGroup.ByteOffset,
-                            drawGroup.Count, (uint)_indirectCommandStride);
+                        cmd.DrawIndexedIndirect(indirectBuffer,
+                                                drawGroup.Count,
+                                                drawGroup.ByteOffset,
+                                                (uint)_indirectCommandStride);
                     }
                     else
                     {
                         for (uint j = 0; j < drawGroup.Count; j++)
                         {
-                            VulkanContext.Vk.CmdDrawIndexedIndirect(cmd, indirectBuffer,
-                                drawGroup.ByteOffset + (ulong)(j * _indirectCommandStride), 1,
-                                (uint)_indirectCommandStride);
+                            cmd.DrawIndexedIndirect(indirectBuffer,
+                                                    1,
+                                                    drawGroup.ByteOffset + (ulong)(j * _indirectCommandStride),
+                                                    (uint)_indirectCommandStride);
                         }
                     }
                 }
@@ -174,30 +177,27 @@ namespace RockEngine.Editor.Rendering.Passes.SubPasses
                     // Issue draw command
                     if (drawGroup.IsMultiDraw && _supportsMultiDraw)
                     {
-                        VulkanContext.Vk.CmdDrawIndexedIndirect(
-                            cmd,
+                        cmd.DrawIndexedIndirect(
                             indirectBuffer,
-                            drawGroup.ByteOffset,
                             drawGroup.Count,
+                            drawGroup.ByteOffset,
                             (uint)_indirectCommandStride);
                     }
                     else
                     {
                         for (uint j = 0; j < drawGroup.Count; j++)
                         {
-                            VulkanContext.Vk.CmdDrawIndexedIndirect(
-                                cmd,
+                            cmd.DrawIndexedIndirect(
                                 indirectBuffer,
-                                drawGroup.ByteOffset + (ulong)(j * _indirectCommandStride),
                                 1,
+                                drawGroup.ByteOffset + (ulong)(j * _indirectCommandStride),
                                 (uint)_indirectCommandStride);
                         }
                     }
                 }
-
-
-
             }
+            return ;
+
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -217,7 +217,7 @@ namespace RockEngine.Editor.Rendering.Passes.SubPasses
                 .Add();
 
             // Depth Attachment
-            builder.ConfigureAttachment(_graphicsEngine.Swapchain.DepthFormat)
+            builder.ConfigureAttachment(_graphicsEngine.MainSwapchain.DepthFormat)
                 .WithDepthOperations(
                     load: AttachmentLoadOp.Clear,
                     store: AttachmentStoreOp.DontCare,

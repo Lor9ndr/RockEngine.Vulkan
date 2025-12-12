@@ -1,4 +1,4 @@
-﻿using ImGuiNET;
+﻿//using ImGuiNET;
 
 using NLog;
 
@@ -154,14 +154,14 @@ namespace RockEngine.Core
             return new CpuSectionTracker(name);
         }
 
-        public static GpuSectionTracker BeginSection(string name, VkCommandBuffer cmd, uint frameIndex)
+        public static GpuSectionTracker BeginSection(string name, UploadBatch batch, uint frameIndex)
         {
             if (!_gpuTimestampsSupported)
             {
                 return new GpuSectionTracker(); // Return a disabled tracker
             }
             var frame = _frameData[frameIndex];
-            return new GpuSectionTracker(name, cmd, frame);
+            return new GpuSectionTracker(name, batch, frame);
         }
 
         public static void BeginFrame(uint frameIndex)
@@ -264,7 +264,7 @@ namespace RockEngine.Core
             }
         }
 
-        public static void DrawMetrics()
+       /* public static void DrawMetrics()
         {
             double elapsedSeconds = _updateTimer.Elapsed.TotalSeconds;
             if (elapsedSeconds > UPDATE_INTERVAL_SECONDS)
@@ -395,16 +395,16 @@ namespace RockEngine.Core
             // Tooltip with detailed information
             if (ImGui.IsItemHovered())
             {
-                ImGui.BeginTooltip();
+                *//*//ImGui.BeginTooltip();
                 ImGui.Text($"Full Path: {scope.FullPath}");
                 ImGui.Text($"Average: {data.AverageDuration:0.00}ms");
                 ImGui.Text($"Last: {data.LastDuration:0.00}ms");
                 ImGui.Text($"Min: {data.MinDuration:0.00}ms");
                 ImGui.Text($"Max: {data.MaxDuration:0.00}ms");
                 ImGui.Text($"Samples: {data.SampleCount}");
-                ImGui.EndTooltip();
+                //ImGui.EndTooltip();*//*
             }
-        }
+        }*/
 
         private static ScopeInfo GetOrCreateScope(string name, ScopeInfo parent)
         {
@@ -569,7 +569,7 @@ namespace RockEngine.Core
         public struct GpuSectionTracker : IDisposable
         {
             private readonly int _scopeId;
-            private readonly VkCommandBuffer _cmd;
+            private readonly UploadBatch _batch;
             private readonly PerFrameData _frame;
             private readonly uint _startIndex;
             private readonly bool _valid;
@@ -580,20 +580,20 @@ namespace RockEngine.Core
             {
                 _valid = false;
                 _scopeId = 0;
-                _cmd = default;
+                _batch = null;
                 _frame = null;
                 _startIndex = 0;
                 _previousScope = null;
                 _disposed = false;
             }
 
-            public GpuSectionTracker(string name, VkCommandBuffer cmd, PerFrameData frame)
+            public GpuSectionTracker(string name, UploadBatch batch, PerFrameData frame)
             {
                 _previousScope = _currentGpuScope.Value;
                 var parent = _previousScope ?? _gpuRoot;
                 var scopeInfo = GetOrCreateScope(name, parent);
                 _scopeId = scopeInfo.Id;
-                _cmd = cmd;
+                _batch = batch;
                 _frame = frame;
                 _valid = true;
                 _disposed = false;
@@ -601,13 +601,8 @@ namespace RockEngine.Core
                 // Reserve queries first to get the start index
                 _startIndex = frame.ReserveQueries(_scopeId, 2);
 
-                var vk = VulkanContext.Vk;
-
                 // Write start timestamp
-                unsafe
-                {
-                    vk.CmdWriteTimestamp(_cmd, PipelineStageFlags.BottomOfPipeBit, frame.QueryPool.VkObjectNative, _startIndex);
-                }
+                batch.WriteTimestamp(PipelineStageFlags.BottomOfPipeBit, frame.QueryPool, _startIndex);
 
                 _currentGpuScope.Value = scopeInfo;
             }
@@ -622,12 +617,8 @@ namespace RockEngine.Core
                 _disposed = true;
 
                 // Write end timestamp
-                var vk = VulkanContext.Vk;
-                unsafe
-                {
-                    vk.CmdWriteTimestamp(_cmd, PipelineStageFlags.BottomOfPipeBit, _frame.QueryPool.VkObjectNative, _startIndex + 1);
-                }
-
+                _batch.WriteTimestamp(PipelineStageFlags.BottomOfPipeBit, _frame.QueryPool, _startIndex + 1);
+                
                 _currentGpuScope.Value = _previousScope;
             }
         }

@@ -50,7 +50,7 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
         {
             return new(Order, Name);
         }
-        public void Execute(VkCommandBuffer cmd, params object[] args)
+        public void Execute(UploadBatch batch, params object[] args)
         {
             using (PerformanceTracer.BeginSection(nameof(ScreenPass)))
             {
@@ -62,16 +62,16 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
 
                 SetInputTexture(camera.RenderTarget.OutputTexture);
 
-                cmd.SetViewport(_renderer.SwapchainTarget.Viewport);
-                cmd.SetScissor(_renderer.SwapchainTarget.Scissor);
+                batch.SetViewport(_renderer.SwapchainTarget.Viewport);
+                batch.SetScissor(_renderer.SwapchainTarget.Scissor);
 
-                cmd.BindPipeline(_screenPipeline, PipelineBindPoint.Graphics);
+                batch.BindPipeline(_screenPipeline, PipelineBindPoint.Graphics);
                /* if(!_screenMaterial.AddSharedBinding)
                 {
                     return;
                 }*/
-                _bindingManager.BindResourcesForMaterial(renderer.FrameIndex, _screenMaterialPass, cmd);
-                cmd.Draw(3, 1, 0, 0);
+                _bindingManager.BindResourcesForMaterial(renderer.FrameIndex, _screenMaterialPass, batch);
+                batch.Draw(3, 1, 0, 0);
             }
         }
         public void Initilize()
@@ -92,9 +92,9 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
                     .AddState(DynamicState.Viewport)
                     .AddState(DynamicState.Scissor))
                 .WithViewportState(new VulkanViewportStateInfoBuilder()
-                    .AddViewport(new Viewport(0, 0, _graphicsEngine.Swapchain.Extent.Width,
-                                             _graphicsEngine.Swapchain.Extent.Height, 0, 1))
-                    .AddScissors(new Rect2D(new Offset2D(), _graphicsEngine.Swapchain.Extent)))
+                    .AddViewport(new Viewport(0, 0, _graphicsEngine.MainSwapchain.Extent.Width,
+                                             _graphicsEngine.MainSwapchain.Extent.Height, 0, 1))
+                    .AddScissors(new Rect2D(new Offset2D(), _graphicsEngine.MainSwapchain.Extent)))
                 .WithRasterizer(new VulkanRasterizerBuilder().CullFace(CullModeFlags.None))
                 .WithMultisampleState(new VulkanMultisampleStateInfoBuilder().Configure(false, SampleCountFlags.Count1Bit))
                 .WithColorBlendState(new VulkanColorBlendStateBuilder().AddDefaultAttachment())
@@ -119,7 +119,7 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
         public void SetupAttachmentDescriptions(RenderPassBuilder builder)
         {
             // Color attachment (swapchain image)
-            builder.ConfigureAttachment(_graphicsEngine.Swapchain.Format)
+            builder.ConfigureAttachment(_graphicsEngine.MainSwapchain.Format)
                 .WithColorOperations(
                     load: AttachmentLoadOp.Clear, // Preserve existing content
                     store: AttachmentStoreOp.Store,
@@ -128,7 +128,7 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
                 .Add();
 
             // Depth attachment (optional)
-            builder.ConfigureAttachment(_graphicsEngine.Swapchain.DepthFormat)
+            builder.ConfigureAttachment(_graphicsEngine.MainSwapchain.DepthFormat)
                 .WithDepthOperations(
                     load: AttachmentLoadOp.Clear,
                     store: AttachmentStoreOp.Store,

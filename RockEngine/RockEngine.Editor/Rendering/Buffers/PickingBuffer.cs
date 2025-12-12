@@ -31,7 +31,7 @@ namespace RockEngine.Editor.Rendering.Buffers
             // Ensure the source texture is in correct layout
             if(sourceTexture.Image.GetMipLayout(0) != ImageLayout.TransferSrcOptimal)
             {
-                sourceTexture.Image.TransitionImageLayout(batch.CommandBuffer, ImageLayout.TransferSrcOptimal);
+                sourceTexture.Image.TransitionImageLayout(batch, ImageLayout.TransferSrcOptimal);
             }
             uint actualY = flipY ? (sourceTexture.Height - 1 - y) : y;
             // Copy specific pixel region
@@ -51,12 +51,10 @@ namespace RockEngine.Editor.Rendering.Buffers
                 ImageExtent = new Extent3D(1, 1, 1)
             };
 
-            VulkanContext.Vk.CmdCopyImageToBuffer(
-                batch.CommandBuffer,
+            batch.CopyImageToBuffer(
                 sourceTexture.Image,
                 ImageLayout.TransferSrcOptimal,
                 _stagingBuffer,
-                1,
                 in imageCopy);
 
             // Add barrier to ensure copy completes before reading
@@ -81,7 +79,7 @@ namespace RockEngine.Editor.Rendering.Buffers
             // Ensure the source texture is in correct layout
             if(sourceTexture.Image.GetMipLayout(0) != ImageLayout.TransferSrcOptimal)
             {
-                sourceTexture.Image.TransitionImageLayout(batch.CommandBuffer, ImageLayout.TransferSrcOptimal);
+                sourceTexture.Image.TransitionImageLayout(batch, ImageLayout.TransferSrcOptimal);
             }
             uint actualY = flipY ? (sourceTexture.Height - 1 - y) : y;
             // Copy specific pixel region
@@ -101,12 +99,10 @@ namespace RockEngine.Editor.Rendering.Buffers
                 ImageExtent = new Extent3D(1, 1, 1)
             };
 
-            VulkanContext.Vk.CmdCopyImageToBuffer(
-                batch.CommandBuffer,
+               batch.CopyImageToBuffer(
                 sourceTexture.Image,
                 ImageLayout.TransferSrcOptimal,
                 _stagingBuffer,
-                1,
                 in imageCopy);
 
             // Add barrier to ensure copy completes before reading

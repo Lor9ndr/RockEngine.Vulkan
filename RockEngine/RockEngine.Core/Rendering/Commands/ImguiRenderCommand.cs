@@ -4,7 +4,7 @@ using Silk.NET.Vulkan;
 
 namespace RockEngine.Core.Rendering.Commands
 {
-    public record struct ImguiRenderCommand(Action<VkCommandBuffer, uint> RenderCommand) : IRenderCommand
+    public record struct ImguiRenderCommand(Action<UploadBatch, uint, WorldRenderer> RenderCommand) : IRenderCommand
     {
     }
 }

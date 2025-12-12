@@ -224,7 +224,7 @@ namespace RockEngine.Core.ECS.Components
         public override ValueTask Update(WorldRenderer renderer)
         {
             UpdateVectors();
-            RenderTarget.Material.PushConstant("iblParams", new IBLParams()
+            RenderTarget?.Material?.PushConstant("iblParams", new IBLParams()
             {
                 Exposure = Exposure,
                 EnvIntensity = EnvIntensity,
@@ -248,5 +248,22 @@ namespace RockEngine.Core.ECS.Components
             IsActive = isActive;
         }
 
+        public Matrix4x4 GetProjectionMatrixForViewport(uint width, uint height)
+        {
+            float aspectRatio = (float)width / height;
+
+            // Create temporary projection matrix with correct aspect ratio
+            Matrix4x4 projectionMatrix = Matrix4x4.CreatePerspectiveFieldOfView(
+                _fov,
+                aspectRatio,
+                _nearClip,
+                _farClip
+            );
+
+            // Flip for Vulkan
+            projectionMatrix.M22 *= -1;
+
+            return projectionMatrix;
+        }
     }
 }

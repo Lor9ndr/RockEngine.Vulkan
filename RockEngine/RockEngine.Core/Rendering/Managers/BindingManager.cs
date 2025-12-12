@@ -27,7 +27,7 @@ namespace RockEngine.Core.Rendering.Managers
         public unsafe void BindResourcesForMaterial(
              uint frameIndex,
              MaterialPass materialPass,
-             VkCommandBuffer batch,
+             UploadBatch batch,
              bool isCompute = false,
              Span<uint> skipSets = default)
         {
@@ -64,7 +64,7 @@ namespace RockEngine.Core.Rendering.Managers
         public void BindResource(
           uint frameIndex,
           ResourceBinding binding,
-          VkCommandBuffer commandBuffer,
+          UploadBatch commandBuffer,
           VkPipelineLayout pipelineLayout,
           bool isCompute = false)
         {
@@ -186,25 +186,21 @@ namespace RockEngine.Core.Rendering.Managers
         }
 
         private unsafe void BindDescriptorSetsToCommandBuffer(
-                VkCommandBuffer commandBuffer,
+                UploadBatch batch,
                 VkPipelineLayout pipelineLayout,
                 Span<DescriptorSet> descriptorSets,
                 Span<uint> dynamicOffsets,
                 uint minSetIndex,
                 bool isCompute)
         {
-            fixed (DescriptorSet* descriptorSetsPtr = descriptorSets)
-            fixed (uint* dynamicOffsetsPtr = dynamicOffsets)
+          
             {
-                VulkanContext.Vk.CmdBindDescriptorSets(
-                    commandBuffer,
+                batch.BindDescriptorSets(
                     isCompute ? PipelineBindPoint.Compute : PipelineBindPoint.Graphics,
                     pipelineLayout,
                     minSetIndex,
-                    (uint)descriptorSets.Length,
-                    descriptorSetsPtr,
-                    (uint)dynamicOffsets.Length,
-                    dynamicOffsetsPtr);
+                    descriptorSets,
+                    dynamicOffsets);
             }
         }
 

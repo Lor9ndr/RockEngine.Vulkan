@@ -41,7 +41,7 @@ namespace RockEngine.Vulkan
         public static unsafe SwapChainSupportDetails QuerySwapChainSupport(PhysicalDevice device, ISurfaceHandler surface)
         {
             SwapChainSupportDetails details = new SwapChainSupportDetails();
-            surface.SurfaceApi.GetPhysicalDeviceSurfaceCapabilities(device, surface.Surface, out details.Capabilities);
+            var result = surface.SurfaceApi.GetPhysicalDeviceSurfaceCapabilities(device, surface.Surface, out details.Capabilities);
 
             uint formatCount;
             surface.SurfaceApi.GetPhysicalDeviceSurfaceFormats(device, surface.Surface, &formatCount, null);
@@ -61,19 +61,6 @@ namespace RockEngine.Vulkan
 
             return details;
         }
-
-
-
-        public static void BeginSingleTimeCommand(this VkCommandBuffer cmd)
-        {
-            var beginInfo = new CommandBufferBeginInfo()
-            {
-                SType = StructureType.CommandBufferBeginInfo,
-                Flags = CommandBufferUsageFlags.OneTimeSubmitBit
-            };
-            cmd.Begin(in beginInfo);
-        }
-
 
 
         public static Result VkAssertResult(this Result result)

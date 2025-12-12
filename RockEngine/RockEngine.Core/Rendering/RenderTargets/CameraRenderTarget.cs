@@ -30,26 +30,26 @@ namespace RockEngine.Core.Rendering.RenderTargets
         };
 
         public CameraRenderTarget(VulkanContext context, GraphicsContext engine, Extent2D size)
-            : base(context, size, engine.Swapchain.Format, ImageUsageFlags.ColorAttachmentBit | ImageUsageFlags.TransientAttachmentBit | ImageUsageFlags.SampledBit)
+            : base(context, size, engine.MainSwapchain.Format, ImageUsageFlags.ColorAttachmentBit | ImageUsageFlags.TransientAttachmentBit | ImageUsageFlags.SampledBit)
         {
             _context = context;
             _engine = engine;
-            _gBuffer = new GBuffer(context, size, engine.Swapchain.DepthFormat);
+            _gBuffer = new GBuffer(context, size, engine.MainSwapchain.DepthFormat);
             CreateTexture();
             ClearValues =
            [
                 // Color attachments (Albedo, Normal, Position)
-                new ClearValue { Color = new ClearColorValue(0.0f, 0.0f, 0.0f, 1.0f) },
-                new ClearValue { Color = new ClearColorValue(0.0f, 0.0f, 0.0f, 1.0f) },
-                new ClearValue { Color = new ClearColorValue(0.0f, 0.0f, 0.0f, 1.0f) },
-                new ClearValue { Color = new ClearColorValue(0.0f, 0.0f, 0.0f, 1.0f) },
+                new ClearValue { Color = new ClearColorValue(0.0f, 0.0f, 0.0f, 0) },
+                new ClearValue { Color = new ClearColorValue(0.0f, 0.0f, 0.0f, 0) },
+                new ClearValue { Color = new ClearColorValue(0.0f, 0.0f, 0.0f, 0) },
+                new ClearValue { Color = new ClearColorValue(0.0f, 0.0f, 0.0f, 0) },
                 //new ClearValue { Color = new ClearColorValue(0.0f, 0.0f, 0.0f, 1.0f) },
         
                 // Depth attachment
                 new ClearValue { DepthStencil = new ClearDepthStencilValue(1.0f, 0) },
         
                 // Output texture
-                new ClearValue { Color = new ClearColorValue(0.1f, 0.1f, 0.1f, 1.0f) }
+                new ClearValue { Color = new ClearColorValue(0) }
            ];
         }
 
@@ -73,7 +73,10 @@ namespace RockEngine.Core.Rendering.RenderTargets
         {
             foreach (var fb in Framebuffers)
             {
-                fb?.Dispose();
+                if(fb is not null)
+                {
+                    _context.GraphicsSubmitContext.AddDependency(fb);
+                }
             }
 
             Framebuffers = new VkFrameBuffer[_context.MaxFramesPerFlight];
@@ -93,20 +96,20 @@ namespace RockEngine.Core.Rendering.RenderTargets
             }
         }
 
-        public override void PrepareForRender(VkCommandBuffer cmd)
+        public override void PrepareForRender(UploadBatch batch)
         {
-            using (cmd.NameAction(nameof(PrepareForRender), [1, 1, 1, 1]))
+            using (batch.NameAction(nameof(PrepareForRender), [1, 1, 1, 1]))
             {
-                OutputTexture.Image.TransitionImageLayout(cmd, ImageLayout.ColorAttachmentOptimal);
+                OutputTexture.Image.TransitionImageLayout(batch, ImageLayout.ColorAttachmentOptimal);
             }
         }
 
         [GPUAction([1, 1, 1, 1])]
-        public override void TransitionToRead(VkCommandBuffer cmd)
+        public override void TransitionToRead(UploadBatch batch)
         {
-            using (cmd.NameAction(nameof(TransitionToRead), [1, 1, 1, 1]))
+            using (batch.NameAction(nameof(TransitionToRead), [1, 1, 1, 1]))
             {
-                OutputTexture.Image.TransitionImageLayout(cmd, ImageLayout.ShaderReadOnlyOptimal);
+                OutputTexture.Image.TransitionImageLayout(batch, ImageLayout.ShaderReadOnlyOptimal);
             }
         }
 

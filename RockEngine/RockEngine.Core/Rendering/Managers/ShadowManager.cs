@@ -28,7 +28,7 @@ namespace RockEngine.Core.Rendering.Managers
 
         private readonly Dictionary<Light, uint> _lightShadowMapIndices = new();
         private readonly Queue<uint> _availableShadowIndices = new();
-        private readonly uint _maxShadowMaps = 100;
+        private readonly uint _maxShadowMaps = 50;
         private static readonly Logger _logger = LogManager.GetCurrentClassLogger();
 
         public ShadowManager(VulkanContext context)
@@ -76,7 +76,7 @@ namespace RockEngine.Core.Rendering.Managers
             // Ensure the entire array starts in ShaderReadOnlyOptimal
             var batch = _context.GraphicsSubmitContext.CreateBatch();
             texture.Image.TransitionImageLayout(
-                batch.CommandBuffer,
+                batch,
                 ImageLayout.ShaderReadOnlyOptimal,
                 baseMipLevel: 0,
                 levelCount: 1,
@@ -133,7 +133,7 @@ namespace RockEngine.Core.Rendering.Managers
 
             // Transition destination array layers to TransferDstOptimal
             targetTexture.Image.TransitionImageLayout(
-                batch.CommandBuffer,
+                batch,
                 ImageLayout.ShaderReadOnlyOptimal,
                 ImageLayout.TransferDstOptimal,
                 PipelineStageFlags.FragmentShaderBit,
@@ -157,7 +157,7 @@ namespace RockEngine.Core.Rendering.Managers
 
             // Transition destination back to ShaderReadOnlyOptimal for sampling
             targetTexture.Image.TransitionImageLayout(
-                batch.CommandBuffer,
+                batch,
                 ImageLayout.TransferDstOptimal,
                 ImageLayout.ShaderReadOnlyOptimal,
                 PipelineStageFlags.TransferBit,
@@ -170,7 +170,7 @@ namespace RockEngine.Core.Rendering.Managers
 
             //Transition source back to DepthStencilAttachmentOptimal for next frame's rendering
             shadowImage.TransitionImageLayout(
-                batch.CommandBuffer,
+                batch,
                 ImageLayout.TransferSrcOptimal,
                 ImageLayout.DepthStencilAttachmentOptimal,
                 PipelineStageFlags.TransferBit,

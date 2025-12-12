@@ -10,7 +10,7 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
 
         SubPassMetadata GetMetadata();
 
-        void Execute(VkCommandBuffer cmd, params object[] args);
+        void Execute(UploadBatch cmd, params object[] args);
         void Dispose();
         /// <summary>
         /// Initialized after the renderpass builded it's renderpass of attached to it subpass

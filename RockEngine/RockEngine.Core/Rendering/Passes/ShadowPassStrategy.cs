@@ -24,7 +24,7 @@ namespace RockEngine.Core.Rendering.Passes
 
         public override async ValueTask Execute(SubmitContext submitContext, CameraManager cameraManager, WorldRenderer renderer)
         {
-            var shadowCastingLights = lightManager.GetShadowCastingLights();//.Take(2);
+            var shadowCastingLights = lightManager.GetShadowCastingLights().Take(3);
             var lst = shadowCastingLights.ToList();
             var mainCamera = cameraManager.RegisteredCameras.FirstOrDefault();
             if (mainCamera == null)
@@ -55,26 +55,25 @@ namespace RockEngine.Core.Rendering.Passes
             using var tracer = PerformanceTracer.BeginSection($"Shadow Pass - {light.Entity.Name}");
 
             var primaryBatch = submitContext.CreateBatch();
-            var cmd = primaryBatch.CommandBuffer;
 
-            using (PerformanceTracer.BeginSection($"ShadowMap_{light.Entity.Name}", cmd, renderer.FrameIndex))
+            using (PerformanceTracer.BeginSection($"ShadowMap_{light.Entity.Name}", primaryBatch, renderer.FrameIndex))
             {
-                var shadowTarget = GetOrCreateShadowTarget(light, cmd);
+                var shadowTarget = GetOrCreateShadowTarget(light);
 
-                using (cmd.NameAction($"ShadowMap_{light.Entity.Name}", _shadowPassColors))
+                using (primaryBatch.NameAction($"ShadowMap_{light.Entity.Name}", _shadowPassColors))
                 {
                     // Pre-calculate viewport and scissor once
                     var viewport = new Viewport(0, 0, light.ShadowMapSize, light.ShadowMapSize, 0, 1);
                     var scissor = new Rect2D(new Offset2D(), new Extent2D(light.ShadowMapSize, light.ShadowMapSize));
 
-                    BeginShadowRenderPass(cmd, shadowTarget);
-                    cmd.SetViewport(viewport);
-                    cmd.SetScissor(scissor);
+                    BeginShadowRenderPass(primaryBatch, shadowTarget);
+                    primaryBatch.SetViewport(viewport);
+                    primaryBatch.SetScissor(scissor);
 
                     // Execute subpass directly without virtual call overhead
-                    _subPasses[0].Execute(cmd, renderer.FrameIndex, light);
+                    _subPasses[0].Execute(primaryBatch, renderer.FrameIndex, light);
 
-                    cmd.EndRenderPass();
+                    primaryBatch.EndRenderPass();
                 }
 
                 shadowManager.UpdateShadowTexture(primaryBatch, light, shadowTarget.Image);
@@ -83,7 +82,7 @@ namespace RockEngine.Core.Rendering.Passes
             
             primaryBatch.Submit();
         }
-        private ShadowRenderTarget GetOrCreateShadowTarget(Light light, VkCommandBuffer commandBuffer)
+        private ShadowRenderTarget GetOrCreateShadowTarget(Light light)
         {
             return _shadowTargets.GetOrAdd(light, static (l, ctx) =>
             {
@@ -107,7 +106,7 @@ namespace RockEngine.Core.Rendering.Passes
             base.Dispose();
             _disposed = true;
         }
-        private unsafe void BeginShadowRenderPass(VkCommandBuffer cmd, ShadowRenderTarget shadowTarget)
+        private unsafe void BeginShadowRenderPass(UploadBatch batch, ShadowRenderTarget shadowTarget)
         {
             Span<ClearValue> clearValues = stackalloc ClearValue[shadowTarget.ClearValues.Length];
             shadowTarget.ClearValues.CopyTo(clearValues);
@@ -124,7 +123,7 @@ namespace RockEngine.Core.Rendering.Passes
                     PClearValues = pClearValues
                 };
 
-                cmd.BeginRenderPass(in renderPassBeginInfo, SubpassContents.Inline);
+                batch.BeginRenderPass(in renderPassBeginInfo, SubpassContents.Inline);
             }
         }
     }

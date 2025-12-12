@@ -222,7 +222,6 @@ namespace RockEngine.Vulkan
                     _signalSemaphores.IsEmpty &&
                     _waitSemaphores.IsEmpty)
                 {
-                    fence.Signal(_targetQueue);
                     var flushOp = new FlushOperation(this, fence, [], []);
                     flushOp.SetCompleted(true);
                     return flushOp;

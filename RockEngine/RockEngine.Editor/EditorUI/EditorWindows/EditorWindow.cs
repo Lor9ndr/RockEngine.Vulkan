@@ -18,7 +18,7 @@ namespace RockEngine.Editor.EditorUI.EditorWindows
             Title = title;
         }
 
-        public virtual async ValueTask Draw()
+        public virtual void Draw()
         {
             if (!IsOpen)
             {
@@ -27,12 +27,12 @@ namespace RockEngine.Editor.EditorUI.EditorWindows
 
             if (ImGui.Begin(Title, ref _isOpen))
             {
-                await OnDraw();
+                OnDraw();
             }
             ImGui.End();
         }
 
-        protected abstract ValueTask OnDraw();
+        protected abstract void OnDraw();
 
         protected virtual void ApplyWindowStyling()
         {

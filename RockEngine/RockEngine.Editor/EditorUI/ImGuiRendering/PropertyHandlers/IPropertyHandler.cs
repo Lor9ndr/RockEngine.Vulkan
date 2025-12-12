@@ -6,7 +6,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.PropertyHandlers
     public interface IPropertyHandler
     {
         bool CanHandle(Type propertyType);
-        ValueTask Draw(IComponent component, UIPropertyAccessor accessor, object value, PropertyDrawer drawer);
+        void Draw(IComponent component, UIPropertyAccessor accessor, object value, PropertyDrawer drawer);
     }
 
     [AttributeUsage(AttributeTargets.Class)]
@@ -24,14 +24,14 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.PropertyHandlers
     {
         public virtual bool CanHandle(Type propertyType) => propertyType == typeof(T);
 
-        public async ValueTask Draw(IComponent component, UIPropertyAccessor accessor, object value, PropertyDrawer drawer)
+        public void Draw(IComponent component, UIPropertyAccessor accessor, object value, PropertyDrawer drawer)
         {
             if (value is T typedValue)
             {
-                await DrawProperty(component, accessor, typedValue, drawer);
+                 DrawProperty(component, accessor, typedValue, drawer);
             }
         }
 
-        protected abstract ValueTask DrawProperty(IComponent component, UIPropertyAccessor accessor, T value, PropertyDrawer drawer);
+        protected abstract void DrawProperty(IComponent component, UIPropertyAccessor accessor, T value, PropertyDrawer drawer);
     }
 }

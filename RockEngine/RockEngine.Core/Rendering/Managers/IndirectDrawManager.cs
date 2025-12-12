@@ -115,7 +115,7 @@ namespace RockEngine.Core.Rendering.Managers
             AddGroup(commandsSpan[groupStartIndex..]);
 
             var batch = _context.GraphicsSubmitContext.CreateBatch();
-            batch.CommandBuffer.LabelObject("IndirectDrawManager cmd");
+            batch.LabelObject("IndirectDrawManager cmd");
             _indirectBuffer.StageCommands(batch, CollectionsMarshal.AsSpan(_indirectCommandsList));
 
             var bufferBarrier = new BufferMemoryBarrier

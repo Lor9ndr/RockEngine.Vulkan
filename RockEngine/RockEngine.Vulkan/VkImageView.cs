@@ -47,8 +47,6 @@ namespace RockEngine.Vulkan
             uint baseArrayLayer = 0,
             uint arrayLayers = 1)
         {
-          
-
             var createInfo = new ImageViewCreateInfo
             {
                 SType = StructureType.ImageViewCreateInfo,
@@ -100,5 +98,10 @@ namespace RockEngine.Vulkan
         }
 
         public override void LabelObject(string name) => _context.DebugUtils.SetDebugUtilsObjectName(_vkObject, ObjectType.ImageView, name);
+
+        internal void Update()
+        {
+            WasUpdated?.Invoke();
+        }
     }
 }

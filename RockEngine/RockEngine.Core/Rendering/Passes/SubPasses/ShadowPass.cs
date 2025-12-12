@@ -177,7 +177,7 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
                 .WithSubpass<ShadowPass>();
         }
 
-        public void Execute(VkCommandBuffer cmd, params object[] args)
+        public void Execute(UploadBatch batch, params object[] args)
         {
             using var tracer = PerformanceTracer.BeginSection(nameof(ShadowPass));
 
@@ -190,61 +190,67 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
             RckPipeline pipeline;
             ref var lightData = ref light.GetLightData();
 
-            if (light.Type == LightType.Directional && light.CascadeCount > 1)
+            switch (light.Type)
             {
-                pipeline = _csmShadowPipeline;
-                var pass = new MaterialPass(_csmShadowPipeline);
-                material.AddPass(Name, pass);
-                pass.BindResource(_shadowManager.GetCSMDataBinding());
-            }
-            else if (light.Type == LightType.Point)
-            {
-                pipeline = _pointShadowPipeline;
-                var pass = new MaterialPass(_pointShadowPipeline);
-                material.AddPass(Name, pass);
-                pass.BindResource(_shadowManager.GetShadowMatricesBinding());
+                case LightType.Directional when light.CascadeCount > 1:
+                    {
+                        pipeline = _csmShadowPipeline;
+                        var pass = new MaterialPass(_csmShadowPipeline);
+                        material.AddPass(Name, pass);
+                        pass.BindResource(_shadowManager.GetCSMDataBinding());
+                        break;
+                    }
 
-                ShadowPointPushConstants pushConstants = new ShadowPointPushConstants
-                {
-                    LightPosition = light.Entity.Transform.Position,
-                    FarPlane = light.ShadowFarPlane,
-                    ShadowIndex = (uint)lightData.ShadowParams.W
-                };
-                pass.PushConstant("pc", in pushConstants);
-            }
-            else
-            {
-                // CORRECTED: Use directional pipeline for both directional and spot lights
-                pipeline = _directionalShadowPipeline;
-                var pass = new MaterialPass(_directionalShadowPipeline);
-                material.AddPass(Name, pass);
+                case LightType.Point:
+                    {
+                        pipeline = _pointShadowPipeline;
+                        var pass = new MaterialPass(_pointShadowPipeline);
+                        material.AddPass(Name, pass);
+                        pass.BindResource(_shadowManager.GetShadowMatricesBinding());
 
-                // CORRECTED: For spot lights, use the first (and only) matrix
-                var shadowMatrix = light.GetShadowMatrix()[0];
+                        ShadowPointPushConstants pushConstants = new ShadowPointPushConstants
+                        {
+                            LightPosition = light.Entity.Transform.Position,
+                            FarPlane = light.Radius,
+                            ShadowIndex = (uint)lightData.ShadowParams.W
+                        };
+                        pass.PushConstant("pc", in pushConstants);
+                        break;
+                    }
 
-                ShadowSpotPushConstants pushConstants = new ShadowSpotPushConstants
-                {
-                    ShadowMatrix = shadowMatrix,
-                };
-                pass.PushConstant("pc", in pushConstants);
+                default:
+                    {
+                        pipeline = _directionalShadowPipeline;
+                        var pass = new MaterialPass(_directionalShadowPipeline);
+                        material.AddPass(Name, pass);
+
+                        var shadowMatrix = light.GetShadowMatrix()[0];
+
+                        ShadowSpotPushConstants pushConstants = new ShadowSpotPushConstants
+                        {
+                            ShadowMatrix = shadowMatrix,
+                        };
+                        pass.PushConstant("pc", in pushConstants);
+                        break;
+                    }
             }
 
             // Pre-calculate viewport and scissor
             var viewport = new Viewport(0, 0, light.ShadowMapSize, light.ShadowMapSize, 0, 1);
             var scissor = new Rect2D(new Offset2D(), new Extent2D(light.ShadowMapSize, light.ShadowMapSize));
 
-            cmd.SetViewport(viewport);
-            cmd.SetScissor(scissor);
+            batch.SetViewport(viewport);
+            batch.SetScissor(scissor);
 
-            cmd.BindPipeline(pipeline);
+            batch.BindPipeline(pipeline);
             var materialPass = material.GetPass(Name);
 
-            _globalGeometryBuffer.Bind(cmd);
+            _globalGeometryBuffer.Bind(batch);
 
             // Push constants based on light type
-            materialPass.CmdPushConstants(cmd);
+            materialPass.CmdPushConstants(batch);
             materialPass.BindResource(matrixBinding);
-            _bindingManager.BindResourcesForMaterial(frameIndex, materialPass, cmd);
+            _bindingManager.BindResourcesForMaterial(frameIndex, materialPass, batch);
 
             // Render shadow-casting geometry
             var drawGroups = CollectionsMarshal.AsSpan(_indirectCommands.GetDrawGroups(GeometryPass.Name));
@@ -254,22 +260,20 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
             {
                 if (drawGroup.IsMultiDraw && _supportsMultiDraw)
                 {
-                    VulkanContext.Vk.CmdDrawIndexedIndirect(
-                        cmd,
+                    batch.DrawIndexedIndirect(
                         indirectBuffer,
-                        drawGroup.ByteOffset,
                         drawGroup.Count,
+                        drawGroup.ByteOffset,
                         (uint)_indirectCommandStride);
                 }
                 else
                 {
                     for (uint j = 0; j < drawGroup.Count; j++)
                     {
-                        VulkanContext.Vk.CmdDrawIndexedIndirect(
-                            cmd,
+                            batch.DrawIndexedIndirect(
                             indirectBuffer,
-                            drawGroup.ByteOffset + (ulong)(j * _indirectCommandStride),
                             1,
+                            drawGroup.ByteOffset + (ulong)(j * _indirectCommandStride),
                             (uint)_indirectCommandStride);
                     }
                 }

@@ -53,24 +53,23 @@ namespace RockEngine.Editor.Rendering.Passes
             using (PerformanceTracer.BeginSection($"Picking Camera - {camera.Entity.Name}"))
             {
                 var primaryBatch = submitContext.CreateBatch();
-                var cmd = primaryBatch.CommandBuffer;
-                using (cmd.NameAction("PickingPassStrategy", [0.2f, 0.4f, 0.2f, 1.0f]))
+                using (primaryBatch.NameAction("PickingPassStrategy", [0.2f, 0.4f, 0.2f, 1.0f]))
                 {
-                    using (PerformanceTracer.BeginSection($"PickingPassStrategy-{camera.Entity.Name}", cmd, frameIndex))
+                    using (PerformanceTracer.BeginSection($"PickingPassStrategy-{camera.Entity.Name}", primaryBatch, frameIndex))
                     {
-                        PickingRenderTarget.PrepareForRender(cmd);
+                        PickingRenderTarget.PrepareForRender(primaryBatch);
 
                         // Begin render pass
-                        BeginRenderPass(PickingRenderTarget, renderer, cmd);
+                        BeginRenderPass(PickingRenderTarget, renderer, primaryBatch);
 
                         // Since we only have one subpass, execute it directly in the primary command buffer
                         if (_subPasses.Length > 0)
                         {
-                            _subPasses[0].Execute(cmd, renderer.FrameIndex, camera, camIndex, PickingRenderTarget);
+                            _subPasses[0].Execute(primaryBatch, renderer.FrameIndex, camera, camIndex, PickingRenderTarget);
                         }
 
-                        cmd.EndRenderPass();
-                        PickingRenderTarget.TransitionToRead(cmd);
+                        primaryBatch.EndRenderPass();
+                        PickingRenderTarget.TransitionToRead(primaryBatch);
                     }
                 }
 
@@ -79,7 +78,7 @@ namespace RockEngine.Editor.Rendering.Passes
             }
         }
 
-        private unsafe static void BeginRenderPass(PickingRenderTarget pickingRenderTarget, WorldRenderer renderer, VkCommandBuffer cmd)
+        private unsafe static void BeginRenderPass(PickingRenderTarget pickingRenderTarget, WorldRenderer renderer, UploadBatch cmd)
         {
             fixed (ClearValue* pClearValue = pickingRenderTarget.ClearValues)
             {

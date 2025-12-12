@@ -8,12 +8,12 @@ using RockEngine.Core.Rendering.Managers;
 using RockEngine.Core.Rendering.Objects;
 using RockEngine.Core.Rendering.Passes;
 using RockEngine.Core.Rendering.Passes.SubPasses;
-using RockEngine.Core.TPL;
 using RockEngine.Vulkan;
 
 using Silk.NET.Input;
 using Silk.NET.Vulkan;
 using Silk.NET.Windowing;
+using Silk.NET.Windowing.Sdl;
 
 using SimpleInjector;
 
@@ -26,7 +26,6 @@ namespace RockEngine.Core.DI
         {
             container.Options.AllowOverridingRegistrations = true;
             // Core systems
-            container.Register<VulkanSynchronizationContext>(() => new VulkanSynchronizationContext(priority:ThreadPriority.Highest));
             container.Register<World>(Lifestyle.Scoped);
             container.Register<ILayerStack,LayerStack>(Lifestyle.Scoped);
 
@@ -59,7 +58,11 @@ namespace RockEngine.Core.DI
             });
 
             // Factory for IWindow
-            container.RegisterInstance<IWindow>(Window.Create(WindowOptions.DefaultVulkan));
+            SdlWindowing.Use();
+            container.RegisterInstance<IWindow>(Window.Create(WindowOptions.DefaultVulkan  with
+            {
+            }
+            ));
             container.Register<IInputContext>(() =>
             {
                 var window = container.GetInstance<IWindow>();
@@ -97,7 +100,7 @@ namespace RockEngine.Core.DI
             var poolSizes = new[]
             {
                 new DescriptorPoolSize(DescriptorType.CombinedImageSampler, 300),
-                new DescriptorPoolSize(DescriptorType.UniformBuffer, 100),
+                new DescriptorPoolSize(DescriptorType.UniformBuffer, 200),
                 new DescriptorPoolSize(DescriptorType.StorageBuffer, 50),
                 new DescriptorPoolSize(DescriptorType.InputAttachment, 10),
                 new DescriptorPoolSize(DescriptorType.UniformBufferDynamic, 20),

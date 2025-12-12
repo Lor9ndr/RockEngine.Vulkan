@@ -513,10 +513,10 @@ namespace RockEngine.Core.Rendering.Buffers
 
      
 
-        public void Bind(VkCommandBuffer cmd)
+        public void Bind(UploadBatch batch)
         {
-            _vertexBuffer.BindVertexBuffer(cmd);
-            _indexBuffer.BindIndexBuffer(cmd, 0, IndexType.Uint32);
+            _vertexBuffer.BindVertexBuffer(batch);
+            _indexBuffer.BindIndexBuffer(batch, 0, IndexType.Uint32);
         }
 
         public MeshAllocation GetMeshAllocation(Guid meshId)

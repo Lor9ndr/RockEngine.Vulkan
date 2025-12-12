@@ -39,7 +39,7 @@ namespace RockEngine.Vulkan
 
         public void Wait(ulong timeoutMs = 10_000_000_000)
         {
-            /*var status = GetFenceStatus();
+/*            var status = GetFenceStatus();
             if (status == Result.Success) return; // Уже сигнален*/
 
             Vk.WaitForFences(_context.Device, 1, in _vkObject, true, timeoutMs) // 10 сек
@@ -94,13 +94,6 @@ namespace RockEngine.Vulkan
 
                 unsafe
                 {
-                    //_ = Vk.GetFenceStatus(_context.Device, this);
-                    // Awesome feature, by requesting fence status we avoid that error :)
-                    //System.Exception: "Vulkan Error: Validation Error: [ VUID-vkDestroyFence-fence-01120 ]
-                    //Object 0: handle = 0x9389c50000000061, type = VK_OBJECT_TYPE_FENCE; | MessageID = 0x5d296248 |
-                    //vkDestroyFence(): fence (VkFence 0x9389c50000000061[]) is in use.
-                    //The Vulkan spec states: All queue submission commands that refer to fence must have completed execution 
-
                     Vk.DestroyFence(_context.Device, _vkObject, in VulkanContext.CustomAllocator<VkFence>());
                 }
 

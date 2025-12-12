@@ -10,30 +10,27 @@ layout(push_constant) uniform FragmentPushConstants {
     uint gizmoType;
 } push;
 
-// Robust encoding: [1 bit: isGizmo] [7 bits: gizmoType] [8 bits: axisMask] [16 bits: checksum]
-uvec4 encodeGizmoHandle(uint gizmoType, uint axisMask) {
-    // Calculate a simple checksum to detect corruption
-    uint checksum = (gizmoType ^ axisMask) & 0xFFFF;
-    
-    // Pack the data
-    uint packed = 0;
-    packed |= (1u << 31);                          // Bit 31: Always 1 for gizmo
-    packed |= ((gizmoType & 0x7Fu) << 24);         // Bits 24-30: Gizmo type (7 bits)
-    packed |= ((axisMask & 0xFFu) << 16);          // Bits 16-23: Axis mask (8 bits)  
-    packed |= (checksum & 0xFFFFu);                // Bits 0-15: Checksum (16 bits)
-    
-    // Split into bytes (little-endian: R=LSB, A=MSB)
-    return uvec4(
-        (packed >> 0) & 0xFFu,   // R: bits 0-7
-        (packed >> 8) & 0xFFu,   // G: bits 8-15  
-        (packed >> 16) & 0xFFu,  // B: bits 16-23
-        (packed >> 24) & 0xFFu   // A: bits 24-31
-    );
-}
-
 vec4 gizmoHandleToColor(uint gizmoType, uint axisMask) {
-    uvec4 encoded = encodeGizmoHandle(gizmoType, axisMask);
-    return vec4(encoded) / 255.0;
+    // Reserve high values for gizmos (e.g., 0xFF000000 range)
+    // Format: [gizmoType:8 bits][axisMask:8 bits][reserved:16 bits]
+    uint encoded = 0;
+    
+    // Set high byte to indicate this is a gizmo (not a regular entity)
+    encoded |= (0xFFu << 24);
+    
+    // Store gizmo type in next byte
+    encoded |= ((gizmoType & 0xFFu) << 16);
+    
+    // Store axis mask in next byte
+    encoded |= ((axisMask & 0xFFu) << 8);
+    
+    // Convert to color
+    float r = float((encoded >> 0) & 0xFFu) / 255.0;
+    float g = float((encoded >> 8) & 0xFFu) / 255.0;
+    float b = float((encoded >> 16) & 0xFFu) / 255.0;
+    float a = float((encoded >> 24) & 0xFFu) / 255.0;
+    
+    return vec4(r, g, b, a);
 }
 
 void main() {

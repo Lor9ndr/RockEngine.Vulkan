@@ -63,14 +63,7 @@ namespace RockEngine.Core.Rendering.Buffers
                 DstOffset = 0,
                 Size = size
             };
-
-            VulkanContext.Vk.CmdCopyBuffer(
-                batch.CommandBuffer,
-                _context.GraphicsSubmitContext.StagingManager.StagingBuffer,
-                _deviceBuffer,
-                1,
-                in copyRegion
-            );
+            batch.CopyBuffer(_context.GraphicsSubmitContext.StagingManager.StagingBuffer,_deviceBuffer, stageOffset, 0, size);
 
         }
 

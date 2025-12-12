@@ -37,7 +37,7 @@ namespace RockEngine.Editor.Rendering.RenderTargets
             // Create depth texture
             _depthTexture = (Texture2D)new Texture.Builder(context)
                 .SetSize(size)
-                .SetFormat(graphicsEngine.Swapchain.DepthFormat)
+                .SetFormat(graphicsEngine.MainSwapchain.DepthFormat)
                 .SetAspectMask(ImageAspectFlags.DepthBit)
                 .SetUsage(ImageUsageFlags.DepthStencilAttachmentBit)
                 .Build();
@@ -87,7 +87,7 @@ namespace RockEngine.Editor.Rendering.RenderTargets
             }
         }
 
-        public override void PrepareForRender(VkCommandBuffer cmd)
+        public override void PrepareForRender(UploadBatch cmd)
         {
             // Transition color attachment to color attachment optimal
          /*   if (OutputTexture.Image.GetMipLayout(0) != ImageLayout.ColorAttachmentOptimal)
@@ -96,7 +96,7 @@ namespace RockEngine.Editor.Rendering.RenderTargets
             }*/
         }
 
-        public override void TransitionToRead(VkCommandBuffer cmd)
+        public override void TransitionToRead(UploadBatch cmd)
         {
             // Transition color attachment to transfer source for reading
              /*OutputTexture.Image.TransitionImageLayout(cmd, ImageLayout.TransferSrcOptimal);*/
@@ -107,7 +107,7 @@ namespace RockEngine.Editor.Rendering.RenderTargets
  
             foreach (var framebuffer in Framebuffers)
             {
-                framebuffer?.Dispose();
+                _context.GraphicsSubmitContext.AddDependency(framebuffer);
             }
             _context.GraphicsSubmitContext.AddDependency(OutputTexture);
             _context.GraphicsSubmitContext.AddDependency(_depthTexture);

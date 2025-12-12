@@ -9,7 +9,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.PropertyHandlers
     [PropertyHandler(typeof(int))]
     public class IntPropertyHandler : BasePropertyHandler<int>
     {
-        protected override ValueTask DrawProperty(IComponent component, UIPropertyAccessor accessor, int value, PropertyDrawer drawer)
+        protected override void DrawProperty(IComponent component, UIPropertyAccessor accessor, int value, PropertyDrawer drawer)
         {
             var stepAttr = accessor.GetAttribute<StepAttribute>();
             float step = stepAttr?.Step ?? 1f; // Default step of 1 for integers
@@ -18,7 +18,6 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.PropertyHandlers
             {
                 accessor.SetValue(component, value);
             }
-            return ValueTask.CompletedTask;
         }
     }
 

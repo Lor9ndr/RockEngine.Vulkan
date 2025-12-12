@@ -69,9 +69,9 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
                 .WithVertexInputState(new VulkanPipelineVertexInputStateBuilder())
                 .WithInputAssembly(new VulkanInputAssemblyBuilder().Configure())
                 .WithViewportState(new VulkanViewportStateInfoBuilder()
-                    .AddViewport(new Viewport(0, 0, _graphicsEngine.Swapchain.Extent.Width,
-                                             _graphicsEngine.Swapchain.Extent.Height, 0, 1))
-                    .AddScissors(new Rect2D(new Offset2D(), _graphicsEngine.Swapchain.Extent)))
+                    .AddViewport(new Viewport(0, 0, _graphicsEngine.MainSwapchain.Extent.Width,
+                                             _graphicsEngine.MainSwapchain.Extent.Height, 0, 1))
+                    .AddScissors(new Rect2D(new Offset2D(), _graphicsEngine.MainSwapchain.Extent)))
                 .WithRasterizer(new VulkanRasterizerBuilder().CullFace(CullModeFlags.None))
                 .WithMultisampleState(new VulkanMultisampleStateInfoBuilder().Configure(false, SampleCountFlags.Count1Bit))
                 .WithColorBlendState(new VulkanColorBlendStateBuilder().AddAttachment(colorBlendAttachments))
@@ -96,7 +96,7 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
             SetIBLTextures(Texture3D.GetDefaultCubemapTexture(_context), Texture3D.GetDefaultCubemapTexture(_context), Texture2D.GetDefaultAlbedoTexture(_context));
         }
 
-        public void Execute(VkCommandBuffer cmd, params object[] args)
+        public void Execute(UploadBatch cmd, params object[] args)
         {
             using (PerformanceTracer.BeginSection(nameof(LightingPass)))
             {
@@ -114,9 +114,13 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
                     materialPass.BindResource(_lightManager.GetCurrentLightBufferBinding());
                     materialPass.BindResource(_shadowManager.GetShadowMapsBinding());
                     materialPass.BindResource(_shadowManager.GetPointShadowMapsBinding());
-                    var csm = _shadowManager.GetCSMDataBinding().Clone();
-                    csm.SetLocation = 5;
-                    materialPass.BindResource(csm);
+                    if (materialPass.Bindings.MaxSetLocation != 5)
+                    {
+                        var csm = _shadowManager.GetCSMDataBinding().Clone();
+                        csm.SetLocation = 5;
+                        materialPass.BindResource(csm);
+                    }
+                   
 
                     if (_iblBinding != null)
                     {
@@ -139,7 +143,7 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
         public void SetupAttachmentDescriptions(RenderPassBuilder builder)
         {
             // Swapchain Color Attachment
-            builder.ConfigureAttachment(_graphicsEngine.Swapchain.Format)
+            builder.ConfigureAttachment(_graphicsEngine.MainSwapchain.Format)
                 .WithColorOperations(
                     load: AttachmentLoadOp.Clear,
                     store: AttachmentStoreOp.Store,

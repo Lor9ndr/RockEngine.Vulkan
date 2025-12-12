@@ -31,7 +31,7 @@ namespace RockEngine.Editor.Rendering.Passes.SubPasses
             return new(Order, Name);
         }
 
-        public void Execute(VkCommandBuffer cmd, params object[] args)
+        public void Execute(UploadBatch batch, params object[] args)
         {
             var renderer = (WorldRenderer)args[0];
             using (PerformanceTracer.BeginSection(nameof(ImGuiPass)))
@@ -41,7 +41,7 @@ namespace RockEngine.Editor.Rendering.Passes.SubPasses
                 {
                     if (command is ImguiRenderCommand imguiCmd)
                     {
-                        imguiCmd.RenderCommand(cmd, _graphicsEngine.FrameIndex);
+                        imguiCmd.RenderCommand(batch,  _graphicsEngine.FrameIndex, renderer);
                     }
                     else
                     {
@@ -59,7 +59,7 @@ namespace RockEngine.Editor.Rendering.Passes.SubPasses
         public void SetupAttachmentDescriptions(RenderPassBuilder builder)
         {
             // Color attachment (swapchain image)
-            builder.ConfigureAttachment(_graphicsEngine.Swapchain.Format)
+            builder.ConfigureAttachment(_graphicsEngine.MainSwapchain.Format)
                 .WithColorOperations(
                     load: AttachmentLoadOp.Clear, // Preserve existing content
                     store: AttachmentStoreOp.Store,
@@ -68,10 +68,10 @@ namespace RockEngine.Editor.Rendering.Passes.SubPasses
                 .Add();
 
             // Depth attachment (optional)
-            builder.ConfigureAttachment(_graphicsEngine.Swapchain.DepthFormat)
+            builder.ConfigureAttachment(_graphicsEngine.MainSwapchain.DepthFormat)
                 .WithDepthOperations(
-                    load: AttachmentLoadOp.Clear,
-                    store: AttachmentStoreOp.Store,
+                    load: AttachmentLoadOp.DontCare,
+                    store: AttachmentStoreOp.DontCare,
                     initialLayout: ImageLayout.Undefined,
                     finalLayout: ImageLayout.DepthStencilAttachmentOptimal)
                 .Add();
@@ -87,16 +87,27 @@ namespace RockEngine.Editor.Rendering.Passes.SubPasses
 
         public void SetupDependencies(RenderPassBuilder builder, uint subpassIndex)
         {
+            // Frame-to-frame synchronization: Previous frame's render pass -> Current frame's render pass
+            builder.AddDependency()
+                .FromExternal()
+                .ToSubpass(subpassIndex)
+                .WithStages(
+                    PipelineStageFlags.LateFragmentTestsBit | PipelineStageFlags.ColorAttachmentOutputBit,
+                    PipelineStageFlags.EarlyFragmentTestsBit | PipelineStageFlags.ColorAttachmentOutputBit)
+                .WithAccess(
+                    AccessFlags.DepthStencilAttachmentWriteBit | AccessFlags.ColorAttachmentWriteBit,
+                    AccessFlags.DepthStencilAttachmentWriteBit | AccessFlags.ColorAttachmentWriteBit)
+                .Add();
 
-            // Dependency to external (presentation)
+            // Current frame's render pass -> Next frame/presentation
             builder.AddDependency()
                 .FromSubpass(subpassIndex)
                 .ToExternal()
                 .WithStages(
-                    PipelineStageFlags.ColorAttachmentOutputBit,
+                    PipelineStageFlags.LateFragmentTestsBit | PipelineStageFlags.ColorAttachmentOutputBit,
                     PipelineStageFlags.BottomOfPipeBit)
                 .WithAccess(
-                    AccessFlags.ColorAttachmentWriteBit,
+                    AccessFlags.DepthStencilAttachmentWriteBit | AccessFlags.ColorAttachmentWriteBit,
                     AccessFlags.None)
                 .Add();
         }

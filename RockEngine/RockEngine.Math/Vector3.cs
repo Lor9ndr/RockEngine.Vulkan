@@ -12,8 +12,8 @@
         public static Vector3 operator *(Vector3 a, float b) => new Vector3(a.X * b, a.Y * b, a.Z * b);
         public static Vector3 operator /(Vector3 a, float b) => new Vector3(a.X / b, a.Y / b, a.Z / b);
 
-        public Vector2 XY => new Vector2(X, Y);
+        public readonly Vector2 XY => new Vector2(X, Y);
         public Vector3 Normalized() => this / Length();
-        public float Length() => MathF.Sqrt(X * X + Y * Y + Z * Z);
+        public readonly float Length() => MathF.Sqrt(X * X + Y * Y + Z * Z);
     }
 }

@@ -9,11 +9,14 @@ using RockEngine.Core.Rendering.RenderTargets;
 using RockEngine.Core.Rendering.ResourceBindings;
 using RockEngine.Core.Rendering.Texturing;
 using RockEngine.Editor.EditorUI.EditorWindows;
+using RockEngine.Editor.EditorUI.ImGuiRendering.MultiWindowing;
 using RockEngine.Editor.Rendering.Passes.SubPasses;
 using RockEngine.Vulkan;
 
 using Silk.NET.Input;
+using Silk.NET.Maths;
 using Silk.NET.Vulkan;
+using Silk.NET.Windowing;
 
 using System.Numerics;
 using System.Reflection;
@@ -30,13 +33,14 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
         private readonly IInputContext _input;
         private VkPipelineLayout _pipelineLayout;
         private VkDescriptorSetLayout _descriptorSetLayout;
-        private readonly VkBuffer?[] _vertexBuffers;
-        private readonly VkBuffer?[] _indexBuffers;
+        private readonly VkBuffer[] _vertexBuffers;
+        private readonly VkBuffer[] _indexBuffers;
         private bool _frameBegun;
+        private bool _frameRendered = false;
         private readonly RckRenderPass _renderPass;
         private readonly BindingManager _bindingManager;
         private VkPipeline _pipeline;
-        private readonly Queue<char> _pressedChars = new Queue<char>();
+        private readonly Queue<(IWindow window, char ch)> _pressedChars = new Queue<(IWindow, char)>();
         private readonly ulong _bufferMemoryAlignment;
         private Texture _fontTexture;
         private readonly Dictionary<Texture, TextureBinding> _textureBindings = new Dictionary<Texture, TextureBinding>();
@@ -49,11 +53,19 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
         private TextureBinding _fontTextureBinding;
 
         private uint _currentFrame = 0;
-        private bool _texturesInitialized = false;
+        private ImGuiViewportManager _viewportManager;
+        private nint _allocatedMonitorsData;
+        private Vector2D<int> _lastMousePosition;
 
         public ImFontPtr IconFont { get => _iconFont; set => _iconFont = value; }
 
-        public unsafe ImGuiController(VulkanContext vkContext, GraphicsContext graphicsEngine, BindingManager bindingManager, IInputContext inputContext, WorldRenderer renderer)
+        private readonly Silk.NET.SDL.Sdl? _windowingApi;
+        private readonly Dictionary<RckImGuiViewport, (VkBuffer VertexBuffer, VkBuffer IndexBuffer)[]> _viewportBuffers = new();
+        private readonly object _bufferLock = new();
+
+
+
+        public unsafe ImGuiController(VulkanContext vkContext, GraphicsContext graphicsEngine, BindingManager bindingManager, IInputContext inputContext, WorldRenderer renderer, IWindow mainWindow, Application application)
         {
             _vkContext = vkContext;
             _bindingManager = bindingManager;
@@ -61,13 +73,24 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
             _input = inputContext;
             _uiRenderTarget = renderer.SwapchainTarget;
             _renderPass = _uiRenderTarget.RenderPass;
-            
-            ImGui.SetCurrentContext(ImGui.CreateContext());
+
+            // Create and set ImGui context
+            var context = ImGui.CreateContext();
+            ImGui.SetCurrentContext(context);
+
             var io = ImGui.GetIO();
+            io.ConfigFlags |= ImGuiConfigFlags.DockingEnable;
+            io.ConfigFlags |= ImGuiConfigFlags.ViewportsEnable;
+
+            //io.BackendFlags |= ImGuiBackendFlags.HasMouseCursors;
+            //io.BackendFlags |= ImGuiBackendFlags.HasSetMousePos;
+            io.BackendFlags |= ImGuiBackendFlags.RendererHasVtxOffset;
+            io.BackendFlags |= ImGuiBackendFlags.PlatformHasViewports;
+            io.BackendFlags |= ImGuiBackendFlags.RendererHasViewports;
+
+            // Initialize buffers first
             _vertexBuffers = new VkBuffer[_vkContext.MaxFramesPerFlight];
             _indexBuffers = new VkBuffer[_vkContext.MaxFramesPerFlight];
-           
-            _input.Keyboards[0].KeyChar += (s, c) => PressChar(c);
 
             for (int i = 0; i < _vkContext.MaxFramesPerFlight; i++)
             {
@@ -75,69 +98,322 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
                 _indexBuffers[i] = VkBuffer.Create(_vkContext, 512 * 1024, BufferUsageFlags.IndexBufferBit, MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit);
             }
 
-
-            io.ConfigFlags |= ImGuiConfigFlags.DockingEnable;
-            io.BackendFlags |= ImGuiBackendFlags.HasMouseCursors;
-            io.BackendFlags |= ImGuiBackendFlags.HasSetMousePos;
-            io.BackendFlags |= ImGuiBackendFlags.RendererHasVtxOffset;
-            SetPerFrameImGuiData(1f / 60f);
-            Init();
-
-        }
-        private void Init()
-        {
-            if (_initialized)
+            // Set configuration
+            _windowingApi = Silk.NET.Windowing.Sdl.SdlWindowing.GetExistingApi(mainWindow);
+   
+            unsafe
             {
-                return;
+                io.NativePtr->BackendPlatformName = (byte*)new FixedAsciiString("RockEngine").DataPtr;
             }
+
+            // Initialize device objects
             CreateDeviceObjects();
             CreateFontResources();
             CreateDescriptorSet();
+            UpdateMonitors();
+
+            // Set up input
+            SetPerFrameImGuiData(1f / 60f);
+
+            // Apply theme
             EditorTheme.ApplyModernDarkTheme();
+
+            // Initialize viewport manager AFTER basic setup
+            _viewportManager = new ImGuiViewportManager(_vkContext, _graphicsContext, this,_renderPass, application);
+             _viewportManager.RegisterMainViewport(mainWindow, inputContext);
             ImGui.NewFrame();
             _frameBegun = true;
             _initialized = true;
         }
-        private void UpdateImGuiInput(IInputContext input)
+        
+        private unsafe void UpdateMonitors()
+        {
+            try
+            {
+                // Free previous monitors data if it exists
+                if (_allocatedMonitorsData != IntPtr.Zero)
+                {
+                    Marshal.FreeHGlobal(_allocatedMonitorsData);
+                    _allocatedMonitorsData = IntPtr.Zero;
+                }
+
+                var monitors = Silk.NET.Windowing.Monitor.GetMonitors(null).ToList();
+                if (monitors == null || monitors.Count == 0)
+                {
+                    AddDefaultMonitor();
+                    return;
+                }
+
+                var platformIO = ImGui.GetPlatformIO();
+
+                int monitorCount = monitors.Count;
+                int monitorSize = Unsafe.SizeOf<ImGuiPlatformMonitor>();
+                int totalSize = monitorCount * monitorSize;
+
+                // Allocate unmanaged memory for the monitors array
+                IntPtr monitorsData = Marshal.AllocHGlobal(totalSize);
+
+                for (int i = 0; i < monitorCount; i++)
+                {
+                    var monitor = monitors[i];
+                    var imguiMonitor = new ImGuiPlatformMonitor
+                    {
+                        MainPos = new Vector2(monitor.Bounds.Origin.X, monitor.Bounds.Origin.Y),
+                        MainSize = new Vector2(monitor.Bounds.Size.X, monitor.Bounds.Size.Y),
+                        WorkPos = new Vector2(monitor.Bounds.Origin.X, monitor.Bounds.Origin.Y),
+                        WorkSize = new Vector2(monitor.Bounds.Size.X, monitor.Bounds.Size.Y),
+                        DpiScale = 1
+                    };
+
+                    Marshal.StructureToPtr(imguiMonitor, monitorsData + (i * monitorSize), false);
+                }
+
+                platformIO.NativePtr->Monitors = new ImVector(monitorCount, monitorCount, monitorsData);
+                _allocatedMonitorsData = monitorsData;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Failed to update monitors: {ex.Message}");
+                AddDefaultMonitor();
+            }
+        }
+
+        private unsafe void AddDefaultMonitor()
+        {
+            var platformIO = ImGui.GetPlatformIO();
+
+            // Create a default monitor with the main window dimensions
+            int monitorSize = Unsafe.SizeOf<ImGuiPlatformMonitor>();
+            IntPtr monitorData = Marshal.AllocHGlobal(monitorSize);
+
+            var defaultMonitor = new ImGuiPlatformMonitor
+            {
+                MainPos = new Vector2(0, 0),
+                MainSize = new Vector2(_graphicsContext.MainSwapchain.Surface.Size.X, _graphicsContext.MainSwapchain.Surface.Size.Y),
+                WorkPos = new Vector2(0, 0),
+                WorkSize = new Vector2(_graphicsContext.MainSwapchain.Surface.Size.X, _graphicsContext.MainSwapchain.Surface.Size.Y),
+                DpiScale = 1.0f
+            };
+
+            Marshal.StructureToPtr(defaultMonitor, monitorData, false);
+            platformIO.NativePtr->Monitors = new ImVector(1, 1, monitorData);
+
+            _allocatedMonitorsData = monitorData;
+        }
+
+
+
+        private void UpdateImGuiInput()
         {
             var io = ImGui.GetIO();
 
-            var mouseState = input.Mice[0];
-            var keyboardState = input.Keyboards[0];
+            // Clear all keyboard state
+            //io.ClearInputKeys();
+            //io.ClearInputMouse();
 
-            io.MouseDown[0] = mouseState.IsButtonPressed(MouseButton.Left);
-            io.MouseDown[1] = mouseState.IsButtonPressed(MouseButton.Right);
-            io.MouseDown[2] = mouseState.IsButtonPressed(MouseButton.Middle);
+            // Track which viewport has mouse focus
+            RckImGuiViewport mouseFocusedViewport = null;
+            Vector2 globalMousePos = Vector2.Zero;
 
-            io.MousePos = mouseState.Position;
+            // First, get global mouse position to determine focus
+            var screenPos = new Vector2D<int>();
+            _windowingApi.GetGlobalMouseState(ref screenPos.X, ref screenPos.Y);
+            globalMousePos = new Vector2(screenPos.X, screenPos.Y);
 
-            var wheel = mouseState.ScrollWheels[0];
-            io.MouseWheel = wheel.Y;
-            io.MouseWheelH = wheel.X;
-
-            foreach (Key key in keyboardState.SupportedKeys)
+            // Determine which viewport has mouse focus
+            foreach (var viewport in _viewportManager.Viewports)
             {
-                if (key == Key.Unknown)
+                if (!viewport.IsMainViewport)
                 {
-                    continue;
+                    viewport.Window.ContinueEvents();
+                    viewport.Window.DoEvents();
+                    viewport.Window.DoUpdate();
+                    viewport.Window.DoRender();
                 }
-                if (TryMapKey(key, out ImGuiKey imguikey))
+                if (viewport.IsFocused)
                 {
-                    io.AddKeyEvent(imguikey, keyboardState.IsKeyPressed(key));
+                    mouseFocusedViewport = viewport;
+                    break;
                 }
             }
 
+            // Update input for each viewport based on focus
+            foreach (var viewport in _viewportManager.Viewports)
+            {
+                // Update keyboard input for the viewport that has keyboard focus
+                if (viewport.IsFocused)
+                {
+                    UpdateMainViewportInput(viewport, io, viewport.InputContext);
+
+                    UpdateKeyboardInputForViewport(viewport, io);
+                    return;
+                }
+            }
+
+            // Process pressed characters (window-specific)
             while (_pressedChars.Count > 0)
             {
-                io.AddInputCharacter(_pressedChars.Dequeue());
+                var (window, ch) = _pressedChars.Dequeue();
+
+                // Only add character if it's from the focused window
+                var focusedViewport = _viewportManager.Viewports.FirstOrDefault(v => v.Window == window && v.IsFocused);
+                if (focusedViewport != null)
+                {
+                    io.AddInputCharacter(ch);
+                }
             }
-
-
-            io.KeyCtrl = keyboardState.IsKeyPressed(Key.ControlLeft) || keyboardState.IsKeyPressed(Key.ControlRight);
-            io.KeyAlt = keyboardState.IsKeyPressed(Key.AltLeft) || keyboardState.IsKeyPressed(Key.AltRight);
-            io.KeyShift = keyboardState.IsKeyPressed(Key.ShiftLeft) || keyboardState.IsKeyPressed(Key.ShiftRight);
-            io.KeySuper = keyboardState.IsKeyPressed(Key.SuperLeft) || keyboardState.IsKeyPressed(Key.SuperRight);
         }
+        
+        private bool IsMouseOverViewport(RckImGuiViewport viewport, Vector2 mousePos)
+        {
+            var windowPos = viewport.Window.Position;
+            var windowSize = viewport.Window.Size;
+
+            return mousePos.X >= windowPos.X &&
+                   mousePos.Y >= windowPos.Y &&
+                   mousePos.X <= windowPos.X + windowSize.X &&
+                   mousePos.Y <= windowPos.Y + windowSize.Y;
+        }
+        private void UpdateKeyboardInputForViewport(RckImGuiViewport viewport, ImGuiIOPtr io)
+        {
+            var input = viewport.InputContext;
+            var keyboardState = input.Keyboards.Count > 0 ? input.Keyboards[0] : null;
+
+            if (keyboardState != null && viewport.IsFocused)
+            {
+                // Update key states for this specific viewport
+                foreach (Key key in keyboardState.SupportedKeys)
+                {
+                    if (key == Key.Unknown) continue;
+
+                    if (TryMapKey(key, out ImGuiKey imguikey))
+                    {
+                        io.AddKeyEvent(imguikey, keyboardState.IsKeyPressed(key));
+                    }
+                }
+
+                // Update modifier keys
+                io.KeyCtrl = keyboardState.IsKeyPressed(Key.ControlLeft) || keyboardState.IsKeyPressed(Key.ControlRight);
+                io.KeyAlt = keyboardState.IsKeyPressed(Key.AltLeft) || keyboardState.IsKeyPressed(Key.AltRight);
+                io.KeyShift = keyboardState.IsKeyPressed(Key.ShiftLeft) || keyboardState.IsKeyPressed(Key.ShiftRight);
+                io.KeySuper = keyboardState.IsKeyPressed(Key.SuperLeft) || keyboardState.IsKeyPressed(Key.SuperRight);
+            }
+        }
+
+        private void UpdateMainViewportInput(RckImGuiViewport viewport, ImGuiIOPtr io, IInputContext input)
+        {
+            var mouseState = input.Mice.Count > 0 ? input.Mice[0] : null;
+            var keyboardState = input.Keyboards.Count > 0 ? input.Keyboards[0] : null;
+
+            if (mouseState != null)
+            {
+                var mousePos = new Vector2D<int>();
+                _windowingApi.GetGlobalMouseState(ref mousePos.X, ref mousePos.Y);
+                // Apply viewport offset if this is not the main window
+
+
+                // Add mouse position event
+                io.MouseDown[0] = mouseState.IsButtonPressed(MouseButton.Left);
+                io.MouseDown[1] = mouseState.IsButtonPressed(MouseButton.Right);
+                io.MouseDown[2] = mouseState.IsButtonPressed(MouseButton.Middle);
+
+                io.MousePos = new Vector2(mousePos.X, mousePos.Y);
+
+                // Update mouse wheel
+                if (mouseState.ScrollWheels.Count > 0)
+                {
+                    var wheel = mouseState.ScrollWheels[0];
+                    io.MouseWheel = wheel.Y;
+                    io.MouseWheelH = wheel.X;
+                }
+            }
+        }
+
+        private void UpdatePlatformWindowsInput(ImGuiIOPtr io)
+        {
+            var platformIO = ImGui.GetPlatformIO();
+
+            for (int i = 0; i < platformIO.Viewports.Size; i++)
+            {
+                var vp = platformIO.Viewports[i];
+
+                // Skip the main viewport (handled separately)
+                if (vp.PlatformHandle == _viewportManager.MainViewport?.Window.Handle)
+                    continue;
+
+                // Find corresponding RckImGuiViewport
+                var rckViewport = _viewportManager.Viewports.FirstOrDefault(v =>
+                    v.ViewportPtr.ID == vp.ID);
+
+                if (rckViewport != null && rckViewport.InputContext != null)
+                {
+                    //UpdatePlatformViewportInput(rckViewport, io, vp);
+                }
+            }
+        }
+
+        private void UpdatePlatformViewportInput(RckImGuiViewport viewport, ImGuiIOPtr io, ImGuiViewportPtr vp)
+        {
+            var input = viewport.InputContext;
+            var mouseState = input.Mice.Count > 0 ? input.Mice[0] : null;
+
+            if (mouseState != null)
+            {
+                var screenPos = new Vector2D<int>((int)mouseState.Position.X, (int)mouseState.Position.Y);
+                // Get mouse position relative to this viewport
+                screenPos = viewport.Window.PointToFramebuffer(screenPos);
+
+                // Update ImGui's mouse position
+
+                if (mouseState != null)
+                {
+                    var mousePos = new Vector2D<int>();
+                    _windowingApi.GetGlobalMouseState(ref mousePos.X, ref mousePos.Y);
+                    // Apply viewport offset if this is not the main window
+
+
+                    // Add mouse position event
+                    io.MouseDown[0] = mouseState.IsButtonPressed(MouseButton.Left);
+                    io.MouseDown[1] = mouseState.IsButtonPressed(MouseButton.Right);
+                    io.MouseDown[2] = mouseState.IsButtonPressed(MouseButton.Middle);
+
+                    io.MousePos = new Vector2(screenPos.X, screenPos.Y);
+
+                    // Update mouse wheel
+                    if (mouseState.ScrollWheels.Count > 0)
+                    {
+                        var wheel = mouseState.ScrollWheels[0];
+                        io.MouseWheel = wheel.Y;
+                        io.MouseWheelH = wheel.X;
+                    }
+                }
+            }
+            var keyboardState = input.Keyboards.Count > 0 ? input.Keyboards[0] : null;
+
+            if (keyboardState != null)
+            {
+                // Only process keyboard input if the window is focused
+
+                foreach (Key key in keyboardState.SupportedKeys)
+                {
+                    if (key == Key.Unknown) continue;
+
+                    if (TryMapKey(key, out ImGuiKey imguikey))
+                    {
+                        io.AddKeyEvent(imguikey, keyboardState.IsKeyPressed(key));
+                    }
+                }
+                while (_pressedChars.Count > 0)
+                {
+                    io.AddInputCharacter(_pressedChars.Dequeue().ch);
+                }
+                io.KeyCtrl = keyboardState.IsKeyPressed(Key.ControlLeft) || keyboardState.IsKeyPressed(Key.ControlRight);
+                io.KeyAlt = keyboardState.IsKeyPressed(Key.AltLeft) || keyboardState.IsKeyPressed(Key.AltRight);
+                io.KeyShift = keyboardState.IsKeyPressed(Key.ShiftLeft) || keyboardState.IsKeyPressed(Key.ShiftRight);
+                io.KeySuper = keyboardState.IsKeyPressed(Key.SuperLeft) || keyboardState.IsKeyPressed(Key.SuperRight);
+            }
+        }
+
 
         private static bool TryMapKey(Key key, out ImGuiKey result)
         {
@@ -201,198 +477,319 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
             return result != ImGuiKey.None;
         }
 
-        internal void PressChar(char keyChar)
-        {
-            _pressedChars.Enqueue(keyChar);
-        }
 
         private void SetPerFrameImGuiData(float deltaSeconds)
         {
             var io = ImGui.GetIO();
-            io.DisplaySize = new Vector2(_graphicsContext.Swapchain.Surface.Size.X, _graphicsContext.Swapchain.Surface.Size.Y);
+            io.DisplaySize = new Vector2(_graphicsContext.MainSwapchain.Surface.Size.X, _graphicsContext.MainSwapchain.Surface.Size.Y);
 
-            if (_graphicsContext.Swapchain.Surface.Size.X > 0 && _graphicsContext.Swapchain.Surface.Size.Y > 0)
+            if (_graphicsContext.MainSwapchain.Surface.Size.X > 0 && _graphicsContext.MainSwapchain.Surface.Size.Y > 0)
             {
                 io.DisplayFramebufferScale = new Vector2(1, 1);
             }
             io.DeltaTime = deltaSeconds; // DeltaTime is in seconds.
         }
 
-
-        public void Update()
+        public void Update(WorldRenderer worldRenderer)
         {
+            // Update monitors periodically (every 60 frames)
+            if (_currentFrame % 60 == 0)
+            {
+                UpdateMonitors();
+            }
+
             // Clean up texture cache every frame
             CleanupTextureCache();
 
-            if (_frameBegun)
+            SetPerFrameImGuiData(Time.DeltaTime);
+            UpdateImGuiInput();
+            if ((ImGui.GetIO().ConfigFlags & ImGuiConfigFlags.ViewportsEnable) != 0 && !_frameBegun)
             {
-                ImGui.Render();
-                _frameBegun = false;
+                ImGui.UpdatePlatformWindows();
+
             }
 
-            SetPerFrameImGuiData(Time.DeltaTime);
-            UpdateImGuiInput(_input);
-            ImGui.NewFrame();
-            _frameBegun = true;
+            if (!_frameBegun)
+            {
+                ImGui.NewFrame();
+                _frameBegun = true;
+            }
+
+            // Only start new frame if not already begun
+
             _currentFrame++;
         }
 
-        public unsafe void Render(VkCommandBuffer commandBuffer, uint frameIndex)
+        public void Render(UploadBatch batch, uint frameIndex, WorldRenderer renderer)
         {
-            if (!_frameBegun || !_initialized)
+            if (!_initialized)
             {
                 return;
             }
+            try
+            {
+                // Always ensure we have a valid frame before rendering
+                if (!_frameBegun)
+                {
+                    ImGui.NewFrame();
+                    _frameBegun = true;
 
-            // Ensure we're using a valid frame index
-            frameIndex %= (uint)_vkContext.MaxFramesPerFlight;
+                    // If we started the frame here, we need to end it immediately for this render
+                    ImGui.Render();
+                }
+                else
+                {
+                    // If frame was begun in Update(), render it now
+                    ImGui.Render();
+                }
 
-            ImGui.Render();
-            RenderImDrawData(ImGui.GetDrawData(), commandBuffer, frameIndex);
+                RenderImDrawData(_viewportManager.MainViewport.ViewportPtr.DrawData, renderer.SwapchainTarget,batch, frameIndex, _viewportManager.MainViewport);
+                if ((ImGui.GetIO().ConfigFlags & ImGuiConfigFlags.ViewportsEnable) != 0)
+                {
+
+                    //ImGui.UpdatePlatformWindows();
+                    var id = Guid.NewGuid();
+                    var ptr = GCHandle.Alloc(new ViewportImguiStruct()
+                    {
+                        Batch = batch,
+                        FrameIndex = frameIndex,
+                    }, GCHandleType.Normal);
+                    var nnt = GCHandle.ToIntPtr(ptr);
+                    ImGui.RenderPlatformWindowsDefault(nnt, nnt);
+                    ptr.Free();
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine(ex.Message + Environment.NewLine + ex.StackTrace);
+            }
+            finally
+            {
+                // Reset frame state for next frame
+                _frameBegun = false;
+            }
+            
+        }
+        internal struct ViewportImguiStruct
+        {
+            public UploadBatch Batch;
+            public uint FrameIndex;
         }
 
 
-         private unsafe void RenderImDrawData(ImDrawDataPtr drawData, VkCommandBuffer commandBuffer, uint frameIndex)
+        public unsafe void RenderImDrawData(ImDrawDataPtr drawData, SwapchainRenderTarget renderTarget, UploadBatch uploadBatch, uint frameIndex, RckImGuiViewport imguiViewport)
         {
             if (drawData.CmdListsCount == 0)
             {
                 return;
             }
-
-            ref var vertexBuffer = ref _vertexBuffers[frameIndex];
-            ref var indexBuffer = ref _indexBuffers[frameIndex];
-            
-            // Calculate required buffer sizes with some padding
-            ulong requiredVertexSize = (ulong)(drawData.TotalVtxCount + 5000) * (ulong)Unsafe.SizeOf<ImDrawVert>();
-            ulong requiredIndexSize = (ulong)(drawData.TotalIdxCount + 10000) * sizeof(ushort);
-
-            // Ensure buffers are large enough
-            if (vertexBuffer.Size < requiredVertexSize)
+            renderTarget.PrepareForRender(uploadBatch);
+            using (PerformanceTracer.BeginSection("IMGUI", uploadBatch, frameIndex))
             {
-                vertexBuffer?.Dispose();
-                vertexBuffer = VkBuffer.Create(_vkContext, requiredVertexSize, BufferUsageFlags.VertexBufferBit, MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit);
-            }
-
-            if (indexBuffer.Size < requiredIndexSize)
-            {
-                indexBuffer?.Dispose();
-                indexBuffer = VkBuffer.Create(_vkContext, requiredIndexSize, BufferUsageFlags.IndexBufferBit, MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit);
-            }
-
-            // Upload vertex/index data
-            vertexBuffer.Map(out var pvtx_dst);
-            indexBuffer.Map(out var pidx_dst);
-            
-            ImDrawVert* vtx_dst = (ImDrawVert*)pvtx_dst;
-            ushort* idx_dst = (ushort*)pidx_dst;
-
-            for (int n = 0; n < drawData.CmdListsCount; n++)
-            {
-                var cmd_list = drawData.CmdListsRange[n];
-                Unsafe.CopyBlock(vtx_dst, cmd_list.VtxBuffer.Data.ToPointer(), (uint)(cmd_list.VtxBuffer.Size * Unsafe.SizeOf<ImDrawVert>()));
-                Unsafe.CopyBlock(idx_dst, cmd_list.IdxBuffer.Data.ToPointer(), (uint)(cmd_list.IdxBuffer.Size * sizeof(ushort)));
-                vtx_dst += cmd_list.VtxBuffer.Size;
-                idx_dst += cmd_list.IdxBuffer.Size;
-            }
-            
-            vertexBuffer.Flush();
-            indexBuffer.Flush();
-            vertexBuffer.Unmap();
-            indexBuffer.Unmap();
-
-            // Setup render state
-            VulkanContext.Vk.CmdBindPipeline(commandBuffer, PipelineBindPoint.Graphics, _pipeline);
-            
-            if (drawData.TotalVtxCount > 0)
-            {
-                vertexBuffer.BindVertexBuffer(commandBuffer, 0);
-                indexBuffer.BindIndexBuffer(commandBuffer, 0, IndexType.Uint16);
-            }
-
-            // Setup viewport
-            Viewport viewport;
-            viewport.X = 0;
-            viewport.Y = 0;
-            viewport.Width = _graphicsContext.Swapchain.Extent.Width;
-            viewport.Height = _graphicsContext.Swapchain.Extent.Height;
-            viewport.MinDepth = 0.0f;
-            viewport.MaxDepth = 1.0f;
-            commandBuffer.SetViewport(in viewport);
-
-            // Setup scale and translation
-            Span<float> scale = [2.0f / drawData.DisplaySize.X, 2.0f / drawData.DisplaySize.Y];
-            Span<float> translate = [-1.0f - drawData.DisplayPos.X * scale[0], -1.0f - drawData.DisplayPos.Y * scale[1]];
-
-            VulkanContext.Vk.CmdPushConstants(commandBuffer, _pipelineLayout, ShaderStageFlags.VertexBit, sizeof(float) * 0, sizeof(float) * 2, scale);
-            VulkanContext.Vk.CmdPushConstants(commandBuffer, _pipelineLayout, ShaderStageFlags.VertexBit, sizeof(float) * 2, sizeof(float) * 2, translate);
-
-            // Bind font texture
-            _bindingManager.BindResource(frameIndex, _fontTextureBinding, commandBuffer, _pipelineLayout);
-
-            // Render command lists
-            Vector2 clipOff = drawData.DisplayPos;
-            Vector2 clipScale = drawData.FramebufferScale;
-            
-            int global_vtx_offset = 0;
-            int global_idx_offset = 0;
-
-
-            for (int n = 0; n < drawData.CmdListsCount; n++)
-            {
-                var cmd_list = drawData.CmdListsRange[n];
-                for (int cmd_i = 0; cmd_i < cmd_list.CmdBuffer.Size; cmd_i++)
+              
+                unsafe
                 {
-                    ImDrawCmdPtr pcmd = cmd_list.CmdBuffer[cmd_i];
-                    if (pcmd.UserCallback != IntPtr.Zero)
+                    fixed (ClearValue* pClearValue = renderTarget.ClearValues)
                     {
-                        // Handle user callbacks if needed
-                    }
-                    else
-                    {
-                        if (pcmd.ElemCount == 0)
+                        var swapchainBeginInfo = new RenderPassBeginInfo
                         {
-                            continue;
-                        }
+                            SType = StructureType.RenderPassBeginInfo,
+                            RenderPass = _renderPass,
+                            Framebuffer = renderTarget.Framebuffers[frameIndex],
+                            RenderArea = new Rect2D { Extent = renderTarget.Size },
+                            ClearValueCount = (uint)renderTarget.ClearValues.Length,
+                            PClearValues = pClearValue
+                        };
 
-                        // Get texture binding
-                        var textureBinding = GetTextureBindingFromId(pcmd.TextureId);
-                        if (textureBinding != null)
-                        {
-                            _bindingManager.BindResource(frameIndex, textureBinding, commandBuffer, _pipelineLayout);
-                        }
-
-                        // Apply scissor/clipping rectangle
-                        Vector4 clipRect;
-                        clipRect.X = (pcmd.ClipRect.X - clipOff.X) * clipScale.X;
-                        clipRect.Y = (pcmd.ClipRect.Y - clipOff.Y) * clipScale.Y;
-                        clipRect.Z = (pcmd.ClipRect.Z - clipOff.X) * clipScale.X;
-                        clipRect.W = (pcmd.ClipRect.W - clipOff.Y) * clipScale.Y;
-
-                        if (clipRect.X < _graphicsContext.Swapchain.Extent.Width && clipRect.Y < _graphicsContext.Swapchain.Extent.Height && clipRect.Z >= 0.0f && clipRect.W >= 0.0f)
-                        {
-                            if (clipRect.X < 0.0f)
-                            {
-                                clipRect.X = 0.0f;
-                            }
-
-                            if (clipRect.Y < 0.0f)
-                            {
-                                clipRect.Y = 0.0f;
-                            }
-
-                            Rect2D scissor = new Rect2D
-                            {
-                                Offset = { X = (int)clipRect.X, Y = (int)clipRect.Y },
-                                Extent = { Width = (uint)(clipRect.Z - clipRect.X), Height = (uint)(clipRect.W - clipRect.Y) }
-                            };
-                            
-                            VulkanContext.Vk.CmdSetScissor(commandBuffer, 0, 1, &scissor);
-                            VulkanContext.Vk.CmdDrawIndexed(commandBuffer, pcmd.ElemCount, 1, pcmd.IdxOffset + (uint)global_idx_offset, (int)pcmd.VtxOffset + global_vtx_offset, 0);
-                        }
+                        uploadBatch.BeginRenderPass(in swapchainBeginInfo, SubpassContents.Inline);
                     }
                 }
-                global_idx_offset += cmd_list.IdxBuffer.Size;
-                global_vtx_offset += cmd_list.VtxBuffer.Size;
+
+                ref var buffers = ref GetOrCreateViewportBuffers(imguiViewport, frameIndex);
+
+                // Ensure buffers exist and are large enough
+                if (buffers.VertexBuffer == null || buffers.VertexBuffer.IsDisposed)
+                {
+                    buffers.VertexBuffer = VkBuffer.Create(_vkContext, 1024 * 1024, BufferUsageFlags.VertexBufferBit,
+                        MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit);
+                }
+
+                if (buffers.IndexBuffer == null || buffers.IndexBuffer.IsDisposed)
+                {
+                    buffers.IndexBuffer = VkBuffer.Create(_vkContext, 512 * 1024, BufferUsageFlags.IndexBufferBit,
+                        MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit);
+                }
+
+                ref var vertexBuffer = ref buffers.VertexBuffer;
+                ref var indexBuffer = ref buffers.IndexBuffer;
+
+                // Calculate required buffer sizes
+                ulong requiredVertexSize = (ulong)(drawData.TotalVtxCount + 5000) * (ulong)Unsafe.SizeOf<ImDrawVert>();
+                ulong requiredIndexSize = (ulong)(drawData.TotalIdxCount + 10000) * sizeof(ushort);
+
+                // Ensure buffers are large enough
+                if (vertexBuffer.Size < requiredVertexSize)
+                {
+                    vertexBuffer?.Dispose();
+                    vertexBuffer = VkBuffer.Create(_vkContext, requiredVertexSize, BufferUsageFlags.VertexBufferBit,
+                        MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit);
+                }
+
+                if (indexBuffer.Size < requiredIndexSize)
+                {
+                    indexBuffer?.Dispose();
+                    indexBuffer = VkBuffer.Create(_vkContext, requiredIndexSize, BufferUsageFlags.IndexBufferBit,
+                        MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit);
+                }
+
+                // Upload vertex/index data
+                vertexBuffer.Map(out var pvtx_dst);
+                indexBuffer.Map(out var pidx_dst);
+
+              
+                ImDrawVert* vtx_dst = (ImDrawVert*)pvtx_dst;
+                ushort* idx_dst = (ushort*)pidx_dst;
+
+                for (int n = 0; n < drawData.CmdListsCount; n++)
+                {
+                    var cmd_list = drawData.CmdLists[n];
+                    Unsafe.CopyBlock(vtx_dst, cmd_list.VtxBuffer.Data.ToPointer(), (uint)(cmd_list.VtxBuffer.Size * Unsafe.SizeOf<ImDrawVert>()));
+                    Unsafe.CopyBlock(idx_dst, cmd_list.IdxBuffer.Data.ToPointer(), (uint)(cmd_list.IdxBuffer.Size * sizeof(ushort)));
+                    vtx_dst += cmd_list.VtxBuffer.Size;
+                    idx_dst += cmd_list.IdxBuffer.Size;
+                }
+
+                vertexBuffer.Flush();
+                indexBuffer.Flush();
+                vertexBuffer.Unmap();
+                indexBuffer.Unmap();
+
+                // Setup render state
+                uploadBatch.BindPipeline(_pipeline);
+
+                if (drawData.TotalVtxCount > 0)
+                {
+                    vertexBuffer.BindVertexBuffer(uploadBatch, 0);
+                    indexBuffer.BindIndexBuffer(uploadBatch, 0, IndexType.Uint16);
+                }
+
+                // Setup viewport
+                Viewport viewport = renderTarget.Viewport;
+                uploadBatch.SetViewport(in viewport);
+
+                // Setup scale and translation
+                Span<float> scale = [2.0f / drawData.DisplaySize.X, 2.0f / drawData.DisplaySize.Y];
+                Span<float> translate = [-1.0f - drawData.DisplayPos.X * scale[0], -1.0f - drawData.DisplayPos.Y * scale[1]];
+
+                uploadBatch.PushConstants(_pipelineLayout, ShaderStageFlags.VertexBit, sizeof(float) * 0, sizeof(float) * 2, scale);
+                uploadBatch.PushConstants(_pipelineLayout, ShaderStageFlags.VertexBit, sizeof(float) * 2, sizeof(float) * 2, translate);
+
+                // Bind font texture
+                _bindingManager.BindResource(frameIndex, _fontTextureBinding, uploadBatch, _pipelineLayout);
+
+                // Render command lists
+                Vector2 clipOff = drawData.DisplayPos;
+                Vector2 clipScale = drawData.FramebufferScale;
+
+                int global_vtx_offset = 0;
+                int global_idx_offset = 0;
+
+
+                for (int n = 0; n < drawData.CmdListsCount; n++)
+                {
+                    var cmd_list = drawData.CmdLists[n];
+                    for (int cmd_i = 0; cmd_i < cmd_list.CmdBuffer.Size; cmd_i++)
+                    {
+                        ImDrawCmdPtr pcmd = cmd_list.CmdBuffer[cmd_i];
+                        if (pcmd.UserCallback != IntPtr.Zero)
+                        {
+                            // Handle user callbacks if needed
+                        }
+                        else
+                        {
+                            if (pcmd.ElemCount == 0)
+                            {
+                                continue;
+                            }
+
+                            // Get texture binding
+                            var textureBinding = GetTextureBindingFromId(pcmd.TextureId);
+                            if (textureBinding != null)
+                            {
+                                _bindingManager.BindResource(frameIndex, textureBinding, uploadBatch, _pipelineLayout);
+                            }
+
+                            // Apply scissor/clipping rectangle
+                            Vector4 clipRect;
+                            clipRect.X = (pcmd.ClipRect.X - clipOff.X) * clipScale.X;
+                            clipRect.Y = (pcmd.ClipRect.Y - clipOff.Y) * clipScale.Y;
+                            clipRect.Z = (pcmd.ClipRect.Z - clipOff.X) * clipScale.X;
+                            clipRect.W = (pcmd.ClipRect.W - clipOff.Y) * clipScale.Y;
+
+                            if (clipRect.X < _graphicsContext.MainSwapchain.Extent.Width && clipRect.Y < _graphicsContext.MainSwapchain.Extent.Height && clipRect.Z >= 0.0f && clipRect.W >= 0.0f)
+                            {
+                                if (clipRect.X < 0.0f)
+                                {
+                                    clipRect.X = 0.0f;
+                                }
+
+                                if (clipRect.Y < 0.0f)
+                                {
+                                    clipRect.Y = 0.0f;
+                                }
+
+                                Rect2D scissor = new Rect2D
+                                {
+                                    Offset = { X = (int)clipRect.X, Y = (int)clipRect.Y },
+                                    Extent = { Width = (uint)(clipRect.Z - clipRect.X), Height = (uint)(clipRect.W - clipRect.Y) }
+                                };
+
+                                uploadBatch.SetScissor(in scissor);
+                                uploadBatch.DrawIndexed(pcmd.ElemCount, 1, pcmd.IdxOffset + (uint)global_idx_offset, (int)pcmd.VtxOffset + global_vtx_offset, 0);
+                            }
+                        }
+                    }
+                    global_idx_offset += cmd_list.IdxBuffer.Size;
+                    global_vtx_offset += cmd_list.VtxBuffer.Size;
+                }
+
+                uploadBatch.EndRenderPass();
+            }
+        }
+
+        private ref (VkBuffer VertexBuffer, VkBuffer IndexBuffer) GetOrCreateViewportBuffers(RckImGuiViewport viewport, uint frameIndex)
+        {
+            lock (_bufferLock)
+            {
+                if (!_viewportBuffers.TryGetValue(viewport, out var buffersArray))
+                {
+                    buffersArray = new (VkBuffer VertexBuffer, VkBuffer IndexBuffer)[_vkContext.MaxFramesPerFlight];
+                    _viewportBuffers[viewport] = buffersArray;
+                }
+
+                return ref buffersArray[frameIndex];
+            }
+        }
+
+        public void CleanupViewportBuffers(RckImGuiViewport viewport)
+        {
+            lock (_bufferLock)
+            {
+                if (_viewportBuffers.TryGetValue(viewport, out var buffersArray))
+                {
+                    for (int i = 0; i < buffersArray.Length; i++)
+                    {
+                        if(buffersArray[i].VertexBuffer is not null)
+                        {
+                            _vkContext.GraphicsSubmitContext.AddDependency(buffersArray[i].VertexBuffer);
+                        }
+                        if (buffersArray[i].IndexBuffer is not null)
+                        {
+                            _vkContext.GraphicsSubmitContext.AddDependency(buffersArray[i].IndexBuffer);
+                        }
+                    }
+                    _viewportBuffers.Remove(viewport);
+                }
             }
         }
 
@@ -624,10 +1021,10 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
 
             lock (_textureCacheLock)
             {
-                if (!_textureBindings.TryGetValue(texture, out var binding))
+                if (!_textureBindings.TryGetValue(texture, out _))
                 {
                     // Create new texture binding
-                    binding = new TextureBinding(0, 0, 0, 1, texture);
+                    TextureBinding? binding = new TextureBinding(0, 0, 0, 1, texture);
                     _textureBindings[texture] = binding;
 
                     // Allocate descriptor sets for all frames
@@ -721,7 +1118,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
                         }
                          ]))
                  .WithViewportState(new VulkanViewportStateInfoBuilder()
-                     .AddViewport(new Viewport() { Height = _graphicsContext.Swapchain.Surface.Size.X, Width = _graphicsContext.Swapchain.Surface.Size.Y })
+                     .AddViewport(new Viewport() { Height = _graphicsContext.MainSwapchain.Surface.Size.X, Width = _graphicsContext.MainSwapchain.Surface.Size.Y })
                      .AddScissors(new Rect2D()))
                  .WithMultisampleState(new VulkanMultisampleStateInfoBuilder().Configure(false, SampleCountFlags.Count1Bit))
                  .WithColorBlendState(new VulkanColorBlendStateBuilder()

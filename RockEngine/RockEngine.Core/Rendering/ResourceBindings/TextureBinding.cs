@@ -78,8 +78,9 @@ namespace RockEngine.Core.Rendering.ResourceBindings
                 if (needsLayoutTransition)
                 {
                     var batch = context.GraphicsSubmitContext.CreateBatch();
-                    texture.PrepareForFragmentShader(batch.CommandBuffer);
+                    texture.PrepareForFragmentShader(batch);
                     batch.Submit();
+                    
                 }
 
                 imageInfos[i] = new DescriptorImageInfo

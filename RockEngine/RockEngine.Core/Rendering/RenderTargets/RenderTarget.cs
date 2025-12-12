@@ -33,8 +33,8 @@ namespace RockEngine.Core.Rendering.RenderTargets
             Framebuffers = new VkFrameBuffer[context.MaxFramesPerFlight];
         }
 
-        public abstract void PrepareForRender(VkCommandBuffer cmd);
-        public abstract void TransitionToRead(VkCommandBuffer cmd);
+        public abstract void PrepareForRender(UploadBatch batch);
+        public abstract void TransitionToRead(UploadBatch batch);
         protected abstract void CreateFramebuffers();
         public abstract void Initialize(RckRenderPass renderPass);
         

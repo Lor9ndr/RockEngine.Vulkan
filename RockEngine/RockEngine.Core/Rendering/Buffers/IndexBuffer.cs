@@ -117,14 +117,14 @@ namespace RockEngine.Core.Rendering.Buffers
 
         }
 
-        public void Bind(VkCommandBuffer commandBuffer, ulong offset = 0)
+        public void Bind(UploadBatch batch, ulong offset = 0)
         {
             if (_buffer == null)
             {
                 throw new InvalidOperationException("Buffer not created");
             }
 
-            _buffer.BindIndexBuffer(commandBuffer, offset, _indexType);
+            _buffer.BindIndexBuffer(batch, offset, _indexType);
         }
 
         public void Dispose()

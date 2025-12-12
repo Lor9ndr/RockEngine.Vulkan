@@ -10,7 +10,7 @@ using static RockEngine.Vulkan.ISurfaceHandler;
 
 namespace RockEngine.Vulkan
 {
-    internal class SDLSurfaceHandler : VkObject<SurfaceKHR>, ISurfaceHandler
+    public class SurfaceHandler : VkObject<SurfaceKHR>, ISurfaceHandler
     {
         private readonly IWindow _window;
         private readonly VulkanContext _context;
@@ -27,7 +27,7 @@ namespace RockEngine.Vulkan
 
         public event FramebufferResizeHandler? OnFramebufferResize;
 
-        public SDLSurfaceHandler(IWindow window, VulkanContext context, in SurfaceKHR surface)
+        public SurfaceHandler(IWindow window, VulkanContext context, in SurfaceKHR surface)
             : base(in surface)
         {
             VkSurfaceNative = window.VkSurface;
@@ -38,12 +38,11 @@ namespace RockEngine.Vulkan
             _window.Resize += SurfaceResized;
         }
 
-        public static unsafe SDLSurfaceHandler CreateSurface(IWindow window, VulkanContext context)
+        public static unsafe SurfaceHandler CreateSurface(IWindow window, VulkanContext context)
         {
-
             var handle = window.VkSurface.Create<AllocationCallbacks>(context.Instance.VkObjectNative.ToHandle(), default);
             var surface = new SurfaceKHR(handle.Handle);
-            return new SDLSurfaceHandler(window, context, surface);
+            return new SurfaceHandler(window, context, surface);
 
 
         }
@@ -68,7 +67,6 @@ namespace RockEngine.Vulkan
                 if (_vkObject.Handle != 0)
                 {
                     _window.Resize -= SurfaceResized;
-                    _surfaceApi.Dispose();
                     _surfaceApi.DestroySurface(_context.Instance, _vkObject, default);
                     _vkObject = default;
                 }
@@ -80,7 +78,7 @@ namespace RockEngine.Vulkan
 
 
         // Override finalizer only if 'Dispose(bool disposing)' has code to free unmanaged resources
-        ~SDLSurfaceHandler()
+        ~SurfaceHandler()
         {
             // Do not change this code. Put cleanup code in 'Dispose(bool disposing)' method
             Dispose(disposing: false);

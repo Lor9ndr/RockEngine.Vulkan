@@ -138,5 +138,10 @@ namespace RockEngine.Vulkan
         protected override void Dispose(bool disposing)
         {
         }
+        public async Task WaitIdleAsync(CancellationToken cancellationToken = default)
+        {
+            await Task.Run(() => WaitIdle(), cancellationToken);
+        }
+
     }
 }

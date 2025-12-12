@@ -31,7 +31,7 @@ namespace RockEngine.Editor.EditorUI.EditorWindows
             }
         }
 
-        protected override ValueTask OnDraw()
+        protected override void OnDraw()
         {
             ApplyWindowStyling();
 
@@ -53,7 +53,6 @@ namespace RockEngine.Editor.EditorUI.EditorWindows
 
             ImGui.PopStyleVar();
             PopWindowStyling();
-            return ValueTask.CompletedTask;
         }
 
         private void DrawEntityNode(Entity entity)

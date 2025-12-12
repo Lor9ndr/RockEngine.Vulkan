@@ -55,7 +55,7 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
 
         public static string Name => "geometry";
 
-        public void Execute(VkCommandBuffer cmd, params object[] args)
+        public void Execute(UploadBatch batch, params object[] args)
         {
             using (PerformanceTracer.BeginSection(nameof(GeometryPass)))
             {
@@ -63,8 +63,8 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
                 var camera = args[1] as Camera ?? throw new ArgumentNullException(nameof(args), nameof(Camera));
                 var camIndex = (int)args[2];
 
-                cmd.SetViewport(camera.RenderTarget.Viewport);
-                cmd.SetScissor(camera.RenderTarget.Scissor);
+                batch.SetViewport(camera.RenderTarget.Viewport);
+                batch.SetScissor(camera.RenderTarget.Scissor);
 
                 var matrixBinding = _transformManager.GetCurrentBinding(frameIndex);
                 var globalUboBinding = _globalUbo.GetBinding((uint)camIndex);
@@ -84,7 +84,7 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
                 // Track state
                 RenderState currentState = default;
 
-                _globalGeometryBuffer.Bind(cmd);
+                _globalGeometryBuffer.Bind(batch);
 
                 unsafe
                 {
@@ -102,11 +102,11 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
                         // Pipeline state change
                         if (!ReferenceEquals(currentState.Pipeline, drawGroup.MaterialPass.Pipeline))
                         {
-                            cmd.BindPipeline(drawGroup.MaterialPass.Pipeline);
+                            batch.BindPipeline(drawGroup.MaterialPass.Pipeline);
                             currentState.Pipeline = drawGroup.MaterialPass.Pipeline;
 
-                            _bindingManager.BindResource(frameIndex, globalUboBinding, cmd, currentState.Pipeline.Layout);
-                            _bindingManager.BindResource(frameIndex, matrixBinding, cmd, currentState.Pipeline.Layout);
+                            _bindingManager.BindResource(frameIndex, globalUboBinding, batch, currentState.Pipeline.Layout);
+                            _bindingManager.BindResource(frameIndex, matrixBinding, batch, currentState.Pipeline.Layout);
                         }
 
                         // Material change
@@ -116,32 +116,29 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
                             _bindingManager.BindResourcesForMaterial(
                                 frameIndex,
                                 currentState.MaterialPass,
-                                cmd,
+                                batch,
                                 false,
                                 [matrixBinding.SetLocation, globalUboBinding.SetLocation]
                             );
-                            currentState.MaterialPass.CmdPushConstants(cmd);
+                            currentState.MaterialPass.CmdPushConstants(batch);
                         }
 
                         // Issue draw command
                         if (drawGroup.IsMultiDraw && _supportsMultiDraw)
                         {
-                            VulkanContext.Vk.CmdDrawIndexedIndirect(
-                                cmd,
-                                indirectBuffer,
-                                drawGroup.ByteOffset,
+                            batch.DrawIndexedIndirect(indirectBuffer,
                                 drawGroup.Count,
+                                drawGroup.ByteOffset,
                                 (uint)_indirectCommandStride);
                         }
                         else
                         {
                             for (uint j = 0; j < drawGroup.Count; j++)
                             {
-                                VulkanContext.Vk.CmdDrawIndexedIndirect(
-                                    cmd,
+                                batch.DrawIndexedIndirect(
                                     indirectBuffer,
-                                    drawGroup.ByteOffset + (ulong)(j * _indirectCommandStride),
                                     1,
+                                    (uint)(drawGroup.ByteOffset + (ulong)(j * _indirectCommandStride)),
                                     (uint)_indirectCommandStride);
                             }
                         }
@@ -182,7 +179,7 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
             }
 
             // Depth Attachment
-            builder.ConfigureAttachment(_graphicsEngine.Swapchain.DepthFormat)
+            builder.ConfigureAttachment(_graphicsEngine.MainSwapchain.DepthFormat)
                 .WithDepthOperations(
                     load: AttachmentLoadOp.Clear,
                     store: AttachmentStoreOp.DontCare,
@@ -261,11 +258,11 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
                  .WithInputAssembly(new VulkanInputAssemblyBuilder().Configure())
                  .WithVertexInputState<Vertex>()
                  .WithViewportState(new VulkanViewportStateInfoBuilder()
-                     .AddViewport(new Viewport() { Height = _graphicsEngine.Swapchain.Surface.Size.Y, Width = _graphicsEngine.Swapchain.Surface.Size.X })
+                     .AddViewport(new Viewport() { Height = _graphicsEngine.MainSwapchain.Surface.Size.Y, Width = _graphicsEngine.MainSwapchain.Surface.Size.X })
                      .AddScissors(new Rect2D()
                      {
                          Offset = new Offset2D(),
-                         Extent = new Extent2D((uint?)_graphicsEngine.Swapchain.Surface.Size.X, (uint?)_graphicsEngine.Swapchain.Surface.Size.Y)
+                         Extent = new Extent2D((uint?)_graphicsEngine.MainSwapchain.Surface.Size.X, (uint?)_graphicsEngine.MainSwapchain.Surface.Size.Y)
                      }))
                  .WithMultisampleState(new VulkanMultisampleStateInfoBuilder().Configure(false, SampleCountFlags.Count1Bit))
                  .WithColorBlendState(new VulkanColorBlendStateBuilder()

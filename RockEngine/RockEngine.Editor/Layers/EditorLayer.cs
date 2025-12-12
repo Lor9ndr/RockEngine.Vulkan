@@ -306,24 +306,24 @@ namespace RockEngine.Editor.Layers
 
         public void OnDetach() { }
 
-        public async ValueTask OnImGuiRender(VkCommandBuffer vkCommandBuffer)
+        public void OnImGuiRender(UploadBatch vkCommandBuffer)
         {
             _dockSpace.Begin();
             _mainMenuBar.Draw();
             _toolbar.Draw();
 
             // Draw all windows
-            await _sceneHierarchy.Draw();
-            await _inspector.Draw();
-            await _sceneViewport.Draw();
-            await _gameViewport.Draw();
-            await _console.Draw();
-            await _performance.Draw();
+            _sceneHierarchy.Draw();
+            _inspector.Draw();
+            _sceneViewport.Draw();
+            _gameViewport.Draw();
+            _console.Draw();
+            _performance.Draw();
 
             _dockSpace.End();
         }
 
-        public void OnRender(VkCommandBuffer vkCommandBuffer) { }
+        public void OnRender(UploadBatch vkCommandBuffer) { }
 
         public void OnUpdate()
         {

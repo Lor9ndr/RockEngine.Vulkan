@@ -33,12 +33,11 @@ namespace RockEngine.Editor.Layers
         {
         }
 
-        public ValueTask OnImGuiRender(VkCommandBuffer vkCommandBuffer)
+        public void OnImGuiRender(UploadBatch vkCommandBuffer)
         {
-            return ValueTask.CompletedTask;
         }
 
-        public void OnRender(VkCommandBuffer vkCommandBuffer)
+        public void OnRender(UploadBatch vkCommandBuffer)
         {
         }
 

@@ -121,10 +121,10 @@ namespace RockEngine.Vulkan
         {
             VulkanContext.Vk.CmdEndRenderPass(this);
         }
-        public void BindVertexBuffer(VkBuffer vertexBuffer, ulong offset = 0)
+        public void BindVertexBuffer(VkBuffer vertexBuffer, in ulong offset = 0)
         {
             var buffer = vertexBuffer.VkObjectNative;
-            VulkanContext.Vk.CmdBindVertexBuffers(_vkObject, 0, 1, ref buffer, ref offset);
+            VulkanContext.Vk.CmdBindVertexBuffers(_vkObject, 0, 1, ref buffer, in offset);
         }
 
         public void BindIndexBuffer(VkBuffer indexBuffer, ulong offset = 0, IndexType indexType = IndexType.Uint32)
@@ -205,7 +205,7 @@ namespace RockEngine.Vulkan
             VulkanContext.Vk.CmdExecuteCommands(commandBuffer: _vkObject, commandBufferCount: 1, pCommandBuffers: in secondaryCommandBuffer);
         }
 
-        public void DrawIndirect(VkBuffer buffer, uint drawCount, uint offset, uint stride)
+        public void DrawIndirect(VkBuffer buffer, uint drawCount, ulong offset, uint stride)
         {
             //lock (_commandPool._lock)
             {
@@ -222,7 +222,13 @@ namespace RockEngine.Vulkan
         }
 
         public void PushConstants<T>(PipelineLayout layout, ShaderStageFlags stageFlags, uint offset, uint size, ref T value) where T : unmanaged
-            => VulkanContext.Vk.CmdPushConstants(this, layout, stageFlags, offset, size, ref value);
+        {
+            VulkanContext.Vk.CmdPushConstants(this, layout, stageFlags, offset, size, ref value);
+        }
+        public void PushConstants<T>(PipelineLayout layout, ShaderStageFlags stageFlags, uint offset, uint size,  Span<T> value) where T : unmanaged
+        {
+            VulkanContext.Vk.CmdPushConstants(this, layout, stageFlags, offset, size, value);
+        }
 
         public unsafe void PushConstants(PipelineLayout layout, ShaderStageFlags stageFlags, uint offset, uint size, void* value)
         {
@@ -253,6 +259,14 @@ namespace RockEngine.Vulkan
         public unsafe void CopyBufferToImage(VkBuffer srcBuffer, VkImage dstImage, ImageLayout dstImageLayout, uint regionCount, Span<BufferImageCopy> pRegions)
         {
             VulkanContext.Vk.CmdCopyBufferToImage(this, srcBuffer, dstImage, dstImageLayout, regionCount, pRegions);
+        }
+        public  void CopyImageToBuffer(VkImage srcImage, ImageLayout srcImageLayout, VkBuffer dstBuffer, in BufferImageCopy pRegions)
+        {
+            VulkanContext.Vk.CmdCopyImageToBuffer(this, srcImage , srcImageLayout, dstBuffer, 1, in pRegions);
+        }
+        public void CopyImageToBuffer(VkImage srcImage, ImageLayout srcImageLayout, VkBuffer dstBuffer,  Span<BufferImageCopy> pRegions)
+        {
+            VulkanContext.Vk.CmdCopyImageToBuffer(this, srcImage, srcImageLayout, dstBuffer, (uint)pRegions.Length, pRegions);
         }
         public unsafe void CopyBufferToImage(VkBuffer srcBuffer, VkImage dstImage, ImageLayout dstImageLayout, uint regionCount, in BufferImageCopy pRegions)
         {

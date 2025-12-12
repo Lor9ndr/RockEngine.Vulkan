@@ -112,8 +112,7 @@ namespace RockEngine.Vulkan
             {
                 try
                 {
-                    _fence?.Wait();
-                    Complete();
+                    Dispose();
                 }
                 catch
                 {

@@ -1,6 +1,7 @@
 ﻿
 using Silk.NET.Vulkan;
 
+using System;
 using System.Runtime.InteropServices;
 
 using Buffer = Silk.NET.Vulkan.Buffer;
@@ -53,6 +54,14 @@ namespace RockEngine.Vulkan
             var deviceMemory = VkDeviceMemory.Allocate(context, memRequirements, properties);
 
             VulkanContext.Vk.BindBufferMemory(context.Device, bufferHandle, deviceMemory, 0);
+            VulkanAllocator.DeviceMemoryTracker.AssociateObject(
+               deviceMemory,
+               bufferHandle.Handle,
+               "Buffer",
+               memRequirements.Size,
+               0, // offset
+               bufferHandle); 
+
 
             return new VkBuffer(context, bufferHandle, deviceMemory, usage);
         }
@@ -354,14 +363,14 @@ namespace RockEngine.Vulkan
         {
             _deviceMemory.Unmap();
         }
-        public void BindVertexBuffer(VkCommandBuffer commandBuffer, ulong vertexOffset = 0)
+        public void BindVertexBuffer(UploadBatch batch, ulong vertexOffset = 0)
         {
-            VulkanContext.Vk.CmdBindVertexBuffers(commandBuffer, 0, 1, in _vkObject, ref vertexOffset);
+            batch.BindVertexBuffer(this, vertexOffset);
         }
 
-        public void BindIndexBuffer(VkCommandBuffer commandBuffer, ulong indexOffset, IndexType type)
+        public void BindIndexBuffer(UploadBatch batch, ulong indexOffset, IndexType type)
         {
-            VulkanContext.Vk.CmdBindIndexBuffer(commandBuffer, _vkObject, indexOffset, type);
+            batch.BindIndexBuffer(this, indexOffset, type);
         }
         public override void LabelObject(string name) => _context.DebugUtils.SetDebugUtilsObjectName(_vkObject, ObjectType.Buffer, name);
 
@@ -377,6 +386,7 @@ namespace RockEngine.Vulkan
                 {
                     _deviceMemory.Unmap();
                 }
+                VulkanAllocator.DeviceMemoryTracker.DisassociateObject(_vkObject.Handle);
                 VulkanContext.Vk.DestroyBuffer(_context.Device, _vkObject, in VulkanContext.CustomAllocator<VkBuffer>());
                 _deviceMemory.Dispose();
 

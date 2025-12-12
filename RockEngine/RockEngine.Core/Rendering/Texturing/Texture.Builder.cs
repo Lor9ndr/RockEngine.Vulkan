@@ -112,8 +112,8 @@ namespace RockEngine.Core.Rendering.Texturing
                 if (_generateMipmaps)
                 {
                     var batch = _context.GraphicsSubmitContext.CreateBatch();
-                    image.GenerateMipmaps(batch.CommandBuffer);
-                    batch.CommandBuffer.LabelObject("GenerateMipmap cmd");
+                    image.GenerateMipmaps(batch);
+                    batch.LabelObject("GenerateMipmap cmd");
                     _context.GraphicsSubmitContext.FlushSingle(batch, VkFence.CreateNotSignaled(_context)).Wait();
                 }
                 if (_isCubeMap)

@@ -53,17 +53,17 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
             }
         }
 
-        public async ValueTask DrawComponentProperties(IComponent component)
+        public void DrawComponentProperties(IComponent component)
         {
             var accessors = GetPropertyAccessors(component.GetType());
 
             foreach (var accessor in accessors)
             {
-                await DrawProperty(component, accessor);
+                DrawProperty(component, accessor);
             }
         }
 
-        public async ValueTask DrawProperty(IComponent component, UIPropertyAccessor accessor)
+        public void DrawProperty(IComponent component, UIPropertyAccessor accessor)
         {
             ImGui.PushID($"{component.GetType().Name}_{accessor.Name}");
 
@@ -79,7 +79,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
 
                 if (handler != null)
                 {
-                    await handler.Draw(component, accessor, value, this);
+                    handler.Draw(component, accessor, value, this);
                 }
                 else
                 {

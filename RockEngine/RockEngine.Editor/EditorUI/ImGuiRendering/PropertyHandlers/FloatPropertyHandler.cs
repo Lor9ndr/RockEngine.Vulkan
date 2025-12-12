@@ -10,7 +10,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.PropertyHandlers
     [PropertyHandler(typeof(float))]
     public class FloatPropertyHandler : BasePropertyHandler<float>
     {
-        protected override ValueTask DrawProperty(IComponent component, UIPropertyAccessor accessor, float value, PropertyDrawer drawer)
+        protected override void DrawProperty(IComponent component, UIPropertyAccessor accessor, float value, PropertyDrawer drawer)
         {
             var range = accessor.GetAttribute<RangeAttribute>();
             var stepAttr = accessor.GetAttribute<StepAttribute>();
@@ -30,7 +30,6 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.PropertyHandlers
                 accessor.SetValue(component, value);
             }
 
-            return ValueTask.CompletedTask;
 
         }
     }

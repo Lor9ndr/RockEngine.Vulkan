@@ -12,7 +12,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.PropertyHandlers
     {
         public bool CanHandle(Type propertyType) => propertyType == typeof(MeshProvider);
 
-        public async ValueTask Draw(IComponent component, UIPropertyAccessor accessor, object value, PropertyDrawer drawer)
+        public  void Draw(IComponent component, UIPropertyAccessor accessor, object value, PropertyDrawer drawer)
         {
             var meshProvider = value as MeshProvider;
 
@@ -21,7 +21,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.PropertyHandlers
 
             ImGui.Button($"{accessor.DisplayName}: {currentName}");
 
-            await HandleAssetDragDrop(component, accessor, drawer);
+            HandleAssetDragDrop(component, accessor, drawer);
             HandleMeshSpecificUI(component, accessor, meshProvider, drawer);
             HandleMeshTooltip(meshProvider, drawer);
         }
@@ -45,11 +45,11 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.PropertyHandlers
             return "Mesh Provider";
         }
 
-        private async ValueTask HandleAssetDragDrop(IComponent component, UIPropertyAccessor accessor, PropertyDrawer drawer)
+        private  void HandleAssetDragDrop(IComponent component, UIPropertyAccessor accessor, PropertyDrawer drawer)
         {
             if (AssetDragDrop.AcceptAssetDrop(out var assetID))
             {
-                var meshAsset = await drawer.AssetManager.GetAssetAsync<MeshAsset>(assetID);
+                var meshAsset = drawer.AssetManager.GetAssetAsync<MeshAsset>(assetID).GetAwaiter().GetResult();
                 if (meshAsset != null)
                 {
                     var meshProvider = new MeshProvider(new AssetReference<MeshAsset>(meshAsset));

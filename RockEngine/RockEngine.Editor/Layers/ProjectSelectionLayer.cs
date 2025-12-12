@@ -48,12 +48,12 @@ namespace RockEngine.Editor.Layers
             // Check for completed async operations if needed
         }
 
-        public void OnRender(VkCommandBuffer vkCommandBuffer)
+        public void OnRender(UploadBatch vkCommandBuffer)
         {
             // No rendering logic needed for this layer
         }
 
-        public async ValueTask OnImGuiRender(VkCommandBuffer vkCommandBuffer)
+        public void OnImGuiRender(UploadBatch vkCommandBuffer)
         {
             // Show progress modal if an operation is in progress
             if (_isOperationInProgress)

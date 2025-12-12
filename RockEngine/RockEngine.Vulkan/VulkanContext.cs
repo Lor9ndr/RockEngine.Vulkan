@@ -32,7 +32,7 @@ namespace RockEngine.Vulkan
 
         public static VulkanContext GetCurrent() => _renderingContext ?? throw new InvalidOperationException("Rendering context was not created yet");
 
-        public static ref AllocationCallbacks CustomAllocator<T>() => ref Vulkan.CustomAllocator.CreateCallbacks<T>();
+        public static ref AllocationCallbacks CustomAllocator<T>() => ref VulkanAllocator.CreateCallbacks<T>();
 
         private static readonly string[] _validationLayers = ["VK_LAYER_KHRONOS_validation"];
         private static DebugUtilsMessengerCallbackFunctionEXT _debugCallback;
@@ -60,7 +60,6 @@ namespace RockEngine.Vulkan
             _renderingContext = this;
             SamplerCache = new SamplerCache(this);
 
-            // Create SubmitContexts with thread managers
             GraphicsSubmitContext =  new SubmitContext(this, Device.GraphicsQueue);
 
             ComputeSubmitContext = new SubmitContext(this, Device.ComputeQueue);
@@ -72,9 +71,9 @@ namespace RockEngine.Vulkan
 
       
 
-        private SDLSurfaceHandler CreateSurface(IWindow window)
+        private SurfaceHandler CreateSurface(IWindow window)
         {
-            return SDLSurfaceHandler.CreateSurface(window, this);
+            return SurfaceHandler.CreateSurface(window, this);
         }
 
         private static unsafe VkInstance CreateInstance(IWindow surface, AppSettings appSettings)
@@ -82,7 +81,7 @@ namespace RockEngine.Vulkan
             var appname = (byte*)Marshal.StringToHGlobalAnsi(appSettings.Name);
             var appInfo = new ApplicationInfo()
             {
-                ApiVersion = Vk.Version13,
+                ApiVersion = Vk.MakeVersion(1,4,312),
                 ApplicationVersion = Vk.MakeVersion(1, 0, 0),
                 EngineVersion = Vk.MakeVersion(1, 0, 0),
                 PApplicationName = appname,

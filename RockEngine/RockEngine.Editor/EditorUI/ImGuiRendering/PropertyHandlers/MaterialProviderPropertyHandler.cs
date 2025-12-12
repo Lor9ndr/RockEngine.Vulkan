@@ -15,7 +15,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.PropertyHandlers
     {
         public bool CanHandle(Type propertyType) => propertyType == typeof(MaterialProvider);
 
-        public async ValueTask Draw(IComponent component, UIPropertyAccessor accessor, object value, PropertyDrawer drawer)
+        public void Draw(IComponent component, UIPropertyAccessor accessor, object value, PropertyDrawer drawer)
         {
             var materialProvider = value as MaterialProvider;
 
@@ -24,7 +24,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.PropertyHandlers
             ImGui.NewLine();
             ImGui.Button($"{accessor.DisplayName}: {currentName}");
 
-            await HandleAssetDragDrop(component, accessor, drawer);
+            HandleAssetDragDrop(component, accessor, drawer);
             HandleMaterialSpecificUI(component, accessor, materialProvider, drawer);
             HandleMaterialTooltip(materialProvider, drawer);
         }
@@ -48,11 +48,11 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.PropertyHandlers
             return "Material Provider";
         }
 
-        private async ValueTask HandleAssetDragDrop(IComponent component, UIPropertyAccessor accessor, PropertyDrawer drawer)
+        private void HandleAssetDragDrop(IComponent component, UIPropertyAccessor accessor, PropertyDrawer drawer)
         {
             if (AssetDragDrop.AcceptAssetDrop(out var assetID))
             {
-                var materialAsset = await drawer.AssetManager.GetAssetAsync<MaterialAsset>(assetID);
+                var materialAsset = drawer.AssetManager.GetAssetAsync<MaterialAsset>(assetID).GetAwaiter().GetResult();
                 if (materialAsset != null)
                 {
                     var materialProvider = new MaterialProvider(new AssetReference<MaterialAsset>(materialAsset));

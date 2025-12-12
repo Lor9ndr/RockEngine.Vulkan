@@ -58,7 +58,7 @@ namespace RockEngine.Editor.EditorUI.EditorWindows
                     .PickingRenderTarget;
         }
 
-        public override async ValueTask Draw()
+        public override void Draw()
         {
             if (!IsOpen)
             {
@@ -67,17 +67,17 @@ namespace RockEngine.Editor.EditorUI.EditorWindows
 
             if (ImGui.Begin(Title, ref _isOpen))
             {
-               await OnDraw();
+                OnDraw();
             }
             ImGui.End();
         }
 
-        protected override ValueTask OnDraw()
+        protected override void OnDraw()
         {
             var camera = GetCamera();
             if (camera == null)
             {
-                return ValueTask.CompletedTask;
+                return;
             }
 
             DrawRenderTarget(camera.RenderTarget, ref _currentSize);
@@ -86,7 +86,6 @@ namespace RockEngine.Editor.EditorUI.EditorWindows
             {
                 HandleViewportInteraction(debugCam);
             }
-            return ValueTask.CompletedTask;
         }
 
         public void Update()
@@ -227,7 +226,7 @@ namespace RockEngine.Editor.EditorUI.EditorWindows
                 var selectedEntity = _selectionManager?.CurrentSelection?.PrimaryEntity;
                 if (selectedEntity != null && Gizmo != null)
                 {
-                    Gizmo.UpdateDrag(ImGui.GetMousePos(), debugCam, selectedEntity);
+                    Gizmo.UpdateDrag(ImGui.GetMousePos(), debugCam, selectedEntity, Size);
                 }
             }
 
@@ -271,10 +270,7 @@ namespace RockEngine.Editor.EditorUI.EditorWindows
 
         private void SetGizmoMode(GizmoType mode)
         {
-            if(Gizmo is not null)
-            {
-                Gizmo.CurrentMode = mode;
-            }
+            Gizmo?.CurrentMode = mode;
         }
 
         private void HandleGizmoHover(Vector2 viewportCoords)
@@ -315,21 +311,14 @@ namespace RockEngine.Editor.EditorUI.EditorWindows
 
         private GizmoAxis DecodeGizmoAxis(uint handleId)
         {
-            // Verify this is a gizmo handle
-            if ((handleId & 0x80000000) == 0)
+            // Check if this is a gizmo (high byte = 0xFF)
+            if ((handleId >> 24) != 0xFF)
             {
                 return GizmoAxis.None;
             }
 
-            uint gizmoType = (handleId >> 24) & 0x7F;
-            uint axisMask = (handleId >> 16) & 0xFF;
-            uint checksum = handleId & 0xFFFF;
-            uint expectedChecksum = (gizmoType ^ axisMask) & 0xFFFF;
-
-            if (checksum != expectedChecksum)
-            {
-                return GizmoAxis.None;
-            }
+            // Extract axis mask from the third byte
+            uint axisMask = (handleId >> 8) & 0xFF;
 
             return axisMask switch
             {
@@ -519,7 +508,7 @@ namespace RockEngine.Editor.EditorUI.EditorWindows
 
             var drawList = ImGui.GetWindowDrawList();
             var windowPos = ImGui.GetWindowPos();
-            var textPos = new Vector2(windowPos.X + 10, windowPos.Y + 15);
+            var textPos = new Vector2(windowPos.X + 10, windowPos.Y + 40);
 
             string modeText = gizmo.CurrentMode switch
             {

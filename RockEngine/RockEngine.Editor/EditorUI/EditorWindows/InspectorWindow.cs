@@ -19,7 +19,7 @@ namespace RockEngine.Editor.EditorUI.EditorWindows
             _selectionManager = selectionManager;
         }
 
-        protected override async ValueTask OnDraw()
+        protected override void OnDraw()
         {
             if (_selectionManager.CurrentSelection == null || !_selectionManager.CurrentSelection.HasSelection)
             {
@@ -40,7 +40,7 @@ namespace RockEngine.Editor.EditorUI.EditorWindows
             // Other components
             foreach (var component in _selectionManager.CurrentSelection.PrimaryEntity.Components.Except([transform]))
             {
-                await DrawComponent(component);
+                DrawComponent(component);
             }
 
             // Add component button
@@ -89,7 +89,7 @@ namespace RockEngine.Editor.EditorUI.EditorWindows
             }
         }
 
-        private async ValueTask DrawComponent(IComponent component)
+        private void DrawComponent(IComponent component)
         {
             var typeName = component.GetType().Name;
             var isOpen = ImGui.CollapsingHeader(typeName, ImGuiTreeNodeFlags.DefaultOpen);
@@ -104,7 +104,7 @@ namespace RockEngine.Editor.EditorUI.EditorWindows
             if (isOpen)
             {
                 ImGui.Indent();
-                await _propertyDrawer.DrawComponentProperties(component);
+                 _propertyDrawer.DrawComponentProperties(component);
                 ImGui.Unindent();
             }
         }

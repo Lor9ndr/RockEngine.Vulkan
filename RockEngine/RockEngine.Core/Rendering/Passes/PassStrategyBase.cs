@@ -61,6 +61,7 @@ namespace RockEngine.Core.Rendering.Passes
             }
            
             _renderPass = new RckRenderPass(builder.Build(), _subPasses);
+            _renderPass.RenderPass.LabelObject(GetType().Name);
             return _renderPass;
         }
 

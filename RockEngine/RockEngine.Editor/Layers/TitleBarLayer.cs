@@ -208,7 +208,7 @@ namespace RockEngine.Editor.Layers
                 mouse.Cursor.StandardCursor = StandardCursor.Arrow;
             }
         }
-        public ValueTask OnImGuiRender(VkCommandBuffer vkCommandBuffer)
+        public void OnImGuiRender(UploadBatch vkCommandBuffer)
         {
             _isHoveringButton = false;
 
@@ -277,7 +277,6 @@ namespace RockEngine.Editor.Layers
                 ImGui.End();
             }
             ImGui.PopStyleVar();
-            return ValueTask.CompletedTask;
         }
 
         private void CreateResizeHandles()
@@ -378,7 +377,7 @@ namespace RockEngine.Editor.Layers
             return _window.Position;
         }*/
 
-        public void OnRender(VkCommandBuffer vkCommandBuffer)
+        public void OnRender(UploadBatch vkCommandBuffer)
         {
         }
         public Task OnAttach()

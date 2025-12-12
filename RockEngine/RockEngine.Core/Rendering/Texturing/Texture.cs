@@ -61,10 +61,10 @@ namespace RockEngine.Core.Rendering.Texturing
             OnTextureUpdated?.Invoke(this);
         }
 
-        public void PrepareForComputeShader(VkCommandBuffer commandBuffer)
+        public void PrepareForComputeShader(UploadBatch batch)
         {
             _image.TransitionImageLayout(
-                commandBuffer,
+                batch,
                 ImageLayout.General,
                 baseMipLevel: 0,
                 levelCount: LoadedMipLevels,
@@ -72,10 +72,10 @@ namespace RockEngine.Core.Rendering.Texturing
                 layerCount: _image.ArrayLayers);
         }
 
-        public void PrepareForFragmentShader(VkCommandBuffer commandBuffer)
+        public void PrepareForFragmentShader(UploadBatch batch)
         {
             _image.TransitionImageLayout(
-                commandBuffer,
+                batch,
                 ImageLayout.ShaderReadOnlyOptimal,
                 baseMipLevel: 0,
                 levelCount: LoadedMipLevels,
