@@ -87,12 +87,11 @@ namespace RockEngine.Core.Rendering
             return _alignedElementSize * cameraIndex;
         }
 
-        [StructLayout(LayoutKind.Sequential)]
+        [StructLayout(LayoutKind.Sequential, Pack = 16)]
         public struct GlobalUboData
         {
             public Matrix4x4 ViewProjection;
-            public Vector3 Position;
-            private float _padding;
+            public System.Numerics.Vector4 Position;
         }
     }
 }

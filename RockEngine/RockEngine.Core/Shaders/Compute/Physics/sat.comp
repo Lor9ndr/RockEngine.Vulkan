@@ -1,0 +1,185 @@
+#version 450
+#extension GL_EXT_scalar_block_layout : require
+
+#include "../../Include/shader_common.glsl"
+
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+layout(set = 0, binding = 0, scalar) buffer RigidbodyBuffer {
+    Rigidbody rigidbodies[];
+};
+
+layout(set = 0, binding = 1, scalar) buffer ColliderBuffer {
+    Collider colliders[];
+};
+
+layout(set = 0, binding = 2, scalar) buffer CollisionPairBuffer {
+    CollisionPair collisionPairs[];
+};
+
+layout(set = 0, binding = 3, scalar) buffer SATResultBuffer {
+    SATResult satResults[];
+};
+
+layout(set = 1, binding = 0) uniform PhysicsParamsBuffer {
+    PhysicsParams params;
+};
+
+layout(push_constant) uniform SATConstants {
+    uint maxFaceChecks;
+    uint maxEdgeChecks;
+    float epsilon;
+    float featureSwapThreshold;
+} sat;
+
+// Get box vertices in world space
+void getBoxVertices(in Collider col, out vec3 vertices[8]) {
+    vec3 halfSize = col.size;
+    mat3 rot = quatToMat3(col.rotation);
+    
+    vertices[0] = col.position + rot * vec3(-halfSize.x, -halfSize.y, -halfSize.z);
+    vertices[1] = col.position + rot * vec3( halfSize.x, -halfSize.y, -halfSize.z);
+    vertices[2] = col.position + rot * vec3( halfSize.x,  halfSize.y, -halfSize.z);
+    vertices[3] = col.position + rot * vec3(-halfSize.x,  halfSize.y, -halfSize.z);
+    vertices[4] = col.position + rot * vec3(-halfSize.x, -halfSize.y,  halfSize.z);
+    vertices[5] = col.position + rot * vec3( halfSize.x, -halfSize.y,  halfSize.z);
+    vertices[6] = col.position + rot * vec3( halfSize.x,  halfSize.y,  halfSize.z);
+    vertices[7] = col.position + rot * vec3(-halfSize.x,  halfSize.y,  halfSize.z);
+}
+
+// Get box face axes
+void getBoxFaceAxes(in Collider col, out vec3 axes[3]) {
+    mat3 rot = quatToMat3(col.rotation);
+    axes[0] = rot[0]; // X axis
+    axes[1] = rot[1]; // Y axis
+    axes[2] = rot[2]; // Z axis
+}
+
+// Project vertices onto axis
+void projectVertices(in vec3 vertices[8], in vec3 axis, out float minProj, out float maxProj) {
+    minProj = maxProj = dot(vertices[0], axis);
+    
+    for (int i = 1; i < 8; i++) {
+        float projection = dot(vertices[i], axis);
+        minProj = (projection < minProj) ? projection : minProj;  // Используем тернарный оператор вместо min()
+        maxProj = (projection > maxProj) ? projection : maxProj;  // Используем тернарный оператор вместо max()
+    }
+}
+
+// Check separating axis
+bool testAxis(in vec3 axis, in vec3 verticesA[8], in vec3 verticesB[8],
+              inout float minOverlap, inout vec3 minAxis) 
+{
+    
+    if (length(axis) < sat.epsilon) return true;
+    
+    vec3 normAxis = normalize(axis);
+    
+    float minA, maxA, minB, maxB;
+    projectVertices(verticesA, normAxis, minA, maxA);
+    projectVertices(verticesB, normAxis, minB, maxB);
+    
+    if (maxA < minB || maxB < minA) 
+    {
+        return false; // Separated
+    }
+    
+    float overlap1 = maxA - minB;
+    float overlap2 = maxB - minA;
+    float overlap = (overlap1 < overlap2) ? overlap1 : overlap2;
+    
+    if (overlap < minOverlap) {
+        minOverlap = overlap;
+        minAxis = normAxis;
+    }
+    
+    return true;
+}
+
+void main() {
+    uint idx = gl_GlobalInvocationID.x;
+    
+    // Исправлено: используем maxCollisionPairs из PhysicsParams
+    if (idx >= params.maxCollisionPairs) return;
+    
+    // Get colliders for this pair
+    CollisionPair pair = collisionPairs[idx];
+    if (pair.bodyA == 0xFFFFFFFFu) return;
+    
+    // Получаем коллайдеры напрямую из CollisionPair
+   uint colIdxA = rigidbodies[pair.bodyA].colliderIndex;
+   uint colIdxB = rigidbodies[pair.bodyB].colliderIndex;
+    
+    Collider colA = colliders[colIdxA];
+    Collider colB = colliders[colIdxB];
+    
+    // Only handle box-box for SAT
+    if (colA.shape != 0u || colB.shape != 0u) return;
+    
+    // Get vertices and axes
+    vec3 verticesA[8], verticesB[8];
+    getBoxVertices(colA, verticesA);
+    getBoxVertices(colB, verticesB);
+    
+    vec3 axesA[3], axesB[3];
+    getBoxFaceAxes(colA, axesA);
+    getBoxFaceAxes(colB, axesB);
+    
+    float minOverlap = 1e9;
+    vec3 minAxis = vec3(0.0);
+    bool separated = false;
+    
+    // Test face axes of A
+    for (int i = 0; i < 3; i++) {
+        if (!testAxis(axesA[i], verticesA, verticesB, minOverlap, minAxis)) {
+            separated = true;
+            break;
+        }
+    }
+    
+    if (!separated) {
+        // Test face axes of B
+        for (int i = 0; i < 3; i++) {
+            if (!testAxis(axesB[i], verticesA, verticesB, minOverlap, minAxis)) {
+                separated = true;
+                break;
+            }
+        }
+    }
+    
+    if (!separated) {
+        // Test edge-edge axes
+        for (int i = 0; i < 3; i++) {
+            for (int j = 0; j < 3; j++) {
+                vec3 edgeAxis = cross(axesA[i], axesB[j]);
+                if (length(edgeAxis) > sat.epsilon) {
+                    if (!testAxis(edgeAxis, verticesA, verticesB, minOverlap, minAxis)) {
+                        separated = true;
+                        break;
+                    }
+                }
+            }
+            if (separated) break;
+        }
+    }
+    
+    SATResult result;
+    result.axis = minAxis;
+    result.overlap = separated ? 0.0 : minOverlap;
+    result.isSeparated = separated ? 1 : 0;
+    
+    // Find contact features
+    if (!separated) {
+        result.contactPoint = (colA.position + colB.position) * 0.5;
+    }
+    
+    satResults[idx] = result;
+    
+    // Update collision pair
+    if (!separated) {
+        collisionPairs[idx].depth = minOverlap;
+        collisionPairs[idx].normal = minAxis;
+    } else {
+        collisionPairs[idx].bodyA = 0xFFFFFFFFu;
+    }
+}

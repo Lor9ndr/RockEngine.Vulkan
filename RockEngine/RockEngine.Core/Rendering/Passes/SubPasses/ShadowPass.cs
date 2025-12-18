@@ -1,5 +1,6 @@
 ﻿using RockEngine.Core.Builders;
 using RockEngine.Core.DI;
+using RockEngine.Core.Diagnostics;
 using RockEngine.Core.ECS.Components;
 using RockEngine.Core.Rendering.Buffers;
 using RockEngine.Core.Rendering.Managers;
@@ -210,7 +211,7 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
 
                         ShadowPointPushConstants pushConstants = new ShadowPointPushConstants
                         {
-                            LightPosition = light.Entity.Transform.Position,
+                            LightPosition = new Vector4(light.Entity.Transform.Position,0),
                             FarPlane = light.Radius,
                             ShadowIndex = (uint)lightData.ShadowParams.W
                         };
@@ -280,26 +281,28 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
             }
         }
 
-
-        [StructLayout(LayoutKind.Sequential)]
+        [StructLayout(LayoutKind.Sequential, Pack = 16)]
         public struct ShadowPointPushConstants
         {
-            public Vector3 LightPosition;      // Used for point lights
+            public System.Numerics.Vector4 LightPosition;      // Used for point lights
             public float FarPlane;             // Used for point lights
             public uint ShadowIndex;           // Index into shadow map array
+            private System.Numerics.Vector2 _glslPadding1;
         }
-        [StructLayout(LayoutKind.Sequential)]
+
+        [StructLayout(LayoutKind.Sequential, Pack = 16)]
         public struct ShadowSpotPushConstants
         {
             public Matrix4x4 ShadowMatrix;     // Used for directional/spot lights (non-CSM)
         }
 
-        [StructLayout(LayoutKind.Sequential)]
+        [StructLayout(LayoutKind.Sequential, Pack = 16)]
         public struct ShadowCSMPushConstants
         {
-            public Vector3 LightDirection;     // Used for CSM directional lights
+            public Vector4 LightDirection;     // Used for CSM directional lights
             public uint CascadeCount;          // Used for CSM
             public uint ShadowIndex;           // Index into shadow map array
+            private System.Numerics.Vector2 _glslPadding1;
         }
 
         public void SetupAttachmentDescriptions(RenderPassBuilder builder)

@@ -9,12 +9,10 @@ using Silk.NET.Vulkan;
 
 namespace RockEngine.Core.Rendering
 {
-    public class GBuffer
+    public class GBuffer : IDisposable
     {
         private readonly VulkanContext _context;
-        private InputAttachmentBinding _attachmentBinding;
         private readonly Format _depthFormat;
-        private RckPipeline? _pipeline;
         private Extent2D _size;
 
         public VkImageView[] ColorAttachments { get; private set; }
@@ -150,6 +148,20 @@ namespace RockEngine.Core.Rendering
 
             /* CreateAttachments();
              CreateTextures();*/
+        }
+
+        public void Dispose()
+        {
+            _context.Device.GraphicsQueue.WaitIdle();
+
+            // Cleanup old resources
+            foreach (var attachment in ColorAttachments)
+            {
+                attachment.Dispose();
+            }
+
+            DepthAttachment.Image.Dispose();
+
         }
     }
 }

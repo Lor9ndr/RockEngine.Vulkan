@@ -1,7 +1,7 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio Version 17
-VisualStudioVersion = 17.10.35201.131
+# Visual Studio Version 18
+VisualStudioVersion = 18.3.11310.294
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "RockEngine.Editor", "RockEngine.Editor\RockEngine.Editor.csproj", "{1EC15AC1-2C9A-4392-85E9-CFEB6526271A}"
 EndProject
@@ -45,6 +45,8 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RockEngine.Mathematics", "RockEngine.Math\RockEngine.Mathematics.csproj", "{4FCB8A80-63F9-44D8-B2B5-37747F92DA00}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RockEngine.Shading", "RockEngine.Shading\RockEngine.Shading.csproj", "{C0851018-7B49-4BB0-A5ED-3170F8126787}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RockEngine.Physics", "RockEngine.Physics\RockEngine.Physics.csproj", "{FAA634F2-DF56-42C5-8542-884F9FFB44DF}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -104,6 +106,10 @@ Global
 		{C0851018-7B49-4BB0-A5ED-3170F8126787}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{C0851018-7B49-4BB0-A5ED-3170F8126787}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{C0851018-7B49-4BB0-A5ED-3170F8126787}.Release|Any CPU.Build.0 = Release|Any CPU
+		{FAA634F2-DF56-42C5-8542-884F9FFB44DF}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{FAA634F2-DF56-42C5-8542-884F9FFB44DF}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{FAA634F2-DF56-42C5-8542-884F9FFB44DF}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{FAA634F2-DF56-42C5-8542-884F9FFB44DF}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -122,6 +128,7 @@ Global
 		{244F3EE5-CFDA-4186-A16B-8DD65AA78870} = {2214071E-7540-45CF-B200-416E412B5BB7}
 		{4FCB8A80-63F9-44D8-B2B5-37747F92DA00} = {7ED2A0B0-2159-42F9-B0A5-F13E5649C427}
 		{C0851018-7B49-4BB0-A5ED-3170F8126787} = {2214071E-7540-45CF-B200-416E412B5BB7}
+		{FAA634F2-DF56-42C5-8542-884F9FFB44DF} = {7ED2A0B0-2159-42F9-B0A5-F13E5649C427}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {69E3A2A2-AB4B-4875-A1C7-99BF0E221F23}

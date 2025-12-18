@@ -55,12 +55,12 @@ namespace RockEngine.Core
 				{
 					var vertex = new Vertex
 					{
-						Position = new Vector3(mesh.Vertices[iv].X, mesh.Vertices[iv].Y, mesh.Vertices[iv].Z)
+						Position = new Vector4(mesh.Vertices[iv].X, mesh.Vertices[iv].Y, mesh.Vertices[iv].Z,0)
 					};
 
 					if (mesh.HasNormals)
 					{
-						vertex.Normal = new Vector3(mesh.Normals[iv].X, mesh.Normals[iv].Y, mesh.Normals[iv].Z);
+						vertex.Normal = new Vector4(mesh.Normals[iv].X, mesh.Normals[iv].Y, mesh.Normals[iv].Z,0);
 					}
 
 					if (mesh.HasTextureCoords(0))
@@ -72,16 +72,18 @@ namespace RockEngine.Core
 					if (mesh.HasTangentBasis)
 					{
 						var tangent = mesh.Tangents[iv];
-						vertex.Tangent = new Vector3(
+						vertex.Tangent = new Vector4(
 							tangent.X,
 							tangent.Y,
-							tangent.Z
+							tangent.Z,
+							0
 						);
 						var bitangent = mesh.BiTangents[iv];
-						vertex.Bitangent = new Vector3(
+						vertex.Bitangent = new Vector4(
 							bitangent.X,
 							bitangent.Y,
-							bitangent.Z
+							bitangent.Z,
+							0
 						);
 					}
 

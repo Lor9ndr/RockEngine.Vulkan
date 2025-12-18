@@ -11,7 +11,7 @@ using System.Diagnostics;
 using System.Numerics;
 using System.Text;
 
-namespace RockEngine.Core
+namespace RockEngine.Core.Diagnostics
 {
     public sealed class PerformanceTracer : IDisposable
     {

@@ -104,7 +104,6 @@ namespace RockEngine.Core.Rendering.RenderTargets
             }
         }
 
-        [GPUAction([1, 1, 1, 1])]
         public override void TransitionToRead(UploadBatch batch)
         {
             using (batch.NameAction(nameof(TransitionToRead), [1, 1, 1, 1]))

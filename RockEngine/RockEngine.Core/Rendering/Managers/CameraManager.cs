@@ -28,7 +28,7 @@ namespace RockEngine.Core.Rendering.Managers
             camera.RenderTarget?.Dispose();
         }
 
-        [StructLayout(LayoutKind.Sequential)]
+        [StructLayout(LayoutKind.Sequential, Pack = 16)]
         public struct IBLParams
         {
             public float Exposure;      // [0.1 - 4.0] Typical HDR exposure range

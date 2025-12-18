@@ -96,7 +96,10 @@ namespace RockEngine.Editor.EditorUI.EditorWindows
 
             if (ImGui.BeginPopupContextItem())
             {
-                if (ImGui.MenuItem("Remove Component")) { }
+                if (ImGui.MenuItem("Remove Component")) 
+                    {
+                    component.Entity.RemoveComponent(component);
+                    }
                 if (ImGui.MenuItem("Reset")) { }
                 ImGui.EndPopup();
             }

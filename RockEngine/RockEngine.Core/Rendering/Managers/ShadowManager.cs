@@ -337,7 +337,7 @@ namespace RockEngine.Core.Rendering.Managers
         }
     }
 
-    [StructLayout(LayoutKind.Sequential)]
+    [StructLayout(LayoutKind.Sequential, Pack = 16)]
     public struct CSMData
     {
         public Matrix4x4 CascadeMatrices0;
@@ -346,6 +346,6 @@ namespace RockEngine.Core.Rendering.Managers
         public Matrix4x4 CascadeMatrices3;
         public Vector4 CascadeSplits;
         public Vector4 CSMParams; // x: cascadeCount, y: shadowMapSize, z: bias, w: normalOffset
-        public Matrix4x4 ViewMatrix; 
+        public Matrix4x4 ViewMatrix;
     }
 }

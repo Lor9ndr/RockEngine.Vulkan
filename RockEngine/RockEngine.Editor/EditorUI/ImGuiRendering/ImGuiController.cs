@@ -2,6 +2,7 @@
 
 using RockEngine.Core;
 using RockEngine.Core.Builders;
+using RockEngine.Core.Diagnostics;
 using RockEngine.Core.Rendering;
 using RockEngine.Core.Rendering.Managers;
 using RockEngine.Core.Rendering.Objects;
@@ -124,8 +125,13 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
             ImGui.NewFrame();
             _frameBegun = true;
             _initialized = true;
+            renderer.GraphicsEngine.MainSwapchain.Surface.Window.StateChanged += (s) =>
+            {
+
+            };
+
         }
-        
+
         private unsafe void UpdateMonitors()
         {
             try

@@ -1,4 +1,4 @@
-﻿using RockEngine.Core;
+﻿using RockEngine.Core.Diagnostics;
 using RockEngine.Core.ECS.Components;
 using RockEngine.Core.Rendering;
 using RockEngine.Core.Rendering.Managers;

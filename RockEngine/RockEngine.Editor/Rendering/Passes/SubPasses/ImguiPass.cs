@@ -1,5 +1,5 @@
-﻿using RockEngine.Core;
-using RockEngine.Core.Builders;
+﻿using RockEngine.Core.Builders;
+using RockEngine.Core.Diagnostics;
 using RockEngine.Core.Rendering;
 using RockEngine.Core.Rendering.Commands;
 using RockEngine.Core.Rendering.Managers;
@@ -61,7 +61,7 @@ namespace RockEngine.Editor.Rendering.Passes.SubPasses
             // Color attachment (swapchain image)
             builder.ConfigureAttachment(_graphicsEngine.MainSwapchain.Format)
                 .WithColorOperations(
-                    load: AttachmentLoadOp.Clear, // Preserve existing content
+                    load: AttachmentLoadOp.DontCare, // Preserve existing content
                     store: AttachmentStoreOp.Store,
                     initialLayout: ImageLayout.Undefined,
                     finalLayout: ImageLayout.PresentSrcKhr)

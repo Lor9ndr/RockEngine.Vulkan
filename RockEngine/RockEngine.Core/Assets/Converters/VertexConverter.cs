@@ -19,11 +19,11 @@ namespace RockEngine.Core.Assets.Converters
 
             return new Vertex
             {
-                Position = obj.GetProperty(Position).Deserialize<Vector3>(options),
-                Normal = obj.GetProperty(Normal).Deserialize<Vector3>(options),
+                Position = obj.GetProperty(Position).Deserialize<Vector3>(options).AsVector4(),
+                Normal = obj.GetProperty(Normal).Deserialize<Vector3>(options).AsVector4(),
                 TexCoord = obj.GetProperty(TexCoord).Deserialize<Vector2>(options),
-                Tangent = obj.GetProperty(Tangent).Deserialize<Vector3>(options),
-                Bitangent = obj.GetProperty(Bitangent).Deserialize<Vector3>(options)
+                Tangent = obj.GetProperty(Tangent).Deserialize<Vector3>(options).AsVector4(),
+                Bitangent = obj.GetProperty(Bitangent).Deserialize<Vector3>(options).AsVector4()
             };
         }
 

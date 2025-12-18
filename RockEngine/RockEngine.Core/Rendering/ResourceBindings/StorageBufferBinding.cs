@@ -3,8 +3,6 @@ using RockEngine.Vulkan;
 
 using Silk.NET.Vulkan;
 
-using System.Net.Mail;
-
 namespace RockEngine.Core.Rendering.ResourceBindings
 {
     public class StorageBufferBinding<T> : ResourceBinding where T:unmanaged

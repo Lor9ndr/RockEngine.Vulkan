@@ -1,4 +1,5 @@
-﻿using RockEngine.Vulkan;
+﻿using RockEngine.Core.Diagnostics;
+using RockEngine.Vulkan;
 
 using Silk.NET.Vulkan;
 

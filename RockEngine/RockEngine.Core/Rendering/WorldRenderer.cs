@@ -1,6 +1,7 @@
 ﻿using NLog;
 
 using RockEngine.Core.Builders;
+using RockEngine.Core.Diagnostics;
 using RockEngine.Core.ECS.Components;
 using RockEngine.Core.Rendering.Commands;
 using RockEngine.Core.Rendering.Managers;
@@ -11,6 +12,8 @@ using RockEngine.Core.Rendering.RenderTargets;
 using RockEngine.Vulkan;
 
 using Silk.NET.Vulkan;
+
+using System.Numerics;
 
 using ZLinq;
 
@@ -65,7 +68,6 @@ namespace RockEngine.Core.Rendering
         public IBLManager IBLManager => _iblManager;
         public RckRenderPass RenderPass { get; private set; }
 
-
         public WorldRenderer(VulkanContext context,
                         GraphicsContext graphicsEngine,
                         PipelineManager pipelineManager,
@@ -77,7 +79,6 @@ namespace RockEngine.Core.Rendering
                         LightManager lightManager,
                         CameraManager cameraManager,
                         ShadowManager shadowManager,
-                        //VulkanSynchronizationContext vulkanSynchronizationContext, 
                         GlobalUbo globalUbo)
         {
             _context = context;
@@ -117,6 +118,7 @@ namespace RockEngine.Core.Rendering
 
             _skyboxPipeline = CreateSkyboxPipeline();
             await iblManagerInitalizeTask;
+            //await PhysicsManager.InitializeAsync();
         }
 
 
@@ -160,8 +162,6 @@ namespace RockEngine.Core.Rendering
             // Wait for all updates concurrently
             await Task.WhenAll(updateTasks).ConfigureAwait(false);
 
-            // Update shadow matrices AFTER light updates
-            //_shadowManager.UpdateShadowMatrices(shadowCastingLights);
 
             if (cameras.Count > 0)
             {
@@ -169,12 +169,10 @@ namespace RockEngine.Core.Rendering
                     .AsValueEnumerable()
                     .Select(s => new GlobalUbo.GlobalUboData()
                     {
-                        Position = s.Entity.Transform.Position,
+                        Position = s.Entity.Transform.Position.AsVector4(),
                         ViewProjection = s.ViewProjectionMatrix,
                     }).ToArray()).ConfigureAwait(false);
             }
-
-
             _prevFrameIndex = FrameIndex;
         }
 

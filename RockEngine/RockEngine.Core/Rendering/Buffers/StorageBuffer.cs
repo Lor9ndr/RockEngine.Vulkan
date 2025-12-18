@@ -9,15 +9,15 @@ namespace RockEngine.Core.Rendering.Buffers
     public sealed class StorageBuffer<T> : IDisposable where T : unmanaged
     {
         private readonly VulkanContext _context;
-        private VkBuffer _deviceBuffer; // Changed from readonly to allow resizing
+        private VkBuffer _deviceBuffer; 
         private readonly ulong _stride;
         private bool _disposed;
 
         public VkBuffer Buffer => _deviceBuffer;
-        public ulong Capacity { get; private set; } // Added private setter
+        public ulong Capacity { get; private set; } 
         public ulong Stride => _stride;
 
-        public StorageBuffer(VulkanContext context, ulong capacity)
+        public StorageBuffer(VulkanContext context, ulong capacity, BufferUsageFlags bufferUsageFlags = BufferUsageFlags.StorageBufferBit | BufferUsageFlags.TransferDstBit | BufferUsageFlags.TransferSrcBit)
         {
             _context = context;
             Capacity = capacity;
@@ -29,7 +29,7 @@ namespace RockEngine.Core.Rendering.Buffers
             _deviceBuffer = VkBuffer.Create(
                 context,
                 Capacity * _stride,
-                BufferUsageFlags.StorageBufferBit | BufferUsageFlags.TransferDstBit | BufferUsageFlags.TransferSrcBit, // Added TransferSrcBit for resize operations
+                bufferUsageFlags,
                 MemoryPropertyFlags.DeviceLocalBit);
         }
 
@@ -140,18 +140,23 @@ namespace RockEngine.Core.Rendering.Buffers
 
         public void StageData(UploadBatch batch, T[] data, ulong startIndex = 0)
         {
+            StageData(batch, data.AsSpan(), startIndex);
+        }
+        public void StageData(UploadBatch batch, Span<T> data, ulong startIndex = 0)
+        {
             if ((ulong)data.Length + startIndex > Capacity)
             {
                 throw new ArgumentOutOfRangeException(nameof(data), "Exceeds buffer capacity");
             }
 
             batch.StageToBuffer<T>(
-                data.AsSpan(),
+                data,
                 _deviceBuffer,
                 startIndex * _stride,
                 (ulong)(Unsafe.SizeOf<T>() * data.Length)
             );
         }
+
 
         public void Dispose()
         {

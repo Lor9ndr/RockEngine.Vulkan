@@ -2,8 +2,10 @@
 
 using RockEngine.Core.Coroutines;
 using RockEngine.Core.DI;
+using RockEngine.Core.Diagnostics;
 using RockEngine.Core.ECS;
 using RockEngine.Core.Extensions;
+using RockEngine.Core.Physics;
 using RockEngine.Core.Rendering;
 using RockEngine.Core.Rendering.Managers;
 using RockEngine.Vulkan;
@@ -12,8 +14,6 @@ using Silk.NET.Windowing;
 
 using SimpleInjector;
 using SimpleInjector.Lifestyles;
-
-using System.Diagnostics;
 
 namespace RockEngine.Core
 {
@@ -30,6 +30,7 @@ namespace RockEngine.Core
         protected WorldRenderer _renderer;
         protected LayerStack _layerStack;
         protected World _world;
+        private PhysicsManager _physicsManager;
 
         // Synchronization
         private readonly CancellationTokenSource _appCts = new();
@@ -56,10 +57,8 @@ namespace RockEngine.Core
             };
             _window.Closing += OnWindowClosing;
             _window.Update +=  (delta) =>  OnWindowUpdate(delta).GetAwaiter().GetResult();
-            _window.Render += OnWindowRender;
+            _window.Render += (delta) => OnWindowRender(delta).GetAwaiter().GetResult();
             _window.Resize += OnWindowResize;
-            _window.StateChanged += OnWindowStateChanged;
-            _window.FocusChanged += OnWindowFocusChanged;
             _window.Initialize();
         }
 
@@ -79,6 +78,7 @@ namespace RockEngine.Core
                 _renderer = IoC.Container.GetInstance<WorldRenderer>();
                 _layerStack = IoC.Container.GetInstance<LayerStack>();
                 _world = IoC.Container.GetInstance<World>();
+                _physicsManager = IoC.Container.GetInstance<PhysicsManager>();
 
                 // Initialize shaders
                 var shaderManager = IoC.Container.GetInstance<IShaderManager>();
@@ -87,6 +87,7 @@ namespace RockEngine.Core
                 // Initialize renderer
                 await _renderer.InitializeAsync();
                 await _world.Start(_renderer);
+                _physicsManager.Initialize();
 
                 // Load application content
                 await Load();
@@ -119,6 +120,8 @@ namespace RockEngine.Core
 
                 // Update world
                 await _world.Update(_renderer);
+                _physicsManager.Update(Time.DeltaTime);
+
 
                 // Update renderer frame data
                 await _renderer.UpdateFrameData();
@@ -131,14 +134,10 @@ namespace RockEngine.Core
 
         }
 
-      
-
-        private void OnWindowRender(double deltaTime)
+        private async Task OnWindowRender(double deltaTime)
         {
-            if (!_isInitialized || _isMinimized || _appCts.IsCancellationRequested)
+            if (!_isInitialized  || _appCts.IsCancellationRequested)
                 return;
-
-
 
             PerformanceTracer.ProcessQueries(_context, _graphicsEngine.FrameIndex);
             PerformanceTracer.BeginFrame(_graphicsEngine.FrameIndex);
@@ -155,7 +154,10 @@ namespace RockEngine.Core
                 RenderLayers(batch);
 
                 // Render world
-                RenderWorld();
+                await RenderWorld();
+
+                // Submit and present
+                _graphicsEngine.SubmitAndPresent();
             }
             catch (Exception ex)
             {
@@ -163,24 +165,13 @@ namespace RockEngine.Core
                 HandleRenderFailure(ex);
             }
 
-            // Submit and present
-            var presented = _graphicsEngine.SubmitAndPresent();
-            if (!presented)
-            {
-
-            }
-
-
-
+           
         }
         private void HandleRenderFailure(Exception ex)
         {
             // Wait a bit before retrying
             Thread.Sleep(16);
         }
-
-      
-
 
         private void RenderImGui(UploadBatch batch)
         {
@@ -202,15 +193,13 @@ namespace RockEngine.Core
             }
         }
 
-        private  void RenderWorld()
+        private  async Task RenderWorld()
         {
             using (PerformanceTracer.BeginSection("World Render"))
             {
-                _renderer.Render().GetAwaiter().GetResult();
+               await _renderer.Render();
             }
         }
-
-       
 
         private void OnWindowResize(Silk.NET.Maths.Vector2D<int> size)
         {
@@ -222,28 +211,8 @@ namespace RockEngine.Core
                 }
                 return;
             }
-
-
-            // Wait a bit before resizing to avoid rapid resize events
-            Thread.Sleep(10);
         }
-
-        private void OnWindowStateChanged(WindowState state)
-        {
-            _isMinimized = (state == WindowState.Minimized);
-
-            if (_isMinimized)
-            {
-                // Pause rendering when minimized
-                _context.Device.WaitIdle();
-            }
-        }
-
-        private void OnWindowFocusChanged(bool isFocused)
-        {
-            // Handle focus changes if needed
-        }
-
+     
         public void Run()
         {
             try

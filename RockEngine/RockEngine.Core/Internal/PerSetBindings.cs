@@ -2,8 +2,6 @@
 
 using System.Collections;
 
-using ZLinq;
-
 namespace RockEngine.Core.Internal
 {
     public class PerSetBindings : IEnumerable<ResourceBinding>
@@ -36,6 +34,7 @@ namespace RockEngine.Core.Internal
         {
             return _bindings.Remove(binding.BindingLocation);
         }
+
         public void CheckForUpdates()
         {
             _needToUpdate = false;
@@ -52,6 +51,7 @@ namespace RockEngine.Core.Internal
             }
 
         }
+
         public void RemoveAll(Func<ResourceBinding, bool> predicate)
         {
             // Use list instead of stackalloc for better memory management
@@ -72,6 +72,7 @@ namespace RockEngine.Core.Internal
 
             CheckForUpdates();
         }
+
         public unsafe void RemoveAllUnsafe(Func<ResourceBinding, bool> predicate)
         {
             if (Count == 0) return;
@@ -113,6 +114,7 @@ namespace RockEngine.Core.Internal
         }
 
         public IEnumerator<ResourceBinding> GetEnumerator() => _bindings.Values.GetEnumerator();
+
         IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 
         internal void Clear()

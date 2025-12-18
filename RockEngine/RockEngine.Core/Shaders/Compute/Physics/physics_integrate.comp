@@ -1,0 +1,79 @@
+#version 450
+#extension GL_EXT_scalar_block_layout : require
+
+#include "../../Include/shader_common.glsl"
+
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+layout(set = 0, binding = 0, std430) buffer RigidbodyBuffer {
+    Rigidbody rigidbodies[];
+};
+
+layout(set = 1, binding = 0) uniform ParamsUniform {
+    vec4 gravity;
+    float deltaTime;
+    uint particleCount;
+    uint bodyCount;
+    uint colliderCount;
+    uint constraintCount;
+    uint maxCollisionPairs;
+    vec4 padding;
+} params;
+
+void main() {
+    uint idx = gl_GlobalInvocationID.x;
+    if (idx >= params.bodyCount) return;
+    
+    Rigidbody rb = rigidbodies[idx];
+    if (rb.isActive == 0u) return;
+    
+    // Skip static bodies - they don't move
+    if (rb.bodyType == 0u) {
+        return;
+    }
+    
+    float dt = params.deltaTime;
+    if (dt <= 0.0 || dt > 0.1) {
+        dt = 1.0 / 60.0;
+    }
+    
+    // Apply gravity to dynamic bodies only
+    if (rb.bodyType == 1u) { // Dynamic
+        rb.velocity += params.gravity.xyz * dt;
+    }
+    
+    // Apply damping (slightly less for kinematic bodies)
+    float linearDamping = (rb.bodyType == 1u) ? 0.99 : 0.95;
+    float angularDamping = (rb.bodyType == 1u) ? 0.98 : 0.90;
+    
+    rb.velocity *= linearDamping;
+    rb.angularVelocity *= angularDamping;
+    
+    // Apply accumulated forces (if any)
+    if (rb.inverseMass > 0.0) {
+        rb.velocity += rb.force * rb.inverseMass * dt;
+    }
+    
+    // Apply accumulated torques (if any)
+    mat3 rotMat = quatToMat3(rb.rotation);
+    mat3 I_inv_world = rotateInertia(rotMat, mat3(rb.inverseInertiaTensor));
+    rb.angularVelocity += I_inv_world * rb.torque * dt;
+    
+    // Clamp velocities for stability
+    const float maxLinear = 100.0;
+    const float maxAngular = 50.0;
+    
+    if (length(rb.velocity) > maxLinear) {
+        rb.velocity = normalize(rb.velocity) * maxLinear;
+    }
+    
+    if (length(rb.angularVelocity) > maxAngular) {
+        rb.angularVelocity = normalize(rb.angularVelocity) * maxAngular;
+    }
+    
+    // Reset forces for next frame
+    rb.force = vec3(0.0);
+    rb.torque = vec3(0.0);
+    
+    rigidbodies[idx] = rb;
+}

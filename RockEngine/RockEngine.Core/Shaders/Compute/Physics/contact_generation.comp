@@ -1,0 +1,208 @@
+#version 450
+#extension GL_EXT_scalar_block_layout : require
+
+#include "../../Include/shader_common.glsl"
+
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+layout(set = 0, binding = 0, scalar) buffer CollisionPairBuffer {
+    CollisionPair collisionPairs[];
+};
+
+layout(set = 0, binding = 1, scalar) buffer ManifoldBuffer {
+    Manifold manifolds[];
+};
+
+layout(set = 0, binding = 2, scalar) buffer ContactPointBuffer {
+    ContactPoint contactPoints[];
+};
+
+layout(set = 0, binding = 3, scalar) buffer EPATriangleBuffer {
+    EPATriangle epaTriangles[];
+};
+
+layout(set = 0, binding = 4, scalar) buffer SATResultBuffer {
+    SATResult satResults[];
+};
+
+layout(set = 0, binding = 5, scalar) buffer RigidbodyBuffer {
+    Rigidbody rigidbodies[];
+};
+
+layout(set = 0, binding = 6, scalar) buffer ColliderBuffer {
+    Collider colliders[];
+};
+
+layout(set = 1, binding = 0, scalar) uniform PhysicsParamsBuffer {
+    PhysicsParams params;
+};
+
+layout(push_constant) uniform ContactGenConstants {
+    uint maxContactsPerPair;
+    float contactMergeDistance;
+    float persistentThreshold;
+    float normalTolerance;
+    uint enableWarmStarting;
+} cg;
+
+// Generate contact points from clipping
+void generateBoxBoxContacts(in Collider colA, in Collider colB, 
+                           in vec3 normal, inout ContactPoint contacts[4],
+                           inout uint contactCount) {
+    
+    // Find reference and incident faces
+    mat3 rotA = quatToMat3(colA.rotation);
+    mat3 rotB = quatToMat3(colB.rotation);
+    
+    // Determine reference face (face with smallest penetration)
+    float maxDot = -1.0;
+    int refFace = 0;
+    bool flip = false;
+    
+    // Check faces of A
+    for (int i = 0; i < 3; i++) {
+        vec3 axisA = rotA[i];
+        vec3 axisB = rotB[i];
+        float dotProd = dot(axisA, normal);
+        
+        if (abs(dotProd) > maxDot) {
+            maxDot = abs(dotProd);
+            refFace = i;
+            flip = (dotProd < 0.0);
+        }
+    }
+    
+    // Check faces of B
+    for (int i = 0; i < 3; i++) {
+        vec3 axis = rotB[i];
+        float dotProd = dot(axis, -normal);
+        if (abs(dotProd) > maxDot) {
+            maxDot = abs(dotProd);
+            refFace = i + 3;
+            flip = (dotProd < 0.0);
+        }
+    }
+    
+    // Generate simple contact point
+    if (contactCount < 4) {
+        ContactPoint contact;
+        contact.position = (colA.position + colB.position) * 0.5;
+        contact.normal = normal;
+        
+        // Calculate proper depth
+        vec3 delta = colB.position - colA.position;
+        float distance = length(delta);
+        float sumExtents = length(colA.size) + length(colB.size);
+        contact.depth = max(0.0, sumExtents - distance);
+        
+        contact.warmStartImpulse = 0.0;
+        contact.frictionImpulse1 = 0.0;
+        contact.frictionImpulse2 = 0.0;
+        contact.featureType = 0;
+        
+        contacts[contactCount] = contact;
+        contactCount++;
+    }
+}
+
+// Merge similar contacts
+void mergeContacts(inout ContactPoint contacts[4], inout uint count) {
+    for (uint i = 0; i < count; i++) {
+        for (uint j = i + 1; j < count; ) {
+            float dist = length(contacts[i].position - contacts[j].position);
+            float normalDiff = dot(contacts[i].normal, contacts[j].normal);
+            
+            if (dist < cg.contactMergeDistance && normalDiff > cg.normalTolerance) {
+                // Merge contacts
+                contacts[i].position = (contacts[i].position + contacts[j].position) * 0.5;
+                contacts[i].depth = max(contacts[i].depth, contacts[j].depth);
+                
+                // Remove j
+                for (uint k = j; k < count - 1; k++) {
+                    contacts[k] = contacts[k + 1];
+                }
+                count--;
+            } else {
+                j++;
+            }
+        }
+    }
+}
+
+void main() {
+    uint idx = gl_GlobalInvocationID.x;
+    
+    // Исправлено: используем params из буфера, а не push-константы
+    if (idx >= params.colliderCount) return;
+    
+    CollisionPair pair = collisionPairs[idx];
+    if (pair.bodyA == 0xFFFFFFFFu) return;
+    
+    // Get colliders
+    uint colIdxA = pair.colliderA; // Исправлено: используем индексы из CollisionPair
+    uint colIdxB = pair.colliderB;
+    
+    Collider colA = colliders[colIdxA];
+    Collider colB = colliders[colIdxB];
+    
+    // Generate contact candidates
+    ContactPoint contacts[4];
+    uint contactCount = 0;
+    
+    // Generate based on shape type
+    if (colA.shape == 0u && colB.shape == 0u) {
+        // Box-Box
+        generateBoxBoxContacts(colA, colB, pair.normal, contacts, contactCount);
+    } else if (colA.shape == 1u && colB.shape == 1u) {
+        // Sphere-Sphere (single contact)
+        if (contactCount < 4) {
+            ContactPoint contact;
+            vec3 delta = colB.position - colA.position;
+            float distance = length(delta);
+            float penetration = (colA.radius + colB.radius) - distance;
+            
+            if (penetration > 0.0) {
+                contact.position = colA.position + normalize(delta) * (colA.radius - penetration * 0.5);
+                contact.normal = normalize(delta);
+                contact.depth = penetration;
+                contact.warmStartImpulse = 0.0;
+                contact.frictionImpulse1 = 0.0;
+                contact.frictionImpulse2 = 0.0;
+                contact.featureType = 0;
+                
+                contacts[contactCount] = contact;
+                contactCount++;
+            }
+        }
+    }
+    
+    if (contactCount > 0) {
+        // Merge similar contacts
+        mergeContacts(contacts, contactCount);
+        
+        // Store in manifold
+        Manifold manifold;
+        manifold.bodyA = pair.bodyA;
+        manifold.bodyB = pair.bodyB;
+        manifold.normal = pair.normal;
+        manifold.depth = pair.depth;
+        manifold.contactCount = contactCount;
+        
+        // Инициализируем все точки контакта
+        for (uint i = 0; i < 4; i++) {
+            if (i < contactCount) {
+                manifold.contactPoints[i] = contacts[i].position;
+            } else {
+                manifold.contactPoints[i] = vec3(0.0);
+            }
+        }
+        
+        manifolds[idx] = manifold;
+        
+        // Store individual contact points for solver
+        uint baseIndex = idx * cg.maxContactsPerPair;
+        for (uint i = 0; i < min(contactCount, cg.maxContactsPerPair); i++) {
+            contactPoints[baseIndex + i] = contacts[i];
+        }
+    }
+}

@@ -21,6 +21,12 @@ namespace RockEngine.Core.ECS.Components
             set { _position = value; SetDirty(); }
         }
 
+        public Vector3 LocalPosition
+        {
+            get => _position;
+            set { _position = value; SetDirty(); }
+        }
+
         public Vector3 EulerAngles
         {
             get => _rotation.QuaternionToEuler();
@@ -37,7 +43,19 @@ namespace RockEngine.Core.ECS.Components
             set { _rotation = value; SetDirty(); }
         }
 
+        public Quaternion LocalRotation
+        {
+            get => _rotation;
+            set { _rotation = value; SetDirty(); }
+        }
+
         public Vector3 Scale
+        {
+            get => _scale;
+            set { _scale = value; SetDirty(); }
+        }
+
+        public Vector3 LocalScale
         {
             get => _scale;
             set { _scale = value; SetDirty(); }
@@ -132,11 +150,13 @@ namespace RockEngine.Core.ECS.Components
         {
             if (Parent == null)
             {
-                _worldMatrix = LocalMatrix;
+                _worldMatrix = Matrix4x4.CreateScale(_scale)
+                    * Matrix4x4.CreateFromQuaternion(_rotation)
+                    * Matrix4x4.CreateTranslation(_position);
             }
             else
             {
-                // Correct order: parent world * local transform
+                // Correct order: ParentWorldMatrix * LocalMatrix
                 _worldMatrix = LocalMatrix * Parent.WorldMatrix;
             }
             _isDirty = false;
@@ -167,6 +187,31 @@ namespace RockEngine.Core.ECS.Components
                 return;
             }
 
+            // If we're already attached to a parent, we need to adjust our local
+            // position/rotation/scale to maintain the same world transform
+            if (parent != null && _parent != null)
+            {
+                // Convert current world transform to local space relative to new parent
+                if (Matrix4x4.Invert(parent.WorldMatrix, out var invParentWorld))
+                {
+                    var localMat = _worldMatrix * invParentWorld;
+
+                    // Extract new local values
+                    Matrix4x4.Decompose(localMat, out var newScale, out var newRotation, out var newPosition);
+                    _position = newPosition;
+                    _rotation = newRotation;
+                    _scale = newScale;
+                }
+            }
+            // If we're detaching from parent (setting parent to null)
+            else if (parent == null && _parent != null)
+            {
+                // Convert current world transform to local (which becomes world now)
+                _position = WorldPosition;
+                _rotation = WorldRotation;
+                _scale = WorldScale;
+            }
+
             // Remove from old parent
             if (_parent != null)
             {
@@ -186,47 +231,6 @@ namespace RockEngine.Core.ECS.Components
 
         private void OnParentTransformChanged(Transform parent)
         {
-            SetDirty();
-        }
-
-        // Helper methods for common operations
-        public void Translate(Vector3 translation, Space space = Space.Local)
-        {
-            if (space == Space.Local)
-            {
-                _position += Vector3.Transform(translation, _rotation);
-            }
-            else
-            {
-                _position += translation;
-            }
-            SetDirty();
-        }
-
-        public void Rotate(Vector3 eulerAngles, Space space = Space.Local)
-        {
-            var rotation = eulerAngles.EulerToQuaternion();
-            Rotate(rotation, space);
-        }
-
-        public void Rotate(Quaternion rotation, Space space = Space.Local)
-        {
-            if (space == Space.Local)
-            {
-                _rotation = Quaternion.Normalize(rotation * _rotation);
-            }
-            else
-            {
-                _rotation = Quaternion.Normalize(_rotation * rotation);
-            }
-            SetDirty();
-        }
-
-        public void LookAt(Vector3 target, Vector3 worldUp)
-        {
-            _rotation = Quaternion.CreateFromRotationMatrix(
-                Matrix4x4.CreateLookAt(WorldPosition, target, worldUp)
-            );
             SetDirty();
         }
 

@@ -31,35 +31,85 @@ namespace RockEngine.Core.Rendering.Managers
              bool isCompute = false,
              Span<uint> skipSets = default)
         {
-            Span<DescriptorSet> setsToBind =  stackalloc DescriptorSet[materialPass.Bindings.Count];
-            int index = 0;
-
-            foreach(var(setLocation, perSetBindings) in materialPass.Bindings)
+            int maxSets = materialPass.Bindings.Count;
+            if (maxSets <= 8) 
             {
-                if (skipSets.Contains(setLocation) ||
-                    materialPass.Pipeline.Layout.GetSetLayout(setLocation) == default)
+                Span<DescriptorSet> setsToBind = stackalloc DescriptorSet[maxSets];
+                Span<uint> dynamicOffsets = stackalloc uint[16]; 
+
+                int setIndex = 0;
+                int dynamicIndex = 0;
+
+                foreach (var (setLocation, perSetBindings) in materialPass.Bindings)
                 {
-                    continue;
+                    if (skipSets.Contains(setLocation) ||
+                        materialPass.Pipeline.Layout.GetSetLayout(setLocation) == default)
+                    {
+                        continue;
+                    }
+
+                    var descriptorSet = GetOrCreateDescriptorSet(
+                        frameIndex,
+                        materialPass.Pipeline.Layout,
+                        setLocation,
+                        perSetBindings);
+
+                    setsToBind[setIndex++] = descriptorSet;
+
+                    // Collect dynamic offsets
+                    foreach (var binding in perSetBindings)
+                    {
+                        if (binding is UniformBufferBinding ubo && ubo.Buffer.IsDynamic)
+                        {
+                            dynamicOffsets[dynamicIndex++] = (uint)ubo.Offset;
+                        }
+                    }
                 }
-                ProcessSet(frameIndex, materialPass.Pipeline.Layout, setLocation, perSetBindings, setsToBind, ref index);
-                /*batch.AddDependency(() =>
-                {
-                    var copy = perSetBindings;
-                });*/
-            }
-            if (index == 0)
-            {
-                return;
-            }
 
-            BindDescriptorSetsToCommandBuffer(
-                batch,//batch.CommandBuffer,
-                materialPass.Pipeline.Layout,
-                setsToBind,
-                CollectionsMarshal.AsSpan(materialPass.Bindings.DynamicOffsets),
-                materialPass.Bindings.MinSetLocation,
-                isCompute
-            );
+                if (setIndex > 0)
+                {
+                    BindDescriptorSetsToCommandBuffer(
+                        batch,
+                        materialPass.Pipeline.Layout,
+                        setsToBind.Slice(0, setIndex),
+                        dynamicOffsets.Slice(0, dynamicIndex),
+                        materialPass.Bindings.MinSetLocation,
+                        isCompute
+                    );
+                }
+            }
+            else
+            {
+                Span<DescriptorSet> setsToBind = stackalloc DescriptorSet[materialPass.Bindings.Count];
+                int index = 0;
+
+                foreach (var (setLocation, perSetBindings) in materialPass.Bindings)
+                {
+                    if (skipSets.Contains(setLocation) ||
+                    materialPass.Pipeline.Layout.GetSetLayout(setLocation) == default)
+                    {
+                        continue;
+                    }
+                    ProcessSet(frameIndex, materialPass.Pipeline.Layout, setLocation, perSetBindings, setsToBind, ref index);
+                    /*batch.AddDependency(() =>
+                    {
+                        var copy = perSetBindings;
+                    });*/
+                }
+                if (index == 0)
+                {
+                    return;
+                }
+
+                BindDescriptorSetsToCommandBuffer(
+                    batch,//batch.CommandBuffer,
+                    materialPass.Pipeline.Layout,
+                    setsToBind,
+                    CollectionsMarshal.AsSpan(materialPass.Bindings.DynamicOffsets),
+                    materialPass.Bindings.MinSetLocation,
+                    isCompute
+                );
+            }
         }
         public void BindResource(
           uint frameIndex,
@@ -71,7 +121,7 @@ namespace RockEngine.Core.Rendering.Managers
             // 1. Проверка существования сета в pipeline layout
             var setLocation = binding.SetLocation;
             var setLayout = pipelineLayout.GetSetLayout(setLocation);
-            if (setLayout == default || setLayout.Bindings.Length == 0 || setLayout.Bindings.Any(s=>s.DescriptorType != binding.DescriptorType))
+            if (setLayout == default || setLayout.Bindings.Length == 0 || setLayout.Bindings.Any(s => s.DescriptorType != binding.DescriptorType))
             {
                 return;
                 throw new InvalidOperationException(
@@ -93,13 +143,13 @@ namespace RockEngine.Core.Rendering.Managers
 
             // 4. Биндим с учетом динамических смещений
             BindDescriptorSetsToCommandBuffer(commandBuffer, pipelineLayout, [descriptorSet], CollectionsMarshal.AsSpan(dynamicOffsets), perSetBindings.Set, isCompute);
-          
+
         }
 
-        private void ProcessSet(uint frameIndex,VkPipelineLayout pipelineLayout, uint setLocation, PerSetBindings perSetBindings, Span<DescriptorSet> setsToBind, ref int index)
+        private void ProcessSet(uint frameIndex, VkPipelineLayout pipelineLayout, uint setLocation, PerSetBindings perSetBindings, Span<DescriptorSet> setsToBind, ref int index)
         {
             // Get or allocate descriptor set
-            var descriptorSet = GetOrCreateDescriptorSet(frameIndex,pipelineLayout, setLocation, perSetBindings);
+            var descriptorSet = GetOrCreateDescriptorSet(frameIndex, pipelineLayout, setLocation, perSetBindings);
 
             setsToBind[index++] = descriptorSet;
         }
@@ -132,7 +182,7 @@ namespace RockEngine.Core.Rendering.Managers
                 descriptorSet.IsDirty = false;
                 return descriptorSet;
             }
-            
+
         }
 
 
@@ -150,7 +200,7 @@ namespace RockEngine.Core.Rendering.Managers
 
             if (binding.DescriptorSets[frameIndex] is null)
             {
-                AllocateAndUpdateDescriptorSet(frameIndex,binding, pipelineLayout);
+                AllocateAndUpdateDescriptorSet(frameIndex, binding, pipelineLayout);
             }
 
             descriptorSets[index++] = binding.DescriptorSets[frameIndex]!;
@@ -193,7 +243,7 @@ namespace RockEngine.Core.Rendering.Managers
                 uint minSetIndex,
                 bool isCompute)
         {
-          
+
             {
                 batch.BindDescriptorSets(
                     isCompute ? PipelineBindPoint.Compute : PipelineBindPoint.Graphics,

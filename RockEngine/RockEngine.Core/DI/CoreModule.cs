@@ -1,6 +1,8 @@
 ﻿using RockEngine.Core.Coroutines;
 using RockEngine.Core.ECS;
 using RockEngine.Core.ECS.Components;
+using RockEngine.Core.ECS.Components.Physics;
+using RockEngine.Core.Physics;
 using RockEngine.Core.Registries;
 using RockEngine.Core.Rendering;
 using RockEngine.Core.Rendering.Buffers;
@@ -42,6 +44,7 @@ namespace RockEngine.Core.DI
             container.Register<IServiceProvider, Container>(Lifestyle.Singleton);
             container.Register<CoroutineScheduler>(Lifestyle.Singleton);
             container.Register<ShadowManager>(Lifestyle.Scoped);
+            container.Register<PhysicsManager>(Lifestyle.Scoped);
 
 
             /*IoC.Container.RegisterInitializer<LayerStack>(async s =>
@@ -91,6 +94,11 @@ namespace RockEngine.Core.DI
             container.Register<Camera>(Lifestyle.Transient);
             container.Register<Skybox>(Lifestyle.Transient);
             container.Register<Transform>(Lifestyle.Transient);
+            container.Register<RigidbodyComponent>(Lifestyle.Transient);
+            container.Register<SphereColliderComponent>(Lifestyle.Transient);
+            container.Register<BoxColliderComponent>(Lifestyle.Transient);
+            container.Register<CapsuleColliderComponent>(Lifestyle.Transient);
+
 
             //container.RegisterRenderSubPass<ScreenPass, SwapchainPassStrategy>();
 
@@ -101,8 +109,8 @@ namespace RockEngine.Core.DI
             {
                 new DescriptorPoolSize(DescriptorType.CombinedImageSampler, 300),
                 new DescriptorPoolSize(DescriptorType.UniformBuffer, 200),
-                new DescriptorPoolSize(DescriptorType.StorageBuffer, 50),
-                new DescriptorPoolSize(DescriptorType.InputAttachment, 10),
+                new DescriptorPoolSize(DescriptorType.StorageBuffer, 200),
+                new DescriptorPoolSize(DescriptorType.InputAttachment, 20),
                 new DescriptorPoolSize(DescriptorType.UniformBufferDynamic, 20),
                 new DescriptorPoolSize(DescriptorType.StorageImage, 10)
             };

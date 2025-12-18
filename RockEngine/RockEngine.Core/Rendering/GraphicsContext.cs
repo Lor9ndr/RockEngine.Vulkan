@@ -9,9 +9,6 @@ using Semaphore = Silk.NET.Vulkan.Semaphore;
 
 namespace RockEngine.Core.Rendering
 {
-    /// <summary>
-    /// High-performance graphics context with proper semaphore synchronization
-    /// </summary>
     public sealed class GraphicsContext : IDisposable
     {
         private readonly VulkanContext _context;
@@ -29,6 +26,10 @@ namespace RockEngine.Core.Rendering
         private readonly uint[] _presentImageIndices = new uint[16];
         private readonly Semaphore[] _presentWaitSemaphores = new Semaphore[16];
 
+        // Pool of available semaphores (to avoid allocations)
+        private readonly Queue<VkSemaphore> _availableSemaphores = new Queue<VkSemaphore>();
+        private const int SEMAPHORE_POOL_SIZE = 16;
+
         public VkSwapchain MainSwapchain { get; private set; }
         public uint FrameIndex => (uint)_currentFrameIndex;
         public int MaxFramesInFlight => _frameCount;
@@ -38,10 +39,23 @@ namespace RockEngine.Core.Rendering
             public VkSwapchain Swapchain;
             public bool NeedsRecreation;
             public bool IsMain;
-            public VkSemaphore[] ImageAvailableSemaphores; // Per-frame
-            public VkSemaphore[] RenderCompleteSemaphores; // Per-frame
-            public bool[] ImageAvailableInUse; // Track if semaphore is in use
-            public bool[] RenderCompleteInUse; // Track if semaphore is in use
+
+            // PER-FRAME ACQUIRE SEMAPHORES (not per-image)
+            public VkSemaphore[] ImageAvailableSemaphores;  // One per frame in flight
+
+            // PER-IMAGE RENDER SEMAPHORES
+            public VkSemaphore[] RenderCompleteSemaphores;  // One per swapchain image
+
+            // Track semaphore usage state
+            public bool[] ImageAvailableInUse;  // Is the frame's acquire semaphore in use?
+            public bool[] RenderCompleteInUse;  // Is the image's render semaphore in use?
+
+            // Track which frame is currently using each image
+            public int[] ImageUserFrameIndex;   // Frame index using the image, or -1 if free
+            public ulong[] ImageLastUsedFrame;  // Frame number when image was last used
+
+            // Track which image index each frame acquired
+            public uint[] FrameAcquiredImageIndex; // Image index for each frame
         }
 
         private sealed class FrameState : IDisposable
@@ -50,21 +64,22 @@ namespace RockEngine.Core.Rendering
             public UploadBatch CurrentBatch;
             public ulong FrameNumber;
             public int AcquiredSwapchainCount;
+
             public readonly int[] AcquiredSwapchainIndices = new int[16];
-            public readonly List<IDisposable> Resources = new(32);
+            public readonly uint[] AcquiredImageIndices = new uint[16];
+
+            public readonly List<VkSemaphore> SemaphoresToReturn = new List<VkSemaphore>(8);
+            public readonly List<IDisposable> Resources = new List<IDisposable>(32);
             public FlushOperation FlushOperation;
 
             public void Reset()
             {
-                // Cleanup resources (but NOT semaphores - they're managed separately)
-                // Only dispose resources that are not semaphores
                 for (int i = Resources.Count - 1; i >= 0; i--)
                 {
                     var resource = Resources[i];
                     if (resource is not VkSemaphore)
                     {
                         VulkanContext.GetCurrent().GraphicsSubmitContext.AddDependency(resource);
-                        //resource?.Dispose();
                         Resources.RemoveAt(i);
                     }
                 }
@@ -72,6 +87,7 @@ namespace RockEngine.Core.Rendering
                 AcquiredSwapchainCount = 0;
                 CurrentBatch = null;
                 FlushOperation = null;
+                SemaphoresToReturn.Clear();
             }
 
             public void Dispose()
@@ -88,9 +104,14 @@ namespace RockEngine.Core.Rendering
             _swapchainApi = new KhrSwapchain(VulkanContext.Vk.Context);
             _frameCount = context.MaxFramesPerFlight;
 
-            // Allocate arrays with fixed maximum sizes
-            _swapchains = new SwapchainEntry[32]; // Maximum 32 swapchains
+            _swapchains = new SwapchainEntry[32];
             _frames = new FrameState[_frameCount];
+
+            // Pre-allocate semaphore pool
+            for (int i = 0; i < SEMAPHORE_POOL_SIZE; i++)
+            {
+                _availableSemaphores.Enqueue(VkSemaphore.Create(_context));
+            }
 
             for (int i = 0; i < _frameCount; i++)
             {
@@ -114,22 +135,37 @@ namespace RockEngine.Core.Rendering
                     entry.Swapchain = swapchain;
                     entry.IsMain = (MainSwapchain == null);
 
-                    // Create per-frame semaphores
-                    entry.ImageAvailableSemaphores = new VkSemaphore[_frameCount];
-                    entry.RenderCompleteSemaphores = new VkSemaphore[_frameCount];
-                    entry.ImageAvailableInUse = new bool[_frameCount];
-                    entry.RenderCompleteInUse = new bool[_frameCount];
+                    // Get actual image count from swapchain
+                    int imageCount = (int)swapchain.SwapChainImagesCount;
 
+                    // Create per-frame acquire semaphores
+                    entry.ImageAvailableSemaphores = new VkSemaphore[_frameCount];
+                    entry.ImageAvailableInUse = new bool[_frameCount];
+                    entry.FrameAcquiredImageIndex = new uint[_frameCount];
+
+                    // Create per-image render semaphores
+                    entry.RenderCompleteSemaphores = new VkSemaphore[imageCount];
+                    entry.RenderCompleteInUse = new bool[imageCount];
+                    entry.ImageUserFrameIndex = new int[imageCount];
+                    entry.ImageLastUsedFrame = new ulong[imageCount];
+
+                    // Allocate semaphores from pool
                     for (int frameIdx = 0; frameIdx < _frameCount; frameIdx++)
                     {
-                        entry.ImageAvailableSemaphores[frameIdx] = VkSemaphore.Create(_context);
-                        entry.RenderCompleteSemaphores[frameIdx] = VkSemaphore.Create(_context);
+                        entry.ImageAvailableSemaphores[frameIdx] = AllocateSemaphoreFromPool();
                         entry.ImageAvailableInUse[frameIdx] = false;
-                        entry.RenderCompleteInUse[frameIdx] = false;
+                        entry.FrameAcquiredImageIndex[frameIdx] = uint.MaxValue; // Mark as not acquired
+                    }
+
+                    for (int imgIdx = 0; imgIdx < imageCount; imgIdx++)
+                    {
+                        entry.RenderCompleteSemaphores[imgIdx] = AllocateSemaphoreFromPool();
+                        entry.RenderCompleteInUse[imgIdx] = false;
+                        entry.ImageUserFrameIndex[imgIdx] = -1;
+                        entry.ImageLastUsedFrame[imgIdx] = 0;
                     }
 
                     MainSwapchain ??= swapchain;
-
                     _activeSwapchainCount = Math.Max(_activeSwapchainCount, i + 1);
                     return;
                 }
@@ -137,46 +173,29 @@ namespace RockEngine.Core.Rendering
 
             throw new InvalidOperationException("Maximum swapchain count reached");
         }
-        public void RemoveSwapchain(VkSwapchain swapchain)
+
+        private VkSemaphore AllocateSemaphoreFromPool()
         {
-            if (_disposed) return;
-
-            for (int i = 0; i < _activeSwapchainCount; i++)
+            if (_availableSemaphores.Count > 0)
             {
-                if (_swapchains[i].Swapchain == swapchain)
-                {
-                    ref var entry = ref _swapchains[i];
+                return _availableSemaphores.Dequeue();
+            }
 
-                    // Mark for removal
-                    entry.Swapchain = null;
-                    entry.NeedsRecreation = false;
-                    _frames[_currentFrameIndex].Resources.Add(swapchain);
+            // Expand pool if needed
+            Debug.WriteLine("Semaphore pool expanded - consider increasing SEMAPHORE_POOL_SIZE");
+            for (int i = 0; i < 4; i++)
+            {
+                _availableSemaphores.Enqueue(VkSemaphore.Create(_context));
+            }
 
-                    if (MainSwapchain == swapchain)
-                    {
-                        // Find new main swapchain
-                        for (int j = 0; j < _activeSwapchainCount; j++)
-                        {
-                            if (_swapchains[j].Swapchain != null)
-                            {
-                                MainSwapchain = _swapchains[j].Swapchain;
-                                _swapchains[j].IsMain = true;
-                                break;
-                            }
-                        }
-                    }
+            return _availableSemaphores.Dequeue();
+        }
 
-                    // Cleanup semaphores
-                    for (int frameIdx = 0; frameIdx < _frameCount; frameIdx++)
-                    {
-                        _frames[_currentFrameIndex].Resources.Add(entry.ImageAvailableSemaphores[frameIdx]);
-                        _frames[_currentFrameIndex].Resources.Add(entry.RenderCompleteSemaphores[frameIdx]);
-                        entry.ImageAvailableInUse[frameIdx] = false;
-                        entry.RenderCompleteInUse[frameIdx] = false;
-                    }
-
-                    break;
-                }
+        private void ReturnSemaphoreToPool(VkSemaphore semaphore)
+        {
+            if (semaphore != null && !semaphore.IsDisposed)
+            {
+                _availableSemaphores.Enqueue(semaphore);
             }
         }
 
@@ -188,13 +207,16 @@ namespace RockEngine.Core.Rendering
             frame.FrameNumber = Interlocked.Increment(ref _frameNumber);
 
             // Wait for previous frame's flush operation to complete
-            // This ensures all GPU operations for this frame are done
             frame.FlushOperation?.Wait();
 
-            // Reset the fence for this frame
-            frame.InFlightFence.Reset();
+            // Return semaphores from previous frame to pool
+            foreach (var semaphore in frame.SemaphoresToReturn)
+            {
+                ReturnSemaphoreToPool(semaphore);
+            }
+            frame.SemaphoresToReturn.Clear();
 
-            // Reset frame state
+            frame.InFlightFence.Reset();
             frame.Reset();
 
             frame.AcquiredSwapchainCount = 0;
@@ -214,39 +236,56 @@ namespace RockEngine.Core.Rendering
 
                 try
                 {
-                    // Wait for the semaphore to become available
-                    // We need to ensure the semaphore is not in use
-                    WaitForSemaphoreAvailable(ref entry, _currentFrameIndex);
-
-                    var semaphore = entry.ImageAvailableSemaphores[_currentFrameIndex];
-
-                    if (semaphore == null || semaphore.IsDisposed)
+                    // Check if the frame's acquire semaphore is safe to use
+                    if (entry.ImageAvailableInUse[_currentFrameIndex])
                     {
-                        Debug.WriteLine($"Semaphore is null or disposed for swapchain {i}, frame {_currentFrameIndex}");
-                        entry.NeedsRecreation = true;
-                        anySwapchainInvalid = true;
-                        continue;
+                        // Wait for the frame that was using this semaphore
+                        // This should be the current frame from a previous use that wasn't cleared
+                        _frames[_currentFrameIndex].FlushOperation?.Wait();
+                        entry.ImageAvailableInUse[_currentFrameIndex] = false;
                     }
 
-                    // Mark semaphore as in use
-                    entry.ImageAvailableInUse[_currentFrameIndex] = true;
+                    var semaphore = entry.ImageAvailableSemaphores[_currentFrameIndex];
+                    uint imageIndex = 0;
 
-                    var result = entry.Swapchain.AcquireNextImage(semaphore);
+                    // Reset the frame's acquired image index
+                    entry.FrameAcquiredImageIndex[_currentFrameIndex] = uint.MaxValue;
+
+                    var result = entry.Swapchain.AcquireNextImage(semaphore, out imageIndex);
 
                     if (result == Result.ErrorOutOfDateKhr || result == Result.SuboptimalKhr)
                     {
-                        entry.ImageAvailableInUse[_currentFrameIndex] = false;
                         entry.NeedsRecreation = true;
                         anySwapchainInvalid = true;
                     }
                     else if (result == Result.Success)
                     {
+                        // Mark frame's acquire semaphore as in use
+                        entry.ImageAvailableInUse[_currentFrameIndex] = true;
+                        entry.FrameAcquiredImageIndex[_currentFrameIndex] = imageIndex;
+
+                        // Check if the image's render semaphore is safe to use
+                        if (entry.RenderCompleteInUse[imageIndex])
+                        {
+                            // Wait for the frame that was using this image
+                            int userFrame = entry.ImageUserFrameIndex[imageIndex];
+                            if (userFrame >= 0 && userFrame != _currentFrameIndex)
+                            {
+                                _frames[userFrame].FlushOperation?.Wait();
+                                entry.RenderCompleteInUse[imageIndex] = false;
+                            }
+                        }
+
+                        entry.ImageUserFrameIndex[imageIndex] = _currentFrameIndex;
+                        entry.ImageLastUsedFrame[imageIndex] = frame.FrameNumber;
+
+                        // Store acquired indices
                         frame.AcquiredSwapchainIndices[frame.AcquiredSwapchainCount] = i;
+                        frame.AcquiredImageIndices[frame.AcquiredSwapchainCount] = imageIndex;
                         frame.AcquiredSwapchainCount++;
                     }
                     else
                     {
-                        entry.ImageAvailableInUse[_currentFrameIndex] = false;
                         Debug.WriteLine($"AcquireNextImage failed with result: {result}");
                         entry.NeedsRecreation = true;
                         anySwapchainInvalid = true;
@@ -273,36 +312,20 @@ namespace RockEngine.Core.Rendering
             for (int i = 0; i < frame.AcquiredSwapchainCount; i++)
             {
                 int swapchainIdx = frame.AcquiredSwapchainIndices[i];
+                uint imageIdx = frame.AcquiredImageIndices[i];
+
                 var semaphore = _swapchains[swapchainIdx].ImageAvailableSemaphores[_currentFrameIndex];
 
-                if (semaphore == null || semaphore.IsDisposed)
+                if (semaphore != null && !semaphore.IsDisposed)
                 {
-                    Debug.WriteLine($"Wait semaphore is null or disposed for swapchain {swapchainIdx}");
-                    continue;
+                    frame.CurrentBatch.AddWaitSemaphore(
+                        semaphore,
+                        PipelineStageFlags.ColorAttachmentOutputBit
+                    );
                 }
-
-                frame.CurrentBatch.AddWaitSemaphore(
-                    semaphore,
-                    PipelineStageFlags.ColorAttachmentOutputBit
-                );
             }
 
             return frame.CurrentBatch;
-        }
-
-        private void WaitForSemaphoreAvailable(ref SwapchainEntry entry, int frameIndex)
-        {
-            // If the semaphore is marked as in use, wait for the fence of that frame
-            // This ensures previous operations using this semaphore are complete
-            if (entry.ImageAvailableInUse[frameIndex] || entry.RenderCompleteInUse[frameIndex])
-            {
-                // Wait for the frame's fence to signal
-                _frames[frameIndex].FlushOperation?.Wait();
-
-                // Reset the in-use flags
-                entry.ImageAvailableInUse[frameIndex] = false;
-                entry.RenderCompleteInUse[frameIndex] = false;
-            }
         }
 
         public bool SubmitAndPresent()
@@ -314,32 +337,25 @@ namespace RockEngine.Core.Rendering
             if (frame.CurrentBatch == null || frame.AcquiredSwapchainCount == 0)
                 return false;
 
-            // Mark render complete semaphores as in use
-            for (int i = 0; i < frame.AcquiredSwapchainCount; i++)
-            {
-                int swapchainIdx = frame.AcquiredSwapchainIndices[i];
-                _swapchains[swapchainIdx].RenderCompleteInUse[_currentFrameIndex] = true;
-            }
-
             // Add signal semaphores for rendering completion
             for (int i = 0; i < frame.AcquiredSwapchainCount; i++)
             {
                 int swapchainIdx = frame.AcquiredSwapchainIndices[i];
-                var semaphore = _swapchains[swapchainIdx].RenderCompleteSemaphores[_currentFrameIndex];
+                uint imageIdx = frame.AcquiredImageIndices[i];
 
-                if (semaphore == null || semaphore.IsDisposed)
+                var semaphore = _swapchains[swapchainIdx].RenderCompleteSemaphores[imageIdx];
+
+                // The semaphore should already be checked for safety in BeginFrame
+                if (semaphore != null && !semaphore.IsDisposed)
                 {
-                    Debug.WriteLine($"Signal semaphore is null or disposed for swapchain {swapchainIdx}");
-                    continue;
+                    frame.CurrentBatch.AddSignalSemaphore(semaphore);
                 }
-
-                frame.CurrentBatch.AddSignalSemaphore(semaphore);
             }
 
             // Submit the batch
             frame.CurrentBatch.Submit();
 
-            // Flush with fence - FlushOperation will handle waiting for the fence
+            // Flush with fence
             frame.FlushOperation = _context.GraphicsSubmitContext.Flush(frame.InFlightFence);
 
             // Present all acquired swapchains
@@ -359,15 +375,17 @@ namespace RockEngine.Core.Rendering
             for (int i = 0; i < frame.AcquiredSwapchainCount; i++)
             {
                 int swapchainIdx = frame.AcquiredSwapchainIndices[i];
-                ref var entry = ref _swapchains[swapchainIdx];
-              
-                _presentSwapchains[i] = entry.Swapchain.VkObjectNative;
-                _presentImageIndices[i] = entry.Swapchain.CurrentImageIndex;
+                uint imageIdx = frame.AcquiredImageIndices[i];
 
-                var semaphore = entry.RenderCompleteSemaphores[_currentFrameIndex];
+                ref var entry = ref _swapchains[swapchainIdx];
+
+                _presentSwapchains[i] = entry.Swapchain.VkObjectNative;
+                _presentImageIndices[i] = imageIdx;
+
+                var semaphore = entry.RenderCompleteSemaphores[imageIdx];
                 if (semaphore == null || semaphore.IsDisposed)
                 {
-                    Debug.WriteLine($"Presentation semaphore is null or disposed for swapchain {swapchainIdx}");
+                    Debug.WriteLine($"Presentation semaphore is null or disposed for swapchain {swapchainIdx}, image {imageIdx}");
                     _presentWaitSemaphores[i] = default;
                 }
                 else
@@ -399,7 +417,7 @@ namespace RockEngine.Core.Rendering
                     for (int i = 0; i < frame.AcquiredSwapchainCount; i++)
                     {
                         int swapchainIdx = frame.AcquiredSwapchainIndices[i];
-                        _swapchains[swapchainIdx].NeedsRecreation = true;
+                        //_swapchains[swapchainIdx].NeedsRecreation = true;
                     }
                 }
 
@@ -409,7 +427,6 @@ namespace RockEngine.Core.Rendering
 
         private void RecreateInvalidSwapchains()
         {
-            // Wait for device to be idle before recreating swapchains
             _context.Device.WaitIdle();
 
             for (int i = 0; i < _activeSwapchainCount; i++)
@@ -419,37 +436,61 @@ namespace RockEngine.Core.Rendering
 
                 try
                 {
-                    // Dispose old semaphores
-                    for (int frameIdx = 0; frameIdx < _frameCount; frameIdx++)
+                    // Return semaphores to pool before recreating
+                    if (entry.ImageAvailableSemaphores != null)
                     {
-                        entry.ImageAvailableSemaphores[frameIdx]?.Dispose();
-                        entry.RenderCompleteSemaphores[frameIdx]?.Dispose();
-                        entry.ImageAvailableInUse[frameIdx] = false;
-                        entry.RenderCompleteInUse[frameIdx] = false;
+                        foreach (var semaphore in entry.ImageAvailableSemaphores)
+                        {
+                            ReturnSemaphoreToPool(semaphore);
+                        }
+                    }
+
+                    if (entry.RenderCompleteSemaphores != null)
+                    {
+                        foreach (var semaphore in entry.RenderCompleteSemaphores)
+                        {
+                            ReturnSemaphoreToPool(semaphore);
+                        }
                     }
 
                     // Recreate swapchain
                     entry.Swapchain.RecreateSwapchain();
                     entry.NeedsRecreation = false;
 
-                    // Recreate semaphores
+                    // Get new image count
+                    int imageCount = (int)entry.Swapchain.SwapChainImagesCount;
+
+                    // Reallocate arrays
+                    entry.ImageAvailableSemaphores = new VkSemaphore[_frameCount];
+                    entry.ImageAvailableInUse = new bool[_frameCount];
+                    entry.FrameAcquiredImageIndex = new uint[_frameCount];
+                    entry.RenderCompleteSemaphores = new VkSemaphore[imageCount];
+                    entry.RenderCompleteInUse = new bool[imageCount];
+                    entry.ImageUserFrameIndex = new int[imageCount];
+                    entry.ImageLastUsedFrame = new ulong[imageCount];
+
+                    // Allocate new semaphores from pool
                     for (int frameIdx = 0; frameIdx < _frameCount; frameIdx++)
                     {
-                        entry.ImageAvailableSemaphores[frameIdx] = VkSemaphore.Create(_context);
-                        entry.RenderCompleteSemaphores[frameIdx] = VkSemaphore.Create(_context);
+                        entry.ImageAvailableSemaphores[frameIdx] = AllocateSemaphoreFromPool();
                         entry.ImageAvailableInUse[frameIdx] = false;
-                        entry.RenderCompleteInUse[frameIdx] = false;
+                        entry.FrameAcquiredImageIndex[frameIdx] = uint.MaxValue;
+                    }
+
+                    for (int imgIdx = 0; imgIdx < imageCount; imgIdx++)
+                    {
+                        entry.RenderCompleteSemaphores[imgIdx] = AllocateSemaphoreFromPool();
+                        entry.RenderCompleteInUse[imgIdx] = false;
+                        entry.ImageUserFrameIndex[imgIdx] = -1;
+                        entry.ImageLastUsedFrame[imgIdx] = 0;
                     }
                 }
                 catch (Exception ex)
                 {
                     Debug.WriteLine($"Failed to recreate swapchain {i}: {ex.Message}");
-                    // Keep marked for retry
                 }
             }
         }
-
-      
 
         public void Dispose()
         {
@@ -463,18 +504,36 @@ namespace RockEngine.Core.Rendering
                 _frames[i].Dispose();
             }
 
-            // Cleanup swapchains and their semaphores
+            // Cleanup swapchains
             for (int i = 0; i < _activeSwapchainCount; i++)
             {
                 ref var entry = ref _swapchains[i];
 
                 entry.Swapchain?.Dispose();
 
-                for (int frameIdx = 0; frameIdx < _frameCount; frameIdx++)
+                // Return semaphores to pool
+                if (entry.ImageAvailableSemaphores != null)
                 {
-                    entry.ImageAvailableSemaphores?[frameIdx]?.Dispose();
-                    entry.RenderCompleteSemaphores?[frameIdx]?.Dispose();
+                    foreach (var semaphore in entry.ImageAvailableSemaphores)
+                    {
+                        ReturnSemaphoreToPool(semaphore);
+                    }
                 }
+
+                if (entry.RenderCompleteSemaphores != null)
+                {
+                    foreach (var semaphore in entry.RenderCompleteSemaphores)
+                    {
+                        ReturnSemaphoreToPool(semaphore);
+                    }
+                }
+            }
+
+            // Dispose all semaphores in the pool
+            while (_availableSemaphores.Count > 0)
+            {
+                var semaphore = _availableSemaphores.Dequeue();
+                semaphore?.Dispose();
             }
 
             GC.SuppressFinalize(this);
@@ -483,30 +542,55 @@ namespace RockEngine.Core.Rendering
         private static void ThrowDisposed() =>
             throw new ObjectDisposedException(nameof(GraphicsContext));
 
-        // Performance monitoring
-        public struct FrameStats
+        public void RemoveSwapchain(VkSwapchain swapchain)
         {
-            public ulong FrameNumber;
-            public int AcquiredSwapchains;
-            public TimeSpan AcquireTime;
-            public TimeSpan PresentTime;
-        }
+            if (_disposed) return;
 
-        public FrameStats GetFrameStats() => new FrameStats
-        {
-            FrameNumber = Interlocked.Read(ref _frameNumber),
-            AcquiredSwapchains = _frames[_currentFrameIndex].AcquiredSwapchainCount
-        };
+            for (int i = 0; i < _activeSwapchainCount; i++)
+            {
+                if (_swapchains[i].Swapchain == swapchain)
+                {
+                    ref var entry = ref _swapchains[i];
 
-        // Helper method for getting semaphores (for compatibility)
-        private VkSemaphore GetImageAvailableSemaphore(int frameIndex, int swapchainIndex)
-        {
-            return _swapchains[swapchainIndex].ImageAvailableSemaphores[frameIndex];
-        }
+                    // Mark for removal
+                    entry.Swapchain = null;
+                    entry.NeedsRecreation = false;
+                    _frames[_currentFrameIndex].Resources.Add(swapchain);
 
-        private VkSemaphore GetRenderCompleteSemaphore(int frameIndex, int swapchainIndex)
-        {
-            return _swapchains[swapchainIndex].RenderCompleteSemaphores[frameIndex];
+                    if (MainSwapchain == swapchain)
+                    {
+                        // Find new main swapchain
+                        for (int j = 0; j < _activeSwapchainCount; j++)
+                        {
+                            if (_swapchains[j].Swapchain != null)
+                            {
+                                MainSwapchain = _swapchains[j].Swapchain;
+                                _swapchains[j].IsMain = true;
+                                break;
+                            }
+                        }
+                    }
+
+                    // Return semaphores to pool
+                    if (entry.ImageAvailableSemaphores != null)
+                    {
+                        foreach (var semaphore in entry.ImageAvailableSemaphores)
+                        {
+                            ReturnSemaphoreToPool(semaphore);
+                        }
+                    }
+
+                    if (entry.RenderCompleteSemaphores != null)
+                    {
+                        foreach (var semaphore in entry.RenderCompleteSemaphores)
+                        {
+                            ReturnSemaphoreToPool(semaphore);
+                        }
+                    }
+
+                    break;
+                }
+            }
         }
     }
 }

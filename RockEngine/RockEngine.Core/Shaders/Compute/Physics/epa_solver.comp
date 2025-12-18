@@ -1,0 +1,227 @@
+#version 450
+#extension GL_EXT_scalar_block_layout : require
+
+#include "../../Include/shader_common.glsl"
+
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+layout(set = 0, binding = 0, scalar) buffer RigidbodyBuffer {
+    Rigidbody rigidbodies[];
+};
+
+layout(set = 0, binding = 1, scalar) buffer ColliderBuffer {
+    Collider colliders[];
+};
+
+layout(set = 0, binding = 2, scalar) buffer CollisionPairBuffer {
+    CollisionPair collisionPairs[];
+};
+
+layout(set = 0, binding = 3, scalar) buffer GJKSimplexBuffer {
+    GJKSimplex simplexes[];
+};
+
+layout(set = 0, binding = 4, scalar) buffer PhysicsParamsBuffer {
+    PhysicsParams params;
+};
+
+
+layout(set = 0, binding = 5, scalar) buffer EPATriangleBuffer {
+    EPATriangle epaTriangles[];
+};
+
+layout(set = 0, binding = 6, scalar) buffer ManifoldBuffer {
+    Manifold manifolds[];
+};
+
+
+
+layout(push_constant) uniform EPAConstants {
+    uint maxIterations;
+    float epsilon;
+    uint maxTriangles;
+    float depthTolerance;
+} epa;
+
+// Support function (same as GJK)
+vec3 support(in Collider col, vec3 dir) {
+    vec3 localDir = rotateVector(dir, col.rotation);
+    
+    if (col.shape == 0u) { // Box
+        vec3 halfSize = col.size;
+        return col.position + rotateVector(vec3(
+            (localDir.x > 0.0) ? halfSize.x : -halfSize.x,
+            (localDir.y > 0.0) ? halfSize.y : -halfSize.y,
+            (localDir.z > 0.0) ? halfSize.z : -halfSize.z
+        ), col.rotation);
+    }
+    else if (col.shape == 1u) { // Sphere
+        return col.position + normalize(dir) * col.radius;
+    }
+    else if (col.shape == 2u) { // Cylinder
+        vec3 localPos = vec3(0.0);
+        float radius = col.radius;
+        float halfHeight = col.height * 0.5;
+        
+        // Cap support
+        if (abs(localDir.y) > 0.001) {
+            localPos.y = (localDir.y > 0.0) ? halfHeight : -halfHeight;
+            float rScale = radius / sqrt(localDir.x * localDir.x + localDir.z * localDir.z);
+            localPos.x = localDir.x * rScale;
+            localPos.z = localDir.z * rScale;
+        } else {
+            // Side support
+            localPos.x = localDir.x * radius;
+            localPos.z = localDir.z * radius;
+            localPos.y = clamp(localDir.y * halfHeight, -halfHeight, halfHeight);
+        }
+        
+        return col.position + rotateVector(localPos, col.rotation);
+    }
+    else if (col.shape == 3u) { // Capsule
+        vec3 axis = vec3(0.0, 1.0, 0.0);
+        float radius = col.radius;
+        float halfHeight = max(0.0, col.height * 0.5 - radius);
+        
+        // Hemisphere + cylinder
+        vec3 localDirNorm = normalize(localDir);
+        float dotAxis = dot(localDirNorm, axis);
+        
+        if (dotAxis > 0.999) {
+            // Top cap
+            return col.position + rotateVector(axis * (halfHeight + radius), col.rotation);
+        } else if (dotAxis < -0.999) {
+            // Bottom cap
+            return col.position + rotateVector(-axis * (halfHeight + radius), col.rotation);
+        } else {
+            // Side
+            vec3 sideDir = normalize(localDirNorm - axis * dotAxis);
+            vec3 localPos = sideDir * radius;
+            localPos += axis * (halfHeight * sign(dotAxis));
+            return col.position + rotateVector(localPos, col.rotation);
+        }
+    }
+    
+    return col.position;
+}
+
+vec3 minkowskiSupport(uint idxA, uint idxB, vec3 dir) {
+    Collider colA = colliders[idxA];
+    Collider colB = colliders[idxB];
+    
+    vec3 supportA = support(colA, dir);
+    vec3 supportB = support(colB, -dir);
+    
+    return supportA - supportB;
+}
+
+// Find closest triangle to origin in polytope
+int findClosestTriangle(EPATriangle triangles[64], int triangleCount) {
+    int closestIdx = -1;
+    float minDistance = 1e9;
+    
+    for (int i = 0; i < triangleCount; i++) {
+        if (triangles[i].isValid == 1) {
+            float dist = triangles[i].distance;
+            if (dist < minDistance) {
+                minDistance = dist;
+                closestIdx = i;
+            }
+        }
+    }
+    
+    return closestIdx;
+}
+
+// EPA algorithm
+bool epaExpansion(uint idxA, uint idxB, GJKSimplex simplex, out vec3 normal, out float depth) {
+    // Initialize polytope with GJK simplex triangles
+    EPATriangle triangles[64];
+    int triangleCount = 0;
+    
+    // Create triangles from tetrahedron
+    if (simplex.count == 4) {
+        // Triangle 0: points0, points1, points2
+        vec3 a = simplex.points0;
+        vec3 b = simplex.points1;
+        vec3 c = simplex.points2;
+        vec3 ab = b - a;
+        vec3 ac = c - a;
+        vec3 n = normalize(cross(ab, ac));
+        
+        triangles[triangleCount].points0 = a;
+        triangles[triangleCount].points1 = b;
+        triangles[triangleCount].points2 = c;
+        triangles[triangleCount].normal = n;
+        triangles[triangleCount].distance = dot(n, a);
+        triangles[triangleCount].isValid = 1;
+        triangleCount++;
+        
+        // Add other 3 triangles of tetrahedron...
+    }
+    
+    // EPA iterations
+    for (uint iter = 0; iter < epa.maxIterations; iter++) {
+        // Find closest triangle
+        int closestIdx = findClosestTriangle(triangles, triangleCount);
+        if (closestIdx == -1) break;
+        
+        EPATriangle closestTri = triangles[closestIdx];
+        vec3 searchDir = closestTri.normal;
+        
+        // Get support point in search direction
+        vec3 supportPt = minkowskiSupport(idxA, idxB, searchDir);
+        
+        // Check if we've reached the surface
+        float distToTriangle = dot(searchDir, supportPt);
+        float distDiff = distToTriangle - closestTri.distance;
+        
+        if (distDiff < epa.epsilon) {
+            // Convergence reached
+            normal = searchDir;
+            depth = closestTri.distance;
+            return true;
+        }
+        
+        // Expand polytope with new point
+        // (Implementation simplified - full EPA would update triangles)
+        break;
+    }
+    
+    return false;
+}
+
+void main() {
+    uint idx = gl_GlobalInvocationID.x;
+    if (idx >= params.colliderCount) return;
+    
+    CollisionPair pair = collisionPairs[idx];
+    if (pair.bodyA == 0xFFFFFFFFu) return;
+    
+    // Get collider indices
+    uint colIdxA = rigidbodies[pair.bodyA].colliderIndex;
+    uint colIdxB = rigidbodies[pair.bodyB].colliderIndex;
+    
+    if (colIdxA == 0xFFFFFFFFu || colIdxB == 0xFFFFFFFFu) return;
+    
+    // Get GJK simplex
+    GJKSimplex simplex = simplexes[idx];
+    if (simplex.count < 3) return;
+    
+    // Run EPA
+    vec3 normal;
+    float depth;
+    bool success = epaExpansion(colIdxA, colIdxB, simplex, normal, depth);
+    
+    if (success) {
+        // Update collision pair with EPA results
+        collisionPairs[idx].normal = normal;
+        collisionPairs[idx].depth = depth;
+        
+        // Update manifold
+        Manifold manifold = manifolds[idx];
+        manifold.normal = normal;
+        manifold.depth = depth;
+        manifolds[idx] = manifold;
+    }
+}

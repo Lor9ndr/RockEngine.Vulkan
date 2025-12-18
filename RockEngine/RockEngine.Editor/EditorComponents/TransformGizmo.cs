@@ -39,17 +39,19 @@ namespace RockEngine.Editor.EditorComponents
         View = 16
     }
 
-    [StructLayout(LayoutKind.Sequential)]
+    [StructLayout(LayoutKind.Sequential, Pack = 16)]
     public struct GizmoPushConstants
     {
         public Vector4 GizmoColor;
         public uint GizmoType;
     }
-    [StructLayout(LayoutKind.Sequential)]
+
+    [StructLayout(LayoutKind.Sequential, Pack = 16)]
     public struct GizmoPushFragConstants
     {
         public uint GizmoType;
         public uint AxisMask;
+        private System.Numerics.Vector2 _glslPadding1;
     }
 
     public partial class TransformGizmo : Component
@@ -819,19 +821,21 @@ namespace RockEngine.Editor.EditorComponents
             _hoveredAxis = axis;
         }
 
-        [StructLayout(LayoutKind.Sequential)]
+        [StructLayout(LayoutKind.Sequential, Pack = 16)]
+#pragma warning disable RE001D // Missing Pack attribute
         public struct GizmoVertex : IVertex
+#pragma warning restore RE001D // Missing Pack attribute
         {
-            public Vector3 Position;
-            public Vector3 Normal;
+            public System.Numerics.Vector4 Position;
+            public System.Numerics.Vector4 Normal;
             public Vector4 Color;
             public uint AxisMask;
 
             public GizmoVertex(Vector3 position, Vector4 color, Vector3 normal, GizmoAxis axis)
             {
-                Position = position;
+                Position = new Vector4(position,0);
                 Color = color;
-                Normal = normal;
+                Normal = new Vector4(normal,0);
                 AxisMask = (uint)axis;
             }
 

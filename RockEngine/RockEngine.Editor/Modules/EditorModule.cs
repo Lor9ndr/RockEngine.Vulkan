@@ -33,6 +33,7 @@ namespace RockEngine.Editor.Modules
             container.Register<InfinityGrid>();
             container.Register<TransformGizmo>();
             container.Register<ISelectionManager, EntitySelectionManager>();
+            container.Register<RenderDocIntegration>();
 
             //container.Collection.Append<ILayer, TitleBarLayer>();
 

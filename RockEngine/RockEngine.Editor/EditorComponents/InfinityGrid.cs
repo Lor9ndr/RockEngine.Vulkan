@@ -22,7 +22,7 @@ namespace RockEngine.Editor.EditorComponents
 {
     public partial class InfinityGrid : Component
     {
-        [StructLayout(LayoutKind.Sequential)]
+        [StructLayout(LayoutKind.Sequential, Pack = 16)]
         public struct GridMaterial
         {
             public Vector4 GridColor;
@@ -31,6 +31,7 @@ namespace RockEngine.Editor.EditorComponents
             public Vector4 AxisColorZ;
             public float GridStep;
             public float MajorGridStep;
+            private System.Numerics.Vector2 _glslPadding1;
         }
 
         public struct GridPushConstants
@@ -186,14 +187,14 @@ namespace RockEngine.Editor.EditorComponents
             return (vertices, indices);
         }
 
-        [StructLayout(LayoutKind.Sequential)]
+        [StructLayout(LayoutKind.Sequential, Pack = 16)]
         public struct PositionVertex : IVertex
         {
-            public Vector3 Position;
+            public Vector4 Position;
 
             public PositionVertex(Vector3 position)
             {
-                Position = position;
+                Position = new(position,0);
             }
 
             public static VertexInputBindingDescription GetBindingDescription() => new VertexInputBindingDescription

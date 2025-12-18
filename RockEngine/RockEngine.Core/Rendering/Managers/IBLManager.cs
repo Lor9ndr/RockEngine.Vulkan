@@ -1,4 +1,5 @@
-﻿using RockEngine.Core.Extensions;
+﻿using RockEngine.Core.Diagnostics;
+using RockEngine.Core.Extensions;
 using RockEngine.Core.Rendering.Materials;
 using RockEngine.Core.Rendering.Objects;
 using RockEngine.Core.Rendering.ResourceBindings;
@@ -250,8 +251,7 @@ namespace RockEngine.Core.Rendering.Managers
             return Task.FromResult(texture);
         }
 
-        // For irradiance shader
-        [StructLayout(LayoutKind.Sequential)]
+        [StructLayout(LayoutKind.Sequential, Pack = 16)]
         private struct IrradiancePushConstants
         {
             public Vector2D<int> OutputSize;
@@ -259,8 +259,7 @@ namespace RockEngine.Core.Rendering.Managers
             public float DeltaTheta;
         }
 
-        // For prefilter shader
-        [StructLayout(LayoutKind.Sequential)]
+        [StructLayout(LayoutKind.Sequential, Pack = 16)]
         private struct PrefilterPushConstants
         {
             public Vector2D<int> OutputSize;

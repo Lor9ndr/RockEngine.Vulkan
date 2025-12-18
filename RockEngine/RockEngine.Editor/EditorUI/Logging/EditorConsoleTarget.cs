@@ -1,12 +1,10 @@
 ﻿using NLog;
 using NLog.Targets;
 
-using System;
-
 namespace RockEngine.Editor.EditorUI.Logging
 {
     [Target("EditorConsole")]
-    public sealed class EditorConsoleTarget : Target
+    public sealed class EditorConsoleTarget : TargetWithLayout
     {
         private readonly EditorConsole _console;
 
@@ -17,7 +15,8 @@ namespace RockEngine.Editor.EditorUI.Logging
 
         protected override void Write(LogEventInfo logEvent)
         {
-            _console.AddLog(logEvent.Level, logEvent.FormattedMessage);
+            string message = Layout.Render(logEvent);
+            _console.AddLog(logEvent.Level, message);
 
             // Store original colors
             var originalForeground = Console.ForegroundColor;
@@ -47,6 +46,7 @@ namespace RockEngine.Editor.EditorUI.Logging
             else if (logEvent.Level == LogLevel.Fatal)
             {
                 Console.ForegroundColor = ConsoleColor.White;
+                Console.BackgroundColor = ConsoleColor.DarkRed;
             }
             else
             {
@@ -54,7 +54,7 @@ namespace RockEngine.Editor.EditorUI.Logging
             }
 
             // Write the message
-            Console.WriteLine(logEvent.FormattedMessage);
+            Console.WriteLine(message);
 
             // Reset to original colors
             Console.ForegroundColor = originalForeground;

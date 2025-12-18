@@ -1,0 +1,147 @@
+#version 450
+#extension GL_EXT_scalar_block_layout : require
+
+#include "../../Include/shader_common.glsl"
+
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+layout(set = 0, binding = 0, scalar) buffer RigidbodyBuffer {
+    Rigidbody rigidbodies[];
+};
+
+layout(set = 0, binding = 1, scalar) buffer ConstraintBuffer {
+    Constraint constraints[];
+};
+
+layout(set = 1, binding = 0) uniform ParamsUniform {
+    PhysicsParams params;
+};
+
+layout(push_constant) uniform ConstraintConstants {
+    float deltaTime;
+    uint iteration;
+    uint constraintCount;
+    float stiffness;
+    float damping;
+} cc;
+
+// Solve distance constraint
+void solveDistanceConstraint(inout Rigidbody rbA, inout Rigidbody rbB,
+                            Constraint constraint, float dt) {
+    
+    // Skip if either body is static
+    if ((rbA.bodyType == 0u && rbA.isActive == 0u) ||
+        (rbB.bodyType == 0u && rbB.isActive == 0u)) {
+        return;
+    }
+    
+    float invMassA = (rbA.bodyType != 0u) ? rbA.inverseMass : 0.0;
+    float invMassB = (rbB.bodyType != 0u) ? rbB.inverseMass : 0.0;
+    
+    // Skip if both have zero mass
+    if (invMassA == 0.0 && invMassB == 0.0) return;
+    
+    // Get world space anchors
+    mat3 rotA = quatToMat3(rbA.rotation);
+    mat3 rotB = quatToMat3(rbB.rotation);
+    
+    vec3 worldAnchorA = rbA.position + rotA * constraint.localAnchorA;
+    vec3 worldAnchorB = rbB.position + rotB * constraint.localAnchorB;
+    
+    // Current distance
+    vec3 delta = worldAnchorB - worldAnchorA;
+    float currentDist = length(delta);
+    
+    // Check if within limits
+    if (currentDist < constraint.minDistance || currentDist > constraint.maxDistance) {
+        // Target distance (clamp to limits)
+        float targetDist = clamp(currentDist, constraint.minDistance, constraint.maxDistance);
+        
+        // Normal direction
+        vec3 normal = normalize(delta);
+        
+        // Relative velocity at anchor points
+        vec3 rA = worldAnchorA - rbA.position;
+        vec3 rB = worldAnchorB - rbB.position;
+        
+        vec3 velA = rbA.velocity + cross(rbA.angularVelocity, rA);
+        vec3 velB = rbB.velocity + cross(rbB.angularVelocity, rB);
+        vec3 relVel = velB - velA;
+        
+        // Velocity along constraint normal
+        float velAlongNormal = dot(relVel, normal);
+        
+        // Calculate effective mass
+        mat3 invInertiaA = rotateInertia(rotA, mat3(rbA.inverseInertiaTensor));
+        mat3 invInertiaB = rotateInertia(rotB, mat3(rbB.inverseInertiaTensor));
+        
+        vec3 rAxN = cross(rA, normal);
+        vec3 rBxN = cross(rB, normal);
+        
+        float kNormal = invMassA + invMassB;
+        
+        if (invMassA > 0.0) {
+            vec3 temp = invInertiaA * rAxN;
+            kNormal += dot(rAxN, temp);
+        }
+        if (invMassB > 0.0) {
+            vec3 temp = invInertiaB * rBxN;
+            kNormal += dot(rBxN, temp);
+        }
+        
+        if (kNormal < 1e-8) return;
+        
+        // Constraint error
+        float error = currentDist - targetDist;
+        
+        // Baumgarte stabilization
+        float baumgarte = cc.stiffness * error / dt;
+        
+        // Damping
+        float damping = cc.damping * velAlongNormal;
+        
+        // Total correction
+        float totalCorrection = baumgarte - damping;
+        
+        // Impulse magnitude
+        float lambda = totalCorrection / kNormal;
+        
+        // Apply impulse
+        vec3 impulse = lambda * normal;
+        
+        if (invMassA > 0.0) {
+            rbA.velocity -= impulse * invMassA;
+            rbA.angularVelocity -= invInertiaA * cross(rA, impulse);
+        }
+        
+        if (invMassB > 0.0) {
+            rbB.velocity += impulse * invMassB;
+            rbB.angularVelocity += invInertiaB * cross(rB, impulse);
+        }
+    }
+}
+
+void main() {
+    uint idx = gl_GlobalInvocationID.x;
+    if (idx >= cc.constraintCount) return;
+    
+    Constraint constraint = constraints[idx];
+    if (constraint.bodyA == 0xFFFFFFFFu || constraint.bodyB == 0xFFFFFFFFu) return;
+    
+    // Get rigidbodies
+    Rigidbody rbA = rigidbodies[constraint.bodyA];
+    Rigidbody rbB = rigidbodies[constraint.bodyB];
+    
+    // Skip inactive bodies
+    if (rbA.isActive == 0u || rbB.isActive == 0u) return;
+    
+    // Solve constraint based on type
+    if (constraint.constraintType == 0u) { // Distance constraint
+        solveDistanceConstraint(rbA, rbB, constraint, cc.deltaTime);
+    }
+    // Add other constraint types here
+    
+    // Write back rigidbodies
+    rigidbodies[constraint.bodyA] = rbA;
+    rigidbodies[constraint.bodyB] = rbB;
+}

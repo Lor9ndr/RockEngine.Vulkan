@@ -29,9 +29,9 @@ namespace RockEngine.Core.Rendering.Managers
         private readonly HashSet<int> _activeIndices = new HashSet<int>();
         private readonly Dictionary<int, int> _versionTracker = new Dictionary<int, int>();
 
-        // NEW: Track mesh groups for consecutive allocation
-        private readonly Dictionary<(Material Material, IMesh Mesh), List<int>> _meshGroupIndices = new Dictionary<(Material, IMesh), List<int>>();
-        private readonly Dictionary<int, (Material Material, IMesh Mesh)> _indexToMeshGroup = new Dictionary<int, (Material, IMesh)>();
+        // rack mesh groups for consecutive allocation
+        private readonly Dictionary<MaterialMeshGroup, List<int>> _meshGroupIndices = new Dictionary<MaterialMeshGroup, List<int>>();
+        private readonly Dictionary<int, MaterialMeshGroup> _indexToMeshGroup = new Dictionary<int, MaterialMeshGroup>();
 
         private static readonly Logger _logger = LogManager.GetCurrentClassLogger();
 
@@ -54,7 +54,7 @@ namespace RockEngine.Core.Rendering.Managers
         }
 
         /// <summary>
-        /// NEW: Allocate transform indices that are consecutive for the same mesh group
+        /// Allocate transform indices that are consecutive for the same mesh group
         /// </summary>
         public int AllocateTransformForMesh(Matrix4x4 transform, Material material, IMesh mesh)
         {
@@ -276,6 +276,19 @@ namespace RockEngine.Core.Rendering.Managers
             {
                 buffer.Dispose();
             }
+        }
+    }
+
+    internal record struct MaterialMeshGroup(Material Material, IMesh Mesh)
+    {
+        public static implicit operator (Material Material, IMesh Mesh)(MaterialMeshGroup value)
+        {
+            return (value.Material, value.Mesh);
+        }
+
+        public static implicit operator MaterialMeshGroup((Material Material, IMesh Mesh) value)
+        {
+            return new MaterialMeshGroup(value.Material, value.Mesh);
         }
     }
 }

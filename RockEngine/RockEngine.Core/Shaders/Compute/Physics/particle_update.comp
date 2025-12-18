@@ -1,0 +1,59 @@
+#version 450
+#extension GL_EXT_scalar_block_layout : require
+
+#include "../../Include/shader_common.glsl"
+
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+layout(set = 0, binding = 0, scalar) buffer ParticleBuffer {
+    Particle particles[];
+};
+
+layout(set = 1, binding = 0) uniform ParamsUniform {
+    PhysicsParams params;
+};
+
+layout(push_constant) uniform ParticleConstants {
+    float deltaTime;
+    uint particleCount;
+    vec3 windForce;
+    float damping;
+} pc;
+
+void main() {
+    uint idx = gl_GlobalInvocationID.x;
+    if (idx >= pc.particleCount) return;
+    
+    Particle p = particles[idx];
+    if (p.isActive == 0u) return;
+    
+    // Update lifetime
+    p.lifetime -= pc.deltaTime;
+    
+    if (p.lifetime <= 0.0) {
+        // Particle is dead
+        p.isActive = 0u;
+        particles[idx] = p;
+        return;
+    }
+    
+    // Apply gravity
+    p.velocity += params.gravity.xyz * pc.deltaTime;
+    
+    // Apply wind
+    p.velocity += pc.windForce * pc.deltaTime;
+    
+    // Apply damping
+    p.velocity *= (1.0 - pc.damping * pc.deltaTime);
+    
+    // Update position
+    p.position += p.velocity * pc.deltaTime;
+    
+    // Update size (optional)
+    p.size *= (1.0 - 0.1 * pc.deltaTime);
+    
+    // Update color (fade out)
+    p.color.a *= (p.lifetime / 1.0); // Assuming 1.0s max lifetime
+    
+    particles[idx] = p;
+}

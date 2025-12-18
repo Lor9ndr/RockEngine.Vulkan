@@ -460,10 +460,9 @@ namespace RockEngine.Core.ECS.Components
         }
     }
 
-    [StructLayout(LayoutKind.Sequential)]
+    [StructLayout(LayoutKind.Sequential, Pack = 16)]
     public struct LightData
     {
-        public static ulong DataSize { get; } = (ulong)Marshal.SizeOf<LightData>();
 
         public Vector4 PositionAndType;       // 16 bytes
         public Vector4 DirectionAndRadius;    // 16 bytes  
@@ -472,5 +471,6 @@ namespace RockEngine.Core.ECS.Components
         public Vector2 _padding;              // 8 bytes explicit padding
         public Vector4 ShadowParams;          // 16 bytes
         public Matrix4x4 ShadowMatrix;        // 64 bytes
+        public static ulong DataSize { get; } = (ulong)Marshal.SizeOf<LightData>();
     }
 }

@@ -2,6 +2,8 @@
 using Silk.NET.Core.Native;
 using Silk.NET.Vulkan;
 
+using System.Runtime.InteropServices;
+
 namespace RockEngine.Vulkan
 {
     public ref struct SwapChainSupportDetails
@@ -122,7 +124,7 @@ namespace RockEngine.Vulkan
                 MultiDrawIndirect = true,
                 ImageCubeArray = true,
                 GeometryShader = true,
-                DrawIndirectFirstInstance = true
+                DrawIndirectFirstInstance = true,
             };
 
             vulkan11Features.SType = StructureType.PhysicalDeviceVulkan11Features;
@@ -130,13 +132,44 @@ namespace RockEngine.Vulkan
 
             vulkan12Features.SType = StructureType.PhysicalDeviceVulkan12Features;
             vulkan12Features.HostQueryReset = true;
+            vulkan12Features.ScalarBlockLayout = true;
+            bool pageableDeviceLocalMemoryAvailable = false;
+            uint extensionCount = 0;
+
+            {
+                api.EnumerateDeviceExtensionProperties(physicalDevice, (byte*)null, &extensionCount, null);
+                var availableExtensions = new ExtensionProperties[extensionCount];
+                fixed (ExtensionProperties* availableExtensionsPtr = availableExtensions)
+                {
+                    api.EnumerateDeviceExtensionProperties(physicalDevice, (byte*)null, &extensionCount, availableExtensionsPtr);
+                }
+
+                foreach (var extension in availableExtensions)
+                {
+                    if (Marshal.PtrToStringAnsi((IntPtr)extension.ExtensionName) == "VK_EXT_pageable_device_local_memory")
+                    {
+                        pageableDeviceLocalMemoryAvailable = true;
+                        break;
+                    }
+                }
+            }
+            // Add pageable device local memory features if available
+            var pageableDeviceLocalMemoryFeatures = new PhysicalDevicePageableDeviceLocalMemoryFeaturesEXT
+            {
+                SType = StructureType.PhysicalDevicePageableDeviceLocalMemoryFeaturesExt,
+                PageableDeviceLocalMemory = pageableDeviceLocalMemoryAvailable
+            };
 
             // Build feature chain using managed chaining
             using var chain = Chain.Create(
-                features2,
-                vulkan11Features,
-                vulkan12Features
-            );
+              features2,
+              vulkan11Features,
+              vulkan12Features
+          );
+            chain.Add(pageableDeviceLocalMemoryFeatures);
+
+
+
 
             // Create device info with proper feature chain
             var deviceCreateInfo = new DeviceCreateInfo
@@ -145,12 +178,12 @@ namespace RockEngine.Vulkan
                 QueueCreateInfoCount = (uint)uniqueQueueFamilies.Count,
                 PQueueCreateInfos = queueCreateInfos,
                 PNext = chain.HeadPtr,
-                EnabledExtensionCount = (uint)extensions.Length,
+                EnabledExtensionCount = (uint)extensionCount,
                 PpEnabledExtensionNames = (byte**)SilkMarshal.StringArrayToPtr(extensions)
             };
 
             // Set extensions
-            if (extensions != null && extensions.Length > 0)
+            if (extensions != null && extensionCount > 0)
             {
                 deviceCreateInfo.PpEnabledExtensionNames = (byte**)SilkMarshal.StringArrayToPtr(extensions);
                 deviceCreateInfo.EnabledExtensionCount = (uint)extensions.Length;
@@ -168,6 +201,7 @@ namespace RockEngine.Vulkan
             api.GetDeviceQueue(logicalDevice, indices.ComputeFamily.Value, 0, out Queue computeQueue);
             api.GetDeviceQueue(logicalDevice, indices.TransferFamily.Value, 0, out Queue transferQueue);
 
+            var x = api.IsDeviceExtensionPresent(context.Instance, "VK_EXT_pageable_device_local_memory");
 
             // Free unmanaged memory
             if (deviceCreateInfo.EnabledExtensionCount != 0)

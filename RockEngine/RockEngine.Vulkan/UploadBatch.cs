@@ -119,7 +119,7 @@ namespace RockEngine.Vulkan
         {
             if (size == 0)
             {
-                throw new InvalidOperationException("Size cannot be 0");
+                return;
             }
 
             if (!_stagingManager.TryStage(this, data, out var srcOffset, out _))

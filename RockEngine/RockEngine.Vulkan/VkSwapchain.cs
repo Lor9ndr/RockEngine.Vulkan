@@ -180,6 +180,11 @@ namespace RockEngine.Vulkan
 
         private static PresentModeKHR ChoosePresentMode(PresentModeKHR[] modes)
         {
+            if (modes.Contains(PresentModeKHR.FifoKhr))
+            {
+                return PresentModeKHR.FifoKhr;
+            }
+
             if (modes.Contains(PresentModeKHR.MailboxKhr))
             {
                 return PresentModeKHR.MailboxKhr;
@@ -189,8 +194,9 @@ namespace RockEngine.Vulkan
             {
                 return PresentModeKHR.ImmediateKhr;
             }
+          
 
-            return PresentModeKHR.FifoKhr;
+            return modes[0];
         }
 
         private static SurfaceFormatKHR ChooseSwapSurfaceFormat(SurfaceFormatKHR[] availableFormats)
@@ -265,7 +271,7 @@ namespace RockEngine.Vulkan
                 }
             }
         }
-        public unsafe Result AcquireNextImage(VkSemaphore imageAvailable)
+        public Result AcquireNextImage(VkSemaphore imageAvailable, out uint imageIndex)
         {
             var semaphore = imageAvailable.VkObjectNative;
 
@@ -276,7 +282,7 @@ namespace RockEngine.Vulkan
                 semaphore,
                 default,
                 ref _currentImageIndex);
-
+            imageIndex = _currentImageIndex;
             return result;
         }
 

@@ -1,6 +1,8 @@
 ﻿using RockEngine.Core.Rendering.ResourceBindings;
 using RockEngine.Core.Rendering.Texturing;
 
+using ZLinq;
+
 namespace RockEngine.Core.Rendering.Materials
 {
     public class Material : IDisposable
@@ -10,6 +12,7 @@ namespace RockEngine.Core.Rendering.Materials
 
         public string Name { get; }
         public IReadOnlyDictionary<string, MaterialPass> Passes => _passes;
+        public IEnumerable<InputAttachmentBinding> InputAttachments => _passes.Values.SelectMany(s => s.Bindings.SelectMany(s => s.Item2.OfType<InputAttachmentBinding>()));
 
         public Material(string name)
         {

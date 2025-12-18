@@ -8,7 +8,7 @@ using System.Numerics;
 using ImGuiNET;
 using System.Numerics;
 
-namespace RockEngine.Editor.EditorUI.ImGuiRendering
+namespace RockEngine.Editor.Extensions
 {
     public static class ImguiExtensions
     {

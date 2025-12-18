@@ -1,0 +1,223 @@
+#version 450
+#extension GL_EXT_scalar_block_layout : enable
+#extension GL_EXT_debug_printf : enable
+
+#include "../../Include/shader_common.glsl"
+
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+layout(set = 0, binding = 0, scalar) buffer RigidbodyBuffer {
+    Rigidbody rigidbodies[];
+};
+
+layout(set = 0, binding = 1, scalar) buffer ColliderBuffer {
+    Collider colliders[];
+};
+
+layout(set = 0, binding = 2, scalar) buffer CollisionPairBuffer {
+    CollisionPair collisionPairs[];
+};
+
+layout(set = 0, binding = 3, scalar) buffer ManifoldBuffer {
+    Manifold manifolds[];
+};
+
+layout(set = 0, binding = 4, scalar) buffer AtomicCounter {
+    uint collisionCount;
+    uint debugCounter;
+} counter;
+
+layout(set = 1, binding = 0) uniform ParamsUniform {
+    PhysicsParams params;
+};
+
+layout(push_constant) uniform PushConstants {
+    float deltaTime;
+    float gravityScale;
+    uint particleCount;
+    uint bodyCount;
+    uint colliderCount;
+    uint constraintCount;
+} pc;
+
+// Simple AABB test - FIXED: Use correct half extents
+bool simpleAABBTest(vec3 posA, vec3 halfA, vec3 posB, vec3 halfB, 
+                    out vec3 normal, out float depth, out vec3 contactPoint) {
+    vec3 delta = posB - posA;
+    vec3 totalHalf = halfA + halfB;
+    
+    // Check for overlap on each axis
+    float overlapX = totalHalf.x - abs(delta.x);
+    float overlapY = totalHalf.y - abs(delta.y);
+    float overlapZ = totalHalf.z - abs(delta.z);
+    
+    if (overlapX <= 0.0f || overlapY <= 0.0f || overlapZ <= 0.0f) {
+        return false;
+    }
+    
+    // Find the smallest overlap axis for normal
+    if (overlapX < overlapY && overlapX < overlapZ) {
+        depth = overlapX;
+        normal = vec3(delta.x > 0.0 ? 1.0 : -1.0, 0.0, 0.0);
+    } else if (overlapY < overlapZ) {
+        depth = overlapY;
+        normal = vec3(0.0, delta.y > 0.0 ? 1.0 : -1.0, 0.0);
+    } else {
+        depth = overlapZ;
+        normal = vec3(0.0, 0.0, delta.z > 0.0 ? 1.0 : -1.0);
+    }
+    
+    // Contact point at the center of the overlap region
+    contactPoint = posA + normal * (halfA - 0.5 * depth);
+    
+    // Ensure normal points from A to B
+    if (dot(normal, delta) < 0.0) {
+        normal = -normal;
+    }
+    
+    return true;
+}
+
+// Sphere-sphere collision test
+bool sphereSphereTest(vec3 posA, float radiusA, vec3 posB, float radiusB,
+                      out vec3 normal, out float depth, out vec3 contactPoint) {
+    vec3 delta = posB - posA;
+    float distance = length(delta);
+    float sumRadii = radiusA + radiusB;
+    
+    if (distance >= sumRadii) {
+        return false;
+    }
+    
+    depth = sumRadii - distance;
+    normal = normalize(delta);
+    contactPoint = posA + normal * (radiusA - depth * 0.5);
+    
+    return true;
+}
+
+// Sphere-box collision test
+bool sphereBoxTest(vec3 spherePos, float radius, vec3 boxPos, vec3 boxHalf,
+                   out vec3 normal, out float depth, out vec3 contactPoint) {
+    // Find closest point on box to sphere
+    vec3 closest = vec3(
+        clamp(spherePos.x, boxPos.x - boxHalf.x, boxPos.x + boxHalf.x),
+        clamp(spherePos.y, boxPos.y - boxHalf.y, boxPos.y + boxHalf.y),
+        clamp(spherePos.z, boxPos.z - boxHalf.z, boxPos.z + boxHalf.z)
+    );
+    
+    vec3 delta = closest - spherePos;
+    float distance = length(delta);
+    
+    if (distance >= radius) {
+        return false;
+    }
+    
+    depth = radius - distance;
+    normal = normalize(delta);
+    contactPoint = closest;
+    
+    return true;
+}
+
+void main() {
+    uint idx = gl_GlobalInvocationID.x;
+    if (idx >= pc.bodyCount) return;
+    
+    // Get rigidbody A
+    Rigidbody rbA = rigidbodies[idx];
+    if (rbA.isActive == 0u) {
+        return;
+    }
+    
+    // Get collider A
+    uint colIdxA = rbA.colliderIndex;
+    if (colIdxA >= pc.colliderCount) {
+        return;
+    }
+    
+    Collider colA = colliders[colIdxA];
+    
+    // IMPORTANT FIX: colA.size is already half extents, no need to divide by 2
+    vec3 halfA = colA.size;  // This is already half extents
+    vec3 posA = colA.position;
+    float radiusA = colA.radius;
+    
+    // Test against all other bodies
+    for (uint i = idx + 1; i < pc.bodyCount; i++) {
+        // Get rigidbody B
+        Rigidbody rbB = rigidbodies[i];
+        if (rbB.isActive == 0u) continue;
+        
+        // Get collider B
+        uint colIdxB = rbB.colliderIndex;
+        if (colIdxB >= pc.colliderCount) continue;
+        
+        Collider colB = colliders[colIdxB];
+        vec3 halfB = colB.size;  // This is already half extents
+        vec3 posB = colB.position;
+        float radiusB = colB.radius;
+        
+        // Check for collision based on shape types
+        bool collision = false;
+        vec3 normal;
+        float depth;
+        vec3 contactPoint;
+        
+        if (colA.shape == 0u && colB.shape == 0u) {
+            // Box-Box
+            collision = simpleAABBTest(posA, halfA, posB, halfB, normal, depth, contactPoint);
+        } else if (colA.shape == 1u && colB.shape == 1u) {
+            // Sphere-Sphere
+            collision = sphereSphereTest(posA, radiusA, posB, radiusB, normal, depth, contactPoint);
+        } else if (colA.shape == 0u && colB.shape == 1u) {
+            // Box-Sphere (A is box, B is sphere)
+            collision = sphereBoxTest(posB, radiusB, posA, halfA, normal, depth, contactPoint);
+            normal = -normal; // Flip normal to point from A to B
+        } else if (colA.shape == 1u && colB.shape == 0u) {
+            // Sphere-Box (A is sphere, B is box)
+            collision = sphereBoxTest(posA, radiusA, posB, halfB, normal, depth, contactPoint);
+        }
+        
+        if (collision && depth > 0.001f) {
+            // Get next available slot
+            uint globalIdx = atomicAdd(counter.collisionCount, 1);
+            
+            if (globalIdx < params.maxCollisionPairs) {
+                // Store collision pair
+                collisionPairs[globalIdx].bodyA = idx;
+                collisionPairs[globalIdx].bodyB = i;
+                collisionPairs[globalIdx].colliderA = colIdxA;
+                collisionPairs[globalIdx].colliderB = colIdxB;
+                collisionPairs[globalIdx].normal = normal;
+                collisionPairs[globalIdx].depth = depth;
+                collisionPairs[globalIdx].contactPoint = contactPoint;
+                collisionPairs[globalIdx].impulse = 0.0;
+                
+                // Calculate tangent directions for friction
+                vec3 tangent1, tangent2;
+                if (abs(normal.x) > 0.1) {
+                    tangent1 = normalize(cross(normal, vec3(0.0, 1.0, 0.0)));
+                } else {
+                    tangent1 = normalize(cross(normal, vec3(1.0, 0.0, 0.0)));
+                }
+                tangent2 = cross(normal, tangent1);
+                
+                collisionPairs[globalIdx].tangent1 = tangent1;
+                collisionPairs[globalIdx].tangent2 = tangent2;
+                collisionPairs[globalIdx].frictionImpulse1 = 0.0;
+                collisionPairs[globalIdx].frictionImpulse2 = 0.0;
+                
+                // Also store in manifold buffer
+                Manifold manifold;
+                manifold.bodyA = idx;
+                manifold.bodyB = i;
+                manifold.normal = normal;
+                manifold.depth = depth;
+                manifold.contactPoints[0] = contactPoint;
+                manifold.contactCount = 1u;
+                manifolds[globalIdx] = manifold;
+            }
+        }
+    }
+}
