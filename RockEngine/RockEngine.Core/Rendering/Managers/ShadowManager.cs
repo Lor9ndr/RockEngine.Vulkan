@@ -1,6 +1,7 @@
 ﻿using NLog;
 
 using RockEngine.Core.ECS.Components;
+using RockEngine.Core.Helpers;
 using RockEngine.Core.Rendering.Buffers;
 using RockEngine.Core.Rendering.ResourceBindings;
 using RockEngine.Core.Rendering.Texturing;
@@ -28,7 +29,7 @@ namespace RockEngine.Core.Rendering.Managers
 
         private readonly Dictionary<Light, uint> _lightShadowMapIndices = new();
         private readonly Queue<uint> _availableShadowIndices = new();
-        private readonly uint _maxShadowMaps = 50;
+        private readonly uint _maxShadowMaps = 20;
         private static readonly Logger _logger = LogManager.GetCurrentClassLogger();
 
         public ShadowManager(VulkanContext context)
@@ -48,8 +49,15 @@ namespace RockEngine.Core.Rendering.Managers
             _pointShadowMapArray = CreateShadowMapArray(_maxShadowMaps, 1024, true, "PointShadowMapArray");
 
             // Create texture bindings
-            _shadowMapsBinding = new TextureBinding(4, 0, 0, 1, _shadowMapArray);
-            _pointShadowMapsBinding = new TextureBinding(4, 1, 0, 1, _pointShadowMapArray);
+            _shadowMapsBinding = new TextureBinding(4,
+                                                    0,
+                                                    0,
+                                                    1,
+                                                    ImageLayout.ShaderReadOnlyOptimal,
+                                                    0,
+                                                    _shadowMapArray.Image.ArrayLayers,
+                                                    _shadowMapArray);
+            _pointShadowMapsBinding = new TextureBinding(4, 1, 0, 1, ImageLayout.ShaderReadOnlyOptimal,0, _pointShadowMapArray.Image.ArrayLayers, _pointShadowMapArray);
 
             // Initialize available indices
             for (uint i = 0; i < _maxShadowMaps; i++)
@@ -77,6 +85,7 @@ namespace RockEngine.Core.Rendering.Managers
             var batch = _context.GraphicsSubmitContext.CreateBatch();
             texture.Image.TransitionImageLayout(
                 batch,
+                ImageLayout.Undefined,
                 ImageLayout.ShaderReadOnlyOptimal,
                 baseMipLevel: 0,
                 levelCount: 1,
@@ -136,8 +145,6 @@ namespace RockEngine.Core.Rendering.Managers
                 batch,
                 ImageLayout.ShaderReadOnlyOptimal,
                 ImageLayout.TransferDstOptimal,
-                PipelineStageFlags.FragmentShaderBit,
-                PipelineStageFlags.TransferBit,
                 baseMipLevel: 0,
                 levelCount: 1,
                 baseArrayLayer: destinationBaseLayer,
@@ -160,8 +167,6 @@ namespace RockEngine.Core.Rendering.Managers
                 batch,
                 ImageLayout.TransferDstOptimal,
                 ImageLayout.ShaderReadOnlyOptimal,
-                PipelineStageFlags.TransferBit,
-                PipelineStageFlags.FragmentShaderBit,
                 baseMipLevel: 0,
                 levelCount: 1,
                 baseArrayLayer: destinationBaseLayer,
@@ -173,8 +178,6 @@ namespace RockEngine.Core.Rendering.Managers
                 batch,
                 ImageLayout.TransferSrcOptimal,
                 ImageLayout.DepthStencilAttachmentOptimal,
-                PipelineStageFlags.TransferBit,
-                PipelineStageFlags.EarlyFragmentTestsBit, // Ready for next frame's depth tests
                 baseMipLevel: 0,
                 levelCount: 1,
                 baseArrayLayer: 0,
@@ -219,7 +222,7 @@ namespace RockEngine.Core.Rendering.Managers
                     // Update cascade splits using camera far plane
                     light.UpdateCascadeSplits(mainCamera.FarClip);
 
-                    var cascadeMatrices = light.CalculateCSMMatrices(mainCamera, light.Direction);
+                    var cascadeMatrices = light.CalculateCSMMatrices(mainCamera, light.Entity.Transform.EulerAngles);
 
                     // Create enhanced CSM data
                     var csmData = new CSMData
@@ -300,24 +303,22 @@ namespace RockEngine.Core.Rendering.Managers
                 batch.StageToBuffer(csmDataArray, _csmDataUbo.Buffer, 0, (ulong)(Unsafe.SizeOf<CSMData>() * csmDataArray.Length));
 
                 // Add pipeline barrier
-                var bufferBarrier = new BufferMemoryBarrier
+                var bufferBarrier = new BufferMemoryBarrier2
                 {
-                    SType = StructureType.BufferMemoryBarrier,
-                    SrcAccessMask = AccessFlags.TransferWriteBit,
-                    DstAccessMask = AccessFlags.UniformReadBit | AccessFlags.ShaderReadBit,
+                    SType = StructureType.BufferMemoryBarrier2,
+                    SrcAccessMask = AccessFlags2.TransferWriteBit,
+                    DstAccessMask = AccessFlags2.UniformReadBit | AccessFlags2.ShaderReadBit,
                     SrcQueueFamilyIndex = Vk.QueueFamilyIgnored,
                     DstQueueFamilyIndex = Vk.QueueFamilyIgnored,
                     Buffer = _shadowMatricesUbo.Buffer,
                     Offset = 0,
-                    Size = Vk.WholeSize
+                    Size = Vk.WholeSize,
+                    SrcStageMask = PipelineStageFlags2.TransferBit,
+                    DstStageMask = PipelineStageFlags2.VertexShaderBit,
                 };
 
                 batch.PipelineBarrier(
-                    PipelineStageFlags.TransferBit,
-                    PipelineStageFlags.VertexShaderBit | PipelineStageFlags.FragmentShaderBit,
-                    memoryBarriers: null,
-                    bufferMemoryBarriers: new[] { bufferBarrier },
-                    imageMemoryBarriers: null
+                    bufferMemoryBarriers: [bufferBarrier]
                 );
 
                 batch.Submit();
@@ -337,7 +338,8 @@ namespace RockEngine.Core.Rendering.Managers
         }
     }
 
-    [StructLayout(LayoutKind.Sequential, Pack = 16)]
+    [GLSLStruct(GLSLMemoryLayout.Scalar)]
+
     public struct CSMData
     {
         public Matrix4x4 CascadeMatrices0;

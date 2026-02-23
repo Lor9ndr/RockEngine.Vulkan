@@ -1,4 +1,6 @@
-﻿using RockEngine.Core.Attributes;
+﻿using MessagePack;
+
+using RockEngine.Core.Attributes;
 using RockEngine.Core.Rendering;
 
 namespace RockEngine.Core.ECS.Components
@@ -10,8 +12,10 @@ namespace RockEngine.Core.ECS.Components
         }
 
         [SerializeIgnore]
+        [IgnoreMember]
         public Entity Entity { get; private set; }
 
+        [Key(6)]
         public bool IsActive {get; protected set;} = true;
 
         public virtual void SetEntity(Entity entity)

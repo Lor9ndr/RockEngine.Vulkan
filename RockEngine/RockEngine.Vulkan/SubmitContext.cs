@@ -1,10 +1,8 @@
-﻿using Silk.NET.GLFW;
-using Silk.NET.Vulkan;
+﻿using Silk.NET.Vulkan;
 
 using System.Buffers;
 using System.Collections.Concurrent;
 using System.Runtime.InteropServices;
-using System.Threading.Tasks;
 
 using ZLinq;
 
@@ -45,7 +43,11 @@ namespace RockEngine.Vulkan
 
         private static readonly ArrayPool<CommandBuffer> _commandBufferPool = ArrayPool<CommandBuffer>.Shared;
 
+        private readonly ConcurrentBag<(List<UploadBatch> batches, List<IDisposable> disposables)> _pendingNoFenceResources = new();
+
         public StagingManager StagingManager => _stagingManager;
+
+        public uint QueueFamily => _targetQueue.FamilyIndex;
 
         public SubmitContext(VulkanContext context, VkQueue targetQueue)
         {
@@ -106,7 +108,6 @@ namespace RockEngine.Vulkan
             else
             {
                 batch.InheritanceInfo = parameters.InheritanceInfo;
-                // Don't change the version - it should already be correct
             }
 
             batch.MarkInUse();
@@ -153,13 +154,13 @@ namespace RockEngine.Vulkan
             batch.Context.ReturnBatch(batch);
         }
 
-        public FlushOperation Flush(VkFence fence)
+        public SubmitOperation Submit(VkFence? fence = null)
         {
-            return FlushInternal(fence);
+            return SubmitInternal(fence);
         }
 
 
-        public FlushOperation FlushSingle(UploadBatch batch, VkFence fence)
+        public SubmitOperation SubmitSingle(UploadBatch batch, VkFence? fence = null)
         {
             batch.End();
 
@@ -167,8 +168,12 @@ namespace RockEngine.Vulkan
             _submissionLock.Wait();
             try
             {
-                _disposableList.Clear();
-                _disposableList.AddRange(batch.Disposables);
+                // Store disposables and batches
+                var disposableList = new List<IDisposable>();
+                var batchList = new List<UploadBatch>();
+
+                disposableList.AddRange(batch.Disposables);
+                batchList.Add(batch);
 
                 Span<Semaphore> semaphores = stackalloc Semaphore[batch.SignalSemaphores.Count];
                 for (int i = 0; i < batch.SignalSemaphores.Count; i++)
@@ -195,12 +200,32 @@ namespace RockEngine.Vulkan
                     fence
                 );
 
-                return new FlushOperation(
-                    this,
-                    fence,
-                    new List<UploadBatch> { batch },
-                    new List<IDisposable>(_disposableList)
-                );
+                if (fence != null)
+                {
+                    foreach (var (batches, disposables) in _pendingNoFenceResources)
+                    {
+                        batchList.AddRange(batches);
+                        disposableList.AddRange(disposables);
+                    }
+                    _pendingNoFenceResources.Clear();
+                    // When fence is provided, SubmitOperation will handle cleanup
+                    return new SubmitOperation(
+                        this,
+                        fence,
+                        batchList,
+                        disposableList
+                    );
+                }
+                else
+                {
+                    // No fence - keep resources in SubmitContext for later cleanup
+                    _pendingNoFenceResources.Add((batchList, disposableList));
+
+                    // Return a completed operation that doesn't own resources
+                    var operation = new SubmitOperation(this, null, [], []);
+                    operation.SetCompleted(true);
+                    return operation;
+                }
             }
             finally
             {
@@ -208,7 +233,7 @@ namespace RockEngine.Vulkan
             }
         }
 
-        private FlushOperation FlushInternal(VkFence fence)
+        private SubmitOperation SubmitInternal(VkFence? fence = null)
         {
             // Only lock during submission preparation
             _submissionLock.Wait();
@@ -217,27 +242,65 @@ namespace RockEngine.Vulkan
                 // Swap active and submission queues
                 (_submissionQueue, _activeQueue) = (_activeQueue, _submissionQueue);
 
-                if (_submissionQueue.IsEmpty &&
-                    _flushDisposables.IsEmpty &&
-                    _signalSemaphores.IsEmpty &&
-                    _waitSemaphores.IsEmpty)
-                {
-                    var flushOp = new FlushOperation(this, fence, [], []);
-                    flushOp.SetCompleted(true);
-                    return flushOp;
-                }
-
+               
                 PrepareSubmissionData();
                 SubmitCommandBuffers(fence);
-                var operation = CreateFlushOperation(fence);
-                ResetState();
-                StagingManager.Reset();
-                return operation;
+               
+
+                if (fence != null)
+                {
+                    foreach (var (batches, disposables) in _pendingNoFenceResources)
+                    {
+                        _batchList.AddRange(batches);
+                        _disposableList.AddRange(disposables);
+                    }
+                    _pendingNoFenceResources.Clear();
+                    // Create operation that will handle cleanup when fence passes
+                    var operation = CreateFlushOperation(fence);
+                    ResetState();
+                    StagingManager.Reset();
+
+                    return operation;
+                }
+                else
+                {
+                    // No fence - keep resources in SubmitContext
+                    var batchesCopy = new List<UploadBatch>(_batchList);
+                    var disposablesCopy = new List<IDisposable>(_disposableList);
+
+                    // Store for later cleanup
+                    _pendingNoFenceResources.Add((batchesCopy, disposablesCopy));
+
+                    // Reset state (transferred ownership to pending resources)
+                    ResetState();
+
+                    // Return completed operation that doesn't own resources
+                    var operation = new SubmitOperation(this, null, [], []);
+                    operation.SetCompleted(true);
+                    return operation;
+                }
             }
             finally
             {
                 _submissionLock.Release();
             }
+        }
+
+        private void CleanUpNoFenceResources()
+        {
+            foreach (var (batches, disposables) in _pendingNoFenceResources)
+            {
+                foreach (var item in batches)
+                {
+                    ReturnBatchToPool(item);
+                }
+                foreach (var item in disposables)
+                {
+                    item.Dispose();
+                }
+
+            }
+            _pendingNoFenceResources.Clear();
         }
 
         private void PrepareSubmissionData()
@@ -256,8 +319,9 @@ namespace RockEngine.Vulkan
             _disposableList.AddRange(_flushDisposables);
         }
 
-        private void SubmitCommandBuffers(VkFence fence)
+        private void SubmitCommandBuffers(VkFence? fence = null)
         {
+
             var signalSemaphores = _signalSemaphores
                 .AsValueEnumerable()
                 .Union(_batchList.SelectMany(b => b.SignalSemaphores))
@@ -285,9 +349,9 @@ namespace RockEngine.Vulkan
             );
         }
 
-        private FlushOperation CreateFlushOperation(VkFence fence)
+        private SubmitOperation CreateFlushOperation(VkFence? fence = null)
         {
-            return new FlushOperation(
+            return new SubmitOperation(
                 this,
                 fence,
                 [.. _batchList],

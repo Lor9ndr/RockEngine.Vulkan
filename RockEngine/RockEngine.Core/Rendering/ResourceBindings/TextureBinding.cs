@@ -8,89 +8,96 @@ namespace RockEngine.Core.Rendering.ResourceBindings
 {
     public class TextureBinding : ResourceBinding, IDisposable
     {
+        private readonly uint _arrayLayer = 0;
+        private readonly uint _layerCount = Vk.RemainingArrayLayers;
+
         public Texture[] Textures { get; private set; }
-        public uint BaseMipLevel { get; private set; }
-        public uint LevelCount { get; private set; }
-
+        public uint BaseMipLevel { get; }
+        public uint LevelCount { get; }
         public override DescriptorType DescriptorType => DescriptorType.CombinedImageSampler;
+        public ImageLayout ImageLayout { get; }
 
-        public TextureBinding(uint setLocation, uint bindingLocation,
-                            uint baseMipLevel = 0, uint levelCount = 1,
-                            params Texture[] textures)
-            : base(setLocation, new UIntRange(bindingLocation, (uint)(bindingLocation + textures.Length -1)))
+        public TextureBinding(
+            uint setLocation,
+            uint bindingLocation,
+            uint baseMipLevel,
+            uint levelCount,
+            ImageLayout imageLayout,
+            uint arrayLayer,
+            uint layerCount,
+            params Texture[] textures)
+            : base(setLocation, new UIntRange(bindingLocation, (uint)(bindingLocation + textures.Length - 1)))
         {
             BaseMipLevel = baseMipLevel;
             LevelCount = levelCount;
+            ImageLayout = imageLayout;
             Textures = textures;
+            _arrayLayer = arrayLayer;
+            _layerCount = layerCount;
 
             foreach (var texture in textures)
             {
-                texture.OnTextureUpdated += MarkAsDirty;
+                texture?.OnTextureUpdated += MarkAsDirty;
             }
         }
-
-        private void MarkAsDirty(Texture _)
+        public TextureBinding(
+            uint setLocation,
+            uint bindingLocation,
+            uint baseMipLevel,
+            uint levelCount,
+            ImageLayout imageLayout,
+            params Texture[] textures)
+            : this(setLocation, bindingLocation, baseMipLevel, levelCount, imageLayout, 0, Vk.RemainingArrayLayers, textures)
         {
-            foreach (var item in DescriptorSets)
+        }
+        public TextureBinding(
+            uint setLocation,
+            uint bindingLocation,
+            uint baseMipLevel,
+            uint levelCount,
+            ImageLayout imageLayout,
+            Texture texture)
+            : this(setLocation, bindingLocation, baseMipLevel, levelCount, imageLayout, 0, texture.Image.ArrayLayers, texture)
+        {
+        }
+
+        private void MarkAsDirty(object? sender, TextureUpdate e)
+        {
+            foreach (var setList in _descriptorSetsByLayout.Values)
             {
-                if (item is null)
+                foreach (var set in setList)
                 {
-                    continue;
+                    set?.IsDirty = true;
                 }
-
-                item.IsDirty = true;
             }
         }
 
-        public override unsafe void UpdateDescriptorSet(VulkanContext context, uint frameIndex)
+        public override unsafe void UpdateDescriptorSet(VulkanContext context, uint frameIndex, VkDescriptorSetLayout descriptorSetLayout)
         {
-            WriteDescriptorSet* writeDescriptorSets = stackalloc WriteDescriptorSet[Textures.Length];
+            var descriptor = GetDescriptorSetForLayout(descriptorSetLayout, frameIndex);
+            WriteDescriptorSet* writes = stackalloc WriteDescriptorSet[Textures.Length];
             DescriptorImageInfo* imageInfos = stackalloc DescriptorImageInfo[Textures.Length];
 
-            var descriptor = DescriptorSets[frameIndex];
             for (int i = 0; i < Textures.Length; i++)
             {
-                writeDescriptorSets[i] = new WriteDescriptorSet
-                {
-                    SType = StructureType.WriteDescriptorSet
-                };
                 var texture = Textures[i];
 
-                // Get the appropriate image view for the requested mip range
-                var imageView = texture.Image.GetMipView(BaseMipLevel);
-                var layout = texture.Image.GetMipLayout(BaseMipLevel);
-
-
-
-                // Validate layout
-                bool needsLayoutTransition = false;
-                for (uint layer = 0; layer < texture.Image.ArrayLayers; layer++)
-                {
-                    layout = texture.Image.GetMipLayout(BaseMipLevel, layer);
-                    if (layout != ImageLayout.ShaderReadOnlyOptimal && layout != ImageLayout.General)
-                    {
-                        needsLayoutTransition = true;
-                        break;
-                    }
-                }
-
-                // Validate layout for ALL layers
-                if (needsLayoutTransition)
-                {
-                    var batch = context.GraphicsSubmitContext.CreateBatch();
-                    texture.PrepareForFragmentShader(batch);
-                    batch.Submit();
-                    
-                }
+                // Obtain view for the required layer range and mip range
+                var imageView = texture.Image.GetView(
+                    baseMipLevel: BaseMipLevel,
+                    levelCount: LevelCount,
+                    baseArrayLayer: _arrayLayer ,
+                    layerCount: _layerCount
+                );
 
                 imageInfos[i] = new DescriptorImageInfo
                 {
-                    ImageLayout = layout,
+                    ImageLayout = ImageLayout,
                     ImageView = imageView,
-                    Sampler = Texture.CreateSampler(context, BaseMipLevel),
+                    Sampler = Texture.CreateSampler(context, BaseMipLevel) 
                 };
 
-                writeDescriptorSets[i] = new WriteDescriptorSet
+                writes[i] = new WriteDescriptorSet
                 {
                     SType = StructureType.WriteDescriptorSet,
                     DstSet = descriptor,
@@ -102,28 +109,45 @@ namespace RockEngine.Core.Rendering.ResourceBindings
                 };
             }
 
-            VulkanContext.Vk.UpdateDescriptorSets(context.Device, (uint)Textures.Length, writeDescriptorSets, 0, null);
+            VulkanContext.Vk.UpdateDescriptorSets(context.Device, (uint)Textures.Length, writes, 0, null);
         }
 
         public void Dispose()
         {
-            foreach (var texture in Textures)
-            {
-                texture.OnTextureUpdated -= MarkAsDirty;
-            }
-            DescriptorSets = Array.Empty<VkDescriptorSet>();
-            Textures = Array.Empty<Texture>();
+            Dispose(true);
             GC.SuppressFinalize(this);
+        }
+
+        protected virtual void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                foreach (var texture in Textures)
+                {
+                    texture?.OnTextureUpdated -= MarkAsDirty;
+                }
+                Textures = Array.Empty<Texture>();
+                _descriptorSetsByLayout.Clear();
+            }
         }
 
         public override TextureBinding Clone()
         {
-            return new TextureBinding(SetLocation, BindingLocation.Start, BaseMipLevel, LevelCount, (Texture[])Textures.Clone());
+            return new TextureBinding(
+                SetLocation,
+                BindingLocation.Start,
+                BaseMipLevel,
+                LevelCount,
+                ImageLayout,
+                _arrayLayer,
+                _layerCount,
+                (Texture[])Textures.Clone()
+            );
         }
 
         ~TextureBinding()
         {
-            Dispose();
+            Dispose(false);
         }
     }
 }

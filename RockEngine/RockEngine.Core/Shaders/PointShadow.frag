@@ -2,7 +2,7 @@
 #extension GL_ARB_separate_shader_objects : enable
 
 layout(push_constant) uniform ShadowPC {
-    vec3 lightPos;
+    vec4 lightPos;
     float farPlane;
     uint shadowIndex;
 } pc;
@@ -12,7 +12,7 @@ layout(location = 2) in vec3 worldPos;
 
 void main() {
     // Optimized distance calculation - use dot product instead of length
-    vec3 toFragment = worldPos - pc.lightPos;
+    vec3 toFragment = worldPos - pc.lightPos.xyz;
     float lightDistance = dot(toFragment, toFragment); // squared distance
     
     // Compare squared distances to avoid sqrt

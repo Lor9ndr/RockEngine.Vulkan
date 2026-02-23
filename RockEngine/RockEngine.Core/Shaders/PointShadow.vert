@@ -8,7 +8,7 @@ layout(set = 1, binding = 0) readonly buffer ModelData {
 };
 
 layout(push_constant) uniform ShadowPC {
-    vec3 lightPos;
+    vec4 lightPos;
     float farPlane;
     uint shadowIndex;
 } pc;

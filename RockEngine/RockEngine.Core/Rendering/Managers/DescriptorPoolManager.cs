@@ -25,7 +25,7 @@ namespace RockEngine.Core.Rendering.Managers
                 var list = new List<VkDescriptorPool>();
                 CreateNewPool(list); // Create initial pool for each thread
                 return list;
-            });
+            }, trackAllValues:true);
 
         }
 
@@ -48,13 +48,12 @@ namespace RockEngine.Core.Rendering.Managers
             }
         }
 
-        public unsafe VkDescriptorSet AllocateDescriptorSet(VkDescriptorSetLayout layout)
+        public VkDescriptorSet AllocateDescriptorSet(VkDescriptorSetLayout layout)
         {
             var currentPools = _pools.Value!;
 
             foreach (var pool in currentPools)
             {
-
                 var result = pool.AllocateDescriptorSet(layout, out var descriptorSet)
                     .VkAssertResult("Failed to allocate descriptor set", Result.ErrorOutOfPoolMemory);
 

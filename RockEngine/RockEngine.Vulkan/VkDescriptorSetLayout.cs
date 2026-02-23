@@ -7,12 +7,14 @@ namespace RockEngine.Vulkan
         public DescriptorSetLayout DescriptorSetLayout;
         public uint SetLocation;
         public readonly DescriptorSetLayoutBindingReflected[] Bindings;
+        public readonly int StageFlagsSum;
 
         public VkDescriptorSetLayout(DescriptorSetLayout descriptorSetLayout, uint setLocation, DescriptorSetLayoutBindingReflected[] bindingsArr)
         {
             DescriptorSetLayout = descriptorSetLayout;
             SetLocation = setLocation;
             Bindings = bindingsArr;
+            StageFlagsSum = bindingsArr.Sum(s=>(int)s.StageFlags);
         }
 
 

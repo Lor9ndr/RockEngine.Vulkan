@@ -28,10 +28,6 @@ namespace RockEngine.Vulkan
         /// <returns>Span of the mapped memory</returns>
         public unsafe Span<T> GetSpan<T>() where T : unmanaged
         {
-            if (_size == Vk.WholeSize)
-            {
-                throw new InvalidOperationException("Cannot create span for WholeSize mapping");
-            }
 
             int elementSize = sizeof(T);
             int count = (int)(_size / (ulong)elementSize);

@@ -1,7 +1,8 @@
 ﻿using RockEngine.Core.Rendering.ResourceBindings;
 using RockEngine.Core.Rendering.Texturing;
 
-using ZLinq;
+using Silk.NET.Vulkan;
+
 
 namespace RockEngine.Core.Rendering.Materials
 {
@@ -12,7 +13,6 @@ namespace RockEngine.Core.Rendering.Materials
 
         public string Name { get; }
         public IReadOnlyDictionary<string, MaterialPass> Passes => _passes;
-        public IEnumerable<InputAttachmentBinding> InputAttachments => _passes.Values.SelectMany(s => s.Bindings.SelectMany(s => s.Item2.OfType<InputAttachmentBinding>()));
 
         public Material(string name)
         {
@@ -73,27 +73,27 @@ namespace RockEngine.Core.Rendering.Materials
         // Texture binding methods
         public void BindTexture(uint set, uint binding, Texture texture)
         {
-            BindResource(new TextureBinding(set, binding, 0, 1, texture));
+            BindResource(new TextureBinding(set, binding, 0, 1, ImageLayout.ShaderReadOnlyOptimal, texture));
         }
 
         public void BindTexture(string subpassName, uint set, uint binding, Texture texture)
         {
-            BindResource(subpassName, new TextureBinding(set, binding, 0, 1, texture));
+            BindResource(subpassName, new TextureBinding(set, binding, 0, 1, ImageLayout.ShaderReadOnlyOptimal, texture));
         }
 
         public void BindTextureArray(uint set, uint binding, params Texture[] textures)
         {
-            BindResource(new TextureBinding(set, binding, 0, (uint)textures.Length, textures));
+            BindResource(new TextureBinding(set, binding, 0, (uint)textures.Length, ImageLayout.ShaderReadOnlyOptimal, textures));
         }
 
         public void BindTextureArray(string subpassName, uint set, uint binding, params Texture[] textures)
         {
-            BindResource(subpassName, new TextureBinding(set, binding, 0, (uint)textures.Length, textures));
+            BindResource(subpassName, new TextureBinding(set, binding, 0, (uint)textures.Length, ImageLayout.ShaderReadOnlyOptimal, textures));
         }
 
 
         // Push constant methods
-        public void PushConstant<T>(string name, T value) where T : unmanaged
+        public void PushConstant<T>(string name, T value)
         {
             foreach (var pass in _passes.Values)
             {
@@ -104,7 +104,7 @@ namespace RockEngine.Core.Rendering.Materials
             }
         }
 
-        public void PushConstant<T>(string subpassName, string name, T value) where T : unmanaged
+        public void PushConstant<T>(string subpassName, string name, T value)
         {
             if (!_passes.TryGetValue(subpassName, out var pass))
             {

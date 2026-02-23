@@ -1,4 +1,6 @@
-﻿using RockEngine.Core.Attributes;
+﻿using MessagePack;
+
+using RockEngine.Core.Attributes;
 using RockEngine.Core.Helpers;
 using RockEngine.Core.Rendering;
 
@@ -14,8 +16,10 @@ namespace RockEngine.Core.ECS.Components
         Spot
     }
 
+    [MessagePackObject(AllowPrivate = true)]
     public partial class Light : Component
     {
+        [Key(7)]
         public LightType Type
         {
             get;
@@ -43,22 +47,26 @@ namespace RockEngine.Core.ECS.Components
         }
 
         [Color]
+        [Key(8)]
         public Vector3 Color { get; set; } = Vector3.One;
 
         [Range(0,1000)]
+        [Key(9)]
         public float Intensity { get; set; } = 1.0f;
 
-        // Directional/Spot properties
-        public Vector3 Direction { get; set; } = Vector3.UnitY;
 
         // Point/Spot properties
         [Range(0.02f, float.MaxValue)]
+        [Key(10)]
         public float Radius { get; set; } = 10.0f;
 
+        [IgnoreMember]
         private float _innerCutoff = 0.9f;
+        [IgnoreMember]
         private float _outerCutoff = 0.7f;
 
         [Range(0.1f, 0.99f), Step(0.01f)]
+        [Key(13)]
         public float InnerCutoff
         {
             get => _innerCutoff;
@@ -76,6 +84,7 @@ namespace RockEngine.Core.ECS.Components
         }
 
         [Range(0.05f, 0.98f), Step(0.01f)]
+        [Key(14)]
         public float OuterCutoff
         {
             get => _outerCutoff;
@@ -94,6 +103,7 @@ namespace RockEngine.Core.ECS.Components
 
         // Helper properties for degrees (for easier editing)
         [Range(1f, 80f)]
+        [Key(15)]
         public float InnerCutoffDegrees
         {
             get => MathHelper.RadiansToDegrees(MathF.Acos(_innerCutoff));
@@ -101,43 +111,61 @@ namespace RockEngine.Core.ECS.Components
         }
 
         [Range(5f, 85f)]
+        [Key(16)]
         public float OuterCutoffDegrees
         {
             get => MathHelper.RadiansToDegrees(MathF.Acos(_outerCutoff));
             set => OuterCutoff = MathF.Cos(MathHelper.DegreesToRadians(Math.Clamp(value, 5f, 85f)));
         }
 
+        [Key(17)]
         public bool CastShadows { get; set; } = false;
 
         [Range(0.001f, 0.1f), Step(0.001f)]
+        [Key(18)]
         public float ShadowBias { get; set; } = 0.005f;
 
         [Range(0.0f, 1.0f), Step(0.01f)]
+        [Key(19)]
         public float ShadowStrength { get; set; } = 1.0f;
 
+        [Key(20)]
         public uint ShadowMapSize { get; set; } = 1024;
 
         // Directional light specific shadow properties
+        [Key(21)]
         public float ShadowDistance { get; set; } = 100.0f;
+        [Key(22)]
         public Vector2 ShadowOrthoSize { get; set; } = new Vector2(200, 200);
 
 
         [Range(1,4)]
+        [Key(23)]
         public int CascadeCount { get; set; } = 4;
+        [Key(24)]
         public float[] CascadeSplits { get; private set; } = new float[4];
 
         [Range(0.001f, 0.1f), Step(0.001f)]
+        [Key(25)]
         public float CSMShadowBias { get; set; } = 0.001f;
 
         [Range(0.0f, 0.1f), Step(0.01f)]
+        [Key(26)]
         public float NormalOffset { get; set; } = 0.01f;
 
+        [Key(27)]
         public bool StabilizeCascades { get; set; } = true;
 
+
         public delegate Matrix4x4[] CalculateShadowMatrixStrategy();
-        public CalculateShadowMatrixStrategy GetShadowMatrix { get; set; } 
+
+        [IgnoreMember]
+        public CalculateShadowMatrixStrategy GetShadowMatrix { get; set; }
+
+        [IgnoreMember]
 
         private LightData _lightData;
+        [IgnoreMember]
         private int _shadowMapIndex = -1;
 
         public override ValueTask OnStart(WorldRenderer renderer)
@@ -153,11 +181,12 @@ namespace RockEngine.Core.ECS.Components
             {
                 GetShadowMatrix.Invoke();
             }
-            
+
             _lightData = new LightData
             {
                 PositionAndType = new Vector4(Entity.Transform.WorldPosition, (float)Type),
-                DirectionAndRadius = new Vector4(Direction, Radius),
+                // FIX: Use Forward vector, not Euler angles!
+                DirectionAndRadius = new Vector4(Entity.Transform.Forward, Radius),
                 ColorAndIntensity = new Vector4(Color, Intensity),
                 Cutoffs = new Vector2(InnerCutoff, OuterCutoff),
                 ShadowParams = new Vector4(ShadowBias, ShadowStrength, CastShadows ? 1.0f : 0.0f, _shadowMapIndex),
@@ -167,7 +196,7 @@ namespace RockEngine.Core.ECS.Components
             return ValueTask.CompletedTask;
         }
 
-        
+
 
         public ref LightData GetLightData()
         {
@@ -185,7 +214,7 @@ namespace RockEngine.Core.ECS.Components
         private Matrix4x4[] UpdateSpotShadowMatrices()
         {
             var lightPos = Entity.Transform.WorldPosition;
-            var lightDir = Vector3.Normalize(Direction);
+            var lightDir = Vector3.Normalize(Entity.Transform.EulerAngles);
 
             // OuterCutoff is cosine of half angle, convert to full FOV angle
             float halfAngle = MathF.Acos(Math.Clamp(OuterCutoff, 0.001f, 0.999f));
@@ -228,7 +257,7 @@ namespace RockEngine.Core.ECS.Components
                 return [Matrix4x4.Identity];
 
             var matrices = new Matrix4x4[6];
-            var position = Entity.Transform.Position;
+            var position = Entity.Transform.WorldPosition;
             var far = Radius;
 
             // Calculate the 6 view-projection matrices for cube map faces
@@ -460,17 +489,16 @@ namespace RockEngine.Core.ECS.Components
         }
     }
 
-    [StructLayout(LayoutKind.Sequential, Pack = 16)]
+    [GLSLStruct(GLSLMemoryLayout.Scalar)]
     public struct LightData
     {
-
         public Vector4 PositionAndType;       // 16 bytes
         public Vector4 DirectionAndRadius;    // 16 bytes  
         public Vector4 ColorAndIntensity;     // 16 bytes
-        public Vector2 Cutoffs;               // 8 bytes
-        public Vector2 _padding;              // 8 bytes explicit padding
         public Vector4 ShadowParams;          // 16 bytes
         public Matrix4x4 ShadowMatrix;        // 64 bytes
+        public Vector2 Cutoffs;               // 8 bytes
+
         public static ulong DataSize { get; } = (ulong)Marshal.SizeOf<LightData>();
     }
 }

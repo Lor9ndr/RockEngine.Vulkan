@@ -1,14 +1,14 @@
-﻿//using ImGuiNET;
-
+﻿
 using NLog;
 
 using RockEngine.Vulkan;
 
 using Silk.NET.Vulkan;
 
+using SkiaSharp;
+
 using System.Collections.Concurrent;
 using System.Diagnostics;
-using System.Numerics;
 using System.Text;
 
 namespace RockEngine.Core.Diagnostics
@@ -38,25 +38,23 @@ namespace RockEngine.Core.Diagnostics
         private static int _cleanupCounter;
         private static long _currentFrameCount;
 
-        // UI state
-        private static readonly bool[] _expandedNodes = new bool[10000];
-        private static string _searchFilter = string.Empty;
-        private static bool _showOnlySignificant = true;
-        private static float _minDurationFilter = MIN_DISPLAY_DURATION;
-        private static long _lastFrameCount;
-        private static double _fps;
-        private static readonly Stopwatch _updateTimer = Stopwatch.StartNew();
 
         // Thread-local current scopes
         private static readonly AsyncLocal<ScopeInfo> _currentCpuScope = new();
         private static readonly AsyncLocal<ScopeInfo> _currentGpuScope = new();
 
         // Root scopes
-        private static readonly ScopeInfo _cpuRoot;
-        private static readonly ScopeInfo _gpuRoot;
+        public static readonly ScopeInfo CpuRoot;
+        public static readonly ScopeInfo GpuRoot;
+
+        public static IReadOnlyDictionary<int, List<int>> ChildScopesByParentId => _childScopesByParentId;
+        public static ArraySegment<ScopeData> ScopeDataArray => _scopeDataArray;
+        public static bool GPUTimestampsSupported => _gpuTimestampsSupported;
+        public static ArraySegment<WeakReference<ScopeInfo>> ScopesById => _scopesById;
 
         // Track if GPU timestamps are supported
         private static bool _gpuTimestampsSupported = false;
+
 
         // String interning helper
         private static string InternString(string str)
@@ -96,23 +94,21 @@ namespace RockEngine.Core.Diagnostics
             var cpuRootName = InternString("CPU");
             var gpuRootName = InternString("GPU");
 
-            _cpuRoot = new ScopeInfo(1, cpuRootName, null, cpuRootName);
-            _gpuRoot = new ScopeInfo(2, gpuRootName, null, gpuRootName);
+            CpuRoot = new ScopeInfo(1, cpuRootName, null, cpuRootName);
+            GpuRoot = new ScopeInfo(2, gpuRootName, null, gpuRootName);
 
-            _scopesByPath[cpuRootName] = _cpuRoot;
-            _scopesByPath[gpuRootName] = _gpuRoot;
-            _scopesById[1] = new WeakReference<ScopeInfo>(_cpuRoot);
-            _scopesById[2] = new WeakReference<ScopeInfo>(_gpuRoot);
+            _scopesByPath[cpuRootName] = CpuRoot;
+            _scopesByPath[gpuRootName] = GpuRoot;
+            _scopesById[1] = new WeakReference<ScopeInfo>(CpuRoot);
+            _scopesById[2] = new WeakReference<ScopeInfo>(GpuRoot);
             _scopeDataArray[1] = new ScopeData();
             _scopeDataArray[2] = new ScopeData();
             _childScopesByParentId[1] = new List<int>();
             _childScopesByParentId[2] = new List<int>();
-            _expandedNodes[1] = true;
-            _expandedNodes[2] = true;
 
             // Initialize thread locals
-            _currentCpuScope.Value = _cpuRoot;
-            _currentGpuScope.Value = _gpuRoot;
+            _currentCpuScope.Value = CpuRoot;
+            _currentGpuScope.Value = GpuRoot;
         }
 
         public static void Initialize(VulkanContext context)
@@ -124,6 +120,7 @@ namespace RockEngine.Core.Diagnostics
             if (!_gpuTimestampsSupported)
             {
                 _logger.Warn("GPU timestamp queries are not supported on this device. GPU profiling will be disabled.");
+                return;
             }
 
             _timestampPeriod = properties.Limits.TimestampPeriod;
@@ -173,9 +170,8 @@ namespace RockEngine.Core.Diagnostics
 
             var frame = _frameData[frameIndex];
             frame.BeginFrame();
-            // Reset the query pool immediately
-            frame.ResetQueryPool();
         }
+      
 
         public static void ProcessQueries(VulkanContext context, uint frameIndex)
         {
@@ -209,7 +205,7 @@ namespace RockEngine.Core.Diagnostics
                 return null;
             }
 
-            var frame = _frameData[frameIndex % _maxFramesPerFlight];
+            var frame = _frameData[frameIndex];
             return frame.QueryPool;
         }
 
@@ -263,148 +259,6 @@ namespace RockEngine.Core.Diagnostics
                 }
             }
         }
-
-       /* public static void DrawMetrics()
-        {
-            double elapsedSeconds = _updateTimer.Elapsed.TotalSeconds;
-            if (elapsedSeconds > UPDATE_INTERVAL_SECONDS)
-            {
-                long currentFrame = Interlocked.Read(ref _currentFrameCount);
-                _fps = (currentFrame - _lastFrameCount) / elapsedSeconds;
-                _lastFrameCount = currentFrame;
-                _updateTimer.Restart();
-            }
-
-            ImGui.Text($"FPS: {_fps:0.0}");
-
-            if (!_gpuTimestampsSupported)
-            {
-                ImGui.TextColored(new Vector4(1, 0, 0, 1), "GPU Timestamps Not Supported");
-            }
-
-            ImGui.Checkbox("Only Significant", ref _showOnlySignificant);
-            ImGui.SameLine();
-            ImGui.SetNextItemWidth(100);
-            ImGui.DragFloat("Min Duration (ms)", ref _minDurationFilter, 0.01f, 0.01f, 100f);
-            ImGui.SameLine();
-            ImGui.SetNextItemWidth(200);
-            ImGui.InputText("Search", ref _searchFilter, 100);
-
-            if (ImGui.CollapsingHeader("CPU Timings", ImGuiTreeNodeFlags.DefaultOpen))
-            {
-                DrawChildScopes(_cpuRoot.Id);
-            }
-
-            if (ImGui.CollapsingHeader("GPU Timings", ImGuiTreeNodeFlags.DefaultOpen))
-            {
-                if (_gpuTimestampsSupported)
-                {
-                    DrawChildScopes(_gpuRoot.Id);
-                }
-                else
-                {
-                    ImGui.Text("GPU timestamps not supported on this device");
-                }
-            }
-        }
-
-        private static void DrawChildScopes(int parentId)
-        {
-            if (!_childScopesByParentId.TryGetValue(parentId, out var children))
-            {
-                return;
-            }
-
-            lock (children)
-            {
-                foreach (int childId in children)
-                {
-                    var scopeID = _scopesById[childId];
-                    if (scopeID != null && scopeID.TryGetTarget(out var scope))
-                    {
-                        var data = _scopeDataArray[childId];
-                        if (data != null)
-                        {
-                            DrawScopeNode(scope, data);
-                        }
-                    }
-                }
-            }
-        }
-
-        private static void DrawScopeNode(ScopeInfo scope, ScopeData data)
-        {
-            bool hasChildren = _childScopesByParentId.TryGetValue(scope.Id, out var children) &&
-                               children.Count > 0;
-
-            // Filtering
-            bool shouldShow = !_showOnlySignificant || data.AverageDuration >= _minDurationFilter || hasChildren;
-            shouldShow = shouldShow && (string.IsNullOrEmpty(_searchFilter) ||
-                         scope.FullPath.Contains(_searchFilter, StringComparison.OrdinalIgnoreCase));
-
-            if (!shouldShow)
-            {
-                return;
-            }
-
-            float displayDuration = data.LastDuration > 0 ? data.LastDuration : data.AverageDuration;
-            float fraction = Math.Clamp(displayDuration / 33f, 0f, 1f);
-
-            ImGui.ProgressBar(fraction, new Vector2(100, 20), $"{displayDuration:0.00}ms");
-            ImGui.SameLine();
-
-            bool isExpanded = _expandedNodes[scope.Id];
-            ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags.FramePadding | ImGuiTreeNodeFlags.OpenOnArrow;
-            if (!hasChildren)
-            {
-                flags |= ImGuiTreeNodeFlags.Leaf;
-            }
-
-            bool nodeOpen = ImGui.TreeNodeEx($"{scope.Name}##{scope.Id}", flags);
-
-            if (ImGui.IsItemClicked())
-            {
-                _expandedNodes[scope.Id] = !isExpanded;
-            }
-
-            if (nodeOpen)
-            {
-                if (hasChildren)
-                {
-                    ImGui.Indent(10);
-                    lock (children)
-                    {
-                        foreach (int childId in children)
-                        {
-                            var scopeID = _scopesById[childId];
-                            if (scopeID != null && scopeID.TryGetTarget(out var childScope))
-                            {
-                                var childScopeData = _scopeDataArray[childId];
-                                if (childScopeData != null)
-                                {
-                                    DrawScopeNode(childScope, childScopeData);
-                                }
-                            }
-                        }
-                    }
-                    ImGui.Unindent(10);
-                }
-                ImGui.TreePop();
-            }
-
-            // Tooltip with detailed information
-            if (ImGui.IsItemHovered())
-            {
-                *//*//ImGui.BeginTooltip();
-                ImGui.Text($"Full Path: {scope.FullPath}");
-                ImGui.Text($"Average: {data.AverageDuration:0.00}ms");
-                ImGui.Text($"Last: {data.LastDuration:0.00}ms");
-                ImGui.Text($"Min: {data.MinDuration:0.00}ms");
-                ImGui.Text($"Max: {data.MaxDuration:0.00}ms");
-                ImGui.Text($"Samples: {data.SampleCount}");
-                //ImGui.EndTooltip();*//*
-            }
-        }*/
 
         private static ScopeInfo GetOrCreateScope(string name, ScopeInfo parent)
         {
@@ -476,7 +330,7 @@ namespace RockEngine.Core.Diagnostics
             }
         }
 
-        private sealed class ScopeInfo
+        public sealed class ScopeInfo
         {
             public int Id { get; }
             public string Name { get; }
@@ -492,7 +346,7 @@ namespace RockEngine.Core.Diagnostics
             }
         }
 
-        private sealed class ScopeData
+        public sealed class ScopeData
         {
             public float LastDuration;
             public float AverageDuration;
@@ -540,7 +394,7 @@ namespace RockEngine.Core.Diagnostics
             public CpuSectionTracker(string name)
             {
                 _previousScope = _currentCpuScope.Value;
-                var parent = _previousScope ?? _cpuRoot;
+                var parent = _previousScope ?? CpuRoot;
                 var scopeInfo = GetOrCreateScope(name, parent);
                 _scopeId = scopeInfo.Id;
                 _sw = ValueStopwatch.StartNew();
@@ -590,7 +444,7 @@ namespace RockEngine.Core.Diagnostics
             public GpuSectionTracker(string name, UploadBatch batch, PerFrameData frame)
             {
                 _previousScope = _currentGpuScope.Value;
-                var parent = _previousScope ?? _gpuRoot;
+                var parent = _previousScope ?? GpuRoot;
                 var scopeInfo = GetOrCreateScope(name, parent);
                 _scopeId = scopeInfo.Id;
                 _batch = batch;
@@ -599,10 +453,11 @@ namespace RockEngine.Core.Diagnostics
                 _disposed = false;
 
                 // Reserve queries first to get the start index
-                _startIndex = frame.ReserveQueries(_scopeId, 2);
-
+                _startIndex = _frame.ReserveQueries(_scopeId, 2); 
+                // resetting query pools by cmd, not by host.
+                _batch.ResetQueryPool(_frame.QueryPool, _startIndex, 2);
                 // Write start timestamp
-                batch.WriteTimestamp(PipelineStageFlags.BottomOfPipeBit, frame.QueryPool, _startIndex);
+                _batch.WriteTimestamp(PipelineStageFlags2.AllCommandsBit, _frame.QueryPool, _startIndex);
 
                 _currentGpuScope.Value = scopeInfo;
             }
@@ -617,10 +472,11 @@ namespace RockEngine.Core.Diagnostics
                 _disposed = true;
 
                 // Write end timestamp
-                _batch.WriteTimestamp(PipelineStageFlags.BottomOfPipeBit, _frame.QueryPool, _startIndex + 1);
+                _batch.WriteTimestamp(PipelineStageFlags2.AllCommandsBit, _frame.QueryPool, _startIndex + 1);
                 
                 _currentGpuScope.Value = _previousScope;
             }
+           
         }
 
         public sealed class PerFrameData : IDisposable
@@ -629,7 +485,6 @@ namespace RockEngine.Core.Diagnostics
             private readonly List<GpuQuery> _queries = new();
             private uint _nextQueryIndex = 0;
             private bool _frameStarted = false;
-            private bool _queriesUsedInFrame = false; // Track if queries were used
 
             public bool FrameStarted => _frameStarted;
             public uint QueryCount => _nextQueryIndex;
@@ -653,9 +508,17 @@ namespace RockEngine.Core.Diagnostics
                 };
 
                 QueryPool = VkQueryPool.Create(context, createInfo);
+            }
 
-                // Reset the entire query pool initially
-                ResetQueryPool();
+            internal void ResetQueryPool(UploadBatch currentBatch)
+            {
+                Console.WriteLine();
+                currentBatch.ResetQueryPool(QueryPool, 0, _nextQueryIndex);
+                lock (_queryLock)
+                {
+                    _nextQueryIndex = 0;
+                    _queries.Clear();
+                }
             }
 
             public void Dispose()
@@ -670,35 +533,9 @@ namespace RockEngine.Core.Diagnostics
                     return;
                 }
 
-                // Reset query pool at the beginning of the frame if queries were used in previous frame
-                if (_queriesUsedInFrame)
-                {
-                    ResetQueryPool();
-                }
-
                 _nextQueryIndex = 0;
                 _queries.Clear();
                 _frameStarted = true;
-                _queriesUsedInFrame = false; // Reset for this frame
-            }
-
-            public void ResetQueryPool()
-            {
-                if (QueryPool != null && QueryPool.VkObjectNative.Handle != 0)
-                {
-                    var vk = VulkanContext.Vk;
-                    unsafe
-                    {
-                        // Use vkCmdResetQueryPool for better performance (reset in command buffer)
-                        // Or use vkResetQueryPool for host reset
-                        vk.ResetQueryPool(
-                            _context.Device,
-                            QueryPool.VkObjectNative,
-                            0,
-                            QUERIES_PER_FRAME
-                        );
-                    }
-                }
             }
 
             public unsafe void Process(VulkanContext context)
@@ -710,24 +547,36 @@ namespace RockEngine.Core.Diagnostics
                 }
 
                 var vk = VulkanContext.Vk;
+                uint queryCount = _nextQueryIndex;
 
-                // Read timestamp results
-                var timestamps = stackalloc ulong[(int)_nextQueryIndex];
+                // Allocate space for (timestamp, availability) pairs
+                ulong* timestampsAndAvailability = stackalloc ulong[(int)queryCount * 2];
+                nuint dataSize = queryCount * sizeof(ulong) * 2; // Total size in bytes
+                nuint stride = sizeof(ulong) * 2; // Stride between query results (16 bytes)
+
                 {
                     var result = vk.GetQueryPoolResults(
                         context.Device,
                         QueryPool.VkObjectNative,
                         0,
-                        _nextQueryIndex,
-                        _nextQueryIndex * sizeof(ulong),
-                        timestamps,
-                        sizeof(ulong),
-                        QueryResultFlags.Result64Bit | QueryResultFlags.ResultWaitBit
+                        queryCount,
+                        dataSize,
+                        timestampsAndAvailability,
+                        stride,
+                        QueryResultFlags.Result64Bit | QueryResultFlags.ResultWithAvailabilityBit
                     );
 
                     if (result != Result.Success)
                     {
-                        _logger.Warn($"Failed to read query pool results: {result}");
+                        if (result == Result.NotReady)
+                        {
+                            // Results aren't ready yet, try again next frame
+                        }
+                        else
+                        {
+                            _logger.Warn($"Failed to read query pool results: {result}");
+                        }
+
                         _frameStarted = false;
                         return;
                     }
@@ -736,15 +585,37 @@ namespace RockEngine.Core.Diagnostics
                 // Process each query pair
                 foreach (var query in _queries)
                 {
-                    if (query.StartIndex + 1 >= _nextQueryIndex)
+                    if (query.StartIndex + 1 >= queryCount)
                     {
                         continue;
                     }
 
-                    ulong startTime = timestamps[query.StartIndex];
-                    ulong endTime = timestamps[query.StartIndex + 1];
+                    // Each query takes 2 slots: [timestamp, availability]
+                    int startBaseIdx = (int)query.StartIndex * 2;
+                    int endBaseIdx = (int)(query.StartIndex + 1) * 2;
 
+                    // Get timestamp and availability for start query
+                    ulong startTime = timestampsAndAvailability[startBaseIdx];
+                    ulong startTimeAvailability = timestampsAndAvailability[startBaseIdx + 1];
+
+                    // Get timestamp and availability for end query
+                    ulong endTime = timestampsAndAvailability[endBaseIdx];
+                    ulong endTimeAvailability = timestampsAndAvailability[endBaseIdx + 1];
+
+                    // Check if both results are available (availability != 0)
+                    if (startTimeAvailability == 0 || endTimeAvailability == 0)
+                    {
+                        continue; // Skip this query pair if results aren't ready
+                    }
+
+                    // Sanity check for valid timestamps (though availability check is primary)
                     if (startTime == 0 || endTime == 0)
+                    {
+                        continue;
+                    }
+
+                    // Ensure end time is greater than start time (should be for valid queries)
+                    if (endTime <= startTime)
                     {
                         continue;
                     }
@@ -758,7 +629,6 @@ namespace RockEngine.Core.Diagnostics
                 }
 
                 _frameStarted = false;
-                // Don't reset here - reset will happen in BeginFrame of next frame
             }
 
             public uint ReserveQueries(int scopeId, uint count)
@@ -785,10 +655,11 @@ namespace RockEngine.Core.Diagnostics
                     uint startIndex = _nextQueryIndex;
                     _queries.Add(new GpuQuery(scopeId, (int)startIndex));
                     _nextQueryIndex += count;
-                    _queriesUsedInFrame = true; // Mark that queries were used this frame
                     return startIndex;
                 }
             }
+
+          
 
             private readonly struct GpuQuery
             {

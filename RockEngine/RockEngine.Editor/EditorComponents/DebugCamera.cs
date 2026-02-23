@@ -4,6 +4,7 @@ using RockEngine.Core.ECS.Components;
 using RockEngine.Core.Rendering;
 
 using Silk.NET.Input;
+using Silk.NET.Input.Extensions;
 
 using System.Numerics;
 
@@ -11,7 +12,7 @@ namespace RockEngine.Editor.EditorComponents
 {
     internal partial class DebugCamera : Camera
     {
-        private readonly IInputContext _inputContext;
+        private readonly InputManager _inputManager;
         private float _movementSpeed = 5.0f; // Speed of movement
         private readonly float _mouseSensitivity = 0.1f; // Sensitivity for mouse movement
         private Vector2 _lastMousePosition;
@@ -19,15 +20,28 @@ namespace RockEngine.Editor.EditorComponents
         public bool CanMove = false;
         public override RenderLayerMask VisibleLayers { get;set; } = RenderLayerMask.All;
 
-        public DebugCamera(IInputContext inputContext )
+        public DebugCamera(InputManager inputManager)
         {
-            _inputContext = inputContext;
+            _inputManager = inputManager;
 
             // Ensure the mouse is captured and events are handled
-            foreach (var mouse in _inputContext.Mice)
+
+            foreach (var mouse in _inputManager.Context.Mice)
             {
                 mouse.MouseMove += OnMouseMove;
             }
+            _inputManager.OnInputActionChanged += (oldContext, newContext)=>
+            {
+                foreach (var mouse in oldContext.Mice)
+                {
+                    mouse.MouseMove -= OnMouseMove;
+                }
+                foreach (var mouse in newContext.Mice)
+                {
+                    mouse.MouseMove += OnMouseMove;
+                }
+
+            };
         }
 
     
@@ -39,13 +53,13 @@ namespace RockEngine.Editor.EditorComponents
 
         private void HandleKeyboardInput()
         {
-            if (_inputContext == null || !CanMove)
+            if (_inputManager == null || !CanMove)
             {
                 return;
             }
-            _movementSpeed += _inputContext.Mice[0].ScrollWheels[0].Y;
+            _movementSpeed += _inputManager.PrimaryMouse.CaptureState().GetScrollWheels()[0].Y;
 
-            foreach (var keyboard in _inputContext.Keyboards)
+            var keyboard = _inputManager.PrimaryKeyboard;
             {
                 var position = Entity.Transform.WorldPosition;
 
@@ -64,6 +78,7 @@ namespace RockEngine.Editor.EditorComponents
                 // Move right
                 if (keyboard.IsKeyPressed(Key.D))
                 {
+
                     position += Right * _movementSpeed * Time.DeltaTime;
                 }
 

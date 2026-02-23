@@ -67,10 +67,6 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
                 batch.SetScissor(_renderer.SwapchainTarget.Scissor);
 
                 batch.BindPipeline(_screenPipeline, PipelineBindPoint.Graphics);
-               /* if(!_screenMaterial.AddSharedBinding)
-                {
-                    return;
-                }*/
                 _bindingManager.BindResourcesForMaterial(renderer.FrameIndex, _screenMaterialPass, batch);
                 batch.Draw(3, 1, 0, 0);
             }
@@ -112,7 +108,7 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
         {
             if(!Bindings.TryGetValue(outputTexture, out var binding))
             {
-                binding = new TextureBinding(0, 0, 0,1,outputTexture);
+                binding = new TextureBinding(0, 0, 0,1, ImageLayout.ShaderReadOnlyOptimal, outputTexture);
                 Bindings.Add(outputTexture, binding);
             }
             _screenMaterialPass.BindResource(binding);

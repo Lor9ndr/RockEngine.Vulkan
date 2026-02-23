@@ -1,12 +1,21 @@
-﻿namespace RockEngine.Core.Rendering
+﻿using MessagePack;
+
+namespace RockEngine.Core.Rendering
 {
 
+    [MessagePackObject]
     public class RenderLayer
     {
+        [Key(0)]
         public uint ID { get; }
+        [Key(1)]
         public string Name { get; }
+        [Key(2)]
         public int Order { get; set; }
+        [Key(3)]
         public bool Enabled { get; set; }
+
+        [Key(4)]
         public RenderLayerMask Mask => (RenderLayerMask)ID;
 
         public RenderLayer(uint id, string name, int order, bool enabled)
@@ -15,6 +24,10 @@
             Name = name;
             Order = order;
             Enabled = enabled;
+        }
+
+        public RenderLayer()
+        {
         }
 
         public override string ToString() => $"{Name} (ID: {ID}, Order: {Order})";

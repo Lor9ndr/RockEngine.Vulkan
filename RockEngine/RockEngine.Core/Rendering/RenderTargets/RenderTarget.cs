@@ -16,7 +16,7 @@ namespace RockEngine.Core.Rendering.RenderTargets
         public Texture2D OutputTexture { get; protected set; }
         public virtual Viewport Viewport { get; protected set; }
         public virtual Rect2D Scissor { get; protected set; }
-        public ClearValue[] ClearValues { get; protected set; }
+        public Memory<ClearValue> ClearValues { get; protected set; }
         public Material? Material { get;set;}
 
         protected VulkanContext Context { get; }

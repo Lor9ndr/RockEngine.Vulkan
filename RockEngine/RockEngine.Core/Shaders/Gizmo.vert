@@ -1,5 +1,8 @@
 #version 460
 #extension GL_KHR_vulkan_glsl:enable
+#extension GL_EXT_scalar_block_layout :enable
+
+#include "Include/common.glsl"
 
 layout(location = 0) in vec3 aPosition;
 layout(location = 1) in vec3 aNormal;
@@ -10,10 +13,9 @@ layout(set = 1, binding = 0) readonly buffer ModelData {
     mat4 models[];
 };
 
-layout(set = 0, binding = 0) uniform GlobalUbo_Dynamic {
-    mat4 viewProj;
-    vec3 camPos;
-} ubo;
+layout(scalar, set = 0, binding = 0) uniform GlobalUbo_Dynamic {
+   GlobalUBO ubo;
+};
 
 layout(push_constant) uniform PushConstants {
     vec4 gizmoColor;

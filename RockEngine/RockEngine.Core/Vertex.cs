@@ -1,4 +1,6 @@
-﻿using RockEngine.Core.Attributes;
+﻿using MessagePack;
+
+using RockEngine.Core.Attributes;
 
 using Silk.NET.Vulkan;
 
@@ -7,19 +9,18 @@ using System.Runtime.InteropServices;
 
 namespace RockEngine.Core
 {
-    [StructLayout(LayoutKind.Sequential, Pack = 16)]
+    [MessagePackObject]
     public struct Vertex : IVertex
     {
-        [Serialize]
+        [Key(0)]
         public Vector4 Position;
-        [Serialize]
+        [Key(1)]
         public Vector4 Normal;
-        [Serialize]
+        [Key(2)]
         public Vector2 TexCoord;
-        private Vector2 _glslPadding1;
-        [Serialize]
+        [Key(3)]
         public Vector4 Tangent;
-        [Serialize]
+        [Key(4)]
         public Vector4 Bitangent;
 
         public static float Size = Marshal.SizeOf<Vertex>();
@@ -35,6 +36,10 @@ namespace RockEngine.Core
             Position = new Vector4(xp, yp, zp,0);
             Normal = new Vector4(xc, yc, zc, 0);
             TexCoord = new Vector2(xt, yt);
+        }
+
+        public Vertex() 
+        {
         }
 
         public static VertexInputBindingDescription GetBindingDescription() => new VertexInputBindingDescription()
@@ -55,9 +60,11 @@ namespace RockEngine.Core
     }
 
     [StructLayout(LayoutKind.Sequential, Pack = 16)]
+    [MessagePackObject]
     public struct PositionVertex : IVertex
     {
-        public System.Numerics.Vector4 Position;
+        [Key(0)]
+        public Vector4 Position;
 
         public static float Size = Marshal.SizeOf<Vertex>();
 

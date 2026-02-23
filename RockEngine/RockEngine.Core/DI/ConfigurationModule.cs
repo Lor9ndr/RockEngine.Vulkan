@@ -13,7 +13,7 @@ namespace RockEngine.Core.DI.Modules
             {
                 container.Register<AppSettings>(()=>
                 {
-                    var cfg =  ConfigLoader.LoadConfig(container);
+                    var cfg =  ConfigLoader.LoadConfigAsync(container).GetAwaiter().GetResult();
                     return cfg;
                 }, Lifestyle.Singleton);
             }

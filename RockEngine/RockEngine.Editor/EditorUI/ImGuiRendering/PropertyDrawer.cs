@@ -1,11 +1,13 @@
 ﻿using ImGuiNET;
 
+using RockEngine.Assets;
 using RockEngine.Core.Assets;
 using RockEngine.Core.Attributes;
 using RockEngine.Core.ECS.Components;
 using RockEngine.Core.Helpers;
 using RockEngine.Core.Rendering.Texturing;
 using RockEngine.Editor.EditorUI.ImGuiRendering.PropertyHandlers;
+using RockEngine.Editor.EditorUI.Thumbnails;
 
 using System.Numerics;
 using System.Reflection;
@@ -14,18 +16,21 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
 {
     public class PropertyDrawer
     {
-        private readonly AssetManager _assetManager;
+        private readonly IAssetManager _assetManager;
         private readonly ImGuiController _imGuiController;
         private readonly Dictionary<Type, IReadOnlyList<UIPropertyAccessor>> _propertyCache;
         private readonly Dictionary<Type, IPropertyHandler> _propertyHandlers;
 
-        public AssetManager AssetManager => _assetManager;
+        public IAssetManager AssetManager => _assetManager;
         public ImGuiController ImGuiController => _imGuiController;
 
-        public PropertyDrawer(AssetManager assetManager, ImGuiController imGuiController)
+        public IThumbnailService ThumbnailService { get; }
+
+        public PropertyDrawer(IAssetManager assetManager, ImGuiController imGuiController, IThumbnailService thumbnailService)
         {
             _assetManager = assetManager;
             _imGuiController = imGuiController;
+            ThumbnailService = thumbnailService;
             _propertyCache = new Dictionary<Type, IReadOnlyList<UIPropertyAccessor>>();
             _propertyHandlers = new Dictionary<Type, IPropertyHandler>();
             InitializeHandlers();

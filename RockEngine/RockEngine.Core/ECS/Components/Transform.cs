@@ -1,32 +1,46 @@
-﻿using RockEngine.Core.Extensions;
+﻿using MessagePack;
+
+using RockEngine.Core.Extensions;
 using RockEngine.Core.Rendering;
 
 using System.Numerics;
 
 namespace RockEngine.Core.ECS.Components
 {
+    [MessagePackObject(AllowPrivate = true)]
     public partial class Transform : Component
     {
+        [IgnoreMember]
         private Vector3 _position = Vector3.Zero;
+        [IgnoreMember]
         private Quaternion _rotation = Quaternion.Identity;
+        [IgnoreMember]
         private Vector3 _scale = Vector3.One;
+        [IgnoreMember]
+
         private Transform? _parent;
+        [IgnoreMember]
+
         private Matrix4x4 _worldMatrix;
+        [IgnoreMember]
         private bool _isDirty = true;
         public event Action<Transform>? TransformChanged;
 
+        [Key(13)]
         public Vector3 Position
         {
             get => _position;
             set { _position = value; SetDirty(); }
         }
 
+        [Key(14)]
         public Vector3 LocalPosition
         {
             get => _position;
             set { _position = value; SetDirty(); }
         }
 
+        [Key(15)]
         public Vector3 EulerAngles
         {
             get => _rotation.QuaternionToEuler();
@@ -37,36 +51,42 @@ namespace RockEngine.Core.ECS.Components
             }
         }
 
+        [Key(16)]
         public Quaternion Rotation
         {
             get => _rotation;
             set { _rotation = value; SetDirty(); }
         }
 
+        [Key(17)]
         public Quaternion LocalRotation
         {
             get => _rotation;
             set { _rotation = value; SetDirty(); }
         }
 
+        [Key(18)]
         public Vector3 Scale
         {
             get => _scale;
             set { _scale = value; SetDirty(); }
         }
 
+        [Key(19)]
         public Vector3 LocalScale
         {
             get => _scale;
             set { _scale = value; SetDirty(); }
         }
 
+        [IgnoreMember]
         public Transform? Parent
         {
             get => _parent;
             set => SetParent(value);
         }
 
+        [IgnoreMember]
         public Matrix4x4 LocalMatrix
         {
             get
@@ -76,6 +96,8 @@ namespace RockEngine.Core.ECS.Components
                     * Matrix4x4.CreateTranslation(_position);
             }
         }
+
+        [IgnoreMember]
 
         public Matrix4x4 WorldMatrix
         {
@@ -89,8 +111,11 @@ namespace RockEngine.Core.ECS.Components
             }
         }
 
+        [IgnoreMember]
+
         public Vector3 WorldPosition => WorldMatrix.Translation;
 
+        [IgnoreMember]
         public Quaternion WorldRotation
         {
             get
@@ -104,6 +129,7 @@ namespace RockEngine.Core.ECS.Components
             }
         }
 
+        [IgnoreMember]
         public Vector3 WorldScale
         {
             get
@@ -122,12 +148,22 @@ namespace RockEngine.Core.ECS.Components
             }
         }
 
+        [IgnoreMember]
         public Vector3 Right => Vector3.Transform(Vector3.UnitX, WorldRotation);
+
+        [IgnoreMember]
         public Vector3 Up => Vector3.Transform(Vector3.UnitY, WorldRotation);
+
+        [IgnoreMember]
         public Vector3 Forward => Vector3.Transform(Vector3.UnitZ, WorldRotation);
 
+        [IgnoreMember]
         public Vector3 LocalRight => Vector3.Transform(Vector3.UnitX, _rotation);
+
+        [IgnoreMember]
         public Vector3 LocalUp => Vector3.Transform(Vector3.UnitY, _rotation);
+
+        [IgnoreMember]
         public Vector3 LocalForward => Vector3.Transform(Vector3.UnitZ, _rotation);
 
         public Transform(Vector3 position, Quaternion rotation, Vector3 scale)

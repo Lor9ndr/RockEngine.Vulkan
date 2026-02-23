@@ -67,7 +67,7 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
                 var matrixBinding = _transformManager.GetCurrentBinding(frameIndex);
                 var globalUboBinding = _globalUbo.GetBinding((uint)camIndex);
 
-                var drawGroups = _indirectCommands.GetDrawGroups(Name);
+                var drawGroups = _indirectCommands.GetDrawGroups<PostLightPass>();
                 if (drawGroups.Count == 0)
                 {
                     return;
@@ -118,6 +118,7 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
                         lastMaterialPass = drawGroup.MaterialPass;
                         lastMaterialPass.CmdPushConstants(batch);
                     }
+                    
 
                     // Issue draw command
                     if (drawGroup.IsMultiDraw && _supportsMultiDraw)

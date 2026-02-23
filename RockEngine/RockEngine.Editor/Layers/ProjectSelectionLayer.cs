@@ -2,6 +2,7 @@
 
 using NLog;
 
+using RockEngine.Assets;
 using RockEngine.Core.Rendering;
 using RockEngine.Editor.EditorUI;
 using RockEngine.Editor.Extensions;
@@ -125,7 +126,7 @@ namespace RockEngine.Editor.Layers
                     // Browse for project button
                     if (ImGui.Button("Browse...") && !_isOperationInProgress)
                     {
-                        var path = PlatformFileDialog.OpenFile("RockEngine Project|*.rockproj", "Open Project");
+                        var path = PlatformFileDialog.OpenFile($"RockEngine Project|*{AssetConstants.ProjectExtension}", "Open Project");
                         if (!string.IsNullOrEmpty(path) && File.Exists(path))
                         {
                             _ = Task.Factory.StartNew(() => OpenProjectAsync(path), CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Current);
@@ -203,7 +204,7 @@ namespace RockEngine.Editor.Layers
                         }
                         else
                         {
-                            var fullPath = Path.Combine(_newProjectPath, _newProjectName + ".rockproj");
+                            var fullPath = Path.Combine(_newProjectPath, _newProjectName + AssetConstants.ProjectExtension);
                             _ = CreateProjectAsync(_newProjectName, fullPath);
                         }
                     }

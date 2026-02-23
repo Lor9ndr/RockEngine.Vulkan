@@ -4,7 +4,7 @@ using ZLinq;
 
 namespace RockEngine.Vulkan
 {
-    public class VkCommandBuffer : VkObject<CommandBuffer>, IBegginable<CommandBufferBeginInfo>
+    public class VkCommandBuffer : VkObject<CommandBuffer>
     {
         private readonly VulkanContext _context;
         private readonly VkCommandPool _commandPool;
@@ -59,11 +59,10 @@ namespace RockEngine.Vulkan
                     });
                 }
             }
-          
         }
         public void Begin(in CommandBufferBeginInfo beginInfo, Action untilEndAction)
         {
-            if (_isInRecordingState)
+            if (!_isInRecordingState)
             {
                 Begin(in beginInfo);
             }
@@ -252,6 +251,11 @@ namespace RockEngine.Vulkan
             VulkanContext.Vk.CmdPipelineBarrier(this, srcStageMask, dstStageMask, dependencyFlags, memoryBarrierCount, pMemoryBarriers, bufferMemoryBarrierCount, pBufferMemoryBarriers, imageMemoryBarrierCount, pImageMemoryBarriers);
         }
 
+        public void PipelineBarrier2(in DependencyInfo dependencyInfo)
+        {
+            VulkanContext.Vk.CmdPipelineBarrier2(this, in dependencyInfo);
+        }
+
         public unsafe void CopyBufferToImage(VkBuffer srcBuffer, VkImage dstImage, ImageLayout dstImageLayout, uint regionCount, BufferImageCopy* pRegions)
         {
             VulkanContext.Vk.CmdCopyBufferToImage(this, srcBuffer, dstImage, dstImageLayout, regionCount, pRegions);
@@ -275,7 +279,7 @@ namespace RockEngine.Vulkan
 
         public void ResetQueryPool(VkQueryPool queryPool, uint firstQuery, uint queryCount)
         {
-            Vk.ResetQueryPool(_context.Device, queryPool, 0, queryCount);
+            Vk.CmdResetQueryPool(this, queryPool, firstQuery, queryCount);
         }
 
         public void Dispatch(uint groupCountX, uint groupCountY, uint groupCountZ)
@@ -291,6 +295,21 @@ namespace RockEngine.Vulkan
                 Stencil = stencil
             };
             Vk.CmdClearDepthStencilImage(this, image, layout,in clearDepthStencilValue, 1, in imageSubresourceRange);
+        }
+
+        public void BeginQuery(VkQueryPool vkQueryPool, uint query, QueryControlFlags flags)
+        {
+            Vk.CmdBeginQuery(this, vkQueryPool, query, flags);
+        }
+
+        internal void EndQuery(VkQueryPool vkQueryPool, uint query)
+        {
+            Vk.CmdEndQuery(this, vkQueryPool, query);
+        }
+
+        internal void BlitImage(VkImage srcImage, ImageLayout srcImageLayout, VkImage dstImage, ImageLayout dstImageLayout, in ImageBlit pRegions, Filter filter)
+        {
+            Vk.CmdBlitImage(this, srcImage, srcImageLayout, dstImage, dstImageLayout, 1, in pRegions, filter);
         }
     }
 }

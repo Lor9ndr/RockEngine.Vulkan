@@ -2,7 +2,7 @@
 #extension GL_EXT_scalar_block_layout : require
 #extension GL_EXT_debug_printf : enable
 
-#include "../../Include/shader_common.glsl"
+#include "../../Include/physics_common.glsl"
 
 layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
 

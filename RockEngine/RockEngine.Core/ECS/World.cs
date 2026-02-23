@@ -102,6 +102,10 @@ namespace RockEngine.Core.ECS
         {
             while (_pendingStartComponents.TryDequeue(out var component))
             {
+                if(component.Entity is null)
+                {
+                    continue;
+                }
                 await component.OnStart(renderer);
             }
         }

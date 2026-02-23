@@ -1,9 +1,10 @@
 ﻿using RockEngine.Core;
-using RockEngine.Core.Assets.AssetData;
+using RockEngine.Core.Assets;
 using RockEngine.Core.Builders;
 using RockEngine.Core.DI;
 using RockEngine.Core.ECS;
 using RockEngine.Core.ECS.Components;
+using RockEngine.Core.Helpers;
 using RockEngine.Core.Rendering;
 using RockEngine.Core.Rendering.Materials;
 using RockEngine.Core.Rendering.Objects;
@@ -17,8 +18,6 @@ using Silk.NET.Vulkan;
 
 using System.Numerics;
 using System.Runtime.InteropServices;
-
-using Plane = RockEngine.Core.Plane;
 
 namespace RockEngine.Editor.EditorComponents
 {
@@ -39,19 +38,23 @@ namespace RockEngine.Editor.EditorComponents
         View = 16
     }
 
-    [StructLayout(LayoutKind.Sequential, Pack = 16)]
+    [GLSLStruct]
     public struct GizmoPushConstants
     {
         public Vector4 GizmoColor;
         public uint GizmoType;
+        private float _padding1;
+        private float _padding2;
+        private float _padding3;
     }
 
-    [StructLayout(LayoutKind.Sequential, Pack = 16)]
+    [GLSLStruct]
     public struct GizmoPushFragConstants
     {
         public uint GizmoType;
         public uint AxisMask;
-        private System.Numerics.Vector2 _glslPadding1;
+        private float _padding1;
+        private float _padding2;
     }
 
     public partial class TransformGizmo : Component
@@ -822,9 +825,7 @@ namespace RockEngine.Editor.EditorComponents
         }
 
         [StructLayout(LayoutKind.Sequential, Pack = 16)]
-#pragma warning disable RE001D // Missing Pack attribute
         public struct GizmoVertex : IVertex
-#pragma warning restore RE001D // Missing Pack attribute
         {
             public System.Numerics.Vector4 Position;
             public System.Numerics.Vector4 Normal;

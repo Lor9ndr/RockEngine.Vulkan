@@ -1,4 +1,6 @@
-﻿using RockEngine.Core.Builders;
+﻿using NLog;
+
+using RockEngine.Core.Builders;
 using RockEngine.Core.Rendering.Managers;
 using RockEngine.Core.Rendering.Objects;
 using RockEngine.Core.Rendering.Passes.SubPasses;
@@ -24,6 +26,7 @@ namespace RockEngine.Core.Rendering.Passes
 
         public List<AttachmentDescription> Attachments { get; private set; }
         public RckRenderPass? RenderPass { get => _renderPass; protected set => _renderPass = value; }
+        protected Logger _logger = LogManager.GetCurrentClassLogger();
 
         protected PassStrategyBase(VulkanContext context, IEnumerable<IRenderSubPass> subPasses)
         {

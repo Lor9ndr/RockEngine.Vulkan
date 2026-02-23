@@ -44,11 +44,6 @@ namespace RockEngine.Core.Rendering.Materials
         private void InitializeDefaultBindings()
         {
             var context = VulkanContext.GetCurrent();
-            if (context == null)
-            {
-                throw new InvalidOperationException("VulkanContext is not available");
-            }
-
             foreach (var setInfo in ReflectionData.DescriptorSets)
             {
                 foreach (var binding in setInfo.Bindings)
@@ -80,7 +75,7 @@ namespace RockEngine.Core.Rendering.Materials
         private ResourceBinding CreateTextureBinding(uint set, DescriptorSetLayoutBindingReflected binding, VulkanContext context)
         {
             var texture = _resourceProvider.GetDefaultTexture(binding, context);
-            return new TextureBinding(set, binding.Binding, 0, binding.DescriptorCount, texture);
+            return new TextureBinding(set, binding.Binding, 0, binding.DescriptorCount, ImageLayout.ShaderReadOnlyOptimal, texture);
         }
 
         private ResourceBinding CreateBufferBinding(uint set, DescriptorSetLayoutBindingReflected binding, VulkanContext context)
@@ -102,10 +97,7 @@ namespace RockEngine.Core.Rendering.Materials
 
         public MaterialPass CreateMaterialPass(RckPipeline pipeline)
         {
-            if (pipeline == null)
-            {
-                throw new ArgumentNullException(nameof(pipeline));
-            }
+            ArgumentNullException.ThrowIfNull(pipeline);
 
             var pass = new MaterialPass(pipeline);
 

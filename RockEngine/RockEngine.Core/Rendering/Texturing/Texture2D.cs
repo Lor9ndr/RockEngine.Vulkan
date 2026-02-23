@@ -1,19 +1,17 @@
-﻿using RockEngine.Core.Helpers;
+﻿using RockEngine.Core.Rendering.Managers;
+using RockEngine.Core.Rendering.ResourceBindings;
 using RockEngine.Vulkan;
 
 using Silk.NET.Maths;
 using Silk.NET.Vulkan;
 
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
-
 using SkiaSharp;
 
-using System.Runtime.InteropServices;
+using System.Reflection.Emit;
 
 namespace RockEngine.Core.Rendering.Texturing
 {
-    public sealed class Texture2D : Texture
+    public sealed partial class Texture2D : Texture
     {
         private static Texture2D? _emptyTexture;
         private static Texture2D? _emptyNormalTexture;
@@ -26,487 +24,499 @@ namespace RockEngine.Core.Rendering.Texturing
         public uint Width => _image.Extent.Width;
         public uint Height => _image.Extent.Height;
 
-        public Texture2D(VulkanContext context, VkImage image,
-                        VkSampler sampler, string? sourcePath = null)
-            : base(context, image, sampler, sourcePath) { }
+        public Texture2D(VulkanContext context, VkImage image, VkSampler sampler, string? sourcePath = null)
+            : base(context, image, sampler) { }
 
-        // Factory method for creating empty textures with parameters
-        public static Texture2D CreateEmpty(VulkanContext context,
-            uint width = 1,
-            uint height = 1,
-            Format format = Format.R8G8B8A8Unorm,
-            ImageUsageFlags usage = ImageUsageFlags.SampledBit | ImageUsageFlags.TransferDstBit,
-            ImageLayout initialLayout = ImageLayout.ShaderReadOnlyOptimal,
-            Filter filter = Filter.Linear,
-            SamplerAddressMode addressMode = SamplerAddressMode.Repeat,
-            string? name = null)
+        // Unified creation method using TextureData
+        public static async Task<Texture2D> CreateAsync(VulkanContext context, TextureData textureData,
+            CancellationToken cancellationToken = default)
         {
-            var image = CreateVulkanImage(context, width, height, format, 1, usage);
-            var sampler = CreateSampler(context, 1, filter, addressMode);
+            if (!textureData.Validate())
+                throw new ArgumentException("Invalid texture data", nameof(textureData));
 
-            // Transition to desired layout if not already there
-            if (initialLayout != ImageLayout.Undefined)
+            return textureData.Dimension switch
             {
-                var batch = context.GraphicsSubmitContext.CreateBatch();
-                image.TransitionImageLayout(
-                    batch,
-                    initialLayout,
-                    baseMipLevel: 0,
-                    levelCount: 1
-                );
-                batch.Submit();
-            }
-
-            if (!string.IsNullOrEmpty(name))
-            {
-                image.LabelObject(name);
-            }
-
-            return new Texture2D(context, image, sampler);
-        }
-
-        // Factory method for creating empty depth textures
-        public static Texture2D CreateEmptyDepth(VulkanContext context,
-            uint width = 1,
-            uint height = 1,
-            Format format = Format.D32Sfloat,
-            ImageUsageFlags usage = ImageUsageFlags.DepthStencilAttachmentBit | ImageUsageFlags.SampledBit,
-            string? name = null)
-        {
-            var image = CreateVulkanImage(context, width, height, format, 1, usage, ImageAspectFlags.DepthBit);
-
-            // Create depth-specific sampler
-            var samplerCreateInfo = new SamplerCreateInfo
-            {
-                SType = StructureType.SamplerCreateInfo,
-                MagFilter = Filter.Linear,
-                MinFilter = Filter.Linear,
-                AddressModeU = SamplerAddressMode.ClampToEdge,
-                AddressModeV = SamplerAddressMode.ClampToEdge,
-                AddressModeW = SamplerAddressMode.ClampToEdge,
-                AnisotropyEnable = false,
-                MaxAnisotropy = 1,
-                BorderColor = BorderColor.FloatOpaqueWhite,
-                UnnormalizedCoordinates = false,
-                CompareEnable = true,
-                CompareOp = CompareOp.Less,
-                MipmapMode = SamplerMipmapMode.Linear,
-                MipLodBias = 0,
-                MinLod = 0,
-                MaxLod = 1
+                TextureDimension.Texture2D => await Create2DAsync(context, textureData, cancellationToken),
+                TextureDimension.TextureCube => await CreateCubeAsync(context, textureData, cancellationToken),
+               /* TextureDimension.TextureArray => await CreateArrayAsync(context, textureData, cancellationToken),
+                TextureDimension.TextureCubeArray => await CreateCubeArrayAsync(context, textureData, cancellationToken),*/
+                _ => throw new NotSupportedException($"Texture dimension {textureData.Dimension} not supported")
             };
+        }
 
-            var sampler = context.SamplerCache.GetSampler(samplerCreateInfo);
-
-            if (!string.IsNullOrEmpty(name))
+        // Create 2D texture
+        private static async Task<Texture2D> Create2DAsync(VulkanContext context, TextureData textureData,
+            CancellationToken cancellationToken)
+        {
+            if (textureData.FilePaths.Count > 0)
             {
-                image.LabelObject(name);
-            }
-
-            return new Texture2D(context, image, sampler);
-        }
-
-        // Factory method for creating empty array textures (for shadow maps)
-        public static Texture2D CreateEmptyArray(VulkanContext context,
-            uint width,
-            uint height,
-            uint arrayLayers,
-            Format format = Format.R8G8B8A8Unorm,
-            ImageUsageFlags usage = ImageUsageFlags.SampledBit | ImageUsageFlags.TransferDstBit,
-            Filter filter = Filter.Linear,
-            SamplerAddressMode addressMode = SamplerAddressMode.ClampToEdge,
-            string? name = null)
-        {
-            var imageInfo = new ImageCreateInfo
-            {
-                SType = StructureType.ImageCreateInfo,
-                ImageType = ImageType.Type2D,
-                Format = format,
-                Extent = new Extent3D(width, height, 1),
-                MipLevels = 1,
-                ArrayLayers = arrayLayers,
-                Samples = SampleCountFlags.Count1Bit,
-                Tiling = ImageTiling.Optimal,
-                Usage = usage,
-                SharingMode = SharingMode.Exclusive,
-                InitialLayout = ImageLayout.Undefined
-            };
-
-            var image = VkImage.Create(context, imageInfo, MemoryPropertyFlags.DeviceLocalBit, ImageAspectFlags.DepthBit);
-
-            // Transition to shader read-only optimal
-            var batch = context.GraphicsSubmitContext.CreateBatch();
-            image.TransitionImageLayout(
-                batch,
-                ImageLayout.ShaderReadOnlyOptimal,
-                baseMipLevel: 0,
-                levelCount: 1
-            );
-            batch.Submit();
-
-            var sampler = CreateSampler(context, 1, filter, addressMode);
-
-            if (!string.IsNullOrEmpty(name))
-            {
-                image.LabelObject(name);
-            }
-
-            return new Texture2D(context, image, sampler);
-        }
-
-        // Factory method for creating empty cube textures
-        public static Texture2D CreateEmptyCube(VulkanContext context,
-            uint size,
-            Format format = Format.R8G8B8A8Unorm,
-            ImageUsageFlags usage = ImageUsageFlags.SampledBit | ImageUsageFlags.TransferDstBit,
-            Filter filter = Filter.Linear,
-            SamplerAddressMode addressMode = SamplerAddressMode.ClampToEdge,
-            string? name = null)
-        {
-            var imageInfo = new ImageCreateInfo
-            {
-                SType = StructureType.ImageCreateInfo,
-                ImageType = ImageType.Type2D,
-                Format = format,
-                Extent = new Extent3D(size, size, 1),
-                MipLevels = 1,
-                ArrayLayers = 6, // Cube has 6 faces
-                Samples = SampleCountFlags.Count1Bit,
-                Tiling = ImageTiling.Optimal,
-                Usage = usage,
-                SharingMode = SharingMode.Exclusive,
-                InitialLayout = ImageLayout.Undefined,
-                Flags = ImageCreateFlags.CreateCubeCompatibleBit
-            };
-
-            var image = VkImage.Create(context, imageInfo, MemoryPropertyFlags.DeviceLocalBit, ImageAspectFlags.DepthBit);
-
-            // Transition to shader read-only optimal
-            var batch = context.GraphicsSubmitContext.CreateBatch();
-            image.TransitionImageLayout(
-                batch,
-                ImageLayout.ShaderReadOnlyOptimal,
-                baseMipLevel: 0,
-                levelCount: 1
-            );
-            batch.Submit();
-
-            var sampler = CreateSampler(context, 1, filter, addressMode);
-
-            if (!string.IsNullOrEmpty(name))
-            {
-                image.LabelObject(name);
-            }
-
-            return new Texture2D(context, image, sampler);
-        }
-
-        // Predefined empty textures
-        public static Texture2D GetEmptyTexture(VulkanContext context)
-        {
-            _emptyTexture ??= CreateColorTexture(context, new Vector4D<byte>(128, 128, 128, 255), "Empty_Default");
-            return _emptyTexture;
-        }
-
-        public static Texture2D GetEmptyWhiteTexture(VulkanContext context)
-        {
-            _emptyWhiteTexture ??= CreateColorTexture(context, new Vector4D<byte>(255, 255, 255, 255), "Empty_White");
-            return _emptyWhiteTexture;
-        }
-
-        public static Texture2D GetEmptyBlackTexture(VulkanContext context)
-        {
-            _emptyBlackTexture ??= CreateColorTexture(context, new Vector4D<byte>(0, 0, 0, 255), "Empty_Black");
-            return _emptyBlackTexture;
-        }
-
-        public static Texture2D GetEmptyNormalTexture(VulkanContext context)
-        {
-            _emptyNormalTexture ??= CreateColorTexture(context, new Vector4D<byte>(128, 128, 255, 255), "Empty_Normal");
-            return _emptyNormalTexture;
-        }
-
-        public static Texture2D GetEmptyMRATexture(VulkanContext context)
-        {
-            _emptyMRATexture ??= CreateColorTexture(context, new Vector4D<byte>(255, 1, 1, 255), "Empty_MRA");
-            return _emptyMRATexture;
-        }
-
-        public static Texture2D GetEmptyDepthTexture(VulkanContext context)
-        {
-            _emptyDepthTexture ??= CreateEmptyDepth(context, 1, 1, Format.D32Sfloat, ImageUsageFlags.SampledBit, "Empty_Depth");
-            return _emptyDepthTexture;
-        }
-
-        // Enhanced color texture creation
-        public static Texture2D CreateColorTexture(VulkanContext context, Vector4D<byte> color, string? name = null)
-        {
-            using var surface = SKSurface.Create(new SKImageInfo(1, 1, SKColorType.Rgba8888));
-            surface.Canvas.Clear(new SKColor(color.X, color.Y, color.Z, color.W));
-            using var image = surface.Snapshot();
-            using var bitmap = SKBitmap.FromImage(image);
-            return LoadFromSKImage(context, bitmap, name);
-        }
-
-        // Shadow map specific creation methods
-        public static Texture2D CreateShadowMap(VulkanContext context,
-            uint size,
-            Format format = Format.D32Sfloat,
-            uint arrayLayers = 1,
-            string? name = null)
-        {
-            var usage = ImageUsageFlags.DepthStencilAttachmentBit | ImageUsageFlags.SampledBit;
-
-            if (arrayLayers > 1)
-            {
-                return CreateEmptyArray(context, size, size, arrayLayers, format, usage, Filter.Linear, SamplerAddressMode.ClampToEdge, name);
+                return await CreateFromFileAsync(context, textureData, cancellationToken);
             }
             else
             {
-                return CreateEmptyDepth(context, size, size, format, usage, name);
+                return CreateEmpty2D(context, textureData);
             }
         }
 
-        public static Texture2D CreatePointShadowMap(VulkanContext context,
-            uint size,
-            Format format = Format.D32Sfloat,
-            string? name = null)
+        // Create cube texture
+        private static async Task<Texture2D> CreateCubeAsync(VulkanContext context, TextureData textureData,
+            CancellationToken cancellationToken)
         {
-            var usage = ImageUsageFlags.DepthStencilAttachmentBit | ImageUsageFlags.SampledBit;
-            return CreateEmptyCube(context, size, format, usage, Filter.Linear, SamplerAddressMode.ClampToEdge, name);
+            if (textureData.FilePaths.Count != 6)
+                throw new ArgumentException("Cube map requires exactly 6 file paths");
+
+            return await CreateCubeFromFilesAsync(context, textureData, cancellationToken);
         }
 
-        // Existing methods remain the same, but updated to use new helpers
-        public static async Task<Texture2D> CreateAsync(VulkanContext context, byte[] data, string name, CancellationToken cancellationToken = default)
+        /*// Create array texture
+        private static async Task<Texture2D> CreateArrayAsync(VulkanContext context, TextureData textureData,
+            CancellationToken cancellationToken)
         {
-            return await CreateFromBytesAsync(context, data, name, cancellationToken);
+            if (textureData.FilePaths.Count == 0)
+                throw new ArgumentException("Array texture requires file paths");
+
+            return await CreateArrayFromFilesAsync(context, textureData, cancellationToken);
         }
 
-        public static async Task<Texture2D> CreateAsync(VulkanContext context, Stream stream, string name, CancellationToken cancellationToken = default)
+        // Create cube array texture
+        private static async Task<Texture2D> CreateCubeArrayAsync(VulkanContext context, TextureData textureData,
+            CancellationToken cancellationToken)
         {
-            using var memoryStream = new MemoryStream();
-            await stream.CopyToAsync(memoryStream, cancellationToken);
-            var bytes = memoryStream.ToArray();
+            if (textureData.FilePaths.Count == 0 || textureData.FilePaths.Count % 6 != 0)
+                throw new ArgumentException("Cube array texture requires multiple of 6 file paths");
 
-            return await CreateFromBytesAsync(context, bytes, name, cancellationToken);
-        }
+            return await CreateCubeArrayFromFilesAsync(context, textureData, cancellationToken);
+        }*/
 
-        public static async Task<Texture2D> CreateAsync(VulkanContext context, string filePath, CancellationToken cancellationToken = default)
+        public static async Task<Texture2D> CreateAsync(VulkanContext context, string filePath,
+            bool generateMipmaps = true, CancellationToken cancellationToken = default)
         {
-            var bytes = await File.ReadAllBytesAsync(filePath, cancellationToken);
-            return await CreateFromBytesAsync(context, bytes, filePath, cancellationToken);
-        }
-
-        private static async Task<Texture2D> CreateFromBytesAsync(VulkanContext context,
-            byte[] bytes, string name, CancellationToken cancellationToken = default)
-        {
-            var extension = Path.GetExtension(name)?.ToLower();
-            SKBitmap skBitmap;
-
-            if (extension == ".tga")
+            var textureData = new TextureData()
             {
-                using Image<Rgba32> imageSharpImage = SixLabors.ImageSharp.Image.Load<Rgba32>(bytes);
-                skBitmap = new SKBitmap(imageSharpImage.Width, imageSharpImage.Height);
+                 FilePaths = [filePath],
+                 GenerateMipmaps = generateMipmaps
+            };
 
-                imageSharpImage.ProcessPixelRows(accessor =>
-                {
-                    for (int y = 0; y < accessor.Height; y++)
-                    {
-                        Span<Rgba32> row = accessor.GetRowSpan(y);
-                        Span<byte> srcBytes = MemoryMarshal.AsBytes(row);
-                        Span<byte> dstBytes = skBitmap.GetPixelSpan().Slice(y * skBitmap.RowBytes, srcBytes.Length);
-                        srcBytes.CopyTo(dstBytes);
-                    }
-                });
-            }
-            else
-            {
-                skBitmap = SKBitmap.Decode(bytes);
-            }
-
-            var texture = await CreateFromSkBitmapAsync(context, skBitmap, name, cancellationToken);
-            skBitmap.Dispose();
-            return texture;
+            return await CreateAsync(context, textureData, cancellationToken);
         }
 
-        public static async Task<Texture2D> CreateFromSkBitmapAsync(VulkanContext context,
-            SKBitmap skBitmap, string name, CancellationToken cancellationToken = default)
-        {
-            var width = (uint)skBitmap.Width;
-            var height = (uint)skBitmap.Height;
-            var format = GetVulkanFormat(skBitmap.Info.ColorType, context);
-            uint totalMipLevels = CalculateMipLevels(width, height);
 
-            var image = CreateVulkanImage(context, width, height, format, totalMipLevels);
+        // Create from file with TextureData
+        private static async Task<Texture2D> CreateFromFileAsync(VulkanContext context, TextureData textureData,
+            CancellationToken cancellationToken)
+        {
+            using var bitmap = SKBitmap.Decode(textureData.FilePaths[0]) ?? throw new InvalidOperationException("Failed to decode image");
+            textureData.Width = (uint)bitmap.Width;
+            textureData.Height = (uint)bitmap.Height;
+            textureData.Format = TextureData.FromSKFormat(bitmap.ColorType, textureData.ConvertToSrgb); // also set format if missing
+            return await CreateFromSkBitmapAsync(context, bitmap, textureData, cancellationToken);
+        }
+
+        // Create from bytes with TextureData
+        public static Texture2D CreateFromBytes(VulkanContext context, byte[] bytes, TextureData textureData)
+        {
+            var vkImage = CreateVulkanImage(context, textureData, ImageAspectFlags.ColorBit);
+
+            // Create semaphores for queue synchronization
+            var transferComplete = VkSemaphore.Create(context);
+            var graphicsComplete = VkSemaphore.Create(context);
+
+
+            // Transfer queue operations
+            var transferBatch = context.TransferSubmitContext.CreateBatch();
+            transferBatch.LabelObject(nameof(CreateFromBytes) + "Transfer");
+            vkImage.TransitionImageLayout(
+                transferBatch,
+                ImageLayout.Undefined,
+                ImageLayout.TransferDstOptimal,
+                baseMipLevel: 0,
+                levelCount: 1
+            );
+            CopyImageDataFromPointer(transferBatch, vkImage, bytes, textureData.Width, textureData.Height, textureData.GetVulkanFormat());
+
+            transferBatch.AddSignalSemaphore(transferComplete);
+            context.TransferSubmitContext.SubmitSingle(transferBatch, VkFence.CreateNotSignaled(context)).Wait();
+
+            // Graphics queue operations
+            var graphicsBatch = context.GraphicsSubmitContext.CreateBatch();
+            graphicsBatch.LabelObject(nameof(CreateFromBytes) + "Graphics");
+            graphicsBatch.AddWaitSemaphore(transferComplete, PipelineStageFlags.TransferBit);
+            vkImage.TransitionImageLayout(
+                graphicsBatch,
+                ImageLayout.TransferDstOptimal,
+                ImageLayout.ShaderReadOnlyOptimal
+            );
+            var graphicsFence = VkFence.CreateNotSignaled(context);
+            graphicsBatch.AddSignalSemaphore(graphicsComplete);
+
+            // Submit and **wait** for the graphics batch
+            graphicsBatch.Submit();
+            //context.GraphicsSubmitContext.SubmitSingle(graphicsBatch, graphicsFence).Wait();
+            var sampler = CreateSampler(context, vkImage.MipLevels);
+            return new Texture2D(context, vkImage, sampler);
+        }
+
+        // Create from SKBitmap with TextureData
+        public static async Task<Texture2D> CreateFromSkBitmapAsync(VulkanContext context, SKBitmap skBitmap,
+            TextureData textureData, CancellationToken cancellationToken = default)
+        {
+            var format = textureData.GetVulkanFormat();
+            var mipLevels = textureData.EnsureMipLevels();
+
+            var image = CreateVulkanImage(context, textureData, ImageAspectFlags.ColorBit);
 
             var transferComplete = VkSemaphore.Create(context);
             var graphicsComplete = VkSemaphore.Create(context);
 
             // Upload base level
             var transferBatch = context.TransferSubmitContext.CreateBatch();
-            CopyImageData(context, transferBatch, skBitmap, image);
+            // Transfer queue operations
+            image.TransitionImageLayout(
+                transferBatch,
+                ImageLayout.Undefined,
+                ImageLayout.TransferDstOptimal,
+                baseMipLevel: 0,
+                levelCount: mipLevels
+            );
+            CopyImageData(context, transferBatch, skBitmap, image, format);
             transferBatch.AddSignalSemaphore(transferComplete);
 
-            await context.TransferSubmitContext.FlushSingle(transferBatch, VkFence.CreateNotSignaled(context));
+            await context.TransferSubmitContext.SubmitSingle(transferBatch, VkFence.CreateNotSignaled(context)).WaitAsync(cancellationToken);
 
             // Generate all mip levels on GPU
             var graphicsBatch = context.GraphicsSubmitContext.CreateBatch();
             graphicsBatch.AddWaitSemaphore(transferComplete, PipelineStageFlags.TransferBit);
 
-            if (totalMipLevels > 1)
-            {
-                image.GenerateMipmaps(graphicsBatch);
-            }
-            else
+            // Если не получилось сгенерировать мипмап(формат не поддерживает блиттинг), то надо самому менять лейаут
+            if (!textureData.GenerateMipmaps || !image.GenerateMipmaps(graphicsBatch))
             {
                 image.TransitionImageLayout(
                     graphicsBatch,
+                 ImageLayout.TransferDstOptimal,
                     ImageLayout.ShaderReadOnlyOptimal,
                     baseMipLevel: 0,
                     levelCount: 1
                 );
             }
 
+            var graphicsFence = VkFence.CreateNotSignaled(context);
             graphicsBatch.AddSignalSemaphore(graphicsComplete);
             graphicsBatch.Submit();
+            //await context.GraphicsSubmitContext.SubmitSingle(graphicsBatch, graphicsFence)
+            //    .WaitAsync(cancellationToken);
 
-            image.LabelObject(name);
-            var sampler = CreateSampler(context, totalMipLevels);
+            if (!string.IsNullOrEmpty(textureData.Name))
+            {
+                image.LabelObject(textureData.Name);
+            }
 
-            return new Texture2D(context, image, sampler, name);
+            var sampler = CreateSampler(context, textureData.Sampler, mipLevels);
+            return new Texture2D(context, image, sampler);
         }
 
-        // Updated helper methods
-        private static VkImage CreateVulkanImage(
-            VulkanContext context,
-            uint width,
-            uint height,
-            Format format,
-            uint mipLevels = 1,
-            ImageUsageFlags usageFlags = ImageUsageFlags.TransferSrcBit |
-                        ImageUsageFlags.TransferDstBit |
-                        ImageUsageFlags.SampledBit,
-            ImageAspectFlags aspectFlags = ImageAspectFlags.ColorBit)
+        // Create empty 2D texture
+        private static Texture2D CreateEmpty2D(VulkanContext context, TextureData textureData)
         {
-            if (format.IsBlockCompressed())
+            var format = textureData.GetVulkanFormat();
+            var usage = textureData.GetVulkanUsageFlags();
+
+            // Add required usage flags for empty textures
+            textureData.Usage |= TextureUsage.TransferDst | TextureUsage.Sampled;
+
+            var image = CreateVulkanImage(context, textureData, ImageAspectFlags.ColorBit);
+
+            // Transition to desired layout
+            var batch = context.GraphicsSubmitContext.CreateBatch();
+            image.TransitionImageLayout(
+                batch,
+                ImageLayout.Undefined,
+                ImageLayout.ShaderReadOnlyOptimal,
+                baseMipLevel: 0,
+                levelCount: 1
+            );
+            batch.Submit();
+            //context.GraphicsSubmitContext.SubmitSingle(batch, VkFence.CreateNotSignaled(context)).Wait();
+
+            if (!string.IsNullOrEmpty(textureData.Name))
             {
-                var blockSize = format.GetBlockSize();
-                if (width % blockSize.Width != 0 || height % blockSize.Height != 0)
-                {
-                    throw new InvalidOperationException(
-                        $"Compressed texture dimensions must be multiples of {blockSize}");
-                }
+                image.LabelObject(textureData.Name);
             }
+
+            var sampler = CreateSampler(context, textureData.Sampler, textureData.MipLevels);
+            return new Texture2D(context, image, sampler);
+        }
+
+        // Create cube from files
+        private static async Task<Texture2D> CreateCubeFromFilesAsync(VulkanContext context, TextureData textureData,
+            CancellationToken cancellationToken)
+        {
+            var faceBitmaps = new SKBitmap[6];
+            await Parallel.ForAsync(0, 6, async (i,ct) =>
+            {
+
+                var bytes = await File.ReadAllBytesAsync(textureData.FilePaths[i], cancellationToken);
+                faceBitmaps[i] = SKBitmap.Decode(bytes);
+
+                if (textureData.FlipVertically)
+                {
+                    faceBitmaps[i] = FlipBitmapVertically(faceBitmaps[i]);
+                }
+            });
+            
+
+            return await CreateCubeFromBitmapsAsync(context, faceBitmaps, textureData, cancellationToken);
+        }
+
+        // Create cube from bitmaps
+        private static async Task<Texture2D> CreateCubeFromBitmapsAsync(VulkanContext context, SKBitmap[] faceBitmaps,
+            TextureData textureData, CancellationToken cancellationToken)
+        {
+            if (faceBitmaps.Length != 6)
+            {
+                throw new ArgumentException("Cube map requires exactly 6 face paths.");
+            }
+           
+
+            uint width = (uint)faceBitmaps[0].Width;
+            uint height = (uint)faceBitmaps[0].Height;
+            uint mipLevels = textureData.EnsureMipLevels();
+            textureData.Width = width;
+            textureData.Height = height;
+            textureData.Format = TextureData.FromSKFormat(faceBitmaps[0].ColorType, textureData.ConvertToSrgb);
+
+            // Create image with initial layout as TransferDstOptimal
+            var image = CreateVulkanImage(context, textureData, ImageAspectFlags.ColorBit);
+
+            // Create semaphores for queue synchronization
+            var transferComplete = VkSemaphore.Create(context);
+            var graphicsComplete = VkSemaphore.Create(context);
+
+            // Transfer queue operations
+            var transferBatch = context.TransferSubmitContext.CreateBatch();
+            transferBatch.LabelObject("CubeMap Transfer");
+
+            // Transition to TransferDstOptimal (even though we created it with this layout, this ensures tracking)
+            image.TransitionImageLayout(
+                transferBatch,
+                 ImageLayout.Undefined,
+                ImageLayout.TransferDstOptimal,
+                baseMipLevel: 0,
+                levelCount: 1,
+                baseArrayLayer: 0,
+                layerCount: 6
+            );
+
+            // Upload each face
+            for (int i = 0; i < 6; i++)
+            {
+                var pixelData = faceBitmaps[i].GetPixelSpan();
+                if (!transferBatch.SubmitContext.StagingManager.TryStage<byte>(transferBatch, pixelData,
+                                                                  out ulong bufferOffset,
+                                                                  out ulong stagedSize))
+                {
+                    throw new InvalidOperationException("Staging buffer overflow");
+                }
+
+                // Barrier for staging buffer
+                var bufferBarrier = new BufferMemoryBarrier2
+                {
+                    SType = StructureType.BufferMemoryBarrier2,
+                    SrcStageMask = PipelineStageFlags2.HostBit,     
+                    DstStageMask = PipelineStageFlags2.TransferBit, 
+                    SrcAccessMask = AccessFlags2.HostWriteBit,
+                    DstAccessMask = AccessFlags2.TransferReadBit,
+                    Buffer = transferBatch.SubmitContext.StagingManager.StagingBuffer,
+                    Offset = bufferOffset,
+                    Size = stagedSize
+                };
+
+                transferBatch.PipelineBarrier(
+                    bufferMemoryBarriers: new[] { bufferBarrier }
+                );
+
+                // Copy to image
+                var copyRegion = new BufferImageCopy
+                {
+                    BufferOffset = bufferOffset,
+                    ImageSubresource = new ImageSubresourceLayers
+                    {
+                        AspectMask = ImageAspectFlags.ColorBit,
+                        MipLevel = 0,
+                        BaseArrayLayer = (uint)i,
+                        LayerCount = 1
+                    },
+                    ImageExtent = new Extent3D(width, height, 1)
+                };
+
+                transferBatch.CopyBufferToImage(
+                    srcBuffer: transferBatch.SubmitContext.StagingManager.StagingBuffer,
+                    dstImage: image,
+                    dstImageLayout: ImageLayout.TransferDstOptimal,
+                    pRegions: in copyRegion
+                );
+            }
+
+            transferBatch.AddSignalSemaphore(transferComplete);
+            await context.TransferSubmitContext.SubmitSingle(transferBatch, VkFence.CreateNotSignaled(context));
+
+            // Graphics queue operations
+            var graphicsBatch = context.GraphicsSubmitContext.CreateBatch();
+            graphicsBatch.LabelObject("CubeMap Graphics");
+            graphicsBatch.AddWaitSemaphore(transferComplete, PipelineStageFlags.TransferBit);
+
+            if (textureData.GenerateMipmaps)
+            {
+                // Prepare base level for mipmap generation
+                image.TransitionImageLayout(
+                    graphicsBatch,
+                     ImageLayout.Undefined,
+                    ImageLayout.TransferSrcOptimal,
+                    baseMipLevel: 0,
+                    levelCount: 1,
+                    baseArrayLayer: 0,
+                    layerCount: 6
+                );
+
+                // Generate mipmaps
+                image.GenerateMipmaps(graphicsBatch);
+            }
+            else
+            {
+                // Transition directly to shader read layout
+                image.TransitionImageLayout(
+                    graphicsBatch,
+                     ImageLayout.Undefined,
+                    ImageLayout.ShaderReadOnlyOptimal,
+                    baseMipLevel: 0,
+                    levelCount: 1,
+                    baseArrayLayer: 0,
+                    layerCount: 6
+                );
+            }
+
+            graphicsBatch.AddSignalSemaphore(graphicsComplete);
+            graphicsBatch.Submit();
+            //await context.GraphicsSubmitContext.SubmitSingle(graphicsBatch, VkFence.CreateNotSignaled(context)).WaitAsync(cancellationToken);
+
+            // Create image view and sampler
+            var sampler = CreateSampler(context, mipLevels);
+
+            // Cleanup
+            foreach (var bitmap in faceBitmaps)
+            {
+                bitmap.Dispose();
+            }
+
+            return new Texture2D(context, image, sampler);
+        }
+
+        private static SKBitmap FlipBitmapVertically(SKBitmap bitmap)
+        {
+            var flipped = new SKBitmap(bitmap.Width, bitmap.Height, bitmap.ColorType, bitmap.AlphaType);
+            using var canvas = new SKCanvas(flipped);
+            canvas.Scale(1, -1, bitmap.Width / 2f, bitmap.Height / 2f);
+            canvas.DrawBitmap(bitmap, 0, 0);
+            return flipped;
+        }
+
+        private static VkImage CreateVulkanImage(VulkanContext context, TextureData textureData, ImageAspectFlags aspectFlags)
+        {
+            var imageType = textureData.Dimension switch
+            {
+                TextureDimension.Texture3D => ImageType.Type3D,
+                _ => ImageType.Type2D
+            };
+
+            var flags = ImageCreateFlags.None;
+            if (textureData.IsCubeMap)
+                flags |= ImageCreateFlags.CreateCubeCompatibleBit;
 
             var imageInfo = new ImageCreateInfo
             {
                 SType = StructureType.ImageCreateInfo,
-                ImageType = ImageType.Type2D,
-                Format = format,
-                Extent = new Extent3D(width, height, 1),
-                MipLevels = mipLevels,
-                ArrayLayers = 1,
+                ImageType = imageType,
+                Format = textureData.GetVulkanFormat(),
+                Extent = new Extent3D(textureData.Width, textureData.Height, textureData.Depth),
+                MipLevels = textureData.EnsureMipLevels(),
+                ArrayLayers = textureData.ArrayLayers,   
                 Samples = SampleCountFlags.Count1Bit,
                 Tiling = ImageTiling.Optimal,
-                Usage = usageFlags,
+                Usage = textureData.GetVulkanUsageFlags(),
                 SharingMode = SharingMode.Exclusive,
-                InitialLayout = ImageLayout.Undefined
+                InitialLayout = ImageLayout.Undefined,
+                Flags = flags
             };
 
-            return VkImage.Create(context, imageInfo, MemoryPropertyFlags.DeviceLocalBit, aspectFlags);
+            return VkImage.Create(context, imageInfo, textureData.GetVulkanMemoryFlags(), aspectFlags);
         }
 
-        private static VkSampler CreateSampler(VulkanContext context, uint mipLevels,
-            Filter filter = Filter.Linear,
-            SamplerAddressMode addressMode = SamplerAddressMode.Repeat)
+        private static VkSampler CreateSampler(VulkanContext context, SamplerState samplerState, uint mipLevels)
         {
             var samplerCreateInfo = new SamplerCreateInfo
             {
                 SType = StructureType.SamplerCreateInfo,
-                MagFilter = filter,
-                MinFilter = filter,
-                AddressModeU = addressMode,
-                AddressModeV = addressMode,
-                AddressModeW = addressMode,
-                AnisotropyEnable = true,
-                MaxAnisotropy = 16,
-                BorderColor = BorderColor.IntOpaqueBlack,
-                UnnormalizedCoordinates = false,
-                CompareEnable = false,
-                CompareOp = CompareOp.Always,
-                MipmapMode = SamplerMipmapMode.Linear,
-                MipLodBias = 0.0f,
-                MinLod = 0.0f,
-                MaxLod = (float)mipLevels
+                MagFilter = ConvertFilter(samplerState.MagFilter),
+                MinFilter = ConvertFilter(samplerState.MinFilter),
+                AddressModeU = ConvertWrap(samplerState.AddressModeU),
+                AddressModeV = ConvertWrap(samplerState.AddressModeV),
+                AddressModeW = ConvertWrap(samplerState.AddressModeW),
+                AnisotropyEnable = samplerState.AnisotropyEnable,
+                MaxAnisotropy = samplerState.MaxAnisotropy,
+                BorderColor = samplerState.BorderColor,
+                UnnormalizedCoordinates = samplerState.UnnormalizedCoordinates,
+                CompareEnable = samplerState.CompareEnable,
+                CompareOp = samplerState.CompareOp,
+                MipmapMode = samplerState.MipFilter == TextureFilter.Nearest ?
+                    SamplerMipmapMode.Nearest : SamplerMipmapMode.Linear,
+                MipLodBias = samplerState.MipLodBias,
+                MinLod = samplerState.MinLod,
+                MaxLod = samplerState.MaxLod
             };
 
             return context.SamplerCache.GetSampler(samplerCreateInfo);
         }
 
-        // Rest of existing methods remain the same...
-        private static unsafe void CopyImageData(VulkanContext context, UploadBatch batch,
-                                             SKBitmap skBitmap, VkImage vkImage)
+        private static Filter ConvertFilter(TextureFilter filter)
         {
-            CopyImageDataFromPointer(batch, vkImage, skBitmap.GetPixelSpan(),
-                                    (uint)skBitmap.Width, (uint)skBitmap.Height,
-                                    GetVulkanFormat(skBitmap.ColorType, context));
+            return filter switch
+            {
+                TextureFilter.Nearest => Filter.Nearest,
+                TextureFilter.Linear => Filter.Linear,
+                _ => Filter.Linear
+            };
         }
 
-        private static unsafe void CopyImageDataFromPointer(
-             UploadBatch batch,
-             VkImage vkImage,
-             Span<byte> data,
-             uint width,
-             uint height,
-             Format format)
+        private static SamplerAddressMode ConvertWrap(TextureWrap wrap)
         {
-            var imageSize = (ulong)(width * height * format.GetBytesPerPixel());
-
-            var preCopyBarrier = new ImageMemoryBarrier
+            return wrap switch
             {
-                SType = StructureType.ImageMemoryBarrier,
-                OldLayout = ImageLayout.Undefined,
-                NewLayout = ImageLayout.TransferDstOptimal,
-                Image = vkImage,
-                SubresourceRange = new ImageSubresourceRange
-                {
-                    AspectMask = vkImage.AspectFlags,
-                    BaseMipLevel = 0,
-                    LevelCount = 1,
-                    BaseArrayLayer = 0,
-                    LayerCount = 1
-                },
-                SrcAccessMask = AccessFlags.None,
-                DstAccessMask = AccessFlags.TransferWriteBit
+                TextureWrap.Repeat => SamplerAddressMode.Repeat,
+                TextureWrap.MirroredRepeat => SamplerAddressMode.MirroredRepeat,
+                TextureWrap.ClampToEdge => SamplerAddressMode.ClampToEdge,
+                TextureWrap.ClampToBorder => SamplerAddressMode.ClampToBorder,
+                _ => SamplerAddressMode.Repeat
             };
+        }
 
-            batch.PipelineBarrier(
-                srcStage: PipelineStageFlags.TopOfPipeBit,
-                dstStage: PipelineStageFlags.TransferBit,
-                imageMemoryBarriers: new[] { preCopyBarrier }
-            );
+        private static void CopyImageData(VulkanContext context, UploadBatch batch,
+            SKBitmap skBitmap, VkImage vkImage, Format format, uint arrayLayer = 0)
+        {
+            CopyImageDataFromPointer(batch, vkImage, skBitmap.GetPixelSpan(),
+                (uint)skBitmap.Width, (uint)skBitmap.Height, format, arrayLayer);
+        }
 
+        private static  void CopyImageDataFromPointer(UploadBatch batch, VkImage vkImage,
+            Span<byte> data, uint width, uint height, Format format, uint arrayLayer = 0)
+        {
+            var imageSize = (ulong)(width * height * GetBytesPerPixel(format));
+
+            // Stage data
             if (!batch.SubmitContext.StagingManager.TryStage<byte>(batch, data, out var offset, out var size))
             {
-                throw new Exception("Failed to stage data from image");
+                throw new Exception("Failed to stage texture data");
             }
 
-            var bufferBarrier = new BufferMemoryBarrier
-            {
-                SType = StructureType.BufferMemoryBarrier,
-                SrcAccessMask = AccessFlags.HostWriteBit,
-                DstAccessMask = AccessFlags.TransferReadBit,
-                Buffer = batch.SubmitContext.StagingManager.StagingBuffer,
-                Offset = offset,
-                Size = size
-            };
-
-            batch.PipelineBarrier(
-                srcStage: PipelineStageFlags.HostBit,
-                dstStage: PipelineStageFlags.TransferBit,
-                bufferMemoryBarriers: new[] { bufferBarrier }
-            );
-
+            // Copy buffer to image
             var copyRegion = new BufferImageCopy
             {
                 BufferOffset = offset,
@@ -514,7 +524,7 @@ namespace RockEngine.Core.Rendering.Texturing
                 {
                     AspectMask = vkImage.AspectFlags,
                     MipLevel = 0,
-                    BaseArrayLayer = 0,
+                    BaseArrayLayer = arrayLayer,
                     LayerCount = 1
                 },
                 ImageExtent = new Extent3D(width, height, 1)
@@ -524,41 +534,98 @@ namespace RockEngine.Core.Rendering.Texturing
                 srcBuffer: batch.SubmitContext.StagingManager.StagingBuffer,
                 dstImage: vkImage,
                 dstImageLayout: ImageLayout.TransferDstOptimal,
-                pRegions: [copyRegion]
+                pRegions: in copyRegion
             );
         }
 
-        public static Texture2D LoadFromSKImage(VulkanContext context, SKBitmap skImage, string? name = null)
+        private static uint GetBytesPerPixel(Format format)
+        {
+            return format switch
+            {
+                Format.R8G8B8A8Unorm => 4,
+                Format.R8G8B8A8Srgb => 4,
+                Format.B8G8R8A8Unorm => 4,
+                Format.B8G8R8A8Srgb => 4,
+                Format.R32G32B32A32Sfloat => 16,
+                Format.D32Sfloat => 4,
+                Format.D24UnormS8Uint => 4,
+                _ => 4
+            };
+        }
+
+        private static uint CalculateMipLevels(uint width, uint height)
+        {
+            uint maxDimension = Math.Max(width, height);
+            return (uint)Math.Floor(Math.Log2(maxDimension)) + 1;
+        }
+
+        // Static texture getters remain the same
+        public static Texture2D GetEmptyTexture(VulkanContext context)
+        {
+            _emptyTexture ??= CreateColorTexture(context, new Vector4D<byte>(128, 128, 128, 255));
+            return _emptyTexture;
+        }
+
+        public static Texture2D GetEmptyWhiteTexture(VulkanContext context)
+        {
+            _emptyWhiteTexture ??= CreateColorTexture(context, new Vector4D<byte>(255, 255, 255, 255));
+            return _emptyWhiteTexture;
+        }
+
+        public static Texture2D CreateColorTexture(VulkanContext context, Vector4D<byte> color, string? name = null, uint mipLevels = 1)
+        {
+            using var surface = SKSurface.Create(new SKImageInfo(1, 1, SKColorType.Rgba8888));
+            surface.Canvas.Clear(new SKColor(color.X, color.Y, color.Z, color.W));
+            using var image = surface.Snapshot();
+            using var bitmap = SKBitmap.FromImage(image);
+            var texData = new TextureData
+            {
+                Height = (uint)bitmap.Height,
+                Width = (uint)bitmap.Width,
+                MipLevels = mipLevels,
+                Name = name
+            };
+            return LoadFromSKImage(context, bitmap, texData, name: name);
+        }
+        public static Texture2D LoadFromSKImage(VulkanContext context, SKBitmap skImage, TextureData? textureData = null, string? name = null)
         {
             var width = (uint)skImage.Width;
             var height = (uint)skImage.Height;
             var format = GetVulkanFormat(skImage.Info.ColorType, context);
-            var vkImage = CreateVulkanImage(context, width, height, format);
+            textureData  ??=  new TextureData();
+            textureData.Usage |=  TextureUsage.TransferDst | TextureUsage.Sampled;
+            textureData.Width = width;
+            textureData.Height = height;
+
+            var vkImage = CreateVulkanImage(context, textureData, ImageAspectFlags.ColorBit);
+           
 
             var transferComplete = VkSemaphore.Create(context);
             var graphicsComplete = VkSemaphore.Create(context);
 
             var transferBatch = context.TransferSubmitContext.CreateBatch();
+            vkImage.TransitionImageLayout(
+               transferBatch,
+               ImageLayout.Undefined,
+               ImageLayout.TransferDstOptimal,
+               baseMipLevel: 0,
+               levelCount: 1
+           );
             CopyImageDataFromPointer(transferBatch, vkImage, skImage.GetPixelSpan(),
                                     width, height, format);
             transferBatch.AddSignalSemaphore(transferComplete);
-            using (var transferOp = context.TransferSubmitContext.FlushSingle(transferBatch, VkFence.CreateNotSignaled(context)))
-            {
-                transferOp.Wait();
-            }
-
+            context.TransferSubmitContext.SubmitSingle(transferBatch, VkFence.CreateNotSignaled(context)).Wait();
             var graphicsBatch = context.GraphicsSubmitContext.CreateBatch();
             graphicsBatch.AddWaitSemaphore(transferComplete, PipelineStageFlags.TransferBit);
             vkImage.TransitionImageLayout(
                 graphicsBatch,
-                ImageLayout.ShaderReadOnlyOptimal,
-                PipelineStageFlags.TransferBit,
-                PipelineStageFlags.FragmentShaderBit
-            );
+                ImageLayout.TransferDstOptimal,
+                ImageLayout.ShaderReadOnlyOptimal);
             graphicsBatch.AddSignalSemaphore(graphicsComplete);
             graphicsBatch.Submit();
+            //context.GraphicsSubmitContext.SubmitSingle(graphicsBatch, VkFence.CreateNotSignaled(context)).Wait();
 
-            var sampler = CreateSampler(context, 1);
+            var sampler = CreateSampler(context, textureData.Sampler, textureData.MipLevels);
             var texture = new Texture2D(context, vkImage, sampler);
 
             if (!string.IsNullOrEmpty(name))
@@ -569,65 +636,6 @@ namespace RockEngine.Core.Rendering.Texturing
             skImage.Dispose();
             return texture;
         }
-
-        // Default texture getters
-        internal static Texture GetDefaultAlbedoTexture(VulkanContext context)
-        {
-            return GetEmptyTexture(context);
-        }
-
-        internal static Texture GetDefaultNormalTexture(VulkanContext context)
-        {
-            return GetEmptyNormalTexture(context);
-        }
-
-        internal static Texture GetDefaultMRATexture(VulkanContext context)
-        {
-            return GetEmptyMRATexture(context);
-        }
-
-        internal static Texture2D GetDefaultLUTTexture(VulkanContext context)
-        {
-            return GetEmptyTexture(context);
-        }
-
-        public static Texture2D Create(VulkanContext context,
-                                       int width,
-                                       int height,
-                                       Format format,
-                                       Span<byte> data)
-        {
-            var vkImage = CreateVulkanImage(context, (uint)width, (uint)height, format);
-
-            // Create semaphores for queue synchronization
-            var transferComplete = VkSemaphore.Create(context);
-            var graphicsComplete = VkSemaphore.Create(context);
-
-            // Transfer queue operations
-            var transferBatch = context.TransferSubmitContext.CreateBatch();
-            CopyImageDataFromPointer(transferBatch, vkImage, data, (uint)width, (uint)height, format);
-            transferBatch.AddSignalSemaphore(transferComplete);
-            using (var transferOp = context.TransferSubmitContext.FlushSingle(transferBatch, VkFence.CreateNotSignaled(context)))
-            {
-                transferOp.Wait();
-            }
-
-            // Graphics queue operations
-            var graphicsBatch = context.GraphicsSubmitContext.CreateBatch();
-            graphicsBatch.AddWaitSemaphore(transferComplete, PipelineStageFlags.TransferBit);
-            vkImage.TransitionImageLayout(
-                graphicsBatch,
-                ImageLayout.ShaderReadOnlyOptimal,
-                PipelineStageFlags.TransferBit,
-                PipelineStageFlags.FragmentShaderBit
-            );
-            graphicsBatch.AddSignalSemaphore(graphicsComplete);
-            graphicsBatch.Submit();
-
-            var sampler = CreateSampler(context, vkImage.MipLevels);
-            return new Texture2D(context, vkImage, sampler);
-        }
-
         public static Texture2D CreateShadowMapArray(VulkanContext context,
                                                      uint size,
                                                      uint arrayLayers,
@@ -681,6 +689,7 @@ namespace RockEngine.Core.Rendering.Texturing
             var batch = context.GraphicsSubmitContext.CreateBatch();
             image.TransitionImageLayout(
                 batch,
+                 ImageLayout.Undefined,
                 ImageLayout.ShaderReadOnlyOptimal,
                 baseMipLevel: 0,
                 levelCount: 1,
@@ -688,6 +697,7 @@ namespace RockEngine.Core.Rendering.Texturing
                 layerCount: arrayLayers  // Transition ALL layers
             );
             batch.Submit();
+            //context.GraphicsSubmitContext.SubmitSingle(batch,VkFence.CreateNotSignaled(context)).Wait();
 
             if (!string.IsNullOrEmpty(name))
             {
@@ -697,11 +707,11 @@ namespace RockEngine.Core.Rendering.Texturing
             return new Texture2D(context, image, sampler);
         }
 
-        public static Texture2D CreatePointShadowMapArray(VulkanContext context,uint size,
-                             uint arrayLayers, // Number of cube maps in the array
-                             Format format = Format.D32Sfloat,
-                             ImageUsageFlags usage = ImageUsageFlags.DepthStencilAttachmentBit | ImageUsageFlags.SampledBit,
-                             string? name = null)
+        public static Texture2D CreatePointShadowMapArray(VulkanContext context, uint size,
+                           uint arrayLayers, // Number of cube maps in the array
+                           Format format = Format.D32Sfloat,
+                           ImageUsageFlags usage = ImageUsageFlags.DepthStencilAttachmentBit | ImageUsageFlags.SampledBit,
+                           string? name = null)
         {
 
             var imageInfo = new ImageCreateInfo
@@ -749,6 +759,7 @@ namespace RockEngine.Core.Rendering.Texturing
             var batch = context.GraphicsSubmitContext.CreateBatch();
             image.TransitionImageLayout(
                 batch,
+                ImageLayout.Undefined,
                 ImageLayout.ShaderReadOnlyOptimal,
                 baseMipLevel: 0,
                 levelCount: 1,
@@ -756,6 +767,7 @@ namespace RockEngine.Core.Rendering.Texturing
                 layerCount: 6 * arrayLayers  // Transition ALL layers, not just the first one
             );
             batch.Submit();
+            //context.GraphicsSubmitContext.SubmitSingle(batch, VkFence.CreateNotSignaled(context)).Wait();
 
             if (!string.IsNullOrEmpty(name))
             {
@@ -763,6 +775,86 @@ namespace RockEngine.Core.Rendering.Texturing
             }
 
             return new Texture2D(context, image, sampler);
+        }
+      
+        public Texture2D CopyWithNewUsage(PipelineManager pipelineManager, BindingManager bindingManager, ImageUsageFlags additionalUsage, Format newFormat = Format.R8G8B8A8Unorm, bool disposeOriginal = false)
+        {
+            // Compute the new usage flags
+            var newUsage = Image.Usage | additionalUsage | ImageUsageFlags.StorageBit;
+
+            // Create new image with same properties but new usage
+            var newCreateInfo = Image.CreateInfo with
+            {
+                Usage = newUsage,
+                Format = newFormat,
+                InitialLayout = ImageLayout.Undefined,
+            };
+
+            var newImage = VkImage.Create(_context, newCreateInfo, MemoryPropertyFlags.DeviceLocalBit, Image.AspectFlags);
+            newImage.LabelObject($"CopyOf_{Image.VkObjectNative}");
+            var newTexture = new Texture2D(_context, newImage, _sampler);
+
+            // Copy data using compute shader
+            CopyViaComputeShader(pipelineManager, bindingManager, this, newTexture).Wait();
+            return newTexture;
+            
+        }
+
+        private SubmitOperation CopyViaComputeShader(PipelineManager pipelineManager, BindingManager bindingManager, Texture src, Texture dst)
+        {
+            var pipeline = pipelineManager.GetPipelineByName("ComputeCopyImage")
+                ?? throw new InvalidOperationException("Missing pipeline: ComputeCopyImage");
+
+            var batch = _context.ComputeSubmitContext.CreateBatch();
+            batch.LabelObject(nameof(CopyViaComputeShader));
+
+            src.Image.TransitionImageLayout(batch, ImageLayout.Undefined, ImageLayout.ShaderReadOnlyOptimal);
+            dst.Image.TransitionImageLayout(batch, ImageLayout.Undefined, ImageLayout.General);
+
+
+            for (uint layer = 0; layer < src.Image.ArrayLayers; layer++)
+            {
+                for (uint mip = 0; mip < src.Image.MipLevels; mip++)
+                {
+                    var textureBinding = new TextureBinding(
+                        setLocation: 0,
+                        bindingLocation: 0,
+                        baseMipLevel: mip,
+                        levelCount: 1,
+                        imageLayout: ImageLayout.ShaderReadOnlyOptimal,
+                        arrayLayer: layer,
+                        layerCount:1,
+                        src);
+
+                    var storageBinding = new StorageImageBinding(
+                        texture: dst,
+                        setLocation: 0,
+                        bindingLocation: 1,
+                        layout: ImageLayout.General,
+                        mipLevel: mip,
+                        arrayLayer: layer);
+
+
+                    batch.BindPipeline(pipeline, PipelineBindPoint.Compute);
+                    bindingManager.BindResource(0, batch, pipeline, true, textureBinding, storageBinding);
+
+                    uint w = Math.Max(1, src.Image.Extent.Width >> (int)mip);
+                    uint h = Math.Max(1, src.Image.Extent.Height >> (int)mip);
+                    uint groupX = (w + 7) / 8;
+                    uint groupY = (h + 7) / 8;
+                    batch.Dispatch(groupX, groupY, 1);
+                    batch.AddDependency(textureBinding);
+                    batch.AddDependency(storageBinding);
+                }
+            }
+
+            dst.Image.TransitionImageLayout(batch, ImageLayout.General, ImageLayout.ShaderReadOnlyOptimal);
+
+            var op = _context.ComputeSubmitContext.SubmitSingle(batch, VkFence.CreateNotSignaled(_context));
+           
+
+
+            return op;
         }
     }
 }

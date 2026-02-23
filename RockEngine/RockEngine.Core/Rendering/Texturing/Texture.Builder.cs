@@ -111,10 +111,16 @@ namespace RockEngine.Core.Rendering.Texturing
                 }
                 if (_generateMipmaps)
                 {
-                    var batch = _context.GraphicsSubmitContext.CreateBatch();
-                    image.GenerateMipmaps(batch);
-                    batch.LabelObject("GenerateMipmap cmd");
-                    _context.GraphicsSubmitContext.FlushSingle(batch, VkFence.CreateNotSignaled(_context)).Wait();
+                    try
+                    {
+                        var batch = _context.GraphicsSubmitContext.CreateBatch();
+                        image.GenerateMipmaps(batch);
+                        batch.LabelObject("GenerateMipmap cmd");
+                        _context.GraphicsSubmitContext.SubmitSingle(batch, VkFence.CreateNotSignaled(_context)).Wait();
+                    }
+                    catch (NotSupportedException)
+                    {
+                    }
                 }
                 if (_isCubeMap)
                 {
@@ -189,8 +195,8 @@ namespace RockEngine.Core.Rendering.Texturing
                     AddressModeU = SamplerAddressMode.Repeat,
                     AddressModeV = SamplerAddressMode.Repeat,
                     AddressModeW = SamplerAddressMode.Repeat,
-                    AnisotropyEnable = Vk.True,
-                    MaxAnisotropy = 16,
+                    AnisotropyEnable = Vk.False,
+                    MaxAnisotropy = 1,
                     BorderColor = BorderColor.IntOpaqueBlack,
                     UnnormalizedCoordinates = Vk.False,
                     CompareEnable = Vk.False,
@@ -198,7 +204,7 @@ namespace RockEngine.Core.Rendering.Texturing
                     MipmapMode = SamplerMipmapMode.Linear,
                     MipLodBias = 0.0f,
                     MinLod = 0.0f,
-                    MaxLod = (float)_mipLevels
+                    MaxLod = _mipLevels
                 };
 
                 return _context.SamplerCache.GetSampler(samplerInfo);

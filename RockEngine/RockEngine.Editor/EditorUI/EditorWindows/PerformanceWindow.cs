@@ -1,10 +1,13 @@
 ﻿using ImGuiNET;
 
+using RockEngine.Core.Diagnostics;
+using RockEngine.Core.Helpers;
 using RockEngine.Vulkan;
 
 using System.Diagnostics;
 using System.Numerics;
 using System.Text.RegularExpressions;
+
 
 namespace RockEngine.Editor.EditorUI.EditorWindows
 {
@@ -18,8 +21,14 @@ namespace RockEngine.Editor.EditorUI.EditorWindows
         private bool _showStackTraceWindow = false;
         private bool _showAllocationChainsWindow = false;
         private bool _showHostAllocationsWindow = false;
+        private bool _showCpuGpuPerfomanceTrace = false;
+        private string _searchFilter = string.Empty;
+        private float _minDurationFilter;
+        private bool _showOnlySignificant;
         private readonly RingBuffer<float> _hostMemoryHistory = new(120);
         private readonly RingBuffer<float> _deviceMemoryHistory = new(120);
+        private static readonly bool[] _expandedNodes = new bool[10000];
+
 
         // Store detected editors
         private static readonly Dictionary<string, (string Exe, string ArgsFormat)> _knownEditors = new()
@@ -70,6 +79,139 @@ namespace RockEngine.Editor.EditorUI.EditorWindows
             if (_showHostAllocationsWindow)
             {
                 DrawHostAllocationsWindow();
+            }
+
+            if (_showCpuGpuPerfomanceTrace)
+            {
+                DrawCpuGpuPerformanceTrace();
+            }
+        }
+
+        private void DrawCpuGpuPerformanceTrace()
+        {
+            if (!PerformanceTracer.GPUTimestampsSupported)
+            {
+                ImGui.TextColored(new Vector4(1, 0, 0, 1), "GPU Timestamps Not Supported");
+            }
+
+            ImGui.Checkbox("Only Significant", ref _showOnlySignificant);
+            ImGui.SameLine();
+            ImGui.SetNextItemWidth(100);
+            ImGui.DragFloat("Min Duration (ms)", ref _minDurationFilter, 0.01f, 0.01f, 100f);
+            ImGui.SameLine();
+            ImGui.SetNextItemWidth(200);
+            ImGui.InputText("Search", ref _searchFilter, 100);
+
+            if (ImGui.CollapsingHeader("CPU Timings", ImGuiTreeNodeFlags.DefaultOpen))
+            {
+                DrawChildScopes(PerformanceTracer.CpuRoot.Id);
+            }
+
+            if (ImGui.CollapsingHeader("GPU Timings", ImGuiTreeNodeFlags.DefaultOpen))
+            {
+                if (PerformanceTracer.GPUTimestampsSupported)
+                {
+                    DrawChildScopes(PerformanceTracer.GpuRoot.Id);
+                }
+                else
+                {
+                    ImGui.Text("GPU timestamps not supported on this device");
+                }
+            }
+        }
+
+        private void DrawChildScopes(int parentId)
+        {
+            if (!PerformanceTracer.ChildScopesByParentId.TryGetValue(parentId, out var children))
+            {
+                return;
+            }
+
+            lock (children)
+            {
+                foreach (int childId in children)
+                {
+                    var scopeID = PerformanceTracer.ScopesById[childId];
+                    if (scopeID != null && scopeID.TryGetTarget(out var scope))
+                    {
+                        var data = PerformanceTracer.ScopeDataArray[childId];
+                        if (data != null)
+                        {
+                            DrawScopeNode(scope, data);
+                        }
+                    }
+                }
+            }
+        }
+
+        private void DrawScopeNode(PerformanceTracer.ScopeInfo scope, PerformanceTracer.ScopeData data)
+        {
+            bool hasChildren = PerformanceTracer.ChildScopesByParentId.TryGetValue(scope.Id, out var children) &&
+                               children.Count > 0;
+
+            // Filtering
+            bool shouldShow = !_showOnlySignificant || data.AverageDuration >= _minDurationFilter || hasChildren;
+            shouldShow = shouldShow && (string.IsNullOrEmpty(_searchFilter) ||
+                         scope.FullPath.Contains(_searchFilter, StringComparison.OrdinalIgnoreCase));
+
+            if (!shouldShow)
+            {
+                return;
+            }
+
+            float displayDuration = data.LastDuration > 0 ? data.LastDuration : data.AverageDuration;
+            float fraction = Math.Clamp(displayDuration / 33f, 0f, 1f);
+
+            ImGui.ProgressBar(fraction, new Vector2(100, 20), $"{displayDuration:0.00}ms");
+            ImGui.SameLine();
+
+            bool isExpanded = _expandedNodes[scope.Id];
+            ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags.FramePadding | ImGuiTreeNodeFlags.OpenOnArrow | ImGuiTreeNodeFlags.OpenOnDoubleClick;
+            if (!hasChildren)
+            {
+                flags |= ImGuiTreeNodeFlags.Leaf;
+            }
+
+            bool nodeOpen = ImGui.TreeNodeEx($"{scope.Name}##{scope.Id}", flags);
+
+            if (ImGui.IsItemClicked())
+            {
+                _expandedNodes[scope.Id] = !isExpanded;
+            }
+
+            if (nodeOpen)
+            {
+                if (hasChildren)
+                {
+                    ImGui.Indent(10);
+                    foreach (int childId in children)
+                    {
+                        var scopeID = PerformanceTracer.ScopesById[childId];
+                        if (scopeID != null && scopeID.TryGetTarget(out var childScope))
+                        {
+                            var childScopeData = PerformanceTracer.ScopeDataArray[childId];
+                            if (childScopeData != null)
+                            {
+                                DrawScopeNode(childScope, childScopeData);
+                            }
+                        }
+                    }
+                    ImGui.Unindent(10);
+                }
+                ImGui.TreePop();
+            }
+
+            // Tooltip with detailed information
+            if (ImGui.IsItemHovered())
+            {
+                ImGui.BeginTooltip();
+                ImGui.Text($"Full Path: {scope.FullPath}");
+                ImGui.Text($"Average: {data.AverageDuration:0.00}ms");
+                ImGui.Text($"Last: {data.LastDuration:0.00}ms");
+                ImGui.Text($"Min: {data.MinDuration:0.00}ms");
+                ImGui.Text($"Max: {data.MaxDuration:0.00}ms");
+                ImGui.Text($"Samples: {data.SampleCount}");
+                ImGui.EndTooltip();
             }
         }
 
@@ -144,6 +286,11 @@ namespace RockEngine.Editor.EditorUI.EditorWindows
             if (ImGui.Button($"{Icons.Folder} Host Allocations##ViewHost"))
             {
                 _showHostAllocationsWindow = true;
+            }
+            ImGui.SameLine();
+            if (ImGui.Button($"{Icons.Code} CPU/GPU Timings##CPUGPUTIMINGS"))
+            {
+                _showCpuGpuPerfomanceTrace = true;
             }
             ImGui.SameLine();
             if (ImGui.Button($"{Icons.FileAlt} Dump to Log##DumpLog"))
@@ -432,7 +579,7 @@ namespace RockEngine.Editor.EditorUI.EditorWindows
 
                                         foreach (var host in hostAllocs)
                                         {
-                                            var fileInfo = ParseStackTraceForFileInfo(host.StackTrace);
+                                            var (FilePath, LineNumber) = ParseStackTraceForFileInfo(host.StackTrace);
 
                                             ImGui.TableNextRow();
 
@@ -449,9 +596,9 @@ namespace RockEngine.Editor.EditorUI.EditorWindows
                                             ImGui.Text($"{host.AllocationTime:HH:mm:ss.fff}");
 
                                             ImGui.TableNextColumn();
-                                            if (!string.IsNullOrEmpty(fileInfo.FilePath))
+                                            if (!string.IsNullOrEmpty(FilePath))
                                             {
-                                                ImGui.Text(Path.GetFileName(fileInfo.FilePath));
+                                                ImGui.Text(Path.GetFileName(FilePath));
                                             }
                                             else
                                             {
@@ -459,9 +606,9 @@ namespace RockEngine.Editor.EditorUI.EditorWindows
                                             }
 
                                             ImGui.TableNextColumn();
-                                            if (fileInfo.LineNumber > 0)
+                                            if (LineNumber > 0)
                                             {
-                                                ImGui.Text($"{fileInfo.LineNumber}");
+                                                ImGui.Text($"{LineNumber}");
                                             }
                                             else
                                             {
@@ -476,16 +623,16 @@ namespace RockEngine.Editor.EditorUI.EditorWindows
                                             }
 
                                             ImGui.TableNextColumn();
-                                            if (!string.IsNullOrEmpty(fileInfo.FilePath) && File.Exists(fileInfo.FilePath))
+                                            if (!string.IsNullOrEmpty(FilePath) && File.Exists(FilePath))
                                             {
                                                 if (ImGui.SmallButton($"{Icons.FileCode}##OpenHostFile_{host.HostPtr}"))
                                                 {
-                                                    OpenFileInEditor(fileInfo.FilePath, fileInfo.LineNumber);
+                                                    OpenFileInEditor(FilePath, LineNumber);
                                                 }
                                                 ImGui.SameLine(0, 2);
                                                 if (ImGui.SmallButton($"{Icons.FolderOpen}##OpenHostFolder_{host.HostPtr}"))
                                                 {
-                                                    OpenFileFolder(fileInfo.FilePath);
+                                                    OpenFileFolder(FilePath);
                                                 }
                                             }
                                         }
@@ -675,7 +822,7 @@ namespace RockEngine.Editor.EditorUI.EditorWindows
                 long actualHostMemory = VulkanAllocator.DeviceMemoryTracker.GetActualHostMemoryUsage();
 
                 ImGui.Text($"Actual VRAM Usage: {FormatSize(actualDeviceMemory)}");
-                ImGui.Text($"Actual RAM Usage: {FormatSize(actualHostMemory)}");
+                ImGui.Text($"Actual RAM Usage: {FormatSize(Environment.WorkingSet)}");
 
                 // Device memory objects section
                 DrawDeviceMemoryObjects();
@@ -1565,47 +1712,6 @@ namespace RockEngine.Editor.EditorUI.EditorWindows
             }
 
             return $"{size:0.##} {suffixes[suffixIndex]}";
-        }
-
-        // Simple ring buffer
-        private class RingBuffer<T>
-        {
-            private readonly T[] _buffer;
-            private int _index;
-            private int _count;
-
-            public RingBuffer(int capacity) => _buffer = new T[capacity];
-
-            public void Push(T item)
-            {
-                _buffer[_index] = item;
-                _index = (_index + 1) % _buffer.Length;
-                if (_count < _buffer.Length) _count++;
-            }
-
-            public T Last() => _buffer[(_index - 1 + _buffer.Length) % _buffer.Length];
-            public int Count => _count;
-            public T[] ToArray()
-            {
-                var result = new T[_count];
-                for (int i = 0; i < _count; i++)
-                {
-                    result[i] = _buffer[(_index - _count + i + _buffer.Length) % _buffer.Length];
-                }
-                return result;
-            }
-
-            public T Max()
-            {
-                var arr = ToArray();
-                return arr.Length > 0 ? arr.Max() : default;
-            }
-
-            public T Min()
-            {
-                var arr = ToArray();
-                return arr.Length > 0 ? arr.Min() : default;
-            }
         }
 
         [GeneratedRegex(@"^/(?:[^/]+\/)*[^/]+$", RegexOptions.Compiled)]

@@ -1,8 +1,10 @@
-﻿using Silk.NET.Vulkan;
+﻿using RockEngine.Assets;
+
+using Silk.NET.Vulkan;
 
 namespace RockEngine.Core
 {
-    public interface IVertex
+    public interface IVertex:IPolymorphicSerializable
     {
         public abstract static VertexInputBindingDescription GetBindingDescription();
 

@@ -8,7 +8,6 @@ using RockEngine.Core.Rendering.Buffers;
 using RockEngine.Core.Rendering.Managers;
 using RockEngine.Core.Rendering.Materials;
 using RockEngine.Core.Rendering.Objects;
-using RockEngine.Core.Rendering.Passes;
 using RockEngine.Core.Rendering.Passes.SubPasses;
 using RockEngine.Editor.Rendering.RenderTargets;
 using RockEngine.Vulkan;
@@ -76,14 +75,14 @@ namespace RockEngine.Editor.Rendering.Passes.SubPasses
 
                 var matrixBinding = _transformManager.GetCurrentBinding(frameIndex);
                 var globalUboBinding = _globalUbo.GetBinding((uint)camIndex);
-                var drawGroups = _indirectCommands.GetDrawGroups(GeometryPass.Name);
-                var lightDrawGroups = _indirectCommands.GetDrawGroups(PostLightPass.Name);
-                drawGroups.AddRange(lightDrawGroups);
-                var pickingGroups = _indirectCommands.GetDrawGroups(PickingSubPass.Name);
+                var drawGroups = _indirectCommands.GetDrawGroups<GeometryPass>();
+                var postlightDrawGroups = _indirectCommands.GetDrawGroups<PostLightPass>();
+                drawGroups.AddRange(postlightDrawGroups);
+                var pickingGroups = _indirectCommands.GetDrawGroups<PickingSubPass>();
                 var drawGroupsSpan = CollectionsMarshal.AsSpan(drawGroups
-                .AsValueEnumerable()
-                .Where(s => !pickingGroups.Any(x => x.MeshRenderer == s.MeshRenderer))
-                .ToList());
+                    .AsValueEnumerable()
+                    .Where(s => !pickingGroups.Any(x => x.MeshRenderer == s.MeshRenderer))
+                    .ToList());
                 var indirectBuffer = _indirectCommands.IndirectBuffer.Buffer;
                 if (drawGroups.Count == 0 && pickingGroups.Count == 0)
                 {
@@ -92,10 +91,7 @@ namespace RockEngine.Editor.Rendering.Passes.SubPasses
 
                 _globalGeometryBuffer.Bind(cmd);
 
-                Span<uint> dynamicOffsets = stackalloc uint[2];
-                dynamicOffsets[0] = 0;
-                dynamicOffsets[1] = 0;
-
+                Span<uint> dynamicOffsets = [0, 0];
                 cmd.BindPipeline(_pipeline);
                 _bindingManager.BindResource(frameIndex, globalUboBinding, cmd, _pipeline.Layout);
                 _bindingManager.BindResource(frameIndex, matrixBinding, cmd, _pipeline.Layout);
@@ -109,7 +105,7 @@ namespace RockEngine.Editor.Rendering.Passes.SubPasses
                     }
 
                     // Get entity ID for picking
-                    uint entityId = drawGroup.MeshRenderer.Entity.ID;
+                    ulong entityId = drawGroup.MeshRenderer.Entity.ID;
 
                     // Push entity ID as push constant
                     cmd.PushConstants(_pipeline.Layout, ShaderStageFlags.FragmentBit,

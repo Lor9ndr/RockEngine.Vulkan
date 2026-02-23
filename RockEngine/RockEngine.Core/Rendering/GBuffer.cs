@@ -24,7 +24,7 @@ namespace RockEngine.Core.Rendering
             Format.R16G16B16A16Sfloat,   // Position (View Space)
             Format.A2R10G10B10UnormPack32,     // Normal (Octahedral encoded) + Depth
             Format.R8G8B8A8Srgb,         // Albedo + Specular
-            Format.R8G8Unorm             // Metallic (R), Roughness (G)
+            Format.R16G16B16A16Unorm             // Metallic (R), Roughness (G), 
         ];
 
         public VkSampler[] Samplers { get; private set; }
@@ -146,8 +146,8 @@ namespace RockEngine.Core.Rendering
 
             _size = size;
 
-            /* CreateAttachments();
-             CreateTextures();*/
+            /*CreateAttachments();
+            CreateTextures();*/
         }
 
         public void Dispose()

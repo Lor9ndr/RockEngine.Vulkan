@@ -8,11 +8,13 @@ namespace RockEngine.Vulkan
     public sealed class VkQueryPool : VkObject<QueryPool>
     {
         private readonly VulkanContext _context;
+        public readonly uint QueryCount;
 
-        private VkQueryPool(QueryPool vkObject, VulkanContext context)
+        private VkQueryPool(QueryPool vkObject, VulkanContext context, uint queryCount)
             : base(vkObject)
         {
             _context = context ?? throw new ArgumentNullException(nameof(context));
+            QueryCount = queryCount;
         }
 
         public override void LabelObject(string name)
@@ -27,9 +29,9 @@ namespace RockEngine.Vulkan
                 in createInfo,
                 in VulkanContext.CustomAllocator<VkQueryPool>(),
                 out QueryPool queryPool
-            ).VkAssertResult();
+            ).VkAssertResult("Failed to create Query pool");
 
-            return new VkQueryPool(queryPool, context);
+            return new VkQueryPool(queryPool, context, createInfo.QueryCount);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -62,10 +64,13 @@ namespace RockEngine.Vulkan
             uint stride,
             QueryResultFlags flags) where T : unmanaged
         {
-            if (destination.Length < queryCount)
+            uint elementsNeeded = queryCount * (stride / (uint)sizeof(T));
+
+            if (destination.Length < elementsNeeded)
             {
-                throw new ArgumentException("Destination span is too small", nameof(destination));
+                throw new ArgumentException($"Destination span is too small. Need {elementsNeeded} elements, got {destination.Length}", nameof(destination));
             }
+
 
             fixed (T* ptr = destination)
             {
@@ -103,10 +108,7 @@ namespace RockEngine.Vulkan
 
         public void Reset(uint firstQuery = 0, uint queryCount = 1)
         {
-            unsafe
-            {
-                VulkanContext.Vk.ResetQueryPool(_context.Device, _vkObject, firstQuery, queryCount);
-            }
+            VulkanContext.Vk.ResetQueryPool(_context.Device, _vkObject, firstQuery, queryCount);
         }
 
     }

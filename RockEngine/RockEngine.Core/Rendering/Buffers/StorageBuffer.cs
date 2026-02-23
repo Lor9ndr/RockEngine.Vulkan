@@ -9,15 +9,17 @@ namespace RockEngine.Core.Rendering.Buffers
     public sealed class StorageBuffer<T> : IDisposable where T : unmanaged
     {
         private readonly VulkanContext _context;
-        private VkBuffer _deviceBuffer; 
+        private VkBuffer _deviceBuffer;
         private readonly ulong _stride;
         private bool _disposed;
 
         public VkBuffer Buffer => _deviceBuffer;
-        public ulong Capacity { get; private set; } 
+        public ulong Capacity { get; private set; }
         public ulong Stride => _stride;
 
-        public StorageBuffer(VulkanContext context, ulong capacity, BufferUsageFlags bufferUsageFlags = BufferUsageFlags.StorageBufferBit | BufferUsageFlags.TransferDstBit | BufferUsageFlags.TransferSrcBit)
+        public StorageBuffer(VulkanContext context, ulong capacity,
+            BufferUsageFlags bufferUsageFlags = BufferUsageFlags.StorageBufferBit |
+            BufferUsageFlags.TransferDstBit | BufferUsageFlags.TransferSrcBit)
         {
             _context = context;
             Capacity = capacity;
@@ -26,6 +28,7 @@ namespace RockEngine.Core.Rendering.Buffers
             var alignment = context.Device.PhysicalDevice.Properties.Limits.MinStorageBufferOffsetAlignment;
             _stride = elementSize + alignment - 1 & ~(alignment - 1);
 
+            // Create device-local buffer
             _deviceBuffer = VkBuffer.Create(
                 context,
                 Capacity * _stride,
@@ -33,115 +36,11 @@ namespace RockEngine.Core.Rendering.Buffers
                 MemoryPropertyFlags.DeviceLocalBit);
         }
 
-        /// <summary>
-        /// Resizes the buffer to a new capacity
-        /// </summary>
-        public void Resize(ulong newCapacity, UploadBatch batch)
-        {
-            if (newCapacity == Capacity)
-            {
-                return;
-            }
-
-            // Create new buffer with the desired capacity
-            var newBuffer = VkBuffer.Create(
-                _context,
-                newCapacity * _stride,
-                BufferUsageFlags.StorageBufferBit | BufferUsageFlags.TransferDstBit | BufferUsageFlags.TransferSrcBit,
-                MemoryPropertyFlags.DeviceLocalBit
-            );
-
-            // Copy existing data to new buffer if there's data to preserve
-            if (Capacity > 0)
-            {
-                var copySize = Math.Min(Capacity, newCapacity) * _stride;
-                var copyRegion = new BufferCopy
-                {
-                    SrcOffset = 0,
-                    DstOffset = 0,
-                    Size = copySize
-                };
-
-                // Add barrier for source buffer
-                var srcBarrier = new BufferMemoryBarrier
-                {
-                    SType = StructureType.BufferMemoryBarrier,
-                    SrcAccessMask = AccessFlags.VertexAttributeReadBit | AccessFlags.IndexReadBit,
-                    DstAccessMask = AccessFlags.TransferReadBit,
-                    Buffer = _deviceBuffer,
-                    Offset = 0,
-                    Size = Vk.WholeSize
-                };
-
-                batch.PipelineBarrier(
-                    srcStage: PipelineStageFlags.VertexInputBit,
-                    dstStage: PipelineStageFlags.TransferBit,
-                    bufferMemoryBarriers: new[] { srcBarrier }
-                );
-
-                // Add barrier for destination buffer
-                var dstBarrier = new BufferMemoryBarrier
-                {
-                    SType = StructureType.BufferMemoryBarrier,
-                    SrcAccessMask = 0,
-                    DstAccessMask = AccessFlags.TransferWriteBit,
-                    Buffer = newBuffer,
-                    Offset = 0,
-                    Size = Vk.WholeSize
-                };
-
-                batch.PipelineBarrier(
-                    srcStage: PipelineStageFlags.TopOfPipeBit,
-                    dstStage: PipelineStageFlags.TransferBit,
-                    bufferMemoryBarriers: new[] { dstBarrier }
-                );
-
-                // Copy data
-                batch.CopyBuffer(_deviceBuffer, newBuffer, in  copyRegion);
-
-                // Add barrier for destination buffer after copy
-                var postDstBarrier = new BufferMemoryBarrier
-                {
-                    SType = StructureType.BufferMemoryBarrier,
-                    SrcAccessMask = AccessFlags.TransferWriteBit,
-                    DstAccessMask = AccessFlags.VertexAttributeReadBit | AccessFlags.IndexReadBit,
-                    Buffer = newBuffer,
-                    Offset = 0,
-                    Size = Vk.WholeSize
-                };
-
-                batch.PipelineBarrier(
-                    srcStage: PipelineStageFlags.TransferBit,
-                    dstStage: PipelineStageFlags.VertexInputBit,
-                    bufferMemoryBarriers: new[] { postDstBarrier }
-                );
-            }
-
-            // Dispose old buffer and replace with new one
-            batch.AddDependency(_deviceBuffer);
-            _deviceBuffer = newBuffer;
-            Capacity = newCapacity;
-        }
-
-        /// <summary>
-        /// Resizes the buffer asynchronously
-        /// </summary>
-        public async ValueTask ResizeAsync(ulong newCapacity)
-        {
-            if (newCapacity == Capacity)
-            {
-                return;
-            }
-
-            var batch = _context.TransferSubmitContext.CreateBatch();
-            Resize(newCapacity, batch);
-            await _context.TransferSubmitContext.FlushSingle(batch, VkFence.CreateNotSignaled(_context));
-        }
-
         public void StageData(UploadBatch batch, T[] data, ulong startIndex = 0)
         {
             StageData(batch, data.AsSpan(), startIndex);
         }
+
         public void StageData(UploadBatch batch, Span<T> data, ulong startIndex = 0)
         {
             if ((ulong)data.Length + startIndex > Capacity)
@@ -149,14 +48,105 @@ namespace RockEngine.Core.Rendering.Buffers
                 throw new ArgumentOutOfRangeException(nameof(data), "Exceeds buffer capacity");
             }
 
-            batch.StageToBuffer<T>(
-                data,
-                _deviceBuffer,
-                startIndex * _stride,
-                (ulong)(Unsafe.SizeOf<T>() * data.Length)
-            );
+            var size = (ulong)(Unsafe.SizeOf<T>() * data.Length);
+            var offset = startIndex * _stride;
+
+            // Write to staging buffer
+            batch.StageToBuffer(data, _deviceBuffer, offset,size);
         }
 
+        // Updated Resize method with proper barriers
+        public void Resize(ulong newCapacity, UploadBatch batch)
+        {
+            if (newCapacity == Capacity)
+            {
+                return;
+            }
+
+            var newSize = newCapacity * _stride;
+            var newDeviceBuffer = VkBuffer.Create(
+                _context,
+                newSize,
+                BufferUsageFlags.StorageBufferBit |
+                BufferUsageFlags.TransferDstBit |
+                BufferUsageFlags.TransferSrcBit,
+                MemoryPropertyFlags.DeviceLocalBit
+            );
+
+
+            // Copy existing data if needed
+            if (Capacity > 0 && newCapacity > 0)
+            {
+                var copySize = Math.Min(Capacity, newCapacity) * _stride;
+
+                // Transition old buffer to transfer source
+                var srcBarrier = new BufferMemoryBarrier2
+                {
+                    SType = StructureType.BufferMemoryBarrier2,
+                    SrcStageMask = PipelineStageFlags2.AllCommandsBit,
+                    DstStageMask = PipelineStageFlags2.TransferBit,
+                    SrcAccessMask = AccessFlags2.MemoryReadBit | AccessFlags2.MemoryWriteBit,
+                    DstAccessMask = AccessFlags2.TransferReadBit,
+                    Buffer = _deviceBuffer,
+                    Offset = 0,
+                    Size = copySize
+                };
+                
+                batch.PipelineBarrier(
+                    bufferMemoryBarriers: [srcBarrier]
+                );
+
+                // Transition new buffer to transfer destination
+                var dstBarrier = new BufferMemoryBarrier2
+                {
+                    SType = StructureType.BufferMemoryBarrier2,
+                    SrcStageMask = PipelineStageFlags2.TopOfPipeBit,
+                    DstStageMask = PipelineStageFlags2.TransferBit,
+                    SrcAccessMask = 0,
+                    DstAccessMask = AccessFlags2.TransferWriteBit,
+                    Buffer = newDeviceBuffer,
+                    Offset = 0,
+                    Size = copySize
+                };
+
+                batch.PipelineBarrier(
+                    bufferMemoryBarriers: [dstBarrier]
+                );
+
+                // Copy data
+                var copyRegion = new BufferCopy
+                {
+                    SrcOffset = 0,
+                    DstOffset = 0,
+                    Size = copySize
+                };
+
+                batch.CopyBuffer(_deviceBuffer, newDeviceBuffer, in copyRegion);
+
+                // Transition new buffer to shader access
+                var finalBarrier = new BufferMemoryBarrier2
+                {
+                    SType = StructureType.BufferMemoryBarrier2,
+                    SrcStageMask = PipelineStageFlags2.TransferBit,
+                    DstStageMask = PipelineStageFlags2.AllCommandsBit,
+                    SrcAccessMask = AccessFlags2.TransferWriteBit,
+                    DstAccessMask = AccessFlags2.ShaderReadBit | AccessFlags2.ShaderWriteBit,
+                    Buffer = newDeviceBuffer,
+                    Offset = 0,
+                    Size = newSize
+                };
+
+                batch.PipelineBarrier(
+                    bufferMemoryBarriers: [finalBarrier]
+                );
+            }
+
+            // Dispose old buffers
+            batch.AddDependency(_deviceBuffer);
+
+            _deviceBuffer = newDeviceBuffer;
+            Capacity = newCapacity;
+        }
 
         public void Dispose()
         {
@@ -166,11 +156,6 @@ namespace RockEngine.Core.Rendering.Buffers
                 _disposed = true;
                 GC.SuppressFinalize(this);
             }
-        }
-
-        ~StorageBuffer()
-        {
-            Dispose();
         }
     }
 }

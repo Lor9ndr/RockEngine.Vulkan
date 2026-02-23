@@ -1,9 +1,8 @@
 ﻿using NLog;
 
+using RockEngine.Assets;
 using RockEngine.Core;
 using RockEngine.Core.Assets;
-using RockEngine.Core.Assets.AssetData;
-using RockEngine.Core.Assets.RockEngine.Core.Assets;
 using RockEngine.Core.Builders;
 using RockEngine.Core.DI;
 using RockEngine.Core.ECS;
@@ -12,14 +11,16 @@ using RockEngine.Core.Rendering;
 using RockEngine.Core.Rendering.Managers;
 using RockEngine.Core.Rendering.Passes;
 using RockEngine.Core.Rendering.Passes.SubPasses;
+using RockEngine.Core.Rendering.Texturing;
+using RockEngine.Core.ResourceProviders;
 using RockEngine.Editor.EditorUI;
 using RockEngine.Editor.EditorUI.EditorWindows;
 using RockEngine.Editor.EditorUI.ImGuiRendering;
 using RockEngine.Editor.EditorUI.Logging;
+using RockEngine.Editor.EditorUI.Thumbnails;
 using RockEngine.Editor.Selection;
 using RockEngine.Vulkan;
 
-using Silk.NET.Input;
 using Silk.NET.Vulkan;
 
 using System.Numerics;
@@ -34,10 +35,12 @@ namespace RockEngine.Editor.Layers
         private readonly VulkanContext _context;
         private readonly GraphicsContext _graphicsEngine;
         private readonly WorldRenderer _renderer;
-        private readonly IInputContext _inputContext;
-        private readonly AssetManager _assetManager;
+        private readonly InputManager _inputManager;
+        private readonly IAssetManager _assetManager;
         private readonly EditorConsole _editorConsole;
         private readonly ISelectionManager _selectionManager;
+        private readonly IAssetFactory _assetFactory;
+        private readonly IProjectManager _projectManager;
 
         // UI Components
         private readonly EditorDockSpace _dockSpace;
@@ -55,29 +58,34 @@ namespace RockEngine.Editor.Layers
             VulkanContext context,
             GraphicsContext graphicsEngine,
             WorldRenderer renderer,
-            IInputContext inputContext,
-            AssetManager assetManager,
+            InputManager inputManager,
+            IAssetManager assetManager,
             EditorConsole editorConsole,
             ImGuiController imGuiController,
-            ISelectionManager selectionManager)
+            ISelectionManager selectionManager, 
+            IAssetRepository assetRepository,
+            IAssetFactory assetFactory,
+            IProjectManager projectManager, IThumbnailService thumbnailService)
         {
             _world = world;
             _context = context;
             _graphicsEngine = graphicsEngine;
             _renderer = renderer;
-            _inputContext = inputContext;
+            _inputManager = inputManager;
             _assetManager = assetManager;
             _editorConsole = editorConsole;
             _selectionManager = selectionManager;
+            _assetFactory = assetFactory;
+            _projectManager = projectManager;
 
             // Initialize UI components
             _dockSpace = new EditorDockSpace();
             _mainMenuBar = new MainMenuBar();
             _toolbar = new Toolbar();
             _sceneHierarchy = new SceneHierarchyWindow(world, _selectionManager);
-            _inspector = new InspectorWindow(assetManager, imGuiController, _selectionManager);
-            _sceneViewport = new ViewportWindow("Scene View", world, inputContext, imGuiController, _selectionManager);
-            _gameViewport = new ViewportWindow("Game View", world, inputContext, imGuiController);
+            _inspector = new InspectorWindow(assetManager, imGuiController, _selectionManager, thumbnailService);
+            _sceneViewport = new ViewportWindow("Scene View", world, _inputManager, imGuiController, _selectionManager);
+            _gameViewport = new ViewportWindow("Game View", world, _inputManager, imGuiController);
             _console = new ConsoleWindow(editorConsole);
             _performance = new PerformanceWindow();
 
@@ -86,7 +94,9 @@ namespace RockEngine.Editor.Layers
 
             // Apply theme and initialize
             EditorTheme.ApplyModernDarkTheme();
-          
+            DefaultMeshes.Initalize(assetRepository);
+
+
         }
 
         private void OnViewToggled(string viewName, bool isVisible)
@@ -106,7 +116,7 @@ namespace RockEngine.Editor.Layers
         {
             CreateSolidPipeline();
             // Uncomment to load assets when needed
-            await LoadOrCreateAssets();
+            //await LoadOrCreateAssets();
 
         }
 
@@ -114,15 +124,15 @@ namespace RockEngine.Editor.Layers
         {
             bool loadFromProject = false;
 
-          /*  if (loadFromProject)
+            if (loadFromProject)
             {
                 await LoadAssetsFromProject(
-                    @"X:\RockEngine.Vulkan\RockEngine\RockEngine.Editor\bin\Debug\net9.0\Project\TestAssetSystem\DebugProject\DebugProject.rockproj");
+                    @"X:\RockEngine.Vulkan\RockEngine\RockEngine.Editor\bin\Debug\net9.0\Project\TestAssetSystem\DebugProject\DebugProject.rckproj");
             }
             else
             {
                 await CreateAssetsProgrammatically();
-            }*/
+            }
         }
 
         private async Task LoadAssetsFromProject(string projectPath)
@@ -132,9 +142,9 @@ namespace RockEngine.Editor.Layers
                 _logger.Info($"Loading assets from project: {projectPath}");
                 await _assetManager.LoadAssetAsync<ProjectAsset>(projectPath);
 
-                var scene = await _assetManager.LoadAsync<SceneData>(new AssetPath("Scenes", "DebugScene"));
+                var scene = await _assetManager.LoadAssetAsync<SceneAsset>("Scenes/DebugScene");
                 await scene.LoadDataAsync();
-                await ((SceneAsset)scene).InstantiateEntities();
+                await scene.InstantiateEntities();
 
                 _logger.Info("Project assets loaded successfully");
             }
@@ -151,21 +161,21 @@ namespace RockEngine.Editor.Layers
             {
                 _logger.Info("Creating assets programmatically");
 
-                var project = await _assetManager.CreateProjectAsync("X:\\RockEngine.Vulkan\\RockEngine\\RockEngine.Editor\\TestProject", "DebugProject");
+                var project = await _projectManager.CreateProjectAsync<ProjectAsset, ProjectData>("X:\\RockEngine.Vulkan\\RockEngine\\RockEngine.Editor\\TestProject", "DebugProject");
 
-                var scene = _assetManager.Create<SceneAsset>(new AssetPath("Scenes", "DebugScene"));
+                var scene = _assetFactory.Create<SceneAsset>(new AssetPath("Scenes", "DebugScene"));
                 scene.SetData(new SceneData());
 
                 var skyboxAsset = await CreateTexture("Skybox", "debug_skybox", [
                     "Resources/skybox/right.jpg", "Resources/skybox/left.jpg",
                     "Resources/skybox/top.jpg", "Resources/skybox/bottom.jpg",
                     "Resources/skybox/front.jpg", "Resources/skybox/back.jpg"
-                ], TextureType.TextureCube);
+                ], TextureDimension.TextureCube);
 
-                var cubeMesh = _assetManager.GetAsset<MeshAsset>(DefaultMeshes.CubeAssetID);
+                var cubeMesh = await _assetManager.GetAssetAsync<MeshAsset>(DefaultMeshes.CubeAssetID);
                 await CreateSceneEntities(scene, cubeMesh, skyboxAsset).ConfigureAwait(false);
 
-                var sponza = await _assetManager.LoadModelAsync("Resources\\Models\\SponzaAtrium\\scene.gltf", "Sponza");
+                var sponza = (ModelAsset)await _assetFactory.CreateModelFromFileAsync("Resources\\Models\\SponzaAtrium\\scene.gltf", "Sponza");
                 CreateModelEntities(scene, sponza, new Vector3(0), new Vector3(0.1f));
 
                 await SaveAssetsAsync(sponza, skyboxAsset, scene);
@@ -178,14 +188,15 @@ namespace RockEngine.Editor.Layers
             }
         }
 
-        private async Task<TextureAsset> CreateTexture(string folder, string name, string[] filePaths, TextureType type)
+        private async Task<TextureAsset> CreateTexture(string folder, string name, string[] filePaths, TextureDimension type)
         {
-            var texture = _assetManager.Create<TextureAsset>(new AssetPath(folder, name));
+            var texture = _assetFactory.Create<TextureAsset>(new AssetPath(folder, name));
             texture.SetData(new TextureData
             {
                 FilePaths = filePaths.ToList(),
-                GenerateMipmaps = type != TextureType.TextureCube,
-                Type = type
+                GenerateMipmaps = type != TextureDimension.TextureCube,
+                Dimension = type,
+                ArrayLayers = (uint)filePaths.Length
             });
             await texture.LoadGpuResourcesAsync();
             await _assetManager.SaveAsync(texture);
@@ -198,6 +209,7 @@ namespace RockEngine.Editor.Layers
             var skybox = scene.CreateEntity();
             skybox.AddComponent<Skybox>().Cubemap = skyboxAsset;
             skybox.Transform.Scale = new Vector3(100, 100, 100);
+            skybox.Name = "SKYBOX";
 
             // Camera
             var camera = scene.CreateEntity();
@@ -205,11 +217,11 @@ namespace RockEngine.Editor.Layers
             camera.Name = "Camera";
 
             // Create lights with solid materials
-            for (int i = 0; i < 100; i++)
+            for (int i = 0; i < 1; i++)
             {
                 var lightColor = new Vector3(Random.Shared.NextSingle(), Random.Shared.NextSingle(), Random.Shared.NextSingle());
 
-                var solidMaterial = _assetManager.Create<MaterialAsset>(new AssetPath("Materials", $"solid{i}"));
+                var solidMaterial = _assetFactory.Create<MaterialAsset>(new AssetPath("Materials", $"solid{i}"));
                 solidMaterial.SetData(new MaterialData
                 {
                     PipelineName = "Solid",
@@ -252,8 +264,12 @@ namespace RockEngine.Editor.Layers
             foreach (var part in model.Parts)
             {
                 var entity = scene.CreateEntity();
+                if(part.Name != null)
+                {
+                    entity.Name = part.Name;
+                }
                 entity.AddComponent<MeshRenderer>()
-                    .SetProviders(part.Mesh, part.Material);
+                    .SetProviders(new MeshProvider(part.Mesh), new MaterialProvider(part.Material));
 
                 parent.AddChild(entity);
             }

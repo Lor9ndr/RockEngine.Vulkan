@@ -1,17 +1,17 @@
-﻿using RockEngine.Core.Assets;
-using RockEngine.Core.Assets.AssetData;
+﻿using RockEngine.Assets;
+using RockEngine.Core.Assets;
 
 namespace RockEngine.Core
 {
     public static class DefaultMeshes
     {
         public static readonly Guid CubeAssetID = new Guid("3A709CF6-C6D8-4602-BF12-52B25879BC17");
-        public static void Initalize(AssetManager assetManager)
+        public static void Initalize(IAssetRepository assetRepository)
         {
             MeshAsset meshAsset = new MeshAsset();
             meshAsset.ID = CubeAssetID;
             meshAsset.SetGeometry(Cube.Vertices, Cube.Indices);
-            assetManager.RegisterAsset(meshAsset);
+            assetRepository.Add(meshAsset);
         }
         public static readonly MeshData<Vertex> Cube = new MeshData<Vertex>() { 
 

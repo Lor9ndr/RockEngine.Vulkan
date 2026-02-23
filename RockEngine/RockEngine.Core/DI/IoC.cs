@@ -5,9 +5,6 @@ using Silk.NET.Windowing;
 using SimpleInjector;
 using SimpleInjector.Lifestyles;
 
-    
-
-
 namespace RockEngine.Core.DI
 {
     public static class IoC

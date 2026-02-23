@@ -1,7 +1,10 @@
-﻿using RockEngine.Vulkan;
+﻿using RockEngine.Core.Diagnostics;
+using RockEngine.Vulkan;
 
 using Silk.NET.Vulkan;
 using Silk.NET.Vulkan.Extensions.KHR;
+
+using SkiaSharp;
 
 using System.Diagnostics;
 
@@ -20,6 +23,7 @@ namespace RockEngine.Core.Rendering
         private int _activeSwapchainCount;
         private bool _disposed;
         private ulong _frameNumber;
+        private VkFence _transferFence;
 
         // Pre-allocated arrays for presentation (reused each frame)
         private readonly SwapchainKHR[] _presentSwapchains = new SwapchainKHR[16];
@@ -40,7 +44,7 @@ namespace RockEngine.Core.Rendering
             public bool NeedsRecreation;
             public bool IsMain;
 
-            // PER-FRAME ACQUIRE SEMAPHORES (not per-image)
+            // PER-FRAME ACQUIRE SEMAPHORES
             public VkSemaphore[] ImageAvailableSemaphores;  // One per frame in flight
 
             // PER-IMAGE RENDER SEMAPHORES
@@ -70,7 +74,7 @@ namespace RockEngine.Core.Rendering
 
             public readonly List<VkSemaphore> SemaphoresToReturn = new List<VkSemaphore>(8);
             public readonly List<IDisposable> Resources = new List<IDisposable>(32);
-            public FlushOperation FlushOperation;
+            public SubmitOperation FlushOperation;
 
             public void Reset()
             {
@@ -93,7 +97,7 @@ namespace RockEngine.Core.Rendering
             public void Dispose()
             {
                 FlushOperation?.Dispose();
-                InFlightFence?.Dispose();
+                InFlightFence.Dispose();
                 Reset();
             }
         }
@@ -117,9 +121,10 @@ namespace RockEngine.Core.Rendering
             {
                 _frames[i] = new FrameState
                 {
-                    InFlightFence = VkFence.CreateNotSignaled(context)
+                    InFlightFence =VkFence.CreateNotSignaled(context)
                 };
             }
+            _transferFence = VkFence.CreateNotSignaled(_context);
         }
 
         public void AddSwapchain(VkSwapchain swapchain)
@@ -199,7 +204,7 @@ namespace RockEngine.Core.Rendering
             }
         }
 
-        public UploadBatch BeginFrame()
+        public UploadBatch? BeginFrame()
         {
             if (_disposed) ThrowDisposed();
 
@@ -246,12 +251,11 @@ namespace RockEngine.Core.Rendering
                     }
 
                     var semaphore = entry.ImageAvailableSemaphores[_currentFrameIndex];
-                    uint imageIndex = 0;
 
                     // Reset the frame's acquired image index
                     entry.FrameAcquiredImageIndex[_currentFrameIndex] = uint.MaxValue;
 
-                    var result = entry.Swapchain.AcquireNextImage(semaphore, out imageIndex);
+                    var result = entry.Swapchain.AcquireNextImage(semaphore, out uint imageIndex);
 
                     if (result == Result.ErrorOutOfDateKhr || result == Result.SuboptimalKhr)
                     {
@@ -298,21 +302,26 @@ namespace RockEngine.Core.Rendering
                     anySwapchainInvalid = true;
                 }
             }
+            
+            
 
             // Handle swapchain recreation if needed
             if (anySwapchainInvalid)
             {
                 RecreateInvalidSwapchains();
             }
-
+            if (frame.AcquiredSwapchainCount == 0)
+            {
+               // return null;
+            }
             // Create upload batch
             frame.CurrentBatch = _context.GraphicsSubmitContext.CreateBatch();
+
 
             // Add wait semaphores for all acquired swapchains
             for (int i = 0; i < frame.AcquiredSwapchainCount; i++)
             {
                 int swapchainIdx = frame.AcquiredSwapchainIndices[i];
-                uint imageIdx = frame.AcquiredImageIndices[i];
 
                 var semaphore = _swapchains[swapchainIdx].ImageAvailableSemaphores[_currentFrameIndex];
 
@@ -352,11 +361,23 @@ namespace RockEngine.Core.Rendering
                 }
             }
 
+
+            
+            if(_currentFrameIndex == 0)
+            {
+                _context.TransferSubmitContext.Submit(_transferFence).Wait();
+                _transferFence.Reset();
+            }
+            else
+            {
+                _context.TransferSubmitContext.Submit();
+
+            }
+
             // Submit the batch
             frame.CurrentBatch.Submit();
-
             // Flush with fence
-            frame.FlushOperation = _context.GraphicsSubmitContext.Flush(frame.InFlightFence);
+            frame.FlushOperation = _context.GraphicsSubmitContext.Submit(frame.InFlightFence);
 
             // Present all acquired swapchains
             bool presentSuccess = PresentFrame(frame);
@@ -412,14 +433,14 @@ namespace RockEngine.Core.Rendering
                 var result = _swapchainApi.QueuePresent(_context.Device.PresentQueue, in presentInfo);
 
                 // Handle presentation errors
-                if (result == Result.ErrorOutOfDateKhr || result == Result.SuboptimalKhr)
+                /*if (result == Result.ErrorOutOfDateKhr || result == Result.SuboptimalKhr)
                 {
                     for (int i = 0; i < frame.AcquiredSwapchainCount; i++)
                     {
                         int swapchainIdx = frame.AcquiredSwapchainIndices[i];
                         //_swapchains[swapchainIdx].NeedsRecreation = true;
                     }
-                }
+                }*/
 
                 return result == Result.Success;
             }
@@ -427,7 +448,24 @@ namespace RockEngine.Core.Rendering
 
         private void RecreateInvalidSwapchains()
         {
-            _context.Device.WaitIdle();
+            var framesToWait = new List<int>();
+            for (int i = 0; i < _frameCount; i++)
+            {
+                var frame = _frames[i];
+                for (int j = 0; j < frame.AcquiredSwapchainCount; j++)
+                {
+                    int swapchainIdx = frame.AcquiredSwapchainIndices[j];
+                    if (_swapchains[swapchainIdx].NeedsRecreation)
+                    {
+                        framesToWait.Add(i);
+                        break;
+                    }
+                }
+            }
+            foreach (int frameIdx in framesToWait)
+            {
+                _frames[frameIdx].FlushOperation?.Wait();
+            }
 
             for (int i = 0; i < _activeSwapchainCount; i++)
             {
@@ -452,6 +490,7 @@ namespace RockEngine.Core.Rendering
                             ReturnSemaphoreToPool(semaphore);
                         }
                     }
+
 
                     // Recreate swapchain
                     entry.Swapchain.RecreateSwapchain();

@@ -10,6 +10,7 @@ using System.Text;
 
 namespace RockEngine.Vulkan
 {
+    //[DebuggerStepThrough]
     public static unsafe class VulkanAllocator
     {
         private static readonly Logger _logger = LogManager.GetCurrentClassLogger();
@@ -32,7 +33,7 @@ namespace RockEngine.Vulkan
         private static int _hostFreeCount;
         private static int _deviceFreeCount;
 
-        private static readonly bool _enableStackTrace = Debugger.IsAttached;
+        private static readonly bool _enableStackTrace =  Debugger.IsAttached;
 
         // Store actual device memory handles with detailed info
         private static readonly ConcurrentDictionary<DeviceMemory, DeviceMemoryInfo> _deviceMemoryObjects = new();
@@ -122,7 +123,7 @@ namespace RockEngine.Vulkan
             /// </summary>
             public static void RegisterDeviceMemory(DeviceMemory memory, ulong size,
                 MemoryPropertyFlags flags, string typeName,
-                List<IntPtr> relatedHostAllocations = null)
+                List<IntPtr>? relatedHostAllocations = null)
             {
                 // Capture full stack trace and call chain
                 var stackTrace = _enableStackTrace ? new StackTrace(3, true).ToString() : string.Empty;
@@ -390,10 +391,11 @@ namespace RockEngine.Vulkan
                 for (int i = 0; i < takeFrames; i++)
                 {
                     var frame = frames[i];
-                    var method = frame.GetMethod();
+                ;
+                    var method = DiagnosticMethodInfo.Create(frame);
                     if (method != null)
                     {
-                        sb.Append($"{method.DeclaringType?.Name}.{method.Name}");
+                        sb.Append($"{method.DeclaringTypeName}.{method.Name}");
                         if (i < takeFrames - 1) sb.Append(" → ");
                     }
                 }

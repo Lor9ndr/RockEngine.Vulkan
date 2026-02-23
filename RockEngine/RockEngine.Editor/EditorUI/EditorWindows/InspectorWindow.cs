@@ -1,9 +1,11 @@
 ﻿using ImGuiNET;
 
+using RockEngine.Assets;
 using RockEngine.Core.Assets;
 using RockEngine.Core.DI;
 using RockEngine.Core.ECS.Components;
 using RockEngine.Editor.EditorUI.ImGuiRendering;
+using RockEngine.Editor.EditorUI.Thumbnails;
 using RockEngine.Editor.Selection;
 
 namespace RockEngine.Editor.EditorUI.EditorWindows
@@ -13,9 +15,9 @@ namespace RockEngine.Editor.EditorUI.EditorWindows
         private readonly PropertyDrawer _propertyDrawer;
         private readonly ISelectionManager _selectionManager;
 
-        public InspectorWindow(AssetManager assetManager, ImGuiController imGuiController, ISelectionManager selectionManager) : base("Inspector")
+        public InspectorWindow(IAssetManager assetManager, ImGuiController imGuiController, ISelectionManager selectionManager, IThumbnailService thumbnailService) : base("Inspector")
         {
-            _propertyDrawer = new PropertyDrawer(assetManager, imGuiController);
+            _propertyDrawer = new PropertyDrawer(assetManager, imGuiController, thumbnailService);
             _selectionManager = selectionManager;
         }
 

@@ -1,6 +1,6 @@
 #version 460
 #extension GL_KHR_vulkan_glsl:enable
-
+#include "Include/common.glsl"
 layout(location = 0) in vec3 inPosition;
 layout(location = 1) in vec3 aNormal;
 layout(location = 2) in vec2 aTexCoord;
@@ -9,9 +9,8 @@ layout(location = 4) in vec3 aBitangent;
 
 
 layout(set = 0, binding = 0) uniform GlobalUbo_Dynamic {
-    mat4 viewProj;
-    vec3 camPos;
-} ubo;
+   GlobalUBO ubo;
+};
 
 layout(set = 1, binding = 0) readonly buffer ModelData {
     mat4 models[];

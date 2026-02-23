@@ -1,6 +1,7 @@
 #version 460
 #extension GL_ARB_separate_shader_objects : enable
 #extension GL_KHR_vulkan_glsl : enable
+#extension GL_EXT_scalar_block_layout :enable
 
 layout(input_attachment_index = 0, set = 2, binding = 0) uniform subpassInput gPosition;
 layout(input_attachment_index = 1, set = 2, binding = 1) uniform subpassInput gNormal;
@@ -17,7 +18,7 @@ layout(set = 3, binding = 2) uniform sampler2D brdfLUT;
 layout(set = 4, binding = 0) uniform sampler2DArray shadowMaps;
 layout(set = 4, binding = 1) uniform samplerCubeArray pointShadowMaps;
 
-// NEW: CSM data for directional lights
+// CSM data for directional lights
 struct CSMData {
     mat4 cascadeMatrices[4];
     vec4 cascadeSplits;
@@ -25,23 +26,25 @@ struct CSMData {
     mat4 viewMatrix;
 };
 
-layout(set = 5, binding = 0) uniform CSMDataBuffer {
+layout(scalar, set = 5, binding = 0) uniform CSMDataBuffer {
     CSMData csmData;
 };
+
 struct LightData {
     vec4 positionAndType;
     vec4 directionAndRadius;
     vec4 colorAndIntensity;
-    vec2 cutoffs;
     vec4 shadowParams;
     mat4 shadowMatrix;
+    vec2 cutoffs;
+
 };
 
-layout(std430, set = 1, binding = 0) readonly buffer LightBuffer {
+layout(scalar, set = 1, binding = 1) readonly buffer LightBuffer {
     LightData lights[];
 };
 
-layout(set = 1, binding = 1) uniform LightCount {
+layout(set = 1, binding = 0) uniform LightCount {
     int numLights;
 };
 
@@ -75,7 +78,16 @@ const vec2 POISSON_DISK[16] = vec2[](
     vec2(0.19984126, 0.78641367), vec2(0.14383161, -0.14100790)
 );
 
-// NEW: Cascade visualization colors
+// Cube map sampling vectors for point shadows
+const vec3 CUBE_OFFSETS[20] = vec3[](
+    vec3( 1,  1,  1), vec3( 1, -1,  1), vec3(-1, -1,  1), vec3(-1,  1,  1),
+    vec3( 1,  1, -1), vec3( 1, -1, -1), vec3(-1, -1, -1), vec3(-1,  1, -1),
+    vec3( 1,  1,  0), vec3( 1, -1,  0), vec3(-1, -1,  0), vec3(-1,  1,  0),
+    vec3( 1,  0,  1), vec3(-1,  0,  1), vec3( 1,  0, -1), vec3(-1,  0, -1),
+    vec3( 0,  1,  1), vec3( 0, -1,  1), vec3( 0, -1, -1), vec3( 0,  1, -1)
+);
+
+// Cascade visualization colors
 vec3 CASCADE_COLORS[4] = vec3[](
     vec3(1.0, 0.0, 0.0), // Red - first cascade
     vec3(0.0, 1.0, 0.0), // Green - second cascade
@@ -105,7 +117,7 @@ float distributionGGX(vec3 N, vec3 H, float roughness) {
 
 // Smith geometry function
 float geometrySchlickGGX(float NdotV, float roughness) {
-    float r = roughness + 1.0;
+    float r = (roughness + 1.0);
     float k = (r * r) / 8.0;
     return NdotV / (NdotV * (1.0 - k) + k);
 }
@@ -132,7 +144,7 @@ mat3 rotationMatrix(vec3 axis, float angle) {
     );
 }
 
-// NEW: Function to select which cascade to use
+// Function to select which cascade to use
 int selectCascade(vec3 fragPos, vec3 viewPos, mat4 viewMatrix) {
     // Transform fragment to view space for proper depth calculation
     vec4 fragPosView = viewMatrix * vec4(fragPos, 1.0);
@@ -147,8 +159,7 @@ int selectCascade(vec3 fragPos, vec3 viewPos, mat4 viewMatrix) {
     return 3;
 }
 
-
-float calculateCSMShadow(vec3 fragPos, vec3 normal, vec3 lightDir, LightData light)  {
+float calculateCSMShadow(vec3 fragPos, vec3 normal, vec3 lightDir, LightData light) {
     if (light.shadowParams.z < 0.5) return 0.0;
     
     int shadowIndex = int(light.shadowParams.w);
@@ -207,7 +218,7 @@ float calculateCSMShadow(vec3 fragPos, vec3 normal, vec3 lightDir, LightData lig
     
     shadow /= 9.0; // 3x3 kernel
     return shadow * light.shadowParams.y;
-  }
+}
 
 // Basic PCF for single cascade directional lights (fallback)
 float calculateDirectionalShadow(vec3 fragPos, vec3 normal, vec3 lightDir, LightData light) {
@@ -248,7 +259,7 @@ float calculateSpotShadow(vec3 fragPos, vec3 normal, vec3 lightDir, LightData li
     
     int shadowIndex = int(light.shadowParams.w);
     
-    // CORRECTED: Better bias calculation for spot lights
+    // Better bias calculation for spot lights
     float baseBias = light.shadowParams.x;
     float normalBias = baseBias * tan(acos(clamp(dot(normal, lightDir), 0.0, 1.0)));
     float bias = max(baseBias * 0.3, normalBias);
@@ -256,7 +267,7 @@ float calculateSpotShadow(vec3 fragPos, vec3 normal, vec3 lightDir, LightData li
     // Transform to light space
     vec4 shadowCoord = light.shadowMatrix * vec4(fragPos, 1.0);
     
-    // CORRECTED: Proper perspective divide for spot lights (perspective projection)
+    // Proper perspective divide for spot lights (perspective projection)
     shadowCoord.xyz /= shadowCoord.w;
     
     // Transform from [-1,1] to [0,1] for texture sampling
@@ -268,7 +279,8 @@ float calculateSpotShadow(vec3 fragPos, vec3 normal, vec3 lightDir, LightData li
         return 0.0;
     }
     
-    shadowCoord.z -= bias;
+    // Apply bias before comparison
+    float currentDepth = shadowCoord.z - bias;
     
     // Clamp to avoid edge artifacts
     shadowCoord.xy = clamp(shadowCoord.xy, 0.01, 0.99);
@@ -287,7 +299,7 @@ float calculateSpotShadow(vec3 fragPos, vec3 normal, vec3 lightDir, LightData li
             for (int y = -1; y <= 1; y++) {
                 vec2 sampleCoord = shadowCoord.xy + vec2(x, y) * texelSize * radius;
                 float closestDepth = texture(shadowMaps, vec3(sampleCoord, shadowIndex)).r;
-                shadow += (shadowCoord.z > closestDepth) ? 1.0 : 0.0;
+                shadow += (currentDepth > closestDepth) ? 1.0 : 0.0;
             }
         }
         shadow /= 9.0;
@@ -296,7 +308,7 @@ float calculateSpotShadow(vec3 fragPos, vec3 normal, vec3 lightDir, LightData li
         for (int i = 0; i < PCF_SAMPLES; i++) {
             vec2 sampleCoord = shadowCoord.xy + POISSON_DISK[i] * texelSize * radius;
             float closestDepth = texture(shadowMaps, vec3(sampleCoord, shadowIndex)).r;
-            shadow += (shadowCoord.z > closestDepth) ? 1.0 : 0.0;
+            shadow += (currentDepth > closestDepth) ? 1.0 : 0.0;
         }
         shadow /= float(PCF_SAMPLES);
     }
@@ -304,9 +316,9 @@ float calculateSpotShadow(vec3 fragPos, vec3 normal, vec3 lightDir, LightData li
     return shadow * light.shadowParams.y;
 }
 
-// Optimized point shadow with fixed sampling pattern
+// FIXED: Optimized point shadow with proper cube map sampling
 float calculatePointShadow(vec3 fragPos, vec3 normal, vec3 lightPos, LightData light) {
-     if (light.shadowParams.z < 0.5) return 0.0;
+    if (light.shadowParams.z < 0.5) return 0.0;
     
     int shadowIndex = int(light.shadowParams.w);
     vec3 fragToLight = fragPos - lightPos;
@@ -318,20 +330,29 @@ float calculatePointShadow(vec3 fragPos, vec3 normal, vec3 lightPos, LightData l
     }
     
     vec3 lightDir = normalize(fragToLight);
-    float bias = max(light.shadowParams.x * 0.2, light.shadowParams.x * (1.0 - dot(normal, lightDir)));
+    
+    // Calculate bias based on normal and light direction
+    float bias = max(light.shadowParams.x * 0.05, light.shadowParams.x * (1.0 - dot(normal, -lightDir)));
+    
+    // Normalize current depth to [0, 1] range
+    float currentDepthNormalized = currentDepth / light.directionAndRadius.w;
     
     // Use fewer samples for distant fragments
     float viewDistance = length(camPos - fragPos);
     int samples = (viewDistance > 25.0) ? 8 : 16;
-    float diskRadius = (viewDistance > 25.0) ? 0.015 : 0.03;
     
     float shadow = 0.0;
-    float currentDepthNormalized = currentDepth / light.directionAndRadius.w;
+    float diskRadius = (0.015 + 0.02 * (1.0 - dot(normal, -lightDir))) * (1.0 / (currentDepthNormalized + 0.1));
     
     for (int i = 0; i < samples; i++) {
-        vec3 sampleOffset = fragToLight + POISSON_DISK[i].xyx * diskRadius;
+        // Sample in the direction from light to fragment
+        vec3 sampleOffset = normalize(fragToLight + CUBE_OFFSETS[i] * diskRadius);
         float closestDepth = texture(pointShadowMaps, vec4(sampleOffset, shadowIndex)).r;
-        shadow += (currentDepthNormalized - bias) > closestDepth ? 1.0 : 0.0;
+        
+        // Compare depths
+        if (currentDepthNormalized - bias > closestDepth) {
+            shadow += 1.0;
+        }
     }
     
     shadow /= float(samples);
@@ -350,8 +371,8 @@ vec3 calculateDirectLighting(LightData light, vec3 albedo, float metallic,
     if(lightType == 0.0) { // Directional Light
         L = normalize(-light.directionAndRadius.xyz);
         
-        // CORRECTED: Always use CSM for directional lights when available
-        if (csmData.csmParams.x > 1.0) {
+        // Always use CSM for directional lights when available
+        if (csmData.cascadeSplits.x > 0.0) {
             shadow = calculateCSMShadow(fragPos, normal, L, light);
         } else {
             // Fallback to single cascade
@@ -417,7 +438,7 @@ vec3 calculateDirectLighting(LightData light, vec3 albedo, float metallic,
     return (kD * albedo / PI + specular) * radiance * attenuation * NdotL * shadowFactor;
 }
 
-// NEW: Debug function to visualize cascades
+// Debug function to visualize cascades
 vec3 debugCascadeVisualization(vec3 fragPos, vec3 viewPos, vec3 originalColor, mat4 viewMatrix) {
     int cascadeIndex = selectCascade(fragPos, viewPos, viewMatrix);
     
@@ -432,7 +453,7 @@ vec3 debugCascadeVisualization(vec3 fragPos, vec3 viewPos, vec3 originalColor, m
     return mix(originalColor, cascadeColor, 0.2 + border * 0.3);
 }
 
-// Enhanced IBL calculation
+// FIXED: Enhanced IBL calculation with proper energy conservation
 vec3 calculateIBL(vec3 N, vec3 V, vec3 F0, float roughness, float metallic, float ao, vec3 albedo) {
     roughness = clamp(roughness, MIN_ROUGHNESS, 0.99);
     float NdotV = clamp(dot(N, V), 0.001, 1.0);
@@ -446,20 +467,22 @@ vec3 calculateIBL(vec3 N, vec3 V, vec3 F0, float roughness, float metallic, floa
     vec3 F = fresnelSchlickRoughness(NdotV, F0, roughness);
     
     // Sample prefiltered environment with proper LOD
-    float lod = roughness * MAX_REFLECTION_LOD;
+    float lod = roughness * (MAX_REFLECTION_LOD - 1.0);
     vec3 prefilteredColor = textureLod(prefilterMap, R_rot, lod).rgb;
     
     // Sample BRDF LUT
-    vec2 brdfSample = textureLod(brdfLUT, vec2(NdotV, roughness), 0.0).rg;
+    vec2 brdfSample = texture(brdfLUT, vec2(NdotV, roughness)).rg;
     vec3 specularIBL = prefilteredColor * (F * brdfSample.x + brdfSample.y);
     
-    // Diffuse IBL
+    // FIXED: Diffuse IBL with proper energy conservation
     vec3 kD = (1.0 - F) * (1.0 - metallic);
     vec3 irradiance = texture(irradianceMap, N_rot).rgb;
-    vec3 diffuseIBL = irradiance * albedo;
+    
+    // Apply albedo to diffuse IBL
+    vec3 diffuseIBL = kD * irradiance * albedo;
     
     // Combine with proper intensity and AO
-    vec3 ambient = (kD * diffuseIBL + specularIBL) * ao;
+    vec3 ambient = (diffuseIBL + specularIBL) * ao;
     
     // Apply environment intensity with non-linear response for more artistic control
     float intensity = iblParams.envIntensity;
@@ -515,7 +538,7 @@ void main() {
     vec3 Lo = vec3(0.0);
     
     // Direct lighting
-    int lightCount = min(numLights, 256);
+    int lightCount = min(numLights, 100);
     for(int i = 0; i < lightCount; i++) {
         if(lights[i].colorAndIntensity.a < MIN_LIGHT_THRESHOLD) continue;
         Lo += calculateDirectLighting(lights[i], albedo, metallic, roughness, N, V, F0, fragPos, N);
@@ -525,8 +548,8 @@ void main() {
     vec3 color = ambient + Lo;
     color *= iblParams.exposure;
     
-    // NEW: Debug cascade visualization (uncomment to debug)
-    //color = debugCascadeVisualization(fragPos, camPos, color, csmData.viewMatrix);
+    // Debug cascade visualization (uncomment to debug)
+    // color = debugCascadeVisualization(fragPos, camPos, color, csmData.viewMatrix);
     
     // Tonemapping
     color = tonemapACES(color);

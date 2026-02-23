@@ -70,7 +70,7 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
                 var matrixBinding = _transformManager.GetCurrentBinding(frameIndex);
                 var globalUboBinding = _globalUbo.GetBinding((uint)camIndex);
 
-                var drawGroups = _indirectCommands.GetDrawGroups(Name);
+                var drawGroups = _indirectCommands.GetDrawGroups<GeometryPass>();
                 if (drawGroups.Count == 0)
                 {
                     return;
@@ -100,15 +100,7 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
                         {
                             continue;
                         }
-                        // Pipeline state change
-                        if (!ReferenceEquals(currentState.Pipeline, drawGroup.MaterialPass.Pipeline))
-                        {
-                            batch.BindPipeline(drawGroup.MaterialPass.Pipeline);
-                            currentState.Pipeline = drawGroup.MaterialPass.Pipeline;
-
-                            _bindingManager.BindResource(frameIndex, globalUboBinding, batch, currentState.Pipeline.Layout);
-                            _bindingManager.BindResource(frameIndex, matrixBinding, batch, currentState.Pipeline.Layout);
-                        }
+                        
 
                         // Material change
                         if (!ReferenceEquals(currentState.MaterialPass, drawGroup.MaterialPass))
@@ -123,9 +115,18 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
                             );
                             currentState.MaterialPass.CmdPushConstants(batch);
                         }
+                        // Pipeline state change
+                        if (!ReferenceEquals(currentState.Pipeline, drawGroup.MaterialPass.Pipeline))
+                        {
+                            batch.BindPipeline(drawGroup.MaterialPass.Pipeline);
+                            currentState.Pipeline = drawGroup.MaterialPass.Pipeline;
+
+                            _bindingManager.BindResource(frameIndex, globalUboBinding, batch, currentState.Pipeline.Layout);
+                            _bindingManager.BindResource(frameIndex, matrixBinding, batch, currentState.Pipeline.Layout);
+                        }
 
                         // Issue draw command
-                        if (drawGroup.IsMultiDraw && _supportsMultiDraw)
+                        if (_supportsMultiDraw)
                         {
                             batch.DrawIndexedIndirect(indirectBuffer,
                                 drawGroup.Count,

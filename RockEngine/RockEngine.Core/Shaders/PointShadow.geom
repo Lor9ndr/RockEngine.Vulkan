@@ -5,7 +5,7 @@ layout(triangles) in;
 layout(triangle_strip, max_vertices = 18) out;
 
 layout(push_constant) uniform ShadowPC {
-    vec3 lightPos;
+    vec4 lightPos;
     float farPlane;
     uint shadowIndex;
 } pc;

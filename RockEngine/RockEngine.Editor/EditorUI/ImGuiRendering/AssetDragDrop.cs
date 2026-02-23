@@ -1,5 +1,6 @@
 ﻿using ImGuiNET;
 
+using RockEngine.Assets;
 using RockEngine.Core.Assets;
 
 using System.Runtime.InteropServices;

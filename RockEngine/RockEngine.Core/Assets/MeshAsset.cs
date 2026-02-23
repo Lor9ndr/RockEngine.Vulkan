@@ -1,5 +1,5 @@
-﻿using RockEngine.Core.Assets.AssetData;
-using RockEngine.Core.Attributes;
+﻿using MessagePack;
+
 using RockEngine.Core.DI;
 using RockEngine.Core.Rendering;
 using RockEngine.Core.Rendering.Buffers;
@@ -7,31 +7,35 @@ using RockEngine.Core.ResourceProviders;
 
 namespace RockEngine.Core.Assets
 {
-    public sealed class MeshAsset : Asset<MeshData<Vertex>>, IGpuResource, IMesh, IDisposable, IResourceProvider<IMesh>
+    [MessagePackObject]
+    public sealed partial class MeshAsset : Asset<MeshData<Vertex>>, IGpuResource, IMesh, IDisposable, IResourceProvider<IMesh>
     {
         public override string Type => "Mesh";
 
-        [SerializeIgnore]
+        [IgnoreMember]
+
         private Vertex[]? Vertices => Data?.Vertices;
-        [SerializeIgnore]
+        [IgnoreMember]
+
         private uint[]? Indices => Data?.Indices;
 
-        [SerializeIgnore]
+        [IgnoreMember]
         public bool GpuReady => _allocation is not null;
 
-        [SerializeIgnore]
+        [IgnoreMember]
         public bool HasIndices => IndicesCount > 0;
 
-        [SerializeIgnore]
+        [IgnoreMember]
         private GlobalGeometryBuffer.MeshAllocation? _allocation;
 
-        [SerializeIgnore]
+        [IgnoreMember]
         public uint IndicesCount { get; private set; }
 
-        [SerializeIgnore]
+        [IgnoreMember]
         public uint VerticesCount { get; private set; }
-
+        [IgnoreMember]
         private readonly SemaphoreSlim _gpuLock = new SemaphoreSlim(1, 1);
+        [IgnoreMember]
         private bool _disposed;
 
 
@@ -89,18 +93,7 @@ namespace RockEngine.Core.Assets
             UnloadData();
         }
 
-        public override void UnloadData()
-        {
-            _fileSemaphore.Wait();
-            try
-            {
-                base.UnloadData();
-            }
-            finally
-            {
-                _fileSemaphore.Release();
-            }
-        }
+       
 
         public void UnloadGpuResources()
         {

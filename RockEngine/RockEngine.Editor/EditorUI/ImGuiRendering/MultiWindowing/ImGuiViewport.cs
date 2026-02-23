@@ -28,10 +28,10 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.MultiWindowing
         public bool IsMainViewport { get; }
         public IInputContext InputContext { get; }
        
-        public volatile bool IsFocused  = true;
+        public bool IsFocused  = true;
         public bool IsMinimized { get; private set; }
 
-        public RckImGuiViewport(IWindow window, ImGuiViewportPtr viewportPtr, IInputContext inputContext, bool isMainViewport = false)
+        public RckImGuiViewport(IWindow window, ImGuiViewportPtr viewportPtr, IInputContext inputContext, ImGuiViewportManager imGuiViewportManager, bool isMainViewport = false)
         {
             Window = window;
             ViewportPtr = viewportPtr;
@@ -59,9 +59,9 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.MultiWindowing
         public delegate void Platform_DestroyWindow(ImGuiViewportPtr vp);
         public delegate void Platform_ShowWindow(ImGuiViewportPtr vp);                      
         public delegate void Platform_SetWindowPos(ImGuiViewportPtr vp, Vector2 pos);
-        public unsafe delegate void Platform_GetWindowPos(ImGuiViewportPtr vp, out Vector2 outPos);
+        public delegate void Platform_GetWindowPos(ImGuiViewportPtr vp, out Vector2 outPos);
         public delegate void Platform_SetWindowSize(ImGuiViewportPtr vp, Vector2 size);
-        public unsafe delegate void Platform_GetWindowSize(ImGuiViewportPtr vp, out Vector2 outSize);
+        public delegate void Platform_GetWindowSize(ImGuiViewportPtr vp, out Vector2 outSize);
         public delegate void Platform_SetWindowFocus(ImGuiViewportPtr vp);                  
         public delegate byte Platform_GetWindowFocus(ImGuiViewportPtr vp);
         public delegate byte Platform_GetWindowMinimized(ImGuiViewportPtr vp);
@@ -95,7 +95,6 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.MultiWindowing
 
         public IReadOnlyList<RckImGuiViewport> Viewports => _viewports;
         public RckImGuiViewport MainViewport => _viewports.FirstOrDefault(v => v.IsMainViewport);
-        private readonly ConcurrentQueue<Action> _pendingOperations = new();
 
         public ImGuiViewportManager(VulkanContext vkContext, GraphicsContext graphicsContext, ImGuiController controller, RckRenderPass renderPass, Core.Application application)
         {
@@ -157,7 +156,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.MultiWindowing
         public void RegisterMainViewport(IWindow mainWindow, IInputContext mainInputContext)
         {
             var mainViewport = ImGui.GetMainViewport();
-            var viewport = new RckImGuiViewport(mainWindow, mainViewport, mainInputContext, true);
+            var viewport = new RckImGuiViewport(mainWindow, mainViewport, mainInputContext, this, true);
 
             mainViewport.PlatformUserData = mainWindow.Handle;
             mainViewport.PlatformHandle = mainWindow.Handle;
@@ -187,7 +186,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.MultiWindowing
 
                 var inputContext = window.CreateInput();
 
-                var viewport = new RckImGuiViewport(window, viewportPtr, inputContext);
+                var viewport = new RckImGuiViewport(window, viewportPtr, inputContext,this);
                
                 _viewports.Add(viewport);
                 _viewportMap[viewportPtr.ID] = viewport;
@@ -263,10 +262,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.MultiWindowing
         {
             if (_viewportMap.TryGetValue(vp.ID, out var viewport))
             {
-                //_application.ExecuteOnMainThread(() =>
-                {
-                    viewport.Window.Position = new Vector2D<int>((int)pos.X, (int)pos.Y);
-                }//);
+                viewport.Window.Position = new Vector2D<int>((int)pos.X, (int)pos.Y);
             }
         }
 
@@ -312,7 +308,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.MultiWindowing
         {
             if (_viewportMap.TryGetValue(vp.ID, out var viewport))
             {
-                return IsWindowFocused(viewport) ? (byte)1 : (byte)0;
+                return viewport.IsFocused ? (byte)1 : (byte)0;
             }
             return 0;
         }
@@ -371,12 +367,13 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.MultiWindowing
                     // The swapchain.Create method should handle this, but we'll ensure it here too
                     var batch = _vkContext.GraphicsSubmitContext.CreateBatch();
 
+                    Span<ImageMemoryBarrier2> barriers = stackalloc ImageMemoryBarrier2[swapchain.SwapChainImagesCount];
                     for (int i = 0; i < swapchain.SwapChainImagesCount; i++)
                     {
                         var image = swapchain.VkImages[i];
-                        var barrier = new ImageMemoryBarrier
+                        var barrier = new ImageMemoryBarrier2
                         {
-                            SType = StructureType.ImageMemoryBarrier,
+                            SType = StructureType.ImageMemoryBarrier2,
                             OldLayout = ImageLayout.Undefined,
                             NewLayout = ImageLayout.PresentSrcKhr,
                             SrcQueueFamilyIndex = Vk.QueueFamilyIgnored,
@@ -390,19 +387,21 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.MultiWindowing
                                 BaseArrayLayer = 0,
                                 LayerCount = 1
                             },
-                            SrcAccessMask = AccessFlags.None,
-                            DstAccessMask = AccessFlags.ColorAttachmentWriteBit
-                        };
+                            SrcAccessMask = AccessFlags2.None,
+                            DstAccessMask = AccessFlags2.ColorAttachmentWriteBit,
+                            SrcStageMask = PipelineStageFlags2.None,
+                            DstStageMask = PipelineStageFlags2.ColorAttachmentOutputBit,
 
-                        batch.PipelineBarrier(
-                            PipelineStageFlags.TopOfPipeBit,
-                            PipelineStageFlags.ColorAttachmentOutputBit,
-                            new Span<ImageMemoryBarrier>(ref barrier)
-                        );
+                        };
+                        barriers[i] = barrier;
+
+
+
                     }
+                    batch.PipelineBarrier([], [], barriers);
 
                     using var fence = VkFence.CreateNotSignaled(_vkContext);
-                    _vkContext.GraphicsSubmitContext.FlushSingle(batch, fence).Wait();
+                    _vkContext.GraphicsSubmitContext.SubmitSingle(batch, fence).Wait();
                     fence.Wait();
 
                     Console.WriteLine($"Created render resources for viewport {vp.ID}");

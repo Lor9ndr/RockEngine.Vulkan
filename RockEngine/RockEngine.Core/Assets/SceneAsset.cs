@@ -1,30 +1,36 @@
-﻿using NLog;
+﻿using MessagePack;
 
-using RockEngine.Core.Assets.Serializers;
+using NLog;
+
+using RockEngine.Assets;
 using RockEngine.Core.DI;
 using RockEngine.Core.ECS;
 using RockEngine.Core.ECS.Components;
 using RockEngine.Core.Rendering;
 
 using System.Collections.Concurrent;
-using System.Text.Json;
-using System.Text.Json.Nodes;
 
 using ZLinq;
 
 namespace RockEngine.Core.Assets
 {
-    public sealed class SceneAsset : Asset<SceneData>
+    [MessagePackObject]
+    public sealed class SceneAsset : Asset<SceneData>, IGpuResource
     {
         private static readonly Logger _logger = LogManager.GetCurrentClassLogger();
 
-        [System.Text.Json.Serialization.JsonIgnore]
+        [IgnoreMember]
         public ConcurrentDictionary<ulong, Entity> Entities { get; private set; } = new();
 
         public override string Type => "Scene";
 
-        [System.Text.Json.Serialization.JsonIgnore]
+        [IgnoreMember]
         public bool IsLoaded { get; private set; }
+
+        [IgnoreMember]
+        public bool GpuReady => Entities.All(e =>
+            !e.Value.HasComponent<MeshRenderer>() ||
+            e.Value.GetComponent<MeshRenderer>()?.Mesh == null);
 
         public Entity CreateEntity(string name = null, Entity parent = null)
         {
@@ -42,12 +48,43 @@ namespace RockEngine.Core.Assets
             World.GetCurrent().RemoveEntity(entity);
         }
 
+        public async ValueTask LoadGpuResourcesAsync()
+        {
+            // Load GPU resources for all entities with renderable components
+            foreach (var entity in Entities.Values)
+            {
+                if (entity.TryGetComponent<MeshRenderer>(out var renderer))
+                {
+                    if (renderer.Mesh != null)
+                    {
+                        var model = await renderer.MeshProvider.GetAsync();
+                        if (model is IGpuResource gpuModel)
+                        {
+                            await gpuModel.LoadGpuResourcesAsync();
+                        }
+                    }
+
+                    if (renderer.Material != null)
+                    {
+                        var material = await renderer.MaterialProvider.GetAsync();
+                        if (material is IGpuResource gpuMaterial)
+                        {
+                            await gpuMaterial.LoadGpuResourcesAsync();
+                        }
+                    }
+                }
+            }
+        }
+
+        public void UnloadGpuResources()
+        {
+            // Note: Don't unload GPU resources here as they might be shared
+            // Only unload scene-specific resources
+        }
+
         public void Unload()
         {
-            if (!IsLoaded)
-            {
-                return;
-            }
+            if (!IsLoaded) return;
 
             try
             {
@@ -70,110 +107,56 @@ namespace RockEngine.Core.Assets
 
         public override void BeforeSaving()
         {
-            // Convert entities to serializable data, starting from root entities
-            var rootEntities = Entities.Values.Where(e => e.Parent == null).ToList();
-
             Data = new SceneData
             {
-                Entities = SerializeEntityHierarchy(rootEntities)
+                Entities = Entities.Values.ToList()
             };
         }
 
-        private List<SceneEntityData> SerializeEntityHierarchy(List<Entity> entities)
-        {
-            var result = new List<SceneEntityData>();
-
-            foreach (var entity in entities)
-            {
-                var entityData = new SceneEntityData
-                {
-                    ID = entity.ID,
-                    Name = entity.Name,
-                    ParentID = entity.Parent?.ID,
-                    RenderLayerType = entity.Layer,
-                    Components = entity.Components.AsValueEnumerable().Select(comp =>
-                    {
-                        try
-                        {
-                            // Use System.Text.Json to serialize the component to JsonNode
-                            var jsonString = JsonSerializer.Serialize(comp, comp.GetType(), IoC.Container.GetInstance<IAssetSerializer>().Options);
-                            var jsonNode = JsonNode.Parse(jsonString);
-
-                            return new SceneComponentData
-                            {
-                                TypeName = comp.GetType().AssemblyQualifiedName,
-                                Data = jsonNode
-                            };
-                        }
-                        catch (Exception ex)
-                        {
-                            _logger.Warn(ex, $"Failed to serialize component {comp.GetType().Name} for entity {entity.Name}");
-                            return null;
-                        }
-                    }).Where(c => c != null).ToList()
-                };
-
-                result.Add(entityData);
-
-                // Recursively serialize children
-                if (entity.Children.Count > 0)
-                {
-                    result.AddRange(SerializeEntityHierarchy(entity.Children.ToList()));
-                }
-            }
-
-            return result;
-        }
-
-        public override void AfterSaving()
-        {
-        }
 
         public async Task InstantiateEntities()
         {
-            if (Data == null || IsLoaded)
-            {
-                return;
-            }
+            if (Data == null || IsLoaded) return;
 
             try
             {
                 var entityMap = new ConcurrentDictionary<ulong, Entity>();
-                var serializeOptions = IoC.Container.GetInstance<IAssetSerializer>().Options;
-                // First pass: create all entities without setting hierarchy
-                await Parallel.ForEachAsync(Data.Entities, (entityData, ct) =>
+
+                // First pass: create all entities
+                await Parallel.ForEachAsync(Data.Entities, async (entityData, ct) =>
                 {
                     var entity = CreateEntity(entityData.Name);
                     entityMap[entityData.ID] = entity;
-                    entity.Layer = entityData.RenderLayerType;
+                    entity.Layer = entityData.Layer;
 
+                    // Apply transform
+                    entity.Transform.Position = entityData.Transform.Position;
+                    entity.Transform.Rotation = entityData.Transform.Rotation;
+                    entity.Transform.Scale = entityData.Transform.Scale;
+
+                    // Deserialize components
                     foreach (var componentData in entityData.Components)
                     {
-                        var componentType = System.Type.GetType(componentData.TypeName);
-                        if (componentType != null && typeof(IComponent).IsAssignableFrom(componentType))
-                        {
-                            try
-                            {
-                                // Use System.Text.Json to deserialize the component
-                                var component = componentData.Data.AsObject().Deserialize(componentType, serializeOptions);
 
-                                if (component is Transform componentTransform)
-                                {
-                                    entity.Transform.Position = componentTransform.Position;
-                                    entity.Transform.Rotation = componentTransform.Rotation;
-                                    entity.Transform.Scale = componentTransform.Scale;
-                                }
-                                entity.AddComponent(component as IComponent);
-                            }
-                            catch (Exception ex)
+                        entity.AddComponent(componentData);
+
+                        // Special handling for MeshRendererComponent
+                        if (componentData is MeshRenderer meshRenderer)
+                        {
+                            // Ensure materials are loaded
+                            if (meshRenderer.Material != null)
                             {
-                                _logger.Error(ex, "Failed to deserialize component of type {Type} for entity: {Name}",
-                                    componentType.Name, entity.Name);
+                                await meshRenderer.MaterialProvider.GetAsync();
+                            }
+
+                            // Ensure model is loaded
+                            if (meshRenderer.Mesh != null)
+                            {
+                                await meshRenderer.MeshProvider.GetAsync();
                             }
                         }
-                    }
 
-                    return new ValueTask();
+                    }
                 });
 
                 // Second pass: establish parent-child relationships
@@ -188,7 +171,7 @@ namespace RockEngine.Core.Assets
                 }
 
                 IsLoaded = true;
-                Data = null;
+                Data = null; // Free memory
                 _logger.Debug($"Instantiated {Entities.Count} entities for scene: {Name}");
             }
             catch (Exception ex)
@@ -197,25 +180,5 @@ namespace RockEngine.Core.Assets
                 throw;
             }
         }
-    }
-
-    public class SceneData
-    {
-        public List<SceneEntityData> Entities { get; set; } = new List<SceneEntityData>();
-    }
-
-    public class SceneEntityData
-    {
-        public ulong ID { get; set; }
-        public string Name { get; set; } = string.Empty;
-        public ulong? ParentID { get; set; }
-        public RenderLayer RenderLayerType { get; set; }
-        public List<SceneComponentData> Components { get; set; } = new List<SceneComponentData>();
-    }
-
-    public class SceneComponentData
-    {
-        public string TypeName { get; set; } = string.Empty;
-        public JsonNode Data { get; set; }
     }
 }

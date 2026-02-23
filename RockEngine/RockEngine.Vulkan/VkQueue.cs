@@ -72,7 +72,7 @@ namespace RockEngine.Vulkan
             }
         }
 
-        public unsafe void Submit(Span<CommandBuffer> commandBuffers, Span<Semaphore> singaleSemaphores, Span<Semaphore> waitSemaphores, PipelineStageFlags[] stageFlags, VkFence? fence)
+        public unsafe void Submit(Span<CommandBuffer> commandBuffers, Span<Semaphore> singaleSemaphores, Span<Semaphore> waitSemaphores, Span<PipelineStageFlags> stageFlags, VkFence? fence)
         {
             fixed (CommandBuffer* pCommandbuffers = commandBuffers)
             fixed (Semaphore* vkSemaphores = singaleSemaphores)

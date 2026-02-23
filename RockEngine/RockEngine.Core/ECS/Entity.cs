@@ -1,35 +1,63 @@
-﻿using RockEngine.Core.DI;
+﻿using MessagePack;
+
+using RockEngine.Core.DI;
 using RockEngine.Core.ECS.Components;
 using RockEngine.Core.Rendering;
+
+using System.Diagnostics;
 
 using ZLinq;
 
 namespace RockEngine.Core.ECS
 {
-    public class Entity
+    [MessagePackObject(AllowPrivate = true)]
+    [DebuggerDisplay("Entity - {Name} ({ID})")]
+    public partial class Entity
     {
-        private static uint _id = 0;
-        private readonly Lock _componentsLock = new Lock();
+        private static ulong _nextId = 0;
+        [IgnoreMember]
+        private readonly Lock _componentsLock = new();
 
-        public string Name { get;set;}
+        [Key(0)]
+        public string Name { get; set; }
+
+        [Key(1)]
         public bool IsActive { get; private set; } = true;
 
-        public readonly uint ID;
+        [Key(2)]
+        public ulong ID { get; set; }   // ← now settable, assigned in ctor or deserialization
 
-        private readonly List<IComponent> _components = [];
-        public Transform Transform { get; private set; }
-        public Entity Parent { get; private set; }
-        private readonly List<Entity> _children = new List<Entity>();
+        [Key(3)]
+        private List<IComponent> _components { get; set; } = [];
+
+        [IgnoreMember]
+        public IReadOnlyList<IComponent> Components => _components;
+
+        [IgnoreMember]
+        public Transform Transform => _components.OfType<Transform>().FirstOrDefault();
+
+        // Parent relationship – serialized ONLY as ParentID
+        [Key(4)]
+        public ulong? ParentID { get; set; }
+
+        [IgnoreMember]
+        public Entity? Parent { get; private set; }
+
+        [IgnoreMember]
+        private readonly List<Entity> _children = [];
+
+        [IgnoreMember]
         public IReadOnlyList<Entity> Children => _children.AsReadOnly();
 
+        [Key(5)]
         public RenderLayer Layer { get; set; }
 
         public event Action OnDestroy;
 
         public Entity()
         {
-            ID = _id++;
-            Transform = AddComponent<Transform>();
+            ID = _nextId++;
+            AddComponent<Transform>(); // will be overwritten by deserialization – fine
             Name = $"Entity_{ID}";
             Layer = IoC.Container.GetInstance<RenderLayerSystem>().DefaultLayer;
         }
@@ -79,30 +107,24 @@ namespace RockEngine.Core.ECS
         {
             return _components.AsValueEnumerable().OfType<T>().FirstOrDefault();
         }
-        public IEnumerable<IComponent> Components => _components;
-
 
         public void AddChild(Entity child)
         {
-            if (child.Parent == this)
-            {
-                return;
-            }
+            if (child.Parent == this) return;
 
             child.Parent?.RemoveChild(child);
             child.Parent = this;
+            child.ParentID = this.ID;          //  sync ParentID
             _children.Add(child);
             child.Transform.SetParent(this.Transform);
         }
 
         public bool RemoveChild(Entity child)
         {
-            if (!_children.Remove(child))
-            {
-                return false;
-            }
+            if (!_children.Remove(child)) return false;
 
             child.Parent = null;
+            child.ParentID = null;            // sync ParentID
             child.Transform.SetParent(null);
             return true;
         }
@@ -158,6 +180,12 @@ namespace RockEngine.Core.ECS
         public bool HasComponent<T>()
         {
             return _components.OfType<T>().Any();
+        }
+
+        public bool TryGetComponent<T>(out T? component)
+        {
+            component = _components.OfType<T>().FirstOrDefault();
+            return component != null;
         }
     }
 }

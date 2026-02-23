@@ -1,5 +1,4 @@
-﻿using RockEngine.Core.Helpers.Attributes;
-using RockEngine.Core.Rendering.Objects;
+﻿using RockEngine.Core.Rendering.Objects;
 using RockEngine.Core.Rendering.Texturing;
 using RockEngine.Vulkan;
 
@@ -36,7 +35,7 @@ namespace RockEngine.Core.Rendering.RenderTargets
             _engine = engine;
             _gBuffer = new GBuffer(context, size, engine.MainSwapchain.DepthFormat);
             CreateTexture();
-            ClearValues =
+            ClearValues = new Memory<ClearValue>(
            [
                 // Color attachments (Albedo, Normal, Position)
                 new ClearValue { Color = new ClearColorValue(0.0f, 0.0f, 0.0f, 0) },
@@ -50,7 +49,7 @@ namespace RockEngine.Core.Rendering.RenderTargets
         
                 // Output texture
                 new ClearValue { Color = new ClearColorValue(0) }
-           ];
+           ]);
         }
 
         public override void Initialize(RckRenderPass renderPass)
@@ -100,7 +99,7 @@ namespace RockEngine.Core.Rendering.RenderTargets
         {
             using (batch.NameAction(nameof(PrepareForRender), [1, 1, 1, 1]))
             {
-                OutputTexture.Image.TransitionImageLayout(batch, ImageLayout.ColorAttachmentOptimal);
+                OutputTexture.Image.TransitionImageLayout(batch, ImageLayout.Undefined, ImageLayout.ColorAttachmentOptimal);
             }
         }
 
@@ -108,7 +107,7 @@ namespace RockEngine.Core.Rendering.RenderTargets
         {
             using (batch.NameAction(nameof(TransitionToRead), [1, 1, 1, 1]))
             {
-                OutputTexture.Image.TransitionImageLayout(batch, ImageLayout.ShaderReadOnlyOptimal);
+                OutputTexture.Image.TransitionImageLayout(batch, ImageLayout.ColorAttachmentOptimal, ImageLayout.ShaderReadOnlyOptimal);
             }
         }
 

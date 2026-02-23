@@ -1,5 +1,8 @@
-﻿using NLog;
+﻿using MessagePack;
 
+using NLog;
+
+using RockEngine.Assets;
 using RockEngine.Core.Assets;
 using RockEngine.Core.Attributes;
 using RockEngine.Core.DI;
@@ -9,43 +12,65 @@ using RockEngine.Core.ResourceProviders;
 
 namespace RockEngine.Core.ECS.Components
 {
+    [MessagePackObject]
     public partial class MeshRenderer : Component, IDisposable
     {
         private static readonly Logger _logger = LogManager.GetCurrentClassLogger();
 
+        [Key(7)]
         public MeshProvider MeshProvider
         {
             get => _meshProvider;
             set => SetProviders(value, MaterialProvider);
         }
+        [Key(8)]
         public MaterialProvider MaterialProvider
         {
             get => _materialProvider;
             set => SetProviders(_meshProvider, value);
         }
 
-        [SerializeIgnore]
+        [IgnoreMember]
         public Material Material { get; private set; }
 
         [SerializeIgnore]
+        [IgnoreMember]
+
         public IMesh Mesh { get; private set; }
 
         [SerializeIgnore]
+        [IgnoreMember]
+
         public bool HasIndices => Mesh?.HasIndices ?? false;
 
         [SerializeIgnore]
+        [IgnoreMember]
+
         public uint? IndicesCount => Mesh?.IndicesCount;
 
         [SerializeIgnore]
+        [IgnoreMember]
+
         public uint VerticesCount => Mesh?.VerticesCount ?? 0;
 
+        [Key(14)]
         public bool CastShadows { get; set; } = true;
 
         // Track transform index and event handler
+        [IgnoreMember]
+
         private int _transformIndex = -1;
+        [IgnoreMember]
+
         private Action<Transform> _transformChangedHandler;
+        [IgnoreMember]
+
         private bool _isRegistered = false;
+        [IgnoreMember]
+
         private MeshProvider _meshProvider;
+        [IgnoreMember]
+
         private MaterialProvider _materialProvider;
 
         public MeshRenderer()

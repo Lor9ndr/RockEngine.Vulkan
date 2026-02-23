@@ -5,9 +5,14 @@ using RockEngine.Core.Rendering.Objects;
 using RockEngine.Core.Rendering.ResourceBindings;
 using RockEngine.Vulkan;
 
+using Silk.NET.Vulkan;
+
 using System.Numerics;
 using System.Reflection;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+
+using ZLinq;
 
 using static RockEngine.Vulkan.ShaderReflectionData;
 
@@ -31,6 +36,34 @@ namespace RockEngine.Core.Rendering.Materials
             Bindings = new BindingCollection();
         }
 
+        public void PrepareToRender(UploadBatch batch)
+        {
+            /*List<ImageMemoryBarrier2> memoryBarrier2s = new List<ImageMemoryBarrier2>();
+
+            foreach (var bindings in Bindings)
+            {
+                foreach (var item in bindings.Item2)
+                {
+                    if(item is StorageImageBinding storage)
+                    {
+                        foreach (var texture in storage.Textures)
+                        {
+                            texture.Image.GetMemoryBarrier(out var membarrier, ImageLayout.Undefined, storage.Layout);
+                            memoryBarrier2s.Add(membarrier);
+                        }
+                    }
+                    else if (item is TextureBinding textureBinding)
+                    {
+                        foreach (var texture in textureBinding.Textures)
+                        {
+                            texture.Image.GetMemoryBarrier(out var membarrier, ImageLayout.Undefined, textureBinding.ImageLayout);
+                            memoryBarrier2s.Add(membarrier);
+                        }
+                    }
+                }
+            }
+            batch.PipelineBarrier(imageMemoryBarriers: CollectionsMarshal.AsSpan(memoryBarrier2s), DependencyFlags.None);*/
+        }
         private void InitializeDefaultPushConstantValues()
         {
             // Initialize all push constants with their type-appropriate default values
@@ -125,14 +158,14 @@ namespace RockEngine.Core.Rendering.Materials
         private bool IsBindingCompatible(ResourceBinding binding)
         {
             return Pipeline.Layout.DescriptorSetLayouts.TryGetValue(binding.SetLocation, out var setLayout) &&
-                   setLayout.Bindings.Any(s =>
+                   setLayout.Bindings.AsValueEnumerable().Any(s =>
                    {
                        return binding.BindingLocation.Contains(s.Binding) &&
                                                                      s.DescriptorType == binding.DescriptorType;
                    });
         }
 
-        public void PushConstant<T>(string name, in T value) where T:unmanaged
+        public void PushConstant<T>(string name, in T value)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
 

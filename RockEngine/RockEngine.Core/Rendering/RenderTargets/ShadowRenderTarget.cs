@@ -81,8 +81,6 @@ namespace RockEngine.Core.Rendering.RenderTargets
                 batch,
                 ImageLayout.Undefined,
                 ImageLayout.DepthStencilAttachmentOptimal,
-                PipelineStageFlags.TopOfPipeBit,
-                PipelineStageFlags.EarlyFragmentTestsBit,
                 baseMipLevel: 0,
                 levelCount: 1,
                 baseArrayLayer: 0,

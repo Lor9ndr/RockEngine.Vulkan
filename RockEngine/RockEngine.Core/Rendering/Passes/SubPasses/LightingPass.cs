@@ -20,6 +20,7 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
         private readonly GraphicsContext _graphicsEngine;
         private readonly ShadowManager _shadowManager;
         private readonly PipelineManager _pipelineManager;
+        private readonly GlobalUbo _globalUbo;
         private TextureBinding _iblBinding;
         private VkPipeline _lightingPipeline;
 
@@ -29,7 +30,8 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
             LightManager lightManager,
             GraphicsContext graphicsEngine,
             ShadowManager shadowManager,
-            PipelineManager pipelineManager)
+            PipelineManager pipelineManager,
+            GlobalUbo globalUbo)
         {
             _context = context;
             _bindingManager = bindingManager;
@@ -37,6 +39,7 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
             _graphicsEngine = graphicsEngine;
             _shadowManager = shadowManager;
             _pipelineManager = pipelineManager;
+            _globalUbo = globalUbo;
         }
 
         public static uint Order => 1;
@@ -94,7 +97,7 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
                     .AddState(DynamicState.Viewport)
                     .AddState(DynamicState.Scissor));
             _lightingPipeline = _pipelineManager.Create(pipelineBuilder)!;
-            SetIBLTextures(Texture3D.GetDefaultCubemapTexture(_context), Texture3D.GetDefaultCubemapTexture(_context), Texture2D.GetDefaultAlbedoTexture(_context));
+            SetIBLTextures(Texture3D.GetDefaultCubemapTexture(_context), Texture3D.GetDefaultCubemapTexture(_context), Texture2D.GetEmptyTexture(_context));
         }
 
         public void Execute(UploadBatch cmd, params object[] args)
@@ -103,6 +106,7 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
             {
                 uint frameIndex = (uint)args[0];
                 var camera = args[1] as Camera ?? throw new ArgumentNullException(nameof(Camera));
+                var cameraIndex = args[2] as int? ?? throw new ArgumentNullException(nameof(Camera));
 
                 cmd.SetViewport(camera.RenderTarget.Viewport);
                 cmd.SetScissor(camera.RenderTarget.Scissor);
@@ -112,9 +116,11 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
 
 
                     var materialPass = cameraRenderTarget.Material.GetPass(Name);
-                    materialPass.BindResource(_lightManager.GetCurrentLightBufferBinding());
+                    materialPass.BindResource(_lightManager.GetCurrentLightBufferBinding(frameIndex));
+                    materialPass.BindResource(_lightManager.GetCountLightBufferBinding());
                     materialPass.BindResource(_shadowManager.GetShadowMapsBinding());
                     materialPass.BindResource(_shadowManager.GetPointShadowMapsBinding());
+                    materialPass.BindResource(_globalUbo.GetBinding((uint)cameraIndex));
                     if (materialPass.Bindings.MaxSetLocation != 5)
                     {
                         var csm = _shadowManager.GetCSMDataBinding().Clone();
@@ -138,7 +144,7 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
 
         internal void SetIBLTextures(Texture irradiance, Texture prefilter, Texture brdfLUT)
         {
-            _iblBinding =  new TextureBinding(3, 0,  0, 1, irradiance, prefilter, brdfLUT);
+            _iblBinding =  new TextureBinding(3, 0,  0, 1, ImageLayout.ShaderReadOnlyOptimal,irradiance, prefilter, brdfLUT);
         }
 
         public void SetupAttachmentDescriptions(RenderPassBuilder builder)

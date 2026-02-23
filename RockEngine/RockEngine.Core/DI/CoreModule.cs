@@ -45,6 +45,7 @@ namespace RockEngine.Core.DI
             container.Register<CoroutineScheduler>(Lifestyle.Singleton);
             container.Register<ShadowManager>(Lifestyle.Scoped);
             container.Register<PhysicsManager>(Lifestyle.Scoped);
+            container.Register<IServiceProvider, Container>(Lifestyle.Singleton);
 
 
             /*IoC.Container.RegisterInitializer<LayerStack>(async s =>
@@ -54,11 +55,7 @@ namespace RockEngine.Core.DI
                     await s.PushLayer(item);
                 }
             });*/
-            IoC.Container.RegisterInitializer<InputManager>(s =>
-            {
-                var inputContext = IoC.Container.GetInstance<IInputContext>();
-                s.Context = inputContext;
-            });
+           
 
             // Factory for IWindow
             SdlWindowing.Use();
@@ -66,11 +63,12 @@ namespace RockEngine.Core.DI
             {
             }
             ));
-            container.Register<IInputContext>(() =>
+           
+            IoC.Container.RegisterInitializer<InputManager>(s =>
             {
                 var window = container.GetInstance<IWindow>();
-                return window.CreateInput();
-            }, Lifestyle.Scoped);
+                s.SetInput(window, window.CreateInput());
+            });
 
 
 
@@ -129,7 +127,7 @@ namespace RockEngine.Core.DI
             {
                 var vkContext = container.GetInstance<VulkanContext>();
                 
-                return new IndirectCommandManager(vkContext, TransformManager.INITIAL_CAPACITY, container.GetInstance<TransformManager>());
+                return new IndirectCommandManager(vkContext, TransformManager.INITIAL_CAPACITY, container.GetInstance<TransformManager>(), container.GetInstance<GlobalGeometryBuffer>());
             },Lifestyle.Scoped);
 
             container.Register<IRegistry<RckPipeline, string>, PipelineRegistry>(Lifestyle.Scoped);

@@ -1,6 +1,5 @@
 ﻿using Silk.NET.Vulkan;
 
-using System;
 using System.Runtime.CompilerServices;
 
 namespace RockEngine.Vulkan
@@ -42,7 +41,7 @@ namespace RockEngine.Vulkan
 
         public unsafe bool TryStage<T>(UploadBatch batch, T[] data, out ulong offset, out ulong size) where T : unmanaged
         {
-            return TryStageInternal<T>(batch, data.AsSpan(), out offset, out size);
+            return TryStageInternal(batch, data.AsSpan(), out offset, out size);
         }
 
         public unsafe bool TryStage<T>(UploadBatch batch, ReadOnlySpan<T> data, out ulong offset, out ulong size) where T : unmanaged
@@ -50,11 +49,9 @@ namespace RockEngine.Vulkan
             return TryStageInternal(batch, data, out offset, out size);
         }
 
-        private unsafe bool TryStageInternal<T>(UploadBatch batch, ReadOnlySpan<T> data, out ulong offset, out ulong size) where T : unmanaged
+        private bool TryStageInternal<T>(UploadBatch batch, ReadOnlySpan<T> data, out ulong offset, out ulong size) where T : unmanaged
         {
             size = (ulong)(Unsafe.SizeOf<T>() * data.Length);
-            offset = 0;
-
             lock (_bufferLock)
             {
                 // Check if we need to downsize before processing this allocation
@@ -90,33 +87,27 @@ namespace RockEngine.Vulkan
                 }
 
                 // Map buffer and copy data
-                _stagingBuffer.Map(out var pdata, size, alignedOffset);
-                fixed (T* dataPtr = data)
+                using (var mem = _stagingBuffer.MapMemory(size, alignedOffset))
                 {
-                    System.Buffer.MemoryCopy(
-                        dataPtr,
-                        (byte*)pdata + alignedOffset,
-                        _bufferSize - alignedOffset,
-                        size);
+                    data.CopyTo(mem.GetSpan<T>());
                 }
 
+
                 // Create memory barrier
-                var bufferBarrier = new BufferMemoryBarrier
+             /*   var bufferBarrier = new BufferMemoryBarrier2
                 {
-                    SType = StructureType.BufferMemoryBarrier,
-                    SrcAccessMask = AccessFlags.HostWriteBit,
-                    DstAccessMask = AccessFlags.TransferReadBit,
+                    SType = StructureType.BufferMemoryBarrier2,
+                    SrcAccessMask = AccessFlags2.HostWriteBit,
+                    DstAccessMask = AccessFlags2.TransferReadBit,
                     Buffer = _stagingBuffer,
                     Offset = alignedOffset,
-                    Size = size
+                    Size = size,
+                    SrcStageMask = PipelineStageFlags2.HostBit,
+                    DstStageMask = PipelineStageFlags2.TransferBit
                 };
 
                 // Add to command batch
-                batch.PipelineBarrier(
-                    srcStage: PipelineStageFlags.HostBit,
-                    dstStage: PipelineStageFlags.TransferBit,
-                    bufferMemoryBarriers: new[] { bufferBarrier }
-                );
+                batch.PipelineBarrier([],[ bufferBarrier], []);*/
 
                 // Update state
                 offset = alignedOffset;
@@ -153,7 +144,7 @@ namespace RockEngine.Vulkan
                 _bufferOffset = 0;
 
                 // Check if we should schedule downsize
-                DateTime now = DateTime.Now;
+                DateTime now = DateTime.UtcNow;
                 TimeSpan timeSinceLastReset = now - _lastResetTime;
                 _lastResetTime = now;
 

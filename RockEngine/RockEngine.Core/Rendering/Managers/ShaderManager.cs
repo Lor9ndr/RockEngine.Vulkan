@@ -1,4 +1,5 @@
-﻿using System.Diagnostics;
+﻿using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -8,8 +9,8 @@ namespace RockEngine.Core.Rendering.Managers
     {
         private readonly string _basePath;
         private readonly string _includePath;
-        private readonly Dictionary<string, byte[]> _compiledShaders = new();
-        private readonly Dictionary<string, string> _includeCache = new();
+        private readonly ConcurrentDictionary<string, byte[]> _compiledShaders = new();
+        private readonly ConcurrentDictionary<string, string> _includeCache = new();
 
         public ShaderManager()
         {
@@ -330,7 +331,7 @@ namespace RockEngine.Core.Rendering.Managers
             if (_compiledShaders.TryGetValue(name, out var bytes))
             {
                 if (removeAfterGet)
-                    _compiledShaders.Remove(name);
+                    _compiledShaders.Remove(name, out _);
                 return bytes;
             }
 
@@ -339,7 +340,7 @@ namespace RockEngine.Core.Rendering.Managers
             if (_compiledShaders.TryGetValue(nameWithoutExtension, out bytes))
             {
                 if (removeAfterGet)
-                    _compiledShaders.Remove(nameWithoutExtension);
+                    _compiledShaders.Remove(nameWithoutExtension, out _);
                 return bytes;
             }
 
@@ -351,7 +352,7 @@ namespace RockEngine.Core.Rendering.Managers
             if (key != null && _compiledShaders.TryGetValue(key, out bytes))
             {
                 if (removeAfterGet)
-                    _compiledShaders.Remove(key);
+                    _compiledShaders.Remove(key, out _);
                 return bytes;
             }
 
@@ -370,14 +371,14 @@ namespace RockEngine.Core.Rendering.Managers
             if (_compiledShaders.TryGetValue(fileName, out var bytes))
             {
                 if (removeAfterGet)
-                    _compiledShaders.Remove(fileName);
+                    _compiledShaders.Remove(fileName, out _);
                 return bytes;
             }
 
             if (_compiledShaders.TryGetValue(fileNameWithoutExt, out bytes))
             {
                 if (removeAfterGet)
-                    _compiledShaders.Remove(fileNameWithoutExt);
+                    _compiledShaders.Remove(fileNameWithoutExt, out _);
                 return bytes;
             }
 

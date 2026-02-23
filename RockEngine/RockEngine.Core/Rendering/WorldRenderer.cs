@@ -148,7 +148,7 @@ namespace RockEngine.Core.Rendering
             var cameras = _cameraManager.RegisteredCameras;
             var updateTasks = new List<Task>
             {
-                _lightManager.UpdateAsync(_cameraManager.RegisteredCameras).AsTask(),
+                _lightManager.UpdateAsync(GraphicsEngine.FrameIndex).AsTask(),
                 _transformManager.UpdateAsync(FrameIndex).AsTask(),
                 _indirectCommandManager.UpdateAsync().AsTask(),
             };
@@ -167,10 +167,25 @@ namespace RockEngine.Core.Rendering
             {
                 await GlobalUbo.UpdateAsync(cameras
                     .AsValueEnumerable()
-                    .Select(s => new GlobalUbo.GlobalUboData()
+                    .Select(s =>
                     {
-                        Position = s.Entity.Transform.Position.AsVector4(),
-                        ViewProjection = s.ViewProjectionMatrix,
+                        bool succcess1 = Matrix4x4.Invert(s.ProjectionMatrix, out var invProj);
+                        bool succcess2 = Matrix4x4.Invert(s.ViewMatrix, out var invView);
+                        bool succcess = Matrix4x4.Invert(s.ViewProjectionMatrix, out var invViewProj);
+
+                        return new GlobalUbo.GlobalUboData()
+                        {
+
+                            ViewProj = s.ViewProjectionMatrix,
+                            InvProj = invProj,
+                            InvView = invView,
+                            Proj = s.ProjectionMatrix,
+                            View = s.ViewMatrix,
+                            InvViewProj = invViewProj,
+                            CamPos = s.Entity.Transform.Position.AsVector4(),
+                            ScreenSize = new Vector2(s.RenderTarget.Viewport.Width, s.RenderTarget.Viewport.Height),
+                            FarClip = s.FarClip
+                        };
                     }).ToArray()).ConfigureAwait(false);
             }
             _prevFrameIndex = FrameIndex;

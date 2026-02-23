@@ -45,16 +45,6 @@ namespace RockEngine.Vulkan
             Vk.WaitForFences(_context.Device, 1, in _vkObject, true, timeoutMs) // 10 сек
                 .VkAssertResult("Failed to wait fence");
         }
-        public void Signal(VkQueue queue)
-        {
-            var submitInfo = new SubmitInfo
-            {
-                SType = StructureType.SubmitInfo,
-                CommandBufferCount = 0,
-                PCommandBuffers = null
-            };
-            queue.Submit(submitInfo, this);
-        }
         public async Task WaitAsync(CancellationToken cancellationToken = default)
         {
             Wait();

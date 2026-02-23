@@ -1,6 +1,8 @@
 ﻿using RockEngine.Core.ECS.Components;
+using RockEngine.Core.Helpers;
 
 using System.Runtime.InteropServices;
+using System.Numerics;
 
 namespace RockEngine.Core.Rendering.Managers
 {
@@ -18,7 +20,7 @@ namespace RockEngine.Core.Rendering.Managers
         public int Register(Camera camera, WorldRenderer renderer)
         {
             _activeCameras.Add(camera);
-            return _activeCameras.Count;
+            return _activeCameras.Count - 1;
         }
 
 
@@ -28,7 +30,8 @@ namespace RockEngine.Core.Rendering.Managers
             camera.RenderTarget?.Dispose();
         }
 
-        [StructLayout(LayoutKind.Sequential, Pack = 16)]
+        [GLSLStruct(GLSLMemoryLayout.Std140)]
+
         public struct IBLParams
         {
             public float Exposure;      // [0.1 - 4.0] Typical HDR exposure range
@@ -36,6 +39,9 @@ namespace RockEngine.Core.Rendering.Managers
             public float AoStrength;    // [0.0 - 2.0] Ambient occlusion effect strength
             public float Gamma;         // [1.8 - 2.4] Gamma correction
             public float EnvRotation;   // [0.0 - 2*PI] Environment map rotation
+            private float _padding1;
+            private float _padding2;
+            private float _padding3;
 
             public IBLParams()
             {

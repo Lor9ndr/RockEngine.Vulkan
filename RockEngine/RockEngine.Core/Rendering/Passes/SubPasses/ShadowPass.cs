@@ -2,6 +2,7 @@
 using RockEngine.Core.DI;
 using RockEngine.Core.Diagnostics;
 using RockEngine.Core.ECS.Components;
+using RockEngine.Core.Helpers;
 using RockEngine.Core.Rendering.Buffers;
 using RockEngine.Core.Rendering.Managers;
 using RockEngine.Core.Rendering.Materials;
@@ -211,7 +212,7 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
 
                         ShadowPointPushConstants pushConstants = new ShadowPointPushConstants
                         {
-                            LightPosition = new Vector4(light.Entity.Transform.Position,0),
+                            LightPosition = new Vector4(light.Entity.Transform.WorldPosition,0),
                             FarPlane = light.Radius,
                             ShadowIndex = (uint)lightData.ShadowParams.W
                         };
@@ -254,7 +255,7 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
             _bindingManager.BindResourcesForMaterial(frameIndex, materialPass, batch);
 
             // Render shadow-casting geometry
-            var drawGroups = CollectionsMarshal.AsSpan(_indirectCommands.GetDrawGroups(GeometryPass.Name));
+            var drawGroups = CollectionsMarshal.AsSpan(_indirectCommands.GetDrawGroups<GeometryPass>());
             var indirectBuffer = _indirectCommands.IndirectBuffer.Buffer;
 
             foreach (ref readonly var drawGroup in drawGroups)
@@ -281,28 +282,29 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
             }
         }
 
-        [StructLayout(LayoutKind.Sequential, Pack = 16)]
+        [GLSLStruct]
         public struct ShadowPointPushConstants
         {
             public System.Numerics.Vector4 LightPosition;      // Used for point lights
             public float FarPlane;             // Used for point lights
             public uint ShadowIndex;           // Index into shadow map array
-            private System.Numerics.Vector2 _glslPadding1;
         }
 
-        [StructLayout(LayoutKind.Sequential, Pack = 16)]
+        [GLSLStruct(GLSLMemoryLayout.Std140)]
+
         public struct ShadowSpotPushConstants
         {
             public Matrix4x4 ShadowMatrix;     // Used for directional/spot lights (non-CSM)
         }
 
-        [StructLayout(LayoutKind.Sequential, Pack = 16)]
+        [GLSLStruct(GLSLMemoryLayout.Std140)]
         public struct ShadowCSMPushConstants
         {
             public Vector4 LightDirection;     // Used for CSM directional lights
             public uint CascadeCount;          // Used for CSM
             public uint ShadowIndex;           // Index into shadow map array
-            private System.Numerics.Vector2 _glslPadding1;
+            private float _padding1;
+            private float _padding2;
         }
 
         public void SetupAttachmentDescriptions(RenderPassBuilder builder)
@@ -311,7 +313,7 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
                 .WithDepthOperations(
                     load: AttachmentLoadOp.Clear,
                     store: AttachmentStoreOp.Store,
-                    initialLayout: ImageLayout.Undefined,
+                    initialLayout: ImageLayout.DepthStencilAttachmentOptimal,
                     finalLayout: ImageLayout.TransferSrcOptimal)
                 .Add();
         }
@@ -329,8 +331,8 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
                     .FromExternal()
                     .ToSubpass(subpassIndex)
                     .WithStages(
-                        PipelineStageFlags.TopOfPipeBit,
-                        PipelineStageFlags.EarlyFragmentTestsBit)
+                        PipelineStageFlags.VertexShaderBit,
+                        PipelineStageFlags.LateFragmentTestsBit)
                     .WithAccess(
                         AccessFlags.None,
                         AccessFlags.DepthStencilAttachmentWriteBit)

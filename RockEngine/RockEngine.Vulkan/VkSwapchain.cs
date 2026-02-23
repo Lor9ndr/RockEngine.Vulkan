@@ -2,6 +2,7 @@
 using Silk.NET.Vulkan.Extensions.KHR;
 
 using System.Numerics;
+using System.Threading;
 
 
 namespace RockEngine.Vulkan
@@ -511,14 +512,14 @@ namespace RockEngine.Vulkan
         private void TransitionSwapchainImagesToPresentLayout()
         {
             var batch = _context.GraphicsSubmitContext.CreateBatch();
-
+            Span<ImageMemoryBarrier2> barriers = stackalloc ImageMemoryBarrier2[_images.Length];
             // Transition all swapchain images to PRESENT_SRC_KHR layout
             for (int i = 0; i < _images.Length; i++)
             {
                 var image = _images[i];
-                var barrier = new ImageMemoryBarrier
+                var barrier = new ImageMemoryBarrier2
                 {
-                    SType = StructureType.ImageMemoryBarrier,
+                    SType = StructureType.ImageMemoryBarrier2,
                     OldLayout = ImageLayout.Undefined,
                     NewLayout = ImageLayout.PresentSrcKhr,
                     SrcQueueFamilyIndex = Vk.QueueFamilyIgnored,
@@ -532,19 +533,17 @@ namespace RockEngine.Vulkan
                         BaseArrayLayer = 0,
                         LayerCount = 1
                     },
-                    SrcAccessMask = AccessFlags.None,
-                    DstAccessMask = AccessFlags.ColorAttachmentWriteBit
+                    SrcAccessMask = AccessFlags2.None,
+                    DstAccessMask = AccessFlags2.ColorAttachmentWriteBit,
+                    SrcStageMask = PipelineStageFlags2.None,
+                    DstStageMask = PipelineStageFlags2.ColorAttachmentOutputBit
                 };
-
-                batch.PipelineBarrier(
-                    PipelineStageFlags.TopOfPipeBit,
-                    PipelineStageFlags.ColorAttachmentOutputBit,
-                    new Span<ImageMemoryBarrier>(ref barrier)
-                );
+                barriers[i] = barrier;
             }
+            batch.PipelineBarrier([], [], barriers);
 
-           using var fence = VkFence.CreateNotSignaled(_context);
-            _context.GraphicsSubmitContext.FlushSingle(batch, fence).Wait();
+            using var fence = VkFence.CreateNotSignaled(_context);
+            _context.GraphicsSubmitContext.SubmitSingle(batch, fence).Wait();
         }
 
         private void DisposeImagesAndViews()
@@ -584,8 +583,8 @@ namespace RockEngine.Vulkan
             _depthImage = VkImage.Create(_context, in imageCi, MemoryPropertyFlags.DeviceLocalBit, aspectMask);
             _depthImage.LabelObject("SwapchainDepthImage");
 
-            _depthImage.TransitionImageLayout(batch, ImageLayout.DepthStencilAttachmentOptimal, PipelineStageFlags.TopOfPipeBit, PipelineStageFlags.EarlyFragmentTestsBit, 0, 1);
-            _context.GraphicsSubmitContext.FlushSingle(batch, fence).Wait();
+            _depthImage.TransitionImageLayout(batch, ImageLayout.Undefined, ImageLayout.DepthStencilAttachmentOptimal);
+            _context.GraphicsSubmitContext.SubmitSingle(batch, fence).Wait();
 
 
             var imageViewCi = new ImageViewCreateInfo

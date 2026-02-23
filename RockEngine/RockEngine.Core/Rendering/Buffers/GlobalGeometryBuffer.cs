@@ -24,12 +24,13 @@ namespace RockEngine.Core.Rendering.Buffers
         private readonly Dictionary<Guid, Type> _vertexTypes = new();
         private readonly Dictionary<Guid, uint> _vertexStrides = new();
         private readonly Lock _allocationLock = new();
+        private readonly SemaphoreSlim _defragmentSemaphore = new SemaphoreSlim(1,1);
 
         // Defragmentation tracking
         private ulong _vertexFragmentationScore;
         private ulong _indexFragmentationScore;
         private const ulong FRAGMENTATION_THRESHOLD = 1024 * 1024; // 1MB
-        private static readonly ILogger _logger = LogManager.GetCurrentClassLogger();
+        private static readonly Logger _logger = LogManager.GetCurrentClassLogger();
 
         public GlobalGeometryBuffer(VulkanContext context, ulong initialVertexSize = 64 * 1024 * 1024,
                                    ulong initialIndexSize = 16 * 1024 * 1024)
@@ -150,7 +151,7 @@ namespace RockEngine.Core.Rendering.Buffers
         }
 
 
-        private async ValueTask<MeshAllocation> UploadMeshData<T>(Guid meshID, T[] vertices, uint[] indices,
+        private  ValueTask<MeshAllocation> UploadMeshData<T>(Guid meshID, T[] vertices, uint[] indices,
              ulong vertexSize, ulong indexSize, ulong vertexOffset, ulong indexOffset) where T : unmanaged, IVertex
         {
             var transferBatch = _context.TransferSubmitContext.CreateBatch();
@@ -159,14 +160,41 @@ namespace RockEngine.Core.Rendering.Buffers
             // Copy vertex data to staging buffer
             transferBatch.StageToBuffer<T>(vertices, _vertexBuffer, vertexOffset, vertexSize);
             transferBatch.StageToBuffer<uint>(indices, _indexBuffer, indexOffset, indexSize);
+            transferBatch.PipelineBarrier([], [
+                new BufferMemoryBarrier2() {
+                    SType = StructureType.BufferMemoryBarrier2,
+                    Buffer = _vertexBuffer,
+                    SrcAccessMask = AccessFlags2.TransferWriteBit,
+                    DstAccessMask = AccessFlags2.VertexAttributeReadBit,
+                    Offset = vertexOffset,
+                    Size = vertexSize,
+                    SrcQueueFamilyIndex = _context.Device.TransferQueue.FamilyIndex,
+                    DstQueueFamilyIndex = _context.Device.GraphicsQueue.FamilyIndex,
+                    SrcStageMask = PipelineStageFlags2.TransferBit,
+                    DstStageMask = PipelineStageFlags2.VertexInputBit
+
+                }], []);
+            transferBatch.PipelineBarrier([],[
+             new BufferMemoryBarrier2() {
+                    SType = StructureType.BufferMemoryBarrier2,
+                    Buffer = _indexBuffer,
+                    SrcAccessMask = AccessFlags2.TransferWriteBit,
+                    DstAccessMask = AccessFlags2.IndexReadBit,
+                    Offset = indexOffset,
+                    Size = indexSize,
+                    SrcQueueFamilyIndex = _context.Device.TransferQueue.FamilyIndex,
+                    DstQueueFamilyIndex = _context.Device.GraphicsQueue.FamilyIndex,
+                    SrcStageMask = PipelineStageFlags2.TransferBit,
+                    DstStageMask = PipelineStageFlags2.IndexInputBit
+                }], []);
 
 
-            await _context.TransferSubmitContext.FlushSingle(transferBatch, VkFence.CreateNotSignaled(_context));
+            transferBatch.Submit();
 
-            return new MeshAllocation(meshID,
+            return ValueTask.FromResult(new MeshAllocation(meshID,
                 new FreeBlock(vertexOffset, vertexSize),
                 new FreeBlock(indexOffset, indexSize),
-                (uint)vertices.Length, (uint)indices.Length);
+                (uint)vertices.Length, (uint)indices.Length));
         }
 
         public void RemoveMesh(Guid meshID)
@@ -260,78 +288,210 @@ namespace RockEngine.Core.Rendering.Buffers
         }
         public async ValueTask DefragmentAsync()
         {
-            lock (_allocationLock)
+            List<MeshAllocation> allocationsSnapshot;
+            Dictionary<Guid, uint> stridesSnapshot;
+            Dictionary<Guid, VertexFormat> formatsSnapshot;
+            await _defragmentSemaphore.WaitAsync();
+            try
             {
-                if (_vertexFragmentationScore < FRAGMENTATION_THRESHOLD &&
-                    _indexFragmentationScore < FRAGMENTATION_THRESHOLD)
+                lock (_allocationLock)
                 {
-                    return;
+                    if (_vertexFragmentationScore < FRAGMENTATION_THRESHOLD &&
+                        _indexFragmentationScore < FRAGMENTATION_THRESHOLD)
+                    {
+                        return;
+                    }
+
+                    _vertexFragmentationScore = 0;
+                    _indexFragmentationScore = 0;
+
+                    // Take snapshots of current state
+                    allocationsSnapshot = _meshAllocations.Values.ToList();
+                    stridesSnapshot = new Dictionary<Guid, uint>(_vertexStrides);
+                    formatsSnapshot = new Dictionary<Guid, VertexFormat>(_vertexFormats);
                 }
 
-                _vertexFragmentationScore = 0;
-                _indexFragmentationScore = 0;
-            }
-
-            var newVertexBuffer = VkBuffer.Create(
-                _context,
-                _vertexBufferSize,
-                BufferUsageFlags.VertexBufferBit | BufferUsageFlags.TransferDstBit | BufferUsageFlags.TransferSrcBit,
-                MemoryPropertyFlags.DeviceLocalBit
-            );
-
-            var newIndexBuffer = VkBuffer.Create(
-                _context,
-                _indexBufferSize,
-                BufferUsageFlags.IndexBufferBit | BufferUsageFlags.TransferDstBit | BufferUsageFlags.TransferSrcBit,
-                MemoryPropertyFlags.DeviceLocalBit
-            );
-
-            var transferBatch = _context.TransferSubmitContext.CreateBatch();
-            ulong newVertexOffset = 0;
-            ulong newIndexOffset = 0;
-
-            var updatedAllocations = new Dictionary<Guid, MeshAllocation>();
-
-            foreach (var allocation in _meshAllocations.Values)
-            {
-                transferBatch.CopyBuffer(_vertexBuffer, newVertexBuffer, allocation.VertexOffset, newVertexOffset, allocation.VertexSize);
-                transferBatch.CopyBuffer(_indexBuffer, newIndexBuffer, allocation.IndexOffset, newIndexOffset, allocation.IndexSize);
-
-                var updatedAllocation = new MeshAllocation(
-                    allocation.MeshID,
-                    newVertexOffset, allocation.VertexSize,
-                    newIndexOffset, allocation.IndexSize,
-                    allocation.VertexCount, allocation.IndexCount
+                // Create new buffers with the same size
+                var newVertexBuffer = VkBuffer.Create(
+                    _context,
+                    _vertexBufferSize,
+                    BufferUsageFlags.VertexBufferBit | BufferUsageFlags.TransferDstBit | BufferUsageFlags.TransferSrcBit,
+                    MemoryPropertyFlags.DeviceLocalBit
                 );
 
-                updatedAllocations[allocation.MeshID] = updatedAllocation;
+                var newIndexBuffer = VkBuffer.Create(
+                    _context,
+                    _indexBufferSize,
+                    BufferUsageFlags.IndexBufferBit | BufferUsageFlags.TransferDstBit | BufferUsageFlags.TransferSrcBit,
+                    MemoryPropertyFlags.DeviceLocalBit
+                );
 
-                newVertexOffset += allocation.VertexSize;
-                newIndexOffset += allocation.IndexSize;
-            }
+                var transferBatch = _context.TransferSubmitContext.CreateBatch();
+                ulong newVertexOffset = 0;
+                ulong newIndexOffset = 0;
 
-            await _context.TransferSubmitContext.FlushSingle(transferBatch, VkFence.CreateNotSignaled(_context));
+                var updatedAllocations = new Dictionary<Guid, MeshAllocation>();
 
-            lock (_allocationLock)
-            {
-                _context.GraphicsSubmitContext.AddDependency(_vertexBuffer);
-                _context.GraphicsSubmitContext.AddDependency(_indexBuffer);
+                // Sort allocations to maintain alignment during defragmentation
+                // Sort by stride first, then by size to minimize fragmentation
+                var sortedAllocations = allocationsSnapshot
+                    .OrderBy(a => stridesSnapshot[a.MeshID])
+                    .ThenBy(a => a.VertexSize)
+                    .ToList();
 
-
-                _vertexBuffer = newVertexBuffer;
-                _indexBuffer = newIndexBuffer;
-
-                foreach (var updatedAllocation in updatedAllocations)
+                foreach (var allocation in sortedAllocations)
                 {
-                    _meshAllocations[updatedAllocation.Key] = updatedAllocation.Value;
+                    uint vertexStride = stridesSnapshot[allocation.MeshID];
+
+                    // Align the new offset to the mesh's vertex stride
+                    if (newVertexOffset % vertexStride != 0)
+                    {
+                        ulong alignmentNeeded = vertexStride - (newVertexOffset % vertexStride);
+                        newVertexOffset += alignmentNeeded;
+
+                        // If we've exceeded buffer size, expand it
+                        if (newVertexOffset + allocation.VertexSize > _vertexBufferSize)
+                        {
+                            // Note: In a production system, you'd handle this better
+                            // For now, we'll expand the buffer
+                            ExpandVertexBuffer(allocation.VertexSize);
+                            // Recreate newVertexBuffer with new size
+                            newVertexBuffer.Dispose();
+                            newVertexBuffer = VkBuffer.Create(
+                                _context,
+                                _vertexBufferSize,
+                                BufferUsageFlags.VertexBufferBit | BufferUsageFlags.TransferDstBit | BufferUsageFlags.TransferSrcBit,
+                                MemoryPropertyFlags.DeviceLocalBit
+                            );
+                        }
+                    }
+
+                    // Align index offset to 4 bytes (uint32 size)
+                    if (newIndexOffset % 4 != 0)
+                    {
+                        newIndexOffset += 4 - (newIndexOffset % 4);
+
+                        if (newIndexOffset + allocation.IndexSize > _indexBufferSize)
+                        {
+                            ExpandIndexBuffer(allocation.IndexSize);
+                            newIndexBuffer.Dispose();
+                            newIndexBuffer = VkBuffer.Create(
+                                _context,
+                                _indexBufferSize,
+                                BufferUsageFlags.IndexBufferBit | BufferUsageFlags.TransferDstBit | BufferUsageFlags.TransferSrcBit,
+                                MemoryPropertyFlags.DeviceLocalBit
+                            );
+                        }
+                    }
+
+                    // Verify alignment before copying
+                    if (newVertexOffset % vertexStride != 0)
+                    {
+                        throw new InvalidOperationException($"Defragmentation error: Vertex offset {newVertexOffset} is not aligned to stride {vertexStride} for mesh {allocation.MeshID}");
+                    }
+
+                    _logger.Debug($"Defragmenting mesh {allocation.MeshID}: " +
+                                 $"vertex {allocation.VertexOffset}->{newVertexOffset} (stride {vertexStride}, size {allocation.VertexSize}), " +
+                                 $"index {allocation.IndexOffset}->{newIndexOffset}");
+
+                    // Copy vertex data
+                    transferBatch.CopyBuffer(_vertexBuffer, newVertexBuffer,
+                        allocation.VertexOffset, newVertexOffset, allocation.VertexSize);
+
+                    // Copy index data
+                    transferBatch.CopyBuffer(_indexBuffer, newIndexBuffer,
+                        allocation.IndexOffset, newIndexOffset, allocation.IndexSize);
+
+                    var updatedAllocation = new MeshAllocation(
+                        allocation.MeshID,
+                        newVertexOffset, allocation.VertexSize,
+                        newIndexOffset, allocation.IndexSize,
+                        allocation.VertexCount, allocation.IndexCount
+                    );
+
+                    updatedAllocations[allocation.MeshID] = updatedAllocation;
+
+                    newVertexOffset += allocation.VertexSize;
+                    newIndexOffset += allocation.IndexSize;
                 }
 
-                _vertexFreeList.Clear();
-                _vertexFreeList.AddLast(new FreeBlock(newVertexOffset, _vertexBufferSize - newVertexOffset));
+                // Add pipeline barriers to ensure data is ready for reading
+                var vertexBarrier = new BufferMemoryBarrier2
+                {
+                    SType = StructureType.BufferMemoryBarrier2,
+                    Buffer = newVertexBuffer,
+                    SrcAccessMask = AccessFlags2.TransferWriteBit,
+                    DstAccessMask = AccessFlags2.VertexAttributeReadBit,
+                    Offset = 0,
+                    Size = Vk.WholeSize,
+                    SrcQueueFamilyIndex = _context.Device.TransferQueue.FamilyIndex,
+                    DstQueueFamilyIndex = _context.Device.GraphicsQueue.FamilyIndex,
+                    SrcStageMask = PipelineStageFlags2.TransferBit,
+                    DstStageMask = PipelineStageFlags2.VertexInputBit
+                };
 
-                _indexFreeList.Clear();
-                _indexFreeList.AddLast(new FreeBlock(newIndexOffset, _indexBufferSize - newIndexOffset));
+                var indexBarrier = new BufferMemoryBarrier2
+                {
+                    SType = StructureType.BufferMemoryBarrier2,
+                    Buffer = newIndexBuffer,
+                    SrcAccessMask = AccessFlags2.TransferWriteBit,
+                    DstAccessMask = AccessFlags2.IndexReadBit,
+                    Offset = 0,
+                    Size = Vk.WholeSize,
+                    SrcQueueFamilyIndex = _context.Device.TransferQueue.FamilyIndex,
+                    DstQueueFamilyIndex = _context.Device.GraphicsQueue.FamilyIndex,
+                    SrcStageMask = PipelineStageFlags2.TransferBit,
+                    DstStageMask = PipelineStageFlags2.IndexInputBit
+                };
+
+                transferBatch.PipelineBarrier([], [vertexBarrier, indexBarrier], []);
+
+                // Submit the transfer batch
+                using var fence = VkFence.CreateNotSignaled(_context);
+                await _context.TransferSubmitContext.SubmitSingle(transferBatch, fence);
+
+
+                // Now update the internal state
+                lock (_allocationLock)
+                {
+                    // Add dependencies for the old buffers
+                    _context.GraphicsSubmitContext.AddDependency(_vertexBuffer);
+                    _context.GraphicsSubmitContext.AddDependency(_indexBuffer);
+
+                    // Replace with new buffers
+                    _vertexBuffer = newVertexBuffer;
+                    _indexBuffer = newIndexBuffer;
+
+                    // Update allocations
+                    foreach (var updatedAllocation in updatedAllocations)
+                    {
+                        _meshAllocations[updatedAllocation.Key] = updatedAllocation.Value;
+                    }
+
+                    // Update free lists - everything after the last allocation is free space
+                    _vertexFreeList.Clear();
+                    if (newVertexOffset < _vertexBufferSize)
+                    {
+                        _vertexFreeList.AddLast(new FreeBlock(newVertexOffset, _vertexBufferSize - newVertexOffset));
+                    }
+
+                    _indexFreeList.Clear();
+                    if (newIndexOffset < _indexBufferSize)
+                    {
+                        _indexFreeList.AddLast(new FreeBlock(newIndexOffset, _indexBufferSize - newIndexOffset));
+                    }
+
+                    // Log the defragmentation result
+                    _logger.Info($"Defragmentation completed: " +
+                                $"Vertex buffer {_vertexBufferSize} bytes, used {newVertexOffset} bytes, " +
+                                $"Index buffer {_indexBufferSize} bytes, used {newIndexOffset} bytes");
+                }
             }
+            finally
+            {
+                _defragmentSemaphore.Release();
+            }
+            
         }
 
         private void AddToFreeList(LinkedList<FreeBlock> freeList, ulong offset, ulong size)

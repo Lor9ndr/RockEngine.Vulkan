@@ -19,9 +19,6 @@ namespace RockEngine.Core
         }
 		public async Task<List<MeshAssimpData>> LoadMeshesAsync(string filePath)
 		{
-
-			
-
 			// Create a LogStream that writes to console
 			var logStream = new ConsoleLogStream();
 			logStream.Attach();
@@ -91,8 +88,8 @@ namespace RockEngine.Core
 					return ValueTask.CompletedTask;
 				});
 				await loadVerticesTask;
-				// Currently order of loading textures are important
-				List<string> textures = new List<string>();
+                // Currently order of loading textures are important
+                List<TextureSlot> textures = new List<TextureSlot>();
 				var material = scene.Materials[mesh.MaterialIndex];
 				GetTexturePath(material.TextureDiffuse, filePath, textures);
 				GetTexturePath(material.TextureNormal, filePath, textures);
@@ -113,13 +110,13 @@ namespace RockEngine.Core
 
 		}
 
-		private void GetTexturePath(TextureSlot slot, string modelDir, List<string> textures)
+		private void GetTexturePath(TextureSlot slot, string modelDir, List<TextureSlot> textures)
 		{
 			if (slot.TextureType != TextureType.None)
 			{
 				var texturePath = slot.FilePath;
-				var texture = Directory.GetParent(modelDir) + "\\" + texturePath;
-				textures.Add(texture);
+				slot.FilePath = Directory.GetParent(modelDir) + "\\" + texturePath;
+				textures.Add(slot);
 			}
 		}
 
@@ -129,5 +126,5 @@ namespace RockEngine.Core
 		}
 	}
 
-	public record struct MeshAssimpData(string Name, Vertex[] Vertices, uint[] Indices, List<string> Textures);
+	public record struct MeshAssimpData(string Name, Vertex[] Vertices, uint[] Indices, List<TextureSlot> Textures);
 }

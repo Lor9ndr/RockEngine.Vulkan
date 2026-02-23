@@ -54,8 +54,15 @@ namespace RockEngine.Core.Rendering.Materials
                 return Texture2D.GetEmptyTexture(context);
             }
 
-            // Default to a basic 2D texture for sampled images
-            return Texture2D.GetDefaultAlbedoTexture(context);
+            if(binding.Name.Contains("albedo", StringComparison.OrdinalIgnoreCase))
+            {
+                return Texture2D.GetEmptyTexture(context);
+            }
+            if(binding.Name.Contains("mra", StringComparison.OrdinalIgnoreCase))
+            {
+                return Texture2D.CreateColorTexture(context, new Silk.NET.Maths.Vector4D<byte>(128, 128,128,255), "mra");
+            }
+            return Texture2D.GetEmptyTexture(context);
         }
 
         private Texture CreateDefaultStorageTexture(DescriptorSetLayoutBindingReflected binding, VulkanContext context)

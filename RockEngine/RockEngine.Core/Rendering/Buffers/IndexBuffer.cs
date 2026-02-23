@@ -54,7 +54,7 @@ namespace RockEngine.Core.Rendering.Buffers
 
 
                 var fence = VkFence.CreateNotSignaled(_context);
-                _context.TransferSubmitContext.FlushSingle(transferBatch, fence).Wait();
+                _context.TransferSubmitContext.SubmitSingle(transferBatch, fence).Wait();
                 fence.Dispose();
             }
             finally
@@ -87,7 +87,7 @@ namespace RockEngine.Core.Rendering.Buffers
 
 
             var fence = VkFence.CreateNotSignaled(_context);
-            _context.TransferSubmitContext.FlushSingle(transferBatch, fence).Wait();
+            _context.TransferSubmitContext.SubmitSingle(transferBatch, fence).Wait();
             fence.Dispose();
 
         }
@@ -112,7 +112,7 @@ namespace RockEngine.Core.Rendering.Buffers
             var transferBatch = _context.TransferSubmitContext.CreateBatch();
             transferBatch.StageToBuffer(indices, _buffer, offset, (ulong)(indices.Length * sizeof(uint)));
             var fence = VkFence.CreateNotSignaled(_context);
-            _context.TransferSubmitContext.FlushSingle(transferBatch, fence).Wait();
+            _context.TransferSubmitContext.SubmitSingle(transferBatch, fence).Wait();
             fence.Dispose();
 
         }

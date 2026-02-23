@@ -1,4 +1,5 @@
-﻿using RockEngine.Vulkan;
+﻿using RockEngine.Core.Helpers;
+using RockEngine.Vulkan;
 
 using Silk.NET.Vulkan;
 
@@ -6,6 +7,14 @@ using SkiaSharp;
 
 namespace RockEngine.Core.Rendering.Texturing
 {
+    public class TextureUpdate : EventArgs
+    {
+        public Texture Texture { get; private set;}
+        public TextureUpdate(Texture texture)
+        {
+            Texture = texture;
+        }
+    }
     /// <summary>
     /// Represents a Vulkan texture resource, managing image, image view, and sampler lifecycle.
     /// Handles 2D textures, cubemaps, and provides texture creation utilities.
@@ -38,33 +47,37 @@ namespace RockEngine.Core.Rendering.Texturing
         /// Total available mipmap levels
         /// </summary>
         public uint TotalMipLevels => _image.MipLevels;
-        public Guid ID { get; } = Guid.NewGuid();
         public string? SourcePath { get; }
         public bool IsDisposed => _disposed;
 
         public bool IsFullyLoaded => LoadedMipLevels >= TotalMipLevels;
 
-        public event Action<Texture>? OnTextureUpdated;
+        public event  EventHandler<TextureUpdate> OnTextureUpdated
+        {
+            add => _onTextureUpdated.AddHandler(value);
+            remove=> _onTextureUpdated.RemoveHandler(value);
+        }
+        private readonly WeakEvent<TextureUpdate> _onTextureUpdated = new WeakEvent<TextureUpdate>();
 
-        protected Texture(VulkanContext context, VkImage image, VkSampler sampler, string? sourcePath = null)
+        protected Texture(VulkanContext context, VkImage image, VkSampler sampler)
         {
             _context = context;
             _image = image;
             _sampler = sampler;
-            SourcePath = sourcePath;
             LoadedMipLevels = 1;
             Image.OnImageResized += (img) => NotifyTextureUpdated();
         }
 
         protected void NotifyTextureUpdated()
         {
-            OnTextureUpdated?.Invoke(this);
+            _onTextureUpdated?.Raise(this,new TextureUpdate(this));
         }
 
         public void PrepareForComputeShader(UploadBatch batch)
         {
             _image.TransitionImageLayout(
                 batch,
+                ImageLayout.Undefined,
                 ImageLayout.General,
                 baseMipLevel: 0,
                 levelCount: LoadedMipLevels,
@@ -76,6 +89,7 @@ namespace RockEngine.Core.Rendering.Texturing
         {
             _image.TransitionImageLayout(
                 batch,
+                ImageLayout.Undefined,
                 ImageLayout.ShaderReadOnlyOptimal,
                 baseMipLevel: 0,
                 levelCount: LoadedMipLevels,
@@ -95,7 +109,7 @@ namespace RockEngine.Core.Rendering.Texturing
                 AddressModeV = SamplerAddressMode.Repeat,
                 AddressModeW = SamplerAddressMode.Repeat,
                 MipLodBias = 0.0f,
-                AnisotropyEnable = Vk.True,
+                AnisotropyEnable = Vk.False,
                 MaxAnisotropy = context.Device.PhysicalDevice.Properties.Limits.MaxSamplerAnisotropy,
                 CompareEnable = Vk.False,
                 CompareOp = CompareOp.Always,

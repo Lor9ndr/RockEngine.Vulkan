@@ -1,26 +1,28 @@
 ﻿
 using NLog;
 
+using RockEngine.Assets;
 using RockEngine.Core.Assets;
 using RockEngine.Core.DI;
 using RockEngine.Core.Rendering;
 
 using System.Text.Json;
-using System.Text.Json.Serialization;
 
 namespace RockEngine.Editor.EditorUI
 {
     public class ProjectSelectionManager
     {
-        private readonly AssetManager _assetManager;
+        private readonly IProjectManager _projectManager;
+        private readonly IAssetManager _assetManager;
         private List<ProjectInfo> _recentProjects = new List<ProjectInfo>();
         private const string RecentProjectsFile = "recent_projects.json";
         private static readonly Logger _logger = LogManager.GetCurrentClassLogger();
 
         public IReadOnlyList<ProjectInfo> RecentProjects => _recentProjects.AsReadOnly();
 
-        public ProjectSelectionManager(AssetManager assetManager)
+        public ProjectSelectionManager(IProjectManager projectManager, IAssetManager assetManager)
         {
+            _projectManager = projectManager;
             _assetManager = assetManager;
             LoadRecentProjects();
         }
@@ -36,7 +38,7 @@ namespace RockEngine.Editor.EditorUI
                 }
 
                 // Load project using AssetManager
-                var project = await _assetManager.LoadProjectAsync(path);
+                var project = await _projectManager.LoadProjectAsync<ProjectAsset>(path);
 
                 // Add to recent projects
                 AddToRecentProjects(new ProjectInfo
@@ -64,7 +66,7 @@ namespace RockEngine.Editor.EditorUI
             try
             {
                 // Create project using AssetManager
-                var project = _assetManager.Create<ProjectAsset>(path, name);
+                var project = await _projectManager.CreateProjectAsync<ProjectAsset, ProjectData>(path, name);
 
                 // Add to recent projects
                 AddToRecentProjects(new ProjectInfo

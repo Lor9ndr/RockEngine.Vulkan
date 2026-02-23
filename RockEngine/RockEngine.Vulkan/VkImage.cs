@@ -21,6 +21,9 @@ namespace RockEngine.Vulkan
         public Extent3D Extent => _createInfo.Extent;
         public ImageAspectFlags AspectFlags => _aspectFlags;
         public uint ArrayLayers => _createInfo.ArrayLayers;
+        public ImageUsageFlags Usage=> _createInfo.Usage;
+
+        public ImageCreateInfo CreateInfo { get => _createInfo; private set => _createInfo = value; }
 
         public event Action<VkImage>? OnImageResized;
         private readonly Dictionary<(ImageAspectFlags, uint, uint, uint, uint), VkImageView> _viewsCache = new();
@@ -58,7 +61,6 @@ namespace RockEngine.Vulkan
                  0, // offset
                  handle);
             }
-
         }
 
         public static VkImage Create(
@@ -123,12 +125,14 @@ namespace RockEngine.Vulkan
             return memory;
         }
 
-        public void Resize(Extent3D newExtent)
+        public void Resize(Extent3D newExtent, uint? newArrayLayers = null)
         {
             DisposeResources();
             _createInfo.Extent = newExtent;
 
-            var newImage = CreateImage(_context, _createInfo);
+            _createInfo.ArrayLayers = newArrayLayers ?? _createInfo.ArrayLayers;
+
+            var newImage = CreateImage(_context, in _createInfo);
             var newMemory = AllocateAndBindMemory(_context, newImage, MemoryPropertyFlags.DeviceLocalBit);
 
             UpdateResources(newImage, newMemory);
@@ -158,8 +162,7 @@ namespace RockEngine.Vulkan
             }
             var batch = _context.GraphicsSubmitContext.CreateBatch();
             batch.CommandBuffer.LabelObject("VKImage.TransitionToDefaultLayout cmd");
-            SetMipLayout(0, ImageLayout.Undefined);
-            TransitionImageLayout(batch, targetLayout, 0,1);
+            TransitionImageLayout(batch, ImageLayout.Undefined, targetLayout);
             batch.Submit();
 
         }
@@ -195,11 +198,15 @@ namespace RockEngine.Vulkan
             uint layerCount = 1)
         {
             ImageViewType viewType;
-
+            if (layerCount == Vk.RemainingArrayLayers)
+            {
+                layerCount = _createInfo.ArrayLayers - baseArrayLayer;
+            }
             // Determine the correct view type based on image properties and layer count
             if (_createInfo.Flags.HasFlag(ImageCreateFlags.CreateCubeCompatibleBit))
             {
-                if (layerCount % 6 == 0 && layerCount >= 6)
+                
+                if(layerCount % 6 == 0 && layerCount >= 6)
                 {
                     // Cube array (multiple cubes)
                     viewType = layerCount > 6 ? ImageViewType.TypeCubeArray : ImageViewType.TypeCube;
@@ -230,9 +237,44 @@ namespace RockEngine.Vulkan
 
         public void TransitionImageLayout(
               UploadBatch batch,
+              ImageLayout oldLayout,
               ImageLayout newLayout,
-              PipelineStageFlags srcStage,
-              PipelineStageFlags dstStage,
+              uint baseMipLevel = 0,
+              uint levelCount = Vk.RemainingMipLevels,
+              uint baseArrayLayer = 0,
+              uint layerCount = Vk.RemainingArrayLayers,
+              uint srcQueueFamilyIndex = Vk.QueueFamilyIgnored,
+              uint dstQueueFamilyIndex = Vk.QueueFamilyIgnored)
+        {
+            
+            var barrier = new ImageMemoryBarrier2
+            {
+                SType = StructureType.ImageMemoryBarrier2,
+                OldLayout = oldLayout,
+                NewLayout = newLayout,
+                Image = _vkObject,
+                SubresourceRange = new ImageSubresourceRange
+                {
+                    AspectMask = AspectFlags,
+                    BaseMipLevel = baseMipLevel,
+                    LevelCount = levelCount,
+                    BaseArrayLayer = baseArrayLayer,
+                    LayerCount = layerCount
+                },
+                SrcQueueFamilyIndex = srcQueueFamilyIndex,
+                DstQueueFamilyIndex = dstQueueFamilyIndex,
+
+            };
+
+            (barrier.SrcAccessMask, barrier.DstAccessMask) = GetAccessMasks(oldLayout, newLayout, srcQueueFamilyIndex, dstQueueFamilyIndex);
+            (barrier.SrcStageMask, barrier.DstStageMask) = GetPipelineStages(oldLayout, newLayout, srcQueueFamilyIndex, dstQueueFamilyIndex);
+
+            batch.PipelineBarrier([],[], [barrier], DependencyFlags.ByRegionBit);
+        }
+        public void GetMemoryBarrier(
+              out ImageMemoryBarrier2 barrier,
+              ImageLayout oldLayout,
+              ImageLayout newLayout,
               uint baseMipLevel = 0,
               uint levelCount = 1,
               uint baseArrayLayer = 0,
@@ -240,15 +282,9 @@ namespace RockEngine.Vulkan
               uint srcQueueFamilyIndex = Vk.QueueFamilyIgnored,
               uint dstQueueFamilyIndex = Vk.QueueFamilyIgnored)
         {
-            ImageLayout oldLayout = GetMipLayout(baseMipLevel, baseArrayLayer);
-            if (oldLayout == newLayout)
+            barrier = new ImageMemoryBarrier2
             {
-                _logger.Warn("Attempt to transition to same layout as it was");
-                return;
-            }
-            var barrier = new ImageMemoryBarrier
-            {
-                SType = StructureType.ImageMemoryBarrier,
+                SType = StructureType.ImageMemoryBarrier2,
                 OldLayout = oldLayout,
                 NewLayout = newLayout,
                 Image = _vkObject,
@@ -259,98 +295,29 @@ namespace RockEngine.Vulkan
                     LevelCount = levelCount,
                     BaseArrayLayer = baseArrayLayer,
                     LayerCount = layerCount
-                }
+                },
+                SrcQueueFamilyIndex = srcQueueFamilyIndex,
+                DstQueueFamilyIndex = dstQueueFamilyIndex
+
             };
-            barrier.SrcQueueFamilyIndex = srcQueueFamilyIndex;
-            barrier.DstQueueFamilyIndex = dstQueueFamilyIndex;
 
             (barrier.SrcAccessMask, barrier.DstAccessMask) = GetAccessMasks(oldLayout, newLayout, srcQueueFamilyIndex, dstQueueFamilyIndex);
-
-
-
-            batch.PipelineBarrier(
-                srcStage,
-                dstStage, [barrier]);
-
-            // Update tracked layouts for all affected layers/mips
-            for (uint mip = baseMipLevel; mip < baseMipLevel + levelCount; mip++)
-            {
-                for (uint layer = baseArrayLayer; layer < baseArrayLayer + layerCount; layer++)
-                {
-                    SetMipLayout(mip, newLayout, layer);
-                }
-            }
-            _currentQueueFamily = dstQueueFamilyIndex;
+            (barrier.SrcStageMask, barrier.DstStageMask) = GetPipelineStages(oldLayout, newLayout, srcQueueFamilyIndex, dstQueueFamilyIndex);
         }
 
         public void TransitionImageLayout(
              UploadBatch batch,
-             ImageLayout oldLayout,
              ImageLayout newLayout,
-             PipelineStageFlags srcStage,
-             PipelineStageFlags dstStage,
-             uint baseMipLevel = 0,
-             uint levelCount = 1,
-             uint baseArrayLayer = 0,
-             uint layerCount = 1,
-             uint srcQueueFamilyIndex = Vk.QueueFamilyIgnored,
-             uint dstQueueFamilyIndex = Vk.QueueFamilyIgnored)
-        {
-            if (oldLayout == newLayout)
-            {
-                _logger.Warn("Attempt to transition to same layout as it was");
-                return;
-            }
-            var barrier = new ImageMemoryBarrier
-            {
-                SType = StructureType.ImageMemoryBarrier,
-                OldLayout = oldLayout,
-                NewLayout = newLayout,
-                Image = _vkObject,
-                SubresourceRange = new ImageSubresourceRange
-                {
-                    AspectMask = AspectFlags,
-                    BaseMipLevel = baseMipLevel,
-                    LevelCount = levelCount,
-                    BaseArrayLayer = baseArrayLayer,
-                    LayerCount = layerCount
-                }
-            };
-            barrier.SrcQueueFamilyIndex = srcQueueFamilyIndex;
-            barrier.DstQueueFamilyIndex = dstQueueFamilyIndex;
-
-            (barrier.SrcAccessMask, barrier.DstAccessMask) = GetAccessMasks(oldLayout, newLayout, srcQueueFamilyIndex, dstQueueFamilyIndex);
-
-
-            batch.PipelineBarrier(
-                srcStage,
-                dstStage,
-                [barrier]);
-
-            // Update tracked layouts for all affected layers/mips
-            for (uint mip = baseMipLevel; mip < baseMipLevel + levelCount; mip++)
-            {
-                for (uint layer = baseArrayLayer; layer < baseArrayLayer + layerCount; layer++)
-                {
-                    SetMipLayout(mip, newLayout, layer);
-                }
-            }
-            _currentQueueFamily = dstQueueFamilyIndex;
-        }
-        public void TransitionImageLayout(
-             UploadBatch batch,
-             ImageLayout newLayout,
-             PipelineStageFlags srcStage,
-             PipelineStageFlags dstStage,
              uint baseMipLevel,
              uint levelCount,
              uint baseArrayLayer,
              uint layerCount,
              uint srcQueueFamilyIndex,
              uint dstQueueFamilyIndex,
-             AccessFlags srcAccessMask,
-             AccessFlags dstAccessMask)
+             AccessFlags2 srcAccessMask,
+             AccessFlags2 dstAccessMask)
         {
+
             ImageLayout oldLayout = GetMipLayout(baseMipLevel, baseArrayLayer);
             if (oldLayout == newLayout)
             {
@@ -358,9 +325,9 @@ namespace RockEngine.Vulkan
                 return;
             }
 
-            var barrier = new ImageMemoryBarrier
+            var barrier = new ImageMemoryBarrier2
             {
-                SType = StructureType.ImageMemoryBarrier,
+                SType = StructureType.ImageMemoryBarrier2,
                 OldLayout = oldLayout,
                 NewLayout = newLayout,
                 Image = _vkObject,
@@ -380,45 +347,19 @@ namespace RockEngine.Vulkan
 
             unsafe
             {
-                batch.PipelineBarrier(srcStage, dstStage,[barrier]);
+                batch.PipelineBarrier([], [],[barrier]);
             }
 
-            // Update layout tracking
-            for (uint mip = baseMipLevel; mip < baseMipLevel + levelCount; mip++)
-            {
-                for (uint layer = baseArrayLayer; layer < baseArrayLayer + layerCount; layer++)
-                {
-                    SetMipLayout(mip, newLayout, layer);
-                }
-            }
-        }
-
-        public void TransitionImageLayout(UploadBatch batch,
-            ImageLayout newLayout, 
-            uint baseMipLevel = 0, 
-            uint levelCount = 1,
-            uint baseArrayLayer = 0,
-            uint layerCount = 1, 
-            uint srcQueueFamilyIndex = Vk.QueueFamilyIgnored,
-            uint dstQueueFamilyIndex = Vk.QueueFamilyIgnored)
-        {
-            ImageLayout oldLayout = GetMipLayout(baseMipLevel, baseArrayLayer);
-            if(oldLayout == newLayout)
-            {
-                _logger.Warn("Attempt to transition to same layout as it was");
-                return;
-            }
-            (var OldStage, var NewStage) = GetPipelineStages(oldLayout, newLayout, srcQueueFamilyIndex, dstQueueFamilyIndex);
-
-            TransitionImageLayout(batch, newLayout, OldStage, NewStage, baseMipLevel, levelCount, baseArrayLayer, layerCount, srcQueueFamilyIndex,dstQueueFamilyIndex);
-            _currentQueueFamily = dstQueueFamilyIndex;
 
         }
 
 
-        public void GenerateMipmaps(UploadBatch commandBuffer)
+        public bool GenerateMipmaps(UploadBatch commandBuffer)
         {
-            ValidateMipmapGeneration();
+            if (!ValidateMipmapGeneration())
+            {
+                return false;
+            }
 
             // Get total layers (6 for cube maps)
             uint layerCount = _createInfo.ArrayLayers;
@@ -451,19 +392,23 @@ namespace RockEngine.Vulkan
                        newLayout: ImageLayout.ShaderReadOnlyOptimal,
                        layer: layer);
             }
+            return true;
         }
 
-        private void ValidateMipmapGeneration()
+        private bool ValidateMipmapGeneration()
         {
             var formatProperties = _context.Device.PhysicalDevice.GetFormatProperties(Format);
-            if ((formatProperties.OptimalTilingFeatures & FormatFeatureFlags.BlitSrcBit) == 0 ||
-                (formatProperties.OptimalTilingFeatures & FormatFeatureFlags.BlitDstBit) == 0)
+            bool result =  ((formatProperties.OptimalTilingFeatures & FormatFeatureFlags.BlitSrcBit) != 0 &&
+                (formatProperties.OptimalTilingFeatures & FormatFeatureFlags.BlitDstBit) != 0);
+            if (!result)
             {
-                throw new NotSupportedException($"Format {Format} doesn't support blitting!");
+                _logger.Warn($"Format {Format}  doesn't support blitting!");
             }
+            return result;
+           
         }
 
-        private unsafe void BlitMipLevel(UploadBatch batch, in ImageBlit blit)
+        private void BlitMipLevel(UploadBatch batch, in ImageBlit blit)
         {
             VulkanContext.Vk.CmdBlitImage(
                 batch.CommandBuffer,
@@ -528,11 +473,10 @@ namespace RockEngine.Vulkan
             }
 
             var (srcAccess, dstAccess) = GetAccessMasks(oldLayout, newLayout, Vk.QueueFamilyIgnored, Vk.QueueFamilyIgnored);
-            var (srcStage, dstStage) = GetPipelineStages(oldLayout, newLayout, Vk.QueueFamilyIgnored, Vk.QueueFamilyIgnored);
 
-            var barrier = new ImageMemoryBarrier
+            var barrier = new ImageMemoryBarrier2
             {
-                SType = StructureType.ImageMemoryBarrier,
+                SType = StructureType.ImageMemoryBarrier2,
                 OldLayout = oldLayout,
                 NewLayout = newLayout,
                 Image = _vkObject,
@@ -547,13 +491,16 @@ namespace RockEngine.Vulkan
                 SrcAccessMask = srcAccess,
                 DstAccessMask = dstAccess
             };
+            (barrier.SrcStageMask, barrier.DstStageMask) = GetPipelineStages(oldLayout, newLayout,Vk.QueueFamilyIgnored, Vk.QueueFamilyIgnored);
 
-            batch.PipelineBarrier(
-                srcStage,
-                dstStage, [barrier]);
 
-            // Update tracked layout for THIS mip+layer
-            SetMipLayout(mipLevel, newLayout, layer);
+            batch.PipelineBarrier([],[], [barrier]);
+            batch.AddDependency(new DeferredOperation(() =>
+            {
+                // Update tracked layout for THIS mip+layer
+                SetMipLayout(mipLevel, newLayout, layer);
+            }));
+          
         }
 
         protected override void Dispose(bool disposing)
@@ -596,7 +543,7 @@ namespace RockEngine.Vulkan
             => _layerMipLayouts[mipLevel, layer] = layout;
 
 
-        private (PipelineStageFlags oldStage, PipelineStageFlags newStage) GetPipelineStages(ImageLayout oldLayout, ImageLayout newLayout, uint srcQueueFamilyIndex, uint dstQueueFamilyIndex)
+        private (PipelineStageFlags2 oldStage, PipelineStageFlags2 newStage) GetPipelineStages(ImageLayout oldLayout, ImageLayout newLayout, uint srcQueueFamilyIndex, uint dstQueueFamilyIndex)
         {
             // Handle queue family ownership transfers
             if (srcQueueFamilyIndex != dstQueueFamilyIndex)
@@ -606,17 +553,17 @@ namespace RockEngine.Vulkan
                 {
                     // Release from source queue
                     (ImageLayout.ShaderReadOnlyOptimal, ImageLayout.General)
-                        => (PipelineStageFlags.BottomOfPipeBit, PipelineStageFlags.TopOfPipeBit),
+                        => (PipelineStageFlags2.BottomOfPipeBit, PipelineStageFlags2.TopOfPipeBit),
                     // Acquire by destination queue
                     (ImageLayout.General, ImageLayout.ShaderReadOnlyOptimal)
-                        => (PipelineStageFlags.BottomOfPipeBit, PipelineStageFlags.ComputeShaderBit),
+                        => (PipelineStageFlags2.BottomOfPipeBit, PipelineStageFlags2.ComputeShaderBit),
                     (ImageLayout.Undefined, ImageLayout.General) =>
-                        (PipelineStageFlags.TopOfPipeBit, PipelineStageFlags.ComputeShaderBit),
+                        (PipelineStageFlags2.TopOfPipeBit, PipelineStageFlags2.ComputeShaderBit),
                     // Add PresentSrcKhr transitions for queue family transfer
                     (ImageLayout.PresentSrcKhr, ImageLayout.General)
-                        => (PipelineStageFlags.BottomOfPipeBit, PipelineStageFlags.TopOfPipeBit),
+                        => (PipelineStageFlags2.BottomOfPipeBit, PipelineStageFlags2.TopOfPipeBit),
                     (ImageLayout.General, ImageLayout.PresentSrcKhr)
-                        => (PipelineStageFlags.BottomOfPipeBit, PipelineStageFlags.TopOfPipeBit),
+                        => (PipelineStageFlags2.BottomOfPipeBit, PipelineStageFlags2.TopOfPipeBit),
                     _ => throw new NotSupportedException($"Unsupported queue family transition: {oldLayout} -> {newLayout}")
                 };
             }
@@ -625,219 +572,223 @@ namespace RockEngine.Vulkan
             {
                 // Undefined -> PresentSrcKhr (for initial setup)
                 (ImageLayout.Undefined, ImageLayout.PresentSrcKhr)
-                    => (PipelineStageFlags.TopOfPipeBit, PipelineStageFlags.BottomOfPipeBit),
+                    => (PipelineStageFlags2.TopOfPipeBit, PipelineStageFlags2.BottomOfPipeBit),
 
                 // ColorAttachmentOptimal -> PresentSrcKhr (after rendering)
                 (ImageLayout.ColorAttachmentOptimal, ImageLayout.PresentSrcKhr)
-                    => (PipelineStageFlags.ColorAttachmentOutputBit, PipelineStageFlags.BottomOfPipeBit),
+                    => (PipelineStageFlags2.ColorAttachmentOutputBit, PipelineStageFlags2.BottomOfPipeBit),
 
                 // PresentSrcKhr -> ColorAttachmentOptimal (for next frame)
                 (ImageLayout.PresentSrcKhr, ImageLayout.ColorAttachmentOptimal)
-                    => (PipelineStageFlags.BottomOfPipeBit, PipelineStageFlags.ColorAttachmentOutputBit),
+                    => (PipelineStageFlags2.BottomOfPipeBit, PipelineStageFlags2.ColorAttachmentOutputBit),
 
                 // PresentSrcKhr -> Undefined (for recreation)
                 (ImageLayout.PresentSrcKhr, ImageLayout.Undefined)
-                    => (PipelineStageFlags.BottomOfPipeBit, PipelineStageFlags.TopOfPipeBit),
+                    => (PipelineStageFlags2.BottomOfPipeBit, PipelineStageFlags2.TopOfPipeBit),
 
                 // PresentSrcKhr -> TransferSrcOptimal (for screenshot/etc)
                 (ImageLayout.PresentSrcKhr, ImageLayout.TransferSrcOptimal)
-                    => (PipelineStageFlags.BottomOfPipeBit, PipelineStageFlags.TransferBit),
+                    => (PipelineStageFlags2.BottomOfPipeBit, PipelineStageFlags2.TransferBit),
 
                 // TransferSrcOptimal -> PresentSrcKhr
                 (ImageLayout.TransferSrcOptimal, ImageLayout.PresentSrcKhr)
-                    => (PipelineStageFlags.TransferBit, PipelineStageFlags.BottomOfPipeBit),
+                    => (PipelineStageFlags2.TransferBit, PipelineStageFlags2.BottomOfPipeBit),
 
                 // Add Undefined -> Depth/Stencil ReadOnly transitions
                 (ImageLayout.Undefined, ImageLayout.DepthStencilReadOnlyOptimal)
-                    => (PipelineStageFlags.TopOfPipeBit, PipelineStageFlags.FragmentShaderBit),
+                    => (PipelineStageFlags2.TopOfPipeBit, PipelineStageFlags2.FragmentShaderBit),
                 (ImageLayout.Undefined, ImageLayout.DepthReadOnlyOptimal)
-                    => (PipelineStageFlags.TopOfPipeBit, PipelineStageFlags.FragmentShaderBit),
+                    => (PipelineStageFlags2.TopOfPipeBit, PipelineStageFlags2.FragmentShaderBit),
                 (ImageLayout.TransferSrcOptimal, ImageLayout.DepthStencilAttachmentOptimal)
-                    => (PipelineStageFlags.TransferBit, PipelineStageFlags.LateFragmentTestsBit),
+                    => (PipelineStageFlags2.TransferBit, PipelineStageFlags2.LateFragmentTestsBit),
 
                 // And the reverse
                 (ImageLayout.DepthStencilAttachmentOptimal, ImageLayout.TransferSrcOptimal)
-                    => (PipelineStageFlags.LateFragmentTestsBit, PipelineStageFlags.TransferBit),
+                    => (PipelineStageFlags2.LateFragmentTestsBit, PipelineStageFlags2.TransferBit),
 
                 // Add Depth/Stencil attachment -> ReadOnly transitions
                 (ImageLayout.DepthStencilAttachmentOptimal, ImageLayout.DepthStencilReadOnlyOptimal)
-                    => (PipelineStageFlags.LateFragmentTestsBit, PipelineStageFlags.FragmentShaderBit),
+                    => (PipelineStageFlags2.LateFragmentTestsBit, PipelineStageFlags2.FragmentShaderBit),
                 (ImageLayout.DepthStencilReadOnlyOptimal, ImageLayout.DepthStencilAttachmentOptimal)
-                    => (PipelineStageFlags.FragmentShaderBit, PipelineStageFlags.LateFragmentTestsBit),
+                    => (PipelineStageFlags2.FragmentShaderBit, PipelineStageFlags2.LateFragmentTestsBit),
                 (ImageLayout.DepthAttachmentOptimal, ImageLayout.DepthReadOnlyOptimal)
-                    => (PipelineStageFlags.LateFragmentTestsBit, PipelineStageFlags.FragmentShaderBit),
+                    => (PipelineStageFlags2.LateFragmentTestsBit, PipelineStageFlags2.FragmentShaderBit),
                 (ImageLayout.DepthReadOnlyOptimal, ImageLayout.DepthAttachmentOptimal)
-                    => (PipelineStageFlags.FragmentShaderBit, PipelineStageFlags.LateFragmentTestsBit),
+                    => (PipelineStageFlags2.FragmentShaderBit, PipelineStageFlags2.LateFragmentTestsBit),
 
                 // Existing transitions...
                 (ImageLayout.General, ImageLayout.TransferSrcOptimal)
-                    => (PipelineStageFlags.ComputeShaderBit, PipelineStageFlags.TransferBit),
+                    => (PipelineStageFlags2.ComputeShaderBit, PipelineStageFlags2.TransferBit),
                 // ShaderReadOnlyOptimal → General (e.g., for compute write)
                 (ImageLayout.ShaderReadOnlyOptimal, ImageLayout.General)
-                    => (PipelineStageFlags.FragmentShaderBit, PipelineStageFlags.ComputeShaderBit),
+                    => (PipelineStageFlags2.FragmentShaderBit, PipelineStageFlags2.ComputeShaderBit),
                 // General → ShaderReadOnlyOptimal (e.g., after compute write)
                 (ImageLayout.General, ImageLayout.ShaderReadOnlyOptimal)
-                    => (PipelineStageFlags.ComputeShaderBit, PipelineStageFlags.FragmentShaderBit),
+                    => (PipelineStageFlags2.ComputeShaderBit, PipelineStageFlags2.FragmentShaderBit),
 
                 // ColorAttachmentOptimal → TransferSrcOptimal (for picking)
                 (ImageLayout.ColorAttachmentOptimal, ImageLayout.TransferSrcOptimal)
-                    => (PipelineStageFlags.ColorAttachmentOutputBit, PipelineStageFlags.TransferBit),
+                    => (PipelineStageFlags2.ColorAttachmentOutputBit, PipelineStageFlags2.TransferBit),
 
                 // TransferSrcOptimal → ColorAttachmentOptimal (reverse transition)
                 (ImageLayout.TransferSrcOptimal, ImageLayout.ColorAttachmentOptimal)
-                    => (PipelineStageFlags.TransferBit, PipelineStageFlags.ColorAttachmentOutputBit),
+                    => (PipelineStageFlags2.TransferBit, PipelineStageFlags2.ColorAttachmentOutputBit),
 
                 // ColorAttachmentOptimal → ShaderReadOnlyOptimal
                 (ImageLayout.ColorAttachmentOptimal, ImageLayout.ShaderReadOnlyOptimal)
-                    => (PipelineStageFlags.ColorAttachmentOutputBit, PipelineStageFlags.FragmentShaderBit),
+                    => (PipelineStageFlags2.ColorAttachmentOutputBit, PipelineStageFlags2.FragmentShaderBit),
 
                 // ShaderReadOnlyOptimal → ColorAttachmentOptimal
                 (ImageLayout.ShaderReadOnlyOptimal, ImageLayout.ColorAttachmentOptimal)
-                    => (PipelineStageFlags.FragmentShaderBit, PipelineStageFlags.ColorAttachmentOutputBit),
+                    => (PipelineStageFlags2.FragmentShaderBit, PipelineStageFlags2.ColorAttachmentOutputBit),
 
                 // Existing transitions
                 (ImageLayout.Undefined, ImageLayout.TransferDstOptimal) =>
-                    (PipelineStageFlags.TopOfPipeBit, PipelineStageFlags.TransferBit),
+                    (PipelineStageFlags2.TopOfPipeBit, PipelineStageFlags2.TransferBit),
                 (ImageLayout.TransferDstOptimal, ImageLayout.ShaderReadOnlyOptimal) =>
-                    (PipelineStageFlags.TransferBit, PipelineStageFlags.FragmentShaderBit),
+                    (PipelineStageFlags2.TransferBit, PipelineStageFlags2.FragmentShaderBit),
                 (ImageLayout.TransferSrcOptimal, ImageLayout.ShaderReadOnlyOptimal) =>
-                    (PipelineStageFlags.TransferBit, PipelineStageFlags.FragmentShaderBit),
+                    (PipelineStageFlags2.TransferBit, PipelineStageFlags2.FragmentShaderBit),
                 (ImageLayout.TransferDstOptimal, ImageLayout.TransferSrcOptimal) =>
-                    (PipelineStageFlags.TransferBit, PipelineStageFlags.TransferBit),
+                    (PipelineStageFlags2.TransferBit, PipelineStageFlags2.TransferBit),
                 (ImageLayout.Undefined, ImageLayout.ColorAttachmentOptimal) =>
-                    (PipelineStageFlags.TopOfPipeBit, PipelineStageFlags.ColorAttachmentOutputBit),
+                    (PipelineStageFlags2.TopOfPipeBit, PipelineStageFlags2.ColorAttachmentOutputBit),
 
                 (ImageLayout.ShaderReadOnlyOptimal, ImageLayout.TransferDstOptimal) =>
-                    (PipelineStageFlags.FragmentShaderBit, PipelineStageFlags.TransferBit),
+                    (PipelineStageFlags2.FragmentShaderBit, PipelineStageFlags2.TransferBit),
                 (ImageLayout.ShaderReadOnlyOptimal, ImageLayout.TransferSrcOptimal) =>
-                    (PipelineStageFlags.FragmentShaderBit, PipelineStageFlags.TransferBit),
+                    (PipelineStageFlags2.FragmentShaderBit, PipelineStageFlags2.TransferBit),
                 (ImageLayout.Undefined, ImageLayout.TransferSrcOptimal) =>
-                    (PipelineStageFlags.TopOfPipeBit, PipelineStageFlags.TransferBit),
+                    (PipelineStageFlags2.TopOfPipeBit, PipelineStageFlags2.TransferBit),
                 (ImageLayout.Undefined, ImageLayout.General) =>
-                    (PipelineStageFlags.TopOfPipeBit, PipelineStageFlags.ComputeShaderBit),
+                    (PipelineStageFlags2.TopOfPipeBit, PipelineStageFlags2.ComputeShaderBit),
 
                 // Add depth/stencil transitions
                 (ImageLayout.Undefined, ImageLayout.DepthStencilAttachmentOptimal) =>
-                    (PipelineStageFlags.TopOfPipeBit, PipelineStageFlags.EarlyFragmentTestsBit),
+                    (PipelineStageFlags2.TopOfPipeBit, PipelineStageFlags2.EarlyFragmentTestsBit),
                 (ImageLayout.Undefined, ImageLayout.DepthAttachmentOptimal) =>
-                    (PipelineStageFlags.TopOfPipeBit, PipelineStageFlags.EarlyFragmentTestsBit),
+                    (PipelineStageFlags2.TopOfPipeBit, PipelineStageFlags2.EarlyFragmentTestsBit),
 
                 (ImageLayout.Undefined, ImageLayout.ShaderReadOnlyOptimal) =>
-                    (PipelineStageFlags.TopOfPipeBit, PipelineStageFlags.FragmentShaderBit),
+                    (PipelineStageFlags2.TopOfPipeBit, PipelineStageFlags2.FragmentShaderBit),
+                (ImageLayout.ShaderReadOnlyOptimal, ImageLayout.ShaderReadOnlyOptimal) =>
+                (PipelineStageFlags2.FragmentShaderBit, PipelineStageFlags2.FragmentShaderBit),
 
 
                 _ => throw new NotSupportedException($"Unsupported layout transition: {oldLayout} -> {newLayout}")
             };
         }
-        private (AccessFlags srcAccessFlag, AccessFlags dstAccessFlag) GetAccessMasks(ImageLayout oldLayout, ImageLayout newLayout, uint srcQueueFamilyIndex, uint dstQueueFamilyIndex)
+        private (AccessFlags2 srcAccessFlag, AccessFlags2 dstAccessFlag) GetAccessMasks(ImageLayout oldLayout, ImageLayout newLayout, uint srcQueueFamilyIndex, uint dstQueueFamilyIndex)
         {
             if (srcQueueFamilyIndex != dstQueueFamilyIndex)
             {
-                return (AccessFlags.None, AccessFlags.None);
+                return (AccessFlags2.None, AccessFlags2.None);
             }
             return (oldLayout, newLayout) switch
             {
                 // ADD THESE MISSING TRANSITIONS FOR PresentSrcKhr:
                 // Undefined -> PresentSrcKhr
                 (ImageLayout.Undefined, ImageLayout.PresentSrcKhr)
-                    => (AccessFlags.None, AccessFlags.MemoryReadBit),
+                    => (AccessFlags2.None, AccessFlags2.MemoryReadBit),
 
                 // ColorAttachmentOptimal -> PresentSrcKhr
                 (ImageLayout.ColorAttachmentOptimal, ImageLayout.PresentSrcKhr)
-                    => (AccessFlags.ColorAttachmentWriteBit, AccessFlags.MemoryReadBit),
+                    => (AccessFlags2.ColorAttachmentWriteBit, AccessFlags2.MemoryReadBit),
 
                 // PresentSrcKhr -> ColorAttachmentOptimal
                 (ImageLayout.PresentSrcKhr, ImageLayout.ColorAttachmentOptimal)
-                    => (AccessFlags.MemoryReadBit, AccessFlags.ColorAttachmentWriteBit),
+                    => (AccessFlags2.MemoryReadBit, AccessFlags2.ColorAttachmentWriteBit),
 
                 // PresentSrcKhr -> Undefined
                 (ImageLayout.PresentSrcKhr, ImageLayout.Undefined)
-                    => (AccessFlags.MemoryReadBit, AccessFlags.None),
+                    => (AccessFlags2.MemoryReadBit, AccessFlags2.None),
 
                 // PresentSrcKhr -> TransferSrcOptimal
                 (ImageLayout.PresentSrcKhr, ImageLayout.TransferSrcOptimal)
-                    => (AccessFlags.MemoryReadBit, AccessFlags.TransferReadBit),
+                    => (AccessFlags2.MemoryReadBit, AccessFlags2.TransferReadBit),
 
                 // TransferSrcOptimal -> PresentSrcKhr
                 (ImageLayout.TransferSrcOptimal, ImageLayout.PresentSrcKhr)
-                    => (AccessFlags.TransferReadBit, AccessFlags.MemoryReadBit),
+                    => (AccessFlags2.TransferReadBit, AccessFlags2.MemoryReadBit),
 
                 // Add Undefined -> Depth/Stencil ReadOnly access masks
                 (ImageLayout.Undefined, ImageLayout.DepthStencilReadOnlyOptimal)
-                    => (AccessFlags.None, AccessFlags.ShaderReadBit),
+                    => (AccessFlags2.None, AccessFlags2.ShaderReadBit),
                 (ImageLayout.Undefined, ImageLayout.DepthReadOnlyOptimal)
-                    => (AccessFlags.None, AccessFlags.ShaderReadBit),
+                    => (AccessFlags2.None, AccessFlags2.ShaderReadBit),
 
                 // Add the missing transition that's causing the error
                 (ImageLayout.TransferSrcOptimal, ImageLayout.DepthStencilAttachmentOptimal)
-                    => (AccessFlags.TransferReadBit, AccessFlags.DepthStencilAttachmentReadBit | AccessFlags.DepthStencilAttachmentWriteBit),
+                    => (AccessFlags2.TransferReadBit, AccessFlags2.DepthStencilAttachmentReadBit | AccessFlags2.DepthStencilAttachmentWriteBit),
 
                 // Also add the reverse transition for completeness
                 (ImageLayout.DepthStencilAttachmentOptimal, ImageLayout.TransferSrcOptimal)
-                    => (AccessFlags.DepthStencilAttachmentWriteBit, AccessFlags.TransferReadBit),
+                    => (AccessFlags2.DepthStencilAttachmentWriteBit, AccessFlags2.TransferReadBit),
 
                 // Add Depth/Stencil attachment -> ReadOnly access masks
                 (ImageLayout.DepthStencilAttachmentOptimal, ImageLayout.DepthStencilReadOnlyOptimal)
-                    => (AccessFlags.DepthStencilAttachmentWriteBit, AccessFlags.ShaderReadBit),
+                    => (AccessFlags2.DepthStencilAttachmentWriteBit, AccessFlags2.ShaderReadBit),
                 (ImageLayout.DepthStencilReadOnlyOptimal, ImageLayout.DepthStencilAttachmentOptimal)
-                    => (AccessFlags.ShaderReadBit, AccessFlags.DepthStencilAttachmentWriteBit),
+                    => (AccessFlags2.ShaderReadBit, AccessFlags2.DepthStencilAttachmentWriteBit),
                 (ImageLayout.DepthAttachmentOptimal, ImageLayout.DepthReadOnlyOptimal)
-                    => (AccessFlags.DepthStencilAttachmentWriteBit, AccessFlags.ShaderReadBit),
+                    => (AccessFlags2.DepthStencilAttachmentWriteBit, AccessFlags2.ShaderReadBit),
                 (ImageLayout.DepthReadOnlyOptimal, ImageLayout.DepthAttachmentOptimal)
-                    => (AccessFlags.ShaderReadBit, AccessFlags.DepthStencilAttachmentWriteBit),
+                    => (AccessFlags2.ShaderReadBit, AccessFlags2.DepthStencilAttachmentWriteBit),
 
                 // Existing transitions...
                 (ImageLayout.ColorAttachmentOptimal, ImageLayout.TransferSrcOptimal)
-                    => (AccessFlags.ColorAttachmentWriteBit, AccessFlags.TransferReadBit),
+                    => (AccessFlags2.ColorAttachmentWriteBit, AccessFlags2.TransferReadBit),
 
                 // TransferSrcOptimal → ColorAttachmentOptimal
                 (ImageLayout.TransferSrcOptimal, ImageLayout.ColorAttachmentOptimal)
-                    => (AccessFlags.TransferReadBit, AccessFlags.ColorAttachmentWriteBit),
+                    => (AccessFlags2.TransferReadBit, AccessFlags2.ColorAttachmentWriteBit),
 
                 // ColorAttachmentOptimal → ShaderReadOnlyOptimal
                 (ImageLayout.ColorAttachmentOptimal, ImageLayout.ShaderReadOnlyOptimal)
-                    => (AccessFlags.ColorAttachmentWriteBit, AccessFlags.ShaderReadBit),
+                    => (AccessFlags2.ColorAttachmentWriteBit, AccessFlags2.ShaderReadBit),
 
                 // ShaderReadOnlyOptimal → ColorAttachmentOptimal
                 (ImageLayout.ShaderReadOnlyOptimal, ImageLayout.ColorAttachmentOptimal)
-                    => (AccessFlags.ShaderReadBit, AccessFlags.ColorAttachmentWriteBit),
+                    => (AccessFlags2.ShaderReadBit, AccessFlags2.ColorAttachmentWriteBit),
                 (ImageLayout.General, ImageLayout.TransferSrcOptimal)
-                    => (AccessFlags.ShaderWriteBit, AccessFlags.TransferReadBit),
+                    => (AccessFlags2.ShaderWriteBit, AccessFlags2.TransferReadBit),
                 (ImageLayout.ShaderReadOnlyOptimal, ImageLayout.General)
-                       => (AccessFlags.ShaderReadBit, AccessFlags.ShaderWriteBit),
+                       => (AccessFlags2.ShaderReadBit, AccessFlags2.ShaderWriteBit),
 
                 (ImageLayout.General, ImageLayout.ShaderReadOnlyOptimal)
-                    => (AccessFlags.ShaderWriteBit, AccessFlags.ShaderReadBit),
+                    => (AccessFlags2.ShaderWriteBit, AccessFlags2.ShaderReadBit),
                 // Existing transitions
                 (ImageLayout.Undefined, ImageLayout.TransferDstOptimal) =>
-                    (AccessFlags.None, AccessFlags.TransferWriteBit),
+                    (AccessFlags2.None, AccessFlags2.TransferWriteBit),
                 (ImageLayout.TransferDstOptimal, ImageLayout.ShaderReadOnlyOptimal) =>
-                    (AccessFlags.TransferWriteBit, AccessFlags.ShaderReadBit),
+                    (AccessFlags2.TransferWriteBit, AccessFlags2.ShaderReadBit),
                 (ImageLayout.TransferSrcOptimal, ImageLayout.ShaderReadOnlyOptimal) =>
-                    (AccessFlags.TransferReadBit, AccessFlags.ShaderReadBit),
+                    (AccessFlags2.TransferReadBit, AccessFlags2.ShaderReadBit),
                 (ImageLayout.TransferDstOptimal, ImageLayout.TransferSrcOptimal) =>
-                    (AccessFlags.TransferWriteBit, AccessFlags.TransferReadBit),
+                    (AccessFlags2.TransferWriteBit, AccessFlags2.TransferReadBit),
                 (ImageLayout.ShaderReadOnlyOptimal, ImageLayout.TransferDstOptimal) =>
-                    (AccessFlags.ShaderReadBit, AccessFlags.TransferWriteBit),
+                    (AccessFlags2.ShaderReadBit, AccessFlags2.TransferWriteBit),
 
                 (ImageLayout.Undefined, ImageLayout.ColorAttachmentOptimal) =>
-                    (AccessFlags.None, AccessFlags.ColorAttachmentWriteBit),
+                    (AccessFlags2.None, AccessFlags2.ColorAttachmentWriteBit),
 
                 (ImageLayout.Undefined, ImageLayout.TransferSrcOptimal) =>
-                    (AccessFlags.None, AccessFlags.TransferReadBit),
+                    (AccessFlags2.None, AccessFlags2.TransferReadBit),
                 (ImageLayout.Undefined, ImageLayout.General) =>
-                    (AccessFlags.None, AccessFlags.ShaderWriteBit),
+                    (AccessFlags2.None, AccessFlags2.ShaderWriteBit),
                 // Add depth/stencil transitions
                 (ImageLayout.Undefined, ImageLayout.DepthStencilAttachmentOptimal) =>
-                    (AccessFlags.None, AccessFlags.DepthStencilAttachmentReadBit | AccessFlags.DepthStencilAttachmentWriteBit),
+                    (AccessFlags2.None, AccessFlags2.DepthStencilAttachmentReadBit | AccessFlags2.DepthStencilAttachmentWriteBit),
 
                 (ImageLayout.Undefined, ImageLayout.DepthAttachmentOptimal) =>
-                    (AccessFlags.None, AccessFlags.DepthStencilAttachmentReadBit | AccessFlags.DepthStencilAttachmentWriteBit),
+                    (AccessFlags2.None, AccessFlags2.DepthStencilAttachmentReadBit | AccessFlags2.DepthStencilAttachmentWriteBit),
                 (ImageLayout.Undefined, ImageLayout.ShaderReadOnlyOptimal) =>
-                    (AccessFlags.None, AccessFlags.ShaderReadBit),
+                    (AccessFlags2.None, AccessFlags2.ShaderReadBit),
 
                 (ImageLayout.ShaderReadOnlyOptimal, ImageLayout.TransferSrcOptimal) =>
-                    (AccessFlags.ShaderReadBit, AccessFlags.TransferReadBit),
+                    (AccessFlags2.ShaderReadBit, AccessFlags2.TransferReadBit),
+                (ImageLayout.ShaderReadOnlyOptimal, ImageLayout.ShaderReadOnlyOptimal) =>
+               (AccessFlags2.ShaderReadBit, AccessFlags2.ShaderReadBit),
 
                 _ => throw new NotSupportedException($"Unsupported layout transition: {oldLayout} -> {newLayout}")
             };
@@ -854,6 +805,19 @@ namespace RockEngine.Vulkan
                0, // baseArrayLayer
                _createInfo.ArrayLayers  // layerCount
            );
+        }
+        /// <summary>
+        /// Returns a cached image view for the specified mip and layer range.
+        /// </summary>
+        /// <param name="baseMipLevel">First mip level to include.</param>
+        /// <param name="levelCount">Number of mip levels.</param>
+        /// <param name="baseArrayLayer">First array layer to include.</param>
+        /// <param name="layerCount">Number of array layers.</param>
+        /// <returns>A Vulkan image view handle.</returns>
+        public VkImageView GetView(uint baseMipLevel = 0, uint levelCount = 1,
+                                   uint baseArrayLayer = 0, uint layerCount = 1)
+        {
+            return GetOrCreateView(AspectFlags, baseMipLevel, levelCount, baseArrayLayer, layerCount);
         }
     }
 }

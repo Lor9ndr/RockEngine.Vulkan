@@ -11,7 +11,7 @@
     <Authors>RockEngine</Authors>
     <PackageTags>roslyn, analyzer, gpu</PackageTags>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
-    <LangVersion>8.0</LangVersion>
+    <LangVersion>9.0</LangVersion>
 
   </PropertyGroup>
 

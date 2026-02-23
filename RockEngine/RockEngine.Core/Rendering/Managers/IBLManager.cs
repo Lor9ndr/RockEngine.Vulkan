@@ -1,5 +1,6 @@
 ﻿using RockEngine.Core.Diagnostics;
 using RockEngine.Core.Extensions;
+using RockEngine.Core.Helpers;
 using RockEngine.Core.Rendering.Materials;
 using RockEngine.Core.Rendering.Objects;
 using RockEngine.Core.Rendering.ResourceBindings;
@@ -8,8 +9,6 @@ using RockEngine.Vulkan;
 
 using Silk.NET.Maths;
 using Silk.NET.Vulkan;
-
-using System.Runtime.InteropServices;
 
 namespace RockEngine.Core.Rendering.Managers
 {
@@ -58,13 +57,31 @@ namespace RockEngine.Core.Rendering.Managers
             {
                 batch.LabelObject("Irradiance cmd");
                 // Transition layouts
-                envMap.Image.TransitionImageLayout(batch, ImageLayout.General, 0, envMap.Image.MipLevels, 0, 6);
-                output.Image.TransitionImageLayout(batch, ImageLayout.General, 0, 1, 0, 6);
+                envMap.Image.TransitionImageLayout(batch, ImageLayout.Undefined, ImageLayout.General, baseMipLevel: 0, envMap.Image.MipLevels, 0, 6);
+                output.Image.TransitionImageLayout(batch, ImageLayout.Undefined, ImageLayout.General, baseMipLevel: 0, 1, 0, 6);
 
-                // Create material with required bindings
+                // Create material with required bindings – FIXED
                 MaterialPass matPass = new MaterialPass(_irradiancePipeline);
-                matPass.BindResource(new TextureBinding(0, 0, 0, 6, envMap));
-                matPass.BindResource(new StorageImageBinding([output], 0, 1));
+                matPass.BindResource(new TextureBinding(
+                    setLocation: 0,
+                    bindingLocation: 0,
+                    baseMipLevel: 0,
+                    levelCount: 1,                           // only base mip
+                    imageLayout: ImageLayout.General,
+                    arrayLayer: 0,
+                    layerCount: envMap.Image.ArrayLayers,    // all 6 layers
+                    envMap
+                ));
+                matPass.BindResource(new StorageImageBinding(
+                 texture: output,
+                 setLocation: 0,
+                 bindingLocation: 1,
+                 layout: ImageLayout.General,
+                 mipLevel: 0,
+                 levelCount: 1,                          // only base mip
+                 arrayLayer: 0,
+                 layerCount: output.Image.ArrayLayers     // 6 layers → cube view
+             ));
 
                 // Set push constants
                 const uint sampleCount = 1024u;
@@ -82,15 +99,14 @@ namespace RockEngine.Core.Rendering.Managers
                 _bindingManager.BindResourcesForMaterial(0, matPass, batch, true);
                 batch.BindPipeline(_irradiancePipeline, PipelineBindPoint.Compute);
                 batch.Dispatch(groupsX, groupsY, 6);
+
                 // Transition and return
-                output.Image.TransitionImageLayout(batch, ImageLayout.ShaderReadOnlyOptimal, 0, 1, 0, 6);
-                envMap.Image.TransitionImageLayout(batch, ImageLayout.ShaderReadOnlyOptimal, 0, envMap.Image.MipLevels, 0, 6);
+                output.Image.TransitionImageLayout(batch, ImageLayout.General, ImageLayout.ShaderReadOnlyOptimal, baseMipLevel: 0, 1, 0, 6);
+                envMap.Image.TransitionImageLayout(batch, ImageLayout.General, ImageLayout.ShaderReadOnlyOptimal, baseMipLevel: 0, envMap.Image.MipLevels, 0, 6);
             }
 
-            await _context.ComputeSubmitContext.FlushSingle(batch, VkFence.CreateNotSignaled(_context));
+            await _context.ComputeSubmitContext.SubmitSingle(batch, VkFence.CreateNotSignaled(_context));
             return output;
-
-
         }
 
         public async Task<Texture> GeneratePrefilterMap(Texture envMap, uint size = 512)
@@ -102,11 +118,8 @@ namespace RockEngine.Core.Rendering.Managers
             batch.LabelObject("Prefilter cmd");
             using (PerformanceTracer.BeginSection("GeneratePrefilterMap", batch, 0))
             {
-                // Transition base mip of input/output images
-                if (envMap.Image.GetMipLayout(0, 0) != ImageLayout.General)
-                {
-                    envMap.Image.TransitionImageLayout(batch, ImageLayout.General, 0, envMap.Image.MipLevels, 0, 6);
-                }
+                // Transition base mip of input images
+                envMap.Image.TransitionImageLayout(batch, ImageLayout.Undefined, ImageLayout.General, baseMipLevel: 0, envMap.Image.MipLevels, 0, 6);
 
                 batch.BindPipeline(_prefilterPipeline, PipelineBindPoint.Compute);
 
@@ -114,9 +127,9 @@ namespace RockEngine.Core.Rendering.Managers
                 {
                     if (mip > 0)
                     {
-                        var barrier = new ImageMemoryBarrier
+                        var barrier = new ImageMemoryBarrier2
                         {
-                            SType = StructureType.ImageMemoryBarrier,
+                            SType = StructureType.ImageMemoryBarrier2,
                             Image = output.Image,
                             OldLayout = ImageLayout.General,
                             NewLayout = ImageLayout.General,
@@ -128,15 +141,12 @@ namespace RockEngine.Core.Rendering.Managers
                                 BaseArrayLayer = 0,
                                 LayerCount = 6
                             },
-                            SrcAccessMask = AccessFlags.ShaderWriteBit,
-                            DstAccessMask = AccessFlags.ShaderReadBit
+                            SrcAccessMask = AccessFlags2.ShaderWriteBit,
+                            DstAccessMask = AccessFlags2.ShaderReadBit,
+                            SrcStageMask = PipelineStageFlags2.ComputeShaderBit,
+                            DstStageMask = PipelineStageFlags2.FragmentShaderBit,
                         };
-
-                        batch.PipelineBarrier(
-                            srcStage: PipelineStageFlags.ComputeShaderBit,
-                            dstStage: PipelineStageFlags.ComputeShaderBit,
-                            imageMemoryBarriers: new[] { barrier }
-                        );
+                        batch.PipelineBarrier(imageMemoryBarriers: [barrier]);
                     }
 
                     var mipSize = (uint)(size * Math.Pow(0.5, mip));
@@ -145,6 +155,7 @@ namespace RockEngine.Core.Rendering.Managers
                     // Transition current mip to GENERAL before use
                     output.Image.TransitionImageLayout(
                         batch,
+                        ImageLayout.Undefined,
                         ImageLayout.General,
                         baseMipLevel: mip,
                         levelCount: 1,
@@ -152,10 +163,28 @@ namespace RockEngine.Core.Rendering.Managers
                         layerCount: 6
                     );
 
-                    // Create per-mip material
+                    // Create per-mip material – FIXED envMap binding
                     var material = new MaterialPass(_prefilterPipeline);
-                    material.BindResource(new TextureBinding(0, 0, 0, 6, envMap));
-                    material.BindResource(new StorageImageBinding(output, 0, 1, mip));
+                    material.BindResource(new TextureBinding(
+                        setLocation: 0,
+                        bindingLocation: 0,
+                        baseMipLevel: 0,
+                        levelCount: 1,                               // only base mip
+                        imageLayout: ImageLayout.General,
+                        arrayLayer: 0,
+                        layerCount: envMap.Image.ArrayLayers,        // all 6 layers
+                        envMap
+                    ));
+                    material.BindResource(new StorageImageBinding(
+                     texture: output,
+                     setLocation: 0,
+                     bindingLocation: 1,
+                     layout: ImageLayout.General,
+                     mipLevel: mip,
+                     levelCount: 1,                          // only this mip
+                     arrayLayer: 0,
+                     layerCount: output.Image.ArrayLayers     // 6 layers → cube view
+                 ));
 
                     // Set push constants
                     material.PushConstant("pc", new PrefilterPushConstants()
@@ -175,18 +204,17 @@ namespace RockEngine.Core.Rendering.Managers
                 // Transition all mip levels to SHADER_READ_ONLY_OPTIMAL
                 output.Image.TransitionImageLayout(
                     batch,
+                    ImageLayout.General,
                     ImageLayout.ShaderReadOnlyOptimal,
                     baseMipLevel: 0,
                     levelCount: mipLevels,
                     baseArrayLayer: 0,
                     layerCount: 6
                 );
-                envMap.Image.TransitionImageLayout(batch, ImageLayout.ShaderReadOnlyOptimal, 0, envMap.Image.MipLevels, 0, 6);
+                envMap.Image.TransitionImageLayout(batch, ImageLayout.General, ImageLayout.ShaderReadOnlyOptimal, baseMipLevel: 0, envMap.Image.MipLevels, 0, 6);
             }
 
-
-            await _context.ComputeSubmitContext.FlushSingle(batch, VkFence.CreateNotSignaled(_context));
-
+            await _context.ComputeSubmitContext.SubmitSingle(batch, VkFence.CreateNotSignaled(_context));
             return output;
         }
         public async Task<Texture> GenerateBRDFLUT(uint size = 512)
@@ -203,11 +231,11 @@ namespace RockEngine.Core.Rendering.Managers
             {
 
 
-                output.Image.TransitionImageLayout(batch, ImageLayout.General);
+                output.Image.TransitionImageLayout(batch, ImageLayout.Undefined, ImageLayout.General);
                 batch.BindPipeline(_brdfPipeline, PipelineBindPoint.Compute);
 
                 var material = new MaterialPass(_brdfPipeline);
-                material.BindResource(new StorageImageBinding(output, 0, 0));
+                material.BindResource(new StorageImageBinding(output, 0, 0, ImageLayout.General));
 
                 // Ensure proper descriptor set binding
                 _bindingManager.BindResourcesForMaterial(0, material, batch, true);
@@ -215,12 +243,12 @@ namespace RockEngine.Core.Rendering.Managers
                 uint groups = (size + 31) / 32;
                 _computeManager.Dispatch(batch, groups, groups, 1);
 
-                output.Image.TransitionImageLayout(batch, ImageLayout.ShaderReadOnlyOptimal);
+                output.Image.TransitionImageLayout(batch, ImageLayout.General, ImageLayout.ShaderReadOnlyOptimal);
                 var semaphore = VkSemaphore.Create(_context);
                 semaphore.LabelObject("BRDFLUT SEMAPHORE");
             }
 
-            await _context.ComputeSubmitContext.FlushSingle(batch, VkFence.CreateNotSignaled(_context));
+            await _context.ComputeSubmitContext.SubmitSingle(batch, VkFence.CreateNotSignaled(_context));
 
             return output;
         }
@@ -251,7 +279,8 @@ namespace RockEngine.Core.Rendering.Managers
             return Task.FromResult(texture);
         }
 
-        [StructLayout(LayoutKind.Sequential, Pack = 16)]
+        [GLSLStruct(GLSLMemoryLayout.Std140)]
+
         private struct IrradiancePushConstants
         {
             public Vector2D<int> OutputSize;
@@ -259,7 +288,7 @@ namespace RockEngine.Core.Rendering.Managers
             public float DeltaTheta;
         }
 
-        [StructLayout(LayoutKind.Sequential, Pack = 16)]
+        [GLSLStruct(GLSLMemoryLayout.Std140)]
         private struct PrefilterPushConstants
         {
             public Vector2D<int> OutputSize;

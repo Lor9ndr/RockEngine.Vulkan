@@ -2,13 +2,19 @@
 
 using JoltPhysicsSharp;
 
+using MessagePack;
+
 namespace RockEngine.Core.ECS.Components.Physics
 {
+    [MessagePackObject(AllowPrivate = true)]
     public partial class BoxColliderComponent : ColliderComponent
     {
+        [IgnoreMember]
         private Vector3 _extents = new Vector3(0.5f, 0.5f, 0.5f);
+        [IgnoreMember]
         private Quaternion _rotation = Quaternion.Identity;
 
+        [Key(0)]
         public Vector3 Extents
         {
             get => _extents;
@@ -22,6 +28,7 @@ namespace RockEngine.Core.ECS.Components.Physics
             }
         }
 
+        [Key(1)]
         public Quaternion Rotation
         {
             get => _rotation;
@@ -35,6 +42,7 @@ namespace RockEngine.Core.ECS.Components.Physics
             }
         }
 
+        [Key(2)]
         public Vector3 Size
         {
             get => _extents * 2;

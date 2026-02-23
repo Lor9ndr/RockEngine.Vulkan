@@ -29,9 +29,9 @@ namespace RockEngine.Editor.Rendering.Buffers
         {
             var batch = _context.GraphicsSubmitContext.CreateBatch();
             // Ensure the source texture is in correct layout
-            if(sourceTexture.Image.GetMipLayout(0) != ImageLayout.TransferSrcOptimal)
+            //if(sourceTexture.Image.GetMipLayout(0) != ImageLayout.TransferSrcOptimal)
             {
-                sourceTexture.Image.TransitionImageLayout(batch, ImageLayout.TransferSrcOptimal);
+                sourceTexture.Image.TransitionImageLayout(batch, ImageLayout.Undefined, ImageLayout.TransferSrcOptimal);
             }
             uint actualY = flipY ? (sourceTexture.Height - 1 - y) : y;
             // Copy specific pixel region
@@ -58,18 +58,18 @@ namespace RockEngine.Editor.Rendering.Buffers
                 in imageCopy);
 
             // Add barrier to ensure copy completes before reading
-            var barrier = new BufferMemoryBarrier
+            var barrier = new BufferMemoryBarrier2
             {
-                SType = StructureType.BufferMemoryBarrier,
-                SrcAccessMask = AccessFlags.TransferWriteBit,
-                DstAccessMask = AccessFlags.HostReadBit,
+                SType = StructureType.BufferMemoryBarrier2,
+                SrcAccessMask = AccessFlags2.TransferWriteBit,
+                DstAccessMask = AccessFlags2.HostReadBit,
                 Buffer = _stagingBuffer,
                 Offset = 0,
                 Size = Vk.WholeSize
             };
 
-            batch.PipelineBarrier(PipelineStageFlags.TransferBit, PipelineStageFlags.HostBit, bufferMemoryBarriers: [barrier]);
-            await batch.SubmitContext.FlushSingle(batch, VkFence.CreateNotSignaled(_context));
+            batch.PipelineBarrier([], [barrier], []);
+            await batch.SubmitContext.SubmitSingle(batch, VkFence.CreateNotSignaled(_context));
 
             return ReadPixelData();
         }
@@ -77,9 +77,9 @@ namespace RockEngine.Editor.Rendering.Buffers
         {
             var batch = _context.GraphicsSubmitContext.CreateBatch();
             // Ensure the source texture is in correct layout
-            if(sourceTexture.Image.GetMipLayout(0) != ImageLayout.TransferSrcOptimal)
+            //if(sourceTexture.Image.GetMipLayout(0) != ImageLayout.TransferSrcOptimal)
             {
-                sourceTexture.Image.TransitionImageLayout(batch, ImageLayout.TransferSrcOptimal);
+                sourceTexture.Image.TransitionImageLayout(batch, ImageLayout.Undefined, ImageLayout.TransferSrcOptimal);
             }
             uint actualY = flipY ? (sourceTexture.Height - 1 - y) : y;
             // Copy specific pixel region
@@ -106,18 +106,21 @@ namespace RockEngine.Editor.Rendering.Buffers
                 in imageCopy);
 
             // Add barrier to ensure copy completes before reading
-            var barrier = new BufferMemoryBarrier
+            var barrier = new BufferMemoryBarrier2
             {
-                SType = StructureType.BufferMemoryBarrier,
-                SrcAccessMask = AccessFlags.TransferWriteBit,
-                DstAccessMask = AccessFlags.HostReadBit,
+                SType = StructureType.BufferMemoryBarrier2,
+                SrcAccessMask = AccessFlags2.TransferWriteBit,
+                DstAccessMask = AccessFlags2.HostReadBit,
                 Buffer = _stagingBuffer,
                 Offset = 0,
-                Size = Vk.WholeSize
+                Size = Vk.WholeSize,
+                SrcStageMask = PipelineStageFlags2.TransferBit,
+                DstStageMask = PipelineStageFlags2.HostBit
             };
 
-            batch.PipelineBarrier(PipelineStageFlags.TransferBit, PipelineStageFlags.HostBit, bufferMemoryBarriers: [barrier]);
-            batch.SubmitContext.FlushSingle(batch, VkFence.CreateNotSignaled(_context)).Wait();
+            batch.PipelineBarrier([], 
+                [barrier], []);
+            batch.SubmitContext.SubmitSingle(batch, VkFence.CreateNotSignaled(_context)).Wait();
 
             return ReadPixelData();
         }

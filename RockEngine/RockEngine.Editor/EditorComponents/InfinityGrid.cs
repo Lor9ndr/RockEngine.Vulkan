@@ -1,9 +1,12 @@
-﻿using RockEngine.Core;
-using RockEngine.Core.Assets.AssetData;
+﻿using MessagePack;
+
+using RockEngine.Core;
+using RockEngine.Core.Assets;
 using RockEngine.Core.Builders;
 using RockEngine.Core.DI;
 using RockEngine.Core.ECS;
 using RockEngine.Core.ECS.Components;
+using RockEngine.Core.Helpers;
 using RockEngine.Core.Rendering;
 using RockEngine.Core.Rendering.Buffers;
 using RockEngine.Core.Rendering.Materials;
@@ -22,7 +25,7 @@ namespace RockEngine.Editor.EditorComponents
 {
     public partial class InfinityGrid : Component
     {
-        [StructLayout(LayoutKind.Sequential, Pack = 16)]
+        [GLSLStruct(GLSLMemoryLayout.Std140)]
         public struct GridMaterial
         {
             public Vector4 GridColor;
@@ -31,9 +34,9 @@ namespace RockEngine.Editor.EditorComponents
             public Vector4 AxisColorZ;
             public float GridStep;
             public float MajorGridStep;
-            private System.Numerics.Vector2 _glslPadding1;
         }
 
+        [GLSLStruct(GLSLMemoryLayout.Std140)]
         public struct GridPushConstants
         {
             public Vector3 cameraPosition;
@@ -188,8 +191,10 @@ namespace RockEngine.Editor.EditorComponents
         }
 
         [StructLayout(LayoutKind.Sequential, Pack = 16)]
+        [MessagePackObject]
         public struct PositionVertex : IVertex
         {
+            [Key(0)]
             public Vector4 Position;
 
             public PositionVertex(Vector3 position)

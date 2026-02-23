@@ -2,15 +2,17 @@
 
 using System.Collections;
 
+using ZLinq;
+
 namespace RockEngine.Core.Internal
 {
     public class PerSetBindings : IEnumerable<ResourceBinding>
     {
         private readonly SortedList<UIntRange, ResourceBinding> _bindings = new SortedList<UIntRange, ResourceBinding>();
+        private bool _needToUpdate;
 
         public uint Set { get; }
         public int Count => _bindings.Count;
-        private bool _needToUpdate;
 
         public bool NeedToUpdate => _needToUpdate;
 
@@ -32,29 +34,18 @@ namespace RockEngine.Core.Internal
 
         public bool Remove(ResourceBinding binding)
         {
-            return _bindings.Remove(binding.BindingLocation);
+            bool remove = _bindings.Remove(binding.BindingLocation);
+            CheckForUpdates();
+            return remove;
         }
 
         public void CheckForUpdates()
         {
-            _needToUpdate = false;
-            foreach (var binding in _bindings.Values)
-            {
-                foreach (var set in binding.DescriptorSets)
-                {
-                    if (set is null || set.IsDirty)
-                    {
-                        _needToUpdate = true;
-                        return;
-                    }
-                }
-            }
-
+            _needToUpdate = _bindings.AsValueEnumerable().Any(s => s.Value.DescriptorSets.AsValueEnumerable().Any(s => s.Value.AsValueEnumerable().Any(s => s is null || s.IsDirty)));
         }
 
         public void RemoveAll(Func<ResourceBinding, bool> predicate)
         {
-            // Use list instead of stackalloc for better memory management
             var keysToRemove = new List<UIntRange>();
 
             foreach (var item in _bindings)
@@ -69,47 +60,6 @@ namespace RockEngine.Core.Internal
             {
                 _bindings.Remove(key);
             }
-
-            CheckForUpdates();
-        }
-
-        public unsafe void RemoveAllUnsafe(Func<ResourceBinding, bool> predicate)
-        {
-            if (Count == 0) return;
-
-            // Limit stack allocation to reasonable size
-            const int MAX_STACK_ALLOC = 64;
-            var useStackAlloc = Count <= MAX_STACK_ALLOC;
-
-            if (useStackAlloc)
-            {
-                var locations = stackalloc UIntRange[Count];
-                int i = 0;
-
-                foreach (var item in _bindings)
-                {
-                    if (predicate.Invoke(item.Value))
-                    {
-                        if (i < Count) // Safety check
-                        {
-                            locations[i] = item.Key;
-                            i++;
-                        }
-                    }
-                }
-
-                while (i > 0)
-                {
-                    i--;
-                    _bindings.Remove(locations[i]);
-                }
-            }
-            else
-            {
-                // Fallback to heap allocation for large collections
-                RemoveAll(predicate);
-            }
-
             CheckForUpdates();
         }
 
@@ -119,7 +69,7 @@ namespace RockEngine.Core.Internal
 
         internal void Clear()
         {
-            _bindings.Clear();  
+            _bindings.Clear();
         }
     }
 }

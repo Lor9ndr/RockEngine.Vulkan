@@ -2,11 +2,11 @@
 
 using NLog;
 
-using RockEngine.Core.DI;
 using RockEngine.Core.ECS.Components;
 using RockEngine.Core.Rendering.Buffers;
 using RockEngine.Core.Rendering.Commands;
 using RockEngine.Core.Rendering.Materials;
+using RockEngine.Core.Rendering.Passes.SubPasses;
 using RockEngine.Vulkan;
 
 using Silk.NET.Core;
@@ -30,24 +30,26 @@ namespace RockEngine.Core.Rendering.Managers
         private readonly Lock _otherCommandsLock = new Lock();
         private readonly uint _transformBufferCapacity;
         private bool _isDirty;
-        private TransformManager _transformManager;
+        private readonly TransformManager _transformManager;
+        private readonly GlobalGeometryBuffer _globalGeometryBuffer;
         private static readonly ulong _commandStride = (ulong)Marshal.SizeOf<DrawIndexedIndirectCommand>();
         private readonly List<DrawIndexedIndirectCommand> _indirectCommandsList = new List<DrawIndexedIndirectCommand>();
-
-        private static readonly ObjectPool<List<DrawGroup>> DrawGroupPool = ObjectPool.Create<List<DrawGroup>>(new ListPolicy<DrawGroup>());
 
         public IndirectBuffer IndirectBuffer => _indirectBuffer;
         public Queue<IRenderCommand> OtherCommands => _otherCommands;
         private readonly Logger _logger = LogManager.GetCurrentClassLogger();
+        private readonly ObjectPool<List<DrawGroup>> _drawGroupsPool;
 
-        public IndirectCommandManager(VulkanContext context, uint transformBufferCapacity, TransformManager transformManager)
+        public IndirectCommandManager(VulkanContext context, uint transformBufferCapacity, TransformManager transformManager, GlobalGeometryBuffer globalGeometryBuffer)
         {
             _context = context;
             _transformBufferCapacity = transformBufferCapacity;
             _indirectBuffer = new IndirectBuffer(context, 10_000 * _commandStride);
             _supportsMultiDraw = context.Device.PhysicalDevice.Features2.Features.MultiDrawIndirect;
             _transformManager = transformManager;
-
+            _globalGeometryBuffer = globalGeometryBuffer;
+            DefaultObjectPoolProvider poolProvider = new DefaultObjectPoolProvider();
+            _drawGroupsPool = poolProvider.Create(new ListPolicy<DrawGroup>());
         }
       
 
@@ -118,19 +120,19 @@ namespace RockEngine.Core.Rendering.Managers
             batch.LabelObject("IndirectDrawManager cmd");
             _indirectBuffer.StageCommands(batch, CollectionsMarshal.AsSpan(_indirectCommandsList));
 
-            var bufferBarrier = new BufferMemoryBarrier
+            var bufferBarrier = new BufferMemoryBarrier2
             {
-                SType = StructureType.BufferMemoryBarrier,
-                SrcAccessMask = AccessFlags.TransferWriteBit,
-                DstAccessMask = AccessFlags.IndirectCommandReadBit,
+                SType = StructureType.BufferMemoryBarrier2,
+                SrcAccessMask = AccessFlags2.TransferWriteBit,
+                DstAccessMask = AccessFlags2.IndirectCommandReadBit,
                 Buffer = _indirectBuffer.Buffer,
                 Offset = 0,
-                Size = Vk.WholeSize
+                Size = Vk.WholeSize,
+                SrcStageMask = PipelineStageFlags2.TransferBit,
+                DstStageMask = PipelineStageFlags2.DrawIndirectBit
             };
 
             batch.PipelineBarrier(
-                srcStage: PipelineStageFlags.TransferBit,
-                dstStage: PipelineStageFlags.DrawIndirectBit,
                 bufferMemoryBarriers: new[] { bufferBarrier }
             );
             batch.Submit();
@@ -153,16 +155,6 @@ namespace RockEngine.Core.Rendering.Managers
             return !ReferenceEquals(aPass?.Pipeline, bPass?.Pipeline);
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool PipelineRequirementsMatch(Material a, Material b, string subpassName)
-        {
-            var aPass = a.GetPass(subpassName);
-            var bPass = b.GetPass(subpassName);
-
-            if (aPass == null || bPass == null) return false;
-
-            return ReferenceEquals(aPass.Pipeline, bPass.Pipeline);
-        }
 
         private void AddGroup(Span<MeshRenderCommand> groupSpan)
         {
@@ -186,7 +178,6 @@ namespace RockEngine.Core.Rendering.Managers
                 _drawGroupsBySubpass[groupSpan[0].SubpassName] = drawGroups;
             }
 
-            var globalGeometryBuffer = IoC.Container.GetInstance<GlobalGeometryBuffer>();
 
             foreach (var (key, batchGroup) in batchGroups)
             {
@@ -199,8 +190,8 @@ namespace RockEngine.Core.Rendering.Managers
                     continue;
                 }
 
-                var allocation = globalGeometryBuffer.GetMeshAllocation(mesh.ID);
-                var vertexStride = globalGeometryBuffer.GetVertexStride(allocation.MeshID);
+                var allocation = _globalGeometryBuffer.GetMeshAllocation(mesh.ID);
+                var vertexStride = _globalGeometryBuffer.GetVertexStride(allocation.MeshID);
 
                 if (allocation.VertexOffset % vertexStride != 0)
                 {
@@ -287,29 +278,24 @@ namespace RockEngine.Core.Rendering.Managers
             _logger.Debug($"Created {batchGroup.Count} individual draws for mesh {batchGroup[0].Mesh.Mesh.ID}");
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool AreTransformIndicesConsecutive(ReadOnlySpan<MeshRenderCommand> commands)
-        {
-            if (commands.Length <= 1) return true;
-
-            uint expected = commands[0].TransformIndex + 1;
-            for (int i = 1; i < commands.Length; i++)
-            {
-                if (commands[i].TransformIndex != expected) return false;
-                expected++;
-            }
-            return true;
-        }
-
-
         public List<DrawGroup> GetDrawGroups(string subpassName)
         {
-            return _drawGroupsBySubpass.TryGetValue(subpassName, out var groups)
-                ? groups.ToList()
-                : new List<DrawGroup>();
+            var list = _drawGroupsPool.Get();
+            list.Clear();
+            if (_drawGroupsBySubpass.TryGetValue(subpassName, out var groups))
+            {
+                list.AddRange(groups);
+            }
+            return list;
         }
 
-        public void Dispose() => _indirectBuffer.Dispose();
+        public List<DrawGroup> GetDrawGroups<T>() where T : IRenderSubPass
+            => GetDrawGroups(T.Name);
+
+        public void Dispose()
+        {
+            _indirectBuffer.Dispose();
+        }
 
         public void AddCommand(IRenderCommand command)
         {

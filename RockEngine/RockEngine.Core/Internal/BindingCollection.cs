@@ -24,6 +24,10 @@ namespace RockEngine.Core.Internal
                 setBindings = new PerSetBindings(binding.SetLocation);
                 _setBindings[binding.SetLocation] = setBindings;
             }
+            else
+            {
+
+            }
 
             setBindings.Add(binding);
 

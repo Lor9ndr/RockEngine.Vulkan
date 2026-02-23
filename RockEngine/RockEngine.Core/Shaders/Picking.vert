@@ -1,5 +1,7 @@
 #version 460
 #extension GL_KHR_vulkan_glsl:enable
+#include "Include/common.glsl"
+
 
 layout(location = 0) in vec3 aPosition;
 
@@ -8,9 +10,8 @@ layout(set = 1, binding = 0) readonly buffer ModelData {
 };
 
 layout(set = 0, binding = 0) uniform GlobalUbo_Dynamic {
-    mat4 viewProj;
-    vec3 camPos;
-} ubo;
+   GlobalUBO ubo;
+};
 
 
 void main() {

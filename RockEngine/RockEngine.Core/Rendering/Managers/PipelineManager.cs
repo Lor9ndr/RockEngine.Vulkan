@@ -81,7 +81,6 @@ namespace RockEngine.Core.Rendering.Managers
             {
                 return;
             }
-
             // The registry will handle disposal of all pipelines
             _pipelineRegistry.Dispose();
             _disposed = true;

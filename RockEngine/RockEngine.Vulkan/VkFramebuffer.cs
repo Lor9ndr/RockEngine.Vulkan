@@ -29,6 +29,15 @@ namespace RockEngine.Vulkan
 
             return new VkFrameBuffer(context, framebuffer, attachments, in framebufferCreateInfo);
         }
+        public static unsafe VkFrameBuffer Create(VulkanContext context, VkRenderPass renderPass, VkImageView[] attachments)
+        {
+            if(attachments.Length == 0)
+            {
+                throw new ArgumentException("attachments can not be empty");
+            }
+            var size = attachments[0].Image.Extent;
+            return Create(context, renderPass, attachments, size.Width,size.Height, 1);
+        }
 
         private unsafe Framebuffer CreateFramebufferInternal()
         {

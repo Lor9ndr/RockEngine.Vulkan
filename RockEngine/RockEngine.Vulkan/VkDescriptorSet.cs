@@ -1,30 +1,30 @@
-﻿using Silk.NET.GLFW;
-using Silk.NET.Vulkan;
+﻿using Silk.NET.Vulkan;
 
 namespace RockEngine.Vulkan
 {
     public class VkDescriptorSet : VkObject<DescriptorSet>
     {
         private readonly VulkanContext _context;
-        private readonly VkDescriptorPool _pool;
         public bool IsDirty { get;set; } = true;
 
-        public VkDescriptorPool Pool => _pool;
+        public VkDescriptorPool Pool { get; }
 
-        public VkDescriptorSet(VulkanContext context, VkDescriptorPool pool,in DescriptorSet vkObject)
+        public VkDescriptorSetLayout SetLayout { get; }
+
+        public VkDescriptorSet(VulkanContext context, VkDescriptorPool pool,in DescriptorSet vkObject, VkDescriptorSetLayout setLayout)
             :base(vkObject)
         {
             _context = context;
-            _pool = pool;
-        }
+            Pool = pool;
+            SetLayout = setLayout;
 
-      
+        }
 
         public override void LabelObject(string name) => _context.DebugUtils.SetDebugUtilsObjectName(_vkObject, ObjectType.DescriptorSet, name);
 
         protected override void Dispose(bool disposing)
         {
-            _pool.FreeDescriptorSet(this);
+            Pool.FreeDescriptorSet(this);
         }
     }
 }

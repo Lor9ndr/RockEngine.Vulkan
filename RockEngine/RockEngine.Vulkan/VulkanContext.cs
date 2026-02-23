@@ -167,6 +167,10 @@ namespace RockEngine.Vulkan
 
         public void Dispose()
         {
+            GraphicsSubmitContext.Dispose();
+            TransferSubmitContext.Dispose();
+            ComputeSubmitContext.Dispose();
+            PresentSubmitContext.Dispose();
             Surface.Dispose();
             Device.Dispose();
             Instance.Dispose();

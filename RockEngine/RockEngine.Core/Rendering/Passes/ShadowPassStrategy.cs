@@ -25,9 +25,9 @@ namespace RockEngine.Core.Rendering.Passes
 
         public override async ValueTask Execute(SubmitContext submitContext, CameraManager cameraManager, WorldRenderer renderer)
         {
-            var shadowCastingLights = lightManager.GetShadowCastingLights().Take(3);
+            var shadowCastingLights = lightManager.GetShadowCastingLights();
             var lst = shadowCastingLights.ToList();
-            var mainCamera = cameraManager.RegisteredCameras.FirstOrDefault();
+            var mainCamera = cameraManager.RegisteredCameras.Count == 0 ? default : cameraManager.RegisteredCameras[0];
             if (mainCamera == null)
             {
                 return;
@@ -110,7 +110,7 @@ namespace RockEngine.Core.Rendering.Passes
         private unsafe void BeginShadowRenderPass(UploadBatch batch, ShadowRenderTarget shadowTarget)
         {
             Span<ClearValue> clearValues = stackalloc ClearValue[shadowTarget.ClearValues.Length];
-            shadowTarget.ClearValues.CopyTo(clearValues);
+            shadowTarget.ClearValues.Span.CopyTo(clearValues);
 
             fixed (ClearValue* pClearValues = clearValues)
             {

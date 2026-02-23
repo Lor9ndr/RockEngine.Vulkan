@@ -62,7 +62,7 @@ namespace RockEngine.Editor.Rendering.Passes
                         // Begin render pass
                         BeginRenderPass(PickingRenderTarget, renderer, primaryBatch);
 
-                        // Since we only have one subpass, execute it directly in the primary command buffer
+                        
                         if (_subPasses.Length > 0)
                         {
                             _subPasses[0].Execute(primaryBatch, renderer.FrameIndex, camera, camIndex, PickingRenderTarget);
@@ -80,7 +80,7 @@ namespace RockEngine.Editor.Rendering.Passes
 
         private unsafe static void BeginRenderPass(PickingRenderTarget pickingRenderTarget, WorldRenderer renderer, UploadBatch cmd)
         {
-            fixed (ClearValue* pClearValue = pickingRenderTarget.ClearValues)
+            fixed (ClearValue* pClearValue = pickingRenderTarget.ClearValues.Span)
             {
                 var renderPassBeginInfo = new RenderPassBeginInfo
                 {

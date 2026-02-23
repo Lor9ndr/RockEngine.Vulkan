@@ -58,7 +58,7 @@ namespace RockEngine.Core.Rendering.Buffers
 
                 // Submit and wait for transfer to complete
                 var fence = VkFence.CreateNotSignaled(_context);
-                _context.TransferSubmitContext.FlushSingle(transferBatch, fence).Wait();
+                _context.TransferSubmitContext.SubmitSingle(transferBatch, fence).Wait();
                 fence.Dispose();
             }
             finally
@@ -94,7 +94,7 @@ namespace RockEngine.Core.Rendering.Buffers
                
 
                 var fence = VkFence.CreateNotSignaled(_context);
-                _context.TransferSubmitContext.FlushSingle(transferBatch, fence).Wait();
+                _context.TransferSubmitContext.SubmitSingle(transferBatch, fence).Wait();
                 fence.Dispose();
             }
             finally

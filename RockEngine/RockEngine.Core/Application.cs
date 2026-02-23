@@ -72,6 +72,7 @@ namespace RockEngine.Core
                 _context = IoC.Container.GetInstance<VulkanContext>();
                 _graphicsEngine = IoC.Container.GetInstance<GraphicsContext>();
                 _coroutineSheduler = IoC.Container.GetInstance<CoroutineScheduler>();
+                PerformanceTracer.Initialize(_context);
                 var surface = SurfaceHandler.CreateSurface(_window, _context);
                 
                 _graphicsEngine.AddSwapchain(VkSwapchain.Create(_context, surface));
@@ -105,7 +106,7 @@ namespace RockEngine.Core
             }
         }
 
-        private async Task OnWindowUpdate(double deltaTime)
+        private async Task OnWindowUpdate(double _)
         {
             if (!_isInitialized || _appCts.IsCancellationRequested)
                 return;
@@ -113,7 +114,7 @@ namespace RockEngine.Core
             try
             {
                 // Update time system
-                Time.Update(_window.Time, deltaTime);
+                Time.Update(_window.Time);
 
                 // Update layers
                 _layerStack.Update();
@@ -140,10 +141,16 @@ namespace RockEngine.Core
                 return;
 
             PerformanceTracer.ProcessQueries(_context, _graphicsEngine.FrameIndex);
+
             PerformanceTracer.BeginFrame(_graphicsEngine.FrameIndex);
 
             // Begin frame
             var batch = _graphicsEngine.BeginFrame();
+            
+            if(batch is null)
+            {
+                return;
+            }
 
             try
             {
@@ -157,7 +164,9 @@ namespace RockEngine.Core
                 await RenderWorld();
 
                 // Submit and present
+
                 _graphicsEngine.SubmitAndPresent();
+
             }
             catch (Exception ex)
             {
@@ -176,24 +185,30 @@ namespace RockEngine.Core
         private void RenderImGui(UploadBatch batch)
         {
             using (PerformanceTracer.BeginSection("ImGui Render"))
-            using (batch.BeginSection("ImGui", _graphicsEngine.FrameIndex))
             {
-                _layerStack.RenderImGui(batch);
+                using (batch.BeginSection("ImGui", _graphicsEngine.FrameIndex))
+                {
+                    _layerStack.RenderImGui(batch);
+                }
             }
+            
         }
 
         private void RenderLayers(UploadBatch batch)
         {
             using (PerformanceTracer.BeginSection("Layer Render"))
-            using (batch.BeginSection("Layers", _graphicsEngine.FrameIndex))
             {
-                var renderBatch = _context.GraphicsSubmitContext.CreateBatch();
-                _layerStack.Render(renderBatch);
-                renderBatch.Submit();
+                using (batch.BeginSection("Layers", _graphicsEngine.FrameIndex))
+                {
+                    var renderBatch = _context.GraphicsSubmitContext.CreateBatch();
+                    _layerStack.Render(renderBatch);
+                    renderBatch.Submit();
+                }
             }
+           
         }
 
-        private  async Task RenderWorld()
+        private async Task RenderWorld()
         {
             using (PerformanceTracer.BeginSection("World Render"))
             {
@@ -208,8 +223,8 @@ namespace RockEngine.Core
                 while(size.X <= 0 || size.Y <= 0)
                 {
                     _window.DoEvents();
+                    _window.DoUpdate();
                 }
-                return;
             }
         }
      
@@ -234,7 +249,14 @@ namespace RockEngine.Core
             _window?.Close();
         }
 
-        protected virtual Task Load() => Task.CompletedTask;
+        protected virtual async Task Load()
+        {
+            var layers = IoC.Container.GetAllInstances<ILayer>();
+            foreach (var item in layers)
+            {
+                await _layerStack.PushLayer(item);
+            }
+        }
 
         private void OnWindowClosing()
         {
@@ -253,21 +275,13 @@ namespace RockEngine.Core
                 _initialized.Wait(TimeSpan.FromSeconds(5));
 
                 _logger.Info("Shutting down application...");
-
-                // Wait for device idle
                 _context?.Device?.WaitIdle();
-
-                // Dispose components in reverse order
                 _world?.Dispose();
                 _layerStack?.Dispose();
                 _renderer?.Dispose();
                 _graphicsEngine?.Dispose();
                 _context?.Dispose();
-
-                // Close window
-                _window?.Close();
-                _window?.Dispose();
-
+               
                 _applicationScope?.Dispose();
 
                 _logger.Info("Application shutdown complete");
@@ -283,55 +297,5 @@ namespace RockEngine.Core
                 GC.SuppressFinalize(this);
             }
         }
-
-        /// <summary>
-        /// Execute an action on the main thread (window thread)
-        /// </summary>
-        public void ExecuteOnMainThread(Action action)
-        {
-            if (_window == null)
-                return;
-
-            // Silk.NET windows run on the main thread, so we can execute directly
-            // For async operations, we need to use the window's thread context
-            if (Environment.CurrentManagedThreadId == Environment.CurrentManagedThreadId)
-            {
-                action();
-            }
-            else
-            {
-                // Queue for execution on next update
-                _window.Invoke(action);
-            }
-        }
-
-        /// <summary>
-        /// Execute a function on the main thread (window thread)
-        /// </summary>
-        public T ExecuteOnMainThread<T>(Func<T> func)
-        {
-            if (_window == null)
-                return default;
-
-            if (Environment.CurrentManagedThreadId == Environment.CurrentManagedThreadId)
-            {
-                return func();
-            }
-            else
-            {
-                T result = default;
-                _window.Invoke(() => result = func());
-                return result;
-            }
-        }
-
-        /// <summary>
-        /// Wait for application initialization
-        /// </summary>
-        public async Task WaitForInitializationAsync(CancellationToken cancellationToken = default)
-        {
-            await Task.Run(() => _initialized.Wait(cancellationToken));
-        }
-
     }
 }

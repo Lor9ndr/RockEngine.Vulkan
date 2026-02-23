@@ -1,5 +1,6 @@
-﻿using RockEngine.Core.Assets;
-using RockEngine.Core.Assets.AssetData;
+﻿using MessagePack;
+
+using RockEngine.Core.Assets;
 using RockEngine.Core.Attributes;
 using RockEngine.Core.DI;
 using RockEngine.Core.Rendering;
@@ -7,13 +8,24 @@ using RockEngine.Core.Rendering.Buffers;
 
 namespace RockEngine.Core.ResourceProviders
 {
+    [MessagePackObject]
     public class MeshProvider : IResourceProvider<IMesh>
     {
+        [IgnoreMember]
+
         protected readonly object _source;
+        [IgnoreMember]
         protected Func<ValueTask<IMesh>> _getter;
+        [IgnoreMember]
         public bool IsAssetBased => _source is AssetReference<MeshAsset>;
 
-      
+        // Helper properties for serialization
+        [Key(2)]
+        public AssetReference<MeshAsset> AssetReference => _source as AssetReference<MeshAsset>;
+
+        [SerializeIgnore]
+        [IgnoreMember]
+        public virtual IMesh DirectMesh => _source as IMesh;
         public MeshProvider(AssetReference<MeshAsset> assetRef)
         {
             _source = assetRef;
@@ -43,10 +55,7 @@ namespace RockEngine.Core.ResourceProviders
             return result;
         }
 
-        // Helper properties for serialization
-        public AssetReference<MeshAsset> AssetReference => _source as AssetReference<MeshAsset>;
-        [SerializeIgnore]
-        public virtual IMesh DirectMesh => _source as IMesh;
+       
       
     }
 

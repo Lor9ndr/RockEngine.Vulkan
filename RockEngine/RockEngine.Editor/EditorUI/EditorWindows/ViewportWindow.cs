@@ -1,8 +1,10 @@
 ﻿using ImGuiNET;
 
+using RockEngine.Core;
 using RockEngine.Core.DI;
 using RockEngine.Core.ECS;
 using RockEngine.Core.ECS.Components;
+using RockEngine.Core.Rendering.Passes;
 using RockEngine.Core.Rendering.RenderTargets;
 using RockEngine.Editor.EditorComponents;
 using RockEngine.Editor.EditorUI.ImGuiRendering;
@@ -16,7 +18,6 @@ using Silk.NET.Input;
 using Silk.NET.Vulkan;
 
 using System.Numerics;
-using System.Threading.Tasks;
 
 using ZLinq;
 
@@ -25,7 +26,7 @@ namespace RockEngine.Editor.EditorUI.EditorWindows
     public class ViewportWindow : EditorWindow
     {
         private readonly World _world;
-        private readonly IInputContext _inputContext;
+        private readonly InputManager _inputManager;
         private readonly ImGuiController _imGuiController;
         private readonly PickingBuffer _pickingBuffer;
         private readonly PickingRenderTarget _pickingRenderTarget;
@@ -37,25 +38,33 @@ namespace RockEngine.Editor.EditorUI.EditorWindows
         private Vector2 _currentImageMax;
 
         private bool _isGizmoDragging = false;
-        private GizmoAxis _currentGizmoSelection = GizmoAxis.None;
+
+        private bool _showPipelineStatsOverlay = false;
+        private IPipelineStatisticsProvider _pipelineStatsProvider;
+        private PipelineStatisticsData _lastPipelineStats;
+        private DateTime _lastStatsUpdate = DateTime.MinValue;
+        private readonly TimeSpan _statsUpdateInterval = TimeSpan.FromSeconds(0.5);
 
         private TransformGizmo Gizmo => _world.GetEntitiesWithComponent<TransformGizmo>()
             .FirstOrDefault()?.GetComponent<TransformGizmo>();
 
-        public ViewportWindow(string title, World world, IInputContext inputContext, ImGuiController imGuiController)
-            : this(title, world, inputContext, imGuiController, null) { }
+        public ViewportWindow(string title, World world, InputManager inputManager, ImGuiController imGuiController)
+            : this(title, world, inputManager, imGuiController, null) { }
 
-        public ViewportWindow(string title, World world, IInputContext inputContext,
-            ImGuiController imGuiController, ISelectionManager selectionManager) : base(title)
+        public ViewportWindow(string title, World world, InputManager inputManager,
+     ImGuiController imGuiController, ISelectionManager selectionManager) : base(title)
         {
             _world = world;
-            _inputContext = inputContext;
+            _inputManager = inputManager;
             _imGuiController = imGuiController;
             _selectionManager = selectionManager;
             _isSceneView = title == "Scene View";
             _pickingBuffer = new PickingBuffer(VulkanContext.GetCurrent());
-            _pickingRenderTarget =  IoC.Container.GetInstance<PickingPassStrategy>()
+            _pickingRenderTarget = IoC.Container.GetInstance<PickingPassStrategy>()
                     .PickingRenderTarget;
+
+            // Get pipeline statistics provider
+            _pipelineStatsProvider = IoC.Container.GetInstance<IPipelineStatisticsProvider>();
         }
 
         public override void Draw()
@@ -65,7 +74,7 @@ namespace RockEngine.Editor.EditorUI.EditorWindows
                 return;
             }
 
-            if (ImGui.Begin(Title, ref _isOpen))
+            if (ImGui.Begin(Title, ref _isOpen, ImGuiWindowFlags.NoNav | ImGuiWindowFlags.MenuBar))
             {
                 OnDraw();
             }
@@ -152,7 +161,7 @@ namespace RockEngine.Editor.EditorUI.EditorWindows
         private void HandleViewportInteraction(DebugCamera debugCam)
         {
             var windowHovered = ImGui.IsWindowHovered();
-            var mouse = _inputContext.Mice[0];
+            var mouse = _inputManager.PrimaryMouse;
 
             // Update cursor
             mouse.Cursor.StandardCursor = windowHovered ? StandardCursor.Hand : StandardCursor.Arrow;
@@ -207,7 +216,6 @@ namespace RockEngine.Editor.EditorUI.EditorWindows
 
             if (gizmoAxis != GizmoAxis.None && gizmo != null)
             {
-                _currentGizmoSelection = gizmoAxis;
                 gizmo.SetSelectedAxis(gizmoAxis);
                 gizmo.StartDrag(ImGui.GetMousePos());
                 _isGizmoDragging = true;
@@ -234,7 +242,6 @@ namespace RockEngine.Editor.EditorUI.EditorWindows
             if (_isGizmoDragging && ImGui.IsMouseReleased(ImGuiMouseButton.Left))
             {
                 _isGizmoDragging = false;
-                _currentGizmoSelection = GizmoAxis.None;
                 Gizmo?.EndDrag();
                 Gizmo?.SetSelectedAxis(GizmoAxis.None);
             }
@@ -486,17 +493,145 @@ namespace RockEngine.Editor.EditorUI.EditorWindows
                 return;
             }
 
-            var texId = _imGuiController.GetTextureID(renderTarget.OutputTexture);
-            var availableSize = ImGui.GetContentRegionAvail();
+            ImGui.BeginGroup();
+            {
+                // Menu bar with pipeline stats toggle
+                if (ImGui.BeginMenuBar())
+                {
+                    if (ImGui.MenuItem("Pipeline Stats", "", _showPipelineStatsOverlay))
+                    {
+                        _showPipelineStatsOverlay = !_showPipelineStatsOverlay;
+                    }
+                    ImGui.EndMenuBar();
+                }
 
-            ImGui.Image(texId, availableSize);
+                var texId = _imGuiController.GetTextureID(renderTarget.OutputTexture);
+                var availableSize = ImGui.GetContentRegionAvail();
 
-            _currentImageMin = ImGui.GetItemRectMin();
-            _currentImageMax = ImGui.GetItemRectMax();
+                ImGui.Image(texId, availableSize);
+                _currentImageMin = ImGui.GetItemRectMin();
+                _currentImageMax = ImGui.GetItemRectMax();
 
-            DrawGizmoModeIndicator();
-            currentSize = availableSize;
+                DrawGizmoModeIndicator();
+
+                // Draw pipeline stats overlay if enabled
+                if (_showPipelineStatsOverlay)
+                {
+                    DrawPipelineStatsOverlay();
+                }
+
+                currentSize = availableSize;
+            }
+            ImGui.EndGroup();
         }
+        private void DrawPipelineStatsOverlay()
+        {
+            // Update stats periodically
+            if (DateTime.Now - _lastStatsUpdate > _statsUpdateInterval &&
+                _pipelineStatsProvider != null &&
+                _pipelineStatsProvider.PipelineStatisticsEnabled)
+            {
+                _lastPipelineStats = _pipelineStatsProvider.GetCurrentStatistics(0); // Get latest
+                _lastStatsUpdate = DateTime.Now;
+            }
+
+            // Don't draw if no stats
+            if (_lastPipelineStats.FrameIndex == 0 && _lastPipelineStats.FragmentShaderInvocations == 0)
+                return;
+
+            // Create overlay window
+            var overlayPos = new Vector2(_currentImageMin.X + 10, _currentImageMin.Y + 40);
+            var overlaySize = new Vector2(300, 200);
+
+            // Semi-transparent background
+            var drawList = ImGui.GetWindowDrawList();
+            drawList.AddRectFilled(overlayPos, overlayPos + overlaySize,
+                ImGui.ColorConvertFloat4ToU32(new Vector4(0, 0, 0, 0.7f)), 5);
+
+            // Border
+            drawList.AddRect(overlayPos, overlayPos + overlaySize,
+                ImGui.ColorConvertFloat4ToU32(new Vector4(0.3f, 0.3f, 0.3f, 1)), 5);
+
+            // Title
+            drawList.AddText(overlayPos + new Vector2(10, 10),
+                ImGui.ColorConvertFloat4ToU32(new Vector4(1, 1, 1, 1)),
+                "Pipeline Statistics");
+
+            // Stats content
+            var textPos = overlayPos + new Vector2(15, 35);
+            float lineHeight = 20;
+
+            // Fragment shaders (most important for performance)
+            drawList.AddText(textPos,
+                ImGui.ColorConvertFloat4ToU32(new Vector4(1, 0.5f, 0, 1)),
+                $"Fragment: {FormatStatCount(_lastPipelineStats.FragmentShaderInvocations)}");
+
+            // Vertex shaders
+            textPos.Y += lineHeight;
+            drawList.AddText(textPos,
+                ImGui.ColorConvertFloat4ToU32(new Vector4(0, 0.8f, 1, 1)),
+                $"Vertex: {FormatStatCount(_lastPipelineStats.VertexShaderInvocations)}");
+
+            // Primitives
+            textPos.Y += lineHeight;
+            drawList.AddText(textPos,
+                ImGui.ColorConvertFloat4ToU32(new Vector4(0.4f, 1, 0.4f, 1)),
+                $"Primitives: {FormatStatCount(_lastPipelineStats.InputAssemblyPrimitives)}");
+
+            // Clipping
+            if (_lastPipelineStats.ClippingPrimitives > 0)
+            {
+                textPos.Y += lineHeight;
+                drawList.AddText(textPos,
+                    ImGui.ColorConvertFloat4ToU32(new Vector4(0.8f, 0.8f, 0.2f, 1)),
+                    $"Clipped: {FormatStatCount(_lastPipelineStats.ClippingPrimitives)}");
+            }
+
+            // Geometry shader (if used)
+            if (_lastPipelineStats.GeometryShaderInvocations > 0)
+            {
+                textPos.Y += lineHeight;
+                drawList.AddText(textPos,
+                    ImGui.ColorConvertFloat4ToU32(new Vector4(0.8f, 0.2f, 0.8f, 1)),
+                    $"Geometry: {FormatStatCount(_lastPipelineStats.GeometryShaderInvocations)}");
+            }
+
+            // Compute shader (if used)
+            if (_lastPipelineStats.ComputeShaderInvocations > 0)
+            {
+                textPos.Y += lineHeight;
+                drawList.AddText(textPos,
+                    ImGui.ColorConvertFloat4ToU32(new Vector4(0.2f, 0.8f, 0.8f, 1)),
+                    $"Compute: {FormatStatCount(_lastPipelineStats.ComputeShaderInvocations)}");
+            }
+            
+            // Close button
+            var closeButtonPos = overlayPos + new Vector2(overlaySize.X - 30, 10);
+            if (ImGui.IsMouseHoveringRect(closeButtonPos, closeButtonPos + new Vector2(20, 20)))
+            {
+                drawList.AddCircleFilled(closeButtonPos + new Vector2(11, 12), 10,
+                    ImGui.ColorConvertFloat4ToU32(ImGui.GetStyle().Colors[(int)ImGuiCol.ButtonHovered]));
+
+                if (ImGui.IsMouseClicked(ImGuiMouseButton.Left))
+                {
+                    _showPipelineStatsOverlay = false;
+                }
+            }
+            drawList.AddText(closeButtonPos + new Vector2(4, 2),
+                ImGui.ColorConvertFloat4ToU32(new Vector4(1, 1, 1, 1)), Icons.Close.ToString());
+        }
+
+        private string FormatStatCount(ulong count)
+        {
+            if (count >= 1_000_000_000)
+                return $"{(count / 1_000_000_000f):0.0}B";
+            if (count >= 1_000_000)
+                return $"{(count / 1_000_000f):0.0}M";
+            if (count >= 1_000)
+                return $"{(count / 1_000f):0.0}K";
+            return count.ToString("N0");
+        }
+
 
         private void DrawGizmoModeIndicator()
         {
@@ -508,7 +643,7 @@ namespace RockEngine.Editor.EditorUI.EditorWindows
 
             var drawList = ImGui.GetWindowDrawList();
             var windowPos = ImGui.GetWindowPos();
-            var textPos = new Vector2(windowPos.X + 10, windowPos.Y + 40);
+            var textPos = new Vector2(windowPos.X, windowPos.Y + 40);
 
             string modeText = gizmo.CurrentMode switch
             {

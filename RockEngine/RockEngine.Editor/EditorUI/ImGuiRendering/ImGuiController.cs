@@ -15,6 +15,7 @@ using RockEngine.Editor.Rendering.Passes.SubPasses;
 using RockEngine.Vulkan;
 
 using Silk.NET.Input;
+using Silk.NET.Input.Extensions;
 using Silk.NET.Maths;
 using Silk.NET.Vulkan;
 using Silk.NET.Windowing;
@@ -31,7 +32,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
         private const string ImguiRenderPass = "ImGuiPass";
         private readonly VulkanContext _vkContext;
         private readonly GraphicsContext _graphicsContext;
-        private readonly IInputContext _input;
+        private readonly InputManager _input;
         private VkPipelineLayout _pipelineLayout;
         private VkDescriptorSetLayout _descriptorSetLayout;
         private readonly VkBuffer[] _vertexBuffers;
@@ -60,13 +61,15 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
 
         public ImFontPtr IconFont { get => _iconFont; set => _iconFont = value; }
 
-        private readonly Silk.NET.SDL.Sdl? _windowingApi;
+        private readonly Silk.NET.SDL.Sdl _windowingApi;
         private readonly Dictionary<RckImGuiViewport, (VkBuffer VertexBuffer, VkBuffer IndexBuffer)[]> _viewportBuffers = new();
-        private readonly object _bufferLock = new();
+        private readonly Lock _bufferLock = new();
 
 
 
-        public unsafe ImGuiController(VulkanContext vkContext, GraphicsContext graphicsEngine, BindingManager bindingManager, IInputContext inputContext, WorldRenderer renderer, IWindow mainWindow, Application application)
+        public unsafe ImGuiController(VulkanContext vkContext, GraphicsContext graphicsEngine,
+                                      BindingManager bindingManager, InputManager inputContext, WorldRenderer renderer,
+                                      IWindow mainWindow, Application application)
         {
             _vkContext = vkContext;
             _bindingManager = bindingManager;
@@ -100,8 +103,8 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
             }
 
             // Set configuration
-            _windowingApi = Silk.NET.Windowing.Sdl.SdlWindowing.GetExistingApi(mainWindow);
-   
+            _windowingApi = Silk.NET.Windowing.Sdl.SdlWindowing.GetExistingApi(mainWindow) ??
+                throw new NotImplementedException("Imgui currently supported only on SDL windows");
             unsafe
             {
                 io.NativePtr->BackendPlatformName = (byte*)new FixedAsciiString("RockEngine").DataPtr;
@@ -121,7 +124,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
 
             // Initialize viewport manager AFTER basic setup
             _viewportManager = new ImGuiViewportManager(_vkContext, _graphicsContext, this,_renderPass, application);
-             _viewportManager.RegisterMainViewport(mainWindow, inputContext);
+             _viewportManager.RegisterMainViewport(mainWindow, _input.Context);
             ImGui.NewFrame();
             _frameBegun = true;
             _initialized = true;
@@ -214,212 +217,92 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
             var io = ImGui.GetIO();
 
             // Clear all keyboard state
-            //io.ClearInputKeys();
-            //io.ClearInputMouse();
-
-            // Track which viewport has mouse focus
             RckImGuiViewport mouseFocusedViewport = null;
-            Vector2 globalMousePos = Vector2.Zero;
-
-            // First, get global mouse position to determine focus
-            var screenPos = new Vector2D<int>();
-            _windowingApi.GetGlobalMouseState(ref screenPos.X, ref screenPos.Y);
-            globalMousePos = new Vector2(screenPos.X, screenPos.Y);
-
             // Determine which viewport has mouse focus
-            foreach (var viewport in _viewportManager.Viewports)
+            unsafe
             {
-                if (!viewport.IsMainViewport)
-                {
-                    viewport.Window.ContinueEvents();
-                    viewport.Window.DoEvents();
-                    viewport.Window.DoUpdate();
-                    viewport.Window.DoRender();
-                }
-                if (viewport.IsFocused)
-                {
-                    mouseFocusedViewport = viewport;
-                    break;
-                }
+                var win = _windowingApi.GetMouseFocus();
+                mouseFocusedViewport = _viewportManager.Viewports.FirstOrDefault(s => s.IsFocused);
             }
+
+           
 
             // Update input for each viewport based on focus
-            foreach (var viewport in _viewportManager.Viewports)
+            // Update keyboard input for the viewport that has keyboard focus
+            if(mouseFocusedViewport is not null)
             {
-                // Update keyboard input for the viewport that has keyboard focus
-                if (viewport.IsFocused)
+                _input.SetInput(mouseFocusedViewport.Window, mouseFocusedViewport.InputContext);
+
+                UpdateMainViewportInput(io, _input.Context);
+
+                UpdateKeyboardInputForViewport(_input.Context, io);
+                // Process pressed characters (window-specific)
+                while (_pressedChars.Count > 0)
                 {
-                    UpdateMainViewportInput(viewport, io, viewport.InputContext);
-
-                    UpdateKeyboardInputForViewport(viewport, io);
-                    return;
-                }
-            }
-
-            // Process pressed characters (window-specific)
-            while (_pressedChars.Count > 0)
-            {
-                var (window, ch) = _pressedChars.Dequeue();
-
-                // Only add character if it's from the focused window
-                var focusedViewport = _viewportManager.Viewports.FirstOrDefault(v => v.Window == window && v.IsFocused);
-                if (focusedViewport != null)
-                {
+                    var (window, ch) = _pressedChars.Dequeue();
                     io.AddInputCharacter(ch);
                 }
+                _pressedChars.Clear();
             }
         }
         
-        private bool IsMouseOverViewport(RckImGuiViewport viewport, Vector2 mousePos)
+     
+        private void UpdateKeyboardInputForViewport(IInputContext input, ImGuiIOPtr io)
         {
-            var windowPos = viewport.Window.Position;
-            var windowSize = viewport.Window.Size;
-
-            return mousePos.X >= windowPos.X &&
-                   mousePos.Y >= windowPos.Y &&
-                   mousePos.X <= windowPos.X + windowSize.X &&
-                   mousePos.Y <= windowPos.Y + windowSize.Y;
-        }
-        private void UpdateKeyboardInputForViewport(RckImGuiViewport viewport, ImGuiIOPtr io)
-        {
-            var input = viewport.InputContext;
             var keyboardState = input.Keyboards.Count > 0 ? input.Keyboards[0] : null;
 
-            if (keyboardState != null && viewport.IsFocused)
+            if (keyboardState == null)
             {
-                // Update key states for this specific viewport
-                foreach (Key key in keyboardState.SupportedKeys)
-                {
-                    if (key == Key.Unknown) continue;
-
-                    if (TryMapKey(key, out ImGuiKey imguikey))
-                    {
-                        io.AddKeyEvent(imguikey, keyboardState.IsKeyPressed(key));
-                    }
-                }
-
-                // Update modifier keys
-                io.KeyCtrl = keyboardState.IsKeyPressed(Key.ControlLeft) || keyboardState.IsKeyPressed(Key.ControlRight);
-                io.KeyAlt = keyboardState.IsKeyPressed(Key.AltLeft) || keyboardState.IsKeyPressed(Key.AltRight);
-                io.KeyShift = keyboardState.IsKeyPressed(Key.ShiftLeft) || keyboardState.IsKeyPressed(Key.ShiftRight);
-                io.KeySuper = keyboardState.IsKeyPressed(Key.SuperLeft) || keyboardState.IsKeyPressed(Key.SuperRight);
+                return;
             }
+            // Update key states for this specific viewport
+            foreach (Key key in keyboardState.SupportedKeys)
+            {
+                if (key == Key.Unknown) continue;
+
+                if (TryMapKey(key, out ImGuiKey imguikey))
+                {
+                    io.AddKeyEvent(imguikey, keyboardState.IsKeyPressed(key));
+                }
+            }
+
+            // Update modifier keys
+            io.KeyCtrl = keyboardState.IsKeyPressed(Key.ControlLeft) || keyboardState.IsKeyPressed(Key.ControlRight);
+            io.KeyAlt = keyboardState.IsKeyPressed(Key.AltLeft) || keyboardState.IsKeyPressed(Key.AltRight);
+            io.KeyShift = keyboardState.IsKeyPressed(Key.ShiftLeft) || keyboardState.IsKeyPressed(Key.ShiftRight);
+            io.KeySuper = keyboardState.IsKeyPressed(Key.SuperLeft) || keyboardState.IsKeyPressed(Key.SuperRight);
         }
 
-        private void UpdateMainViewportInput(RckImGuiViewport viewport, ImGuiIOPtr io, IInputContext input)
+        private void UpdateMainViewportInput(ImGuiIOPtr io, IInputContext input)
         {
             var mouseState = input.Mice.Count > 0 ? input.Mice[0] : null;
-            var keyboardState = input.Keyboards.Count > 0 ? input.Keyboards[0] : null;
 
             if (mouseState != null)
             {
                 var mousePos = new Vector2D<int>();
+                
                 _windowingApi.GetGlobalMouseState(ref mousePos.X, ref mousePos.Y);
                 // Apply viewport offset if this is not the main window
+                io.MousePos = new Vector2(mousePos.X, mousePos.Y);
 
 
                 // Add mouse position event
+
                 io.MouseDown[0] = mouseState.IsButtonPressed(MouseButton.Left);
                 io.MouseDown[1] = mouseState.IsButtonPressed(MouseButton.Right);
                 io.MouseDown[2] = mouseState.IsButtonPressed(MouseButton.Middle);
 
-                io.MousePos = new Vector2(mousePos.X, mousePos.Y);
 
                 // Update mouse wheel
-                if (mouseState.ScrollWheels.Count > 0)
+                var scrollWheels = mouseState.ScrollWheels;
+                if (scrollWheels.Count > 0)
                 {
-                    var wheel = mouseState.ScrollWheels[0];
+                    var wheel = scrollWheels[0];
                     io.MouseWheel = wheel.Y;
                     io.MouseWheelH = wheel.X;
                 }
             }
         }
-
-        private void UpdatePlatformWindowsInput(ImGuiIOPtr io)
-        {
-            var platformIO = ImGui.GetPlatformIO();
-
-            for (int i = 0; i < platformIO.Viewports.Size; i++)
-            {
-                var vp = platformIO.Viewports[i];
-
-                // Skip the main viewport (handled separately)
-                if (vp.PlatformHandle == _viewportManager.MainViewport?.Window.Handle)
-                    continue;
-
-                // Find corresponding RckImGuiViewport
-                var rckViewport = _viewportManager.Viewports.FirstOrDefault(v =>
-                    v.ViewportPtr.ID == vp.ID);
-
-                if (rckViewport != null && rckViewport.InputContext != null)
-                {
-                    //UpdatePlatformViewportInput(rckViewport, io, vp);
-                }
-            }
-        }
-
-        private void UpdatePlatformViewportInput(RckImGuiViewport viewport, ImGuiIOPtr io, ImGuiViewportPtr vp)
-        {
-            var input = viewport.InputContext;
-            var mouseState = input.Mice.Count > 0 ? input.Mice[0] : null;
-
-            if (mouseState != null)
-            {
-                var screenPos = new Vector2D<int>((int)mouseState.Position.X, (int)mouseState.Position.Y);
-                // Get mouse position relative to this viewport
-                screenPos = viewport.Window.PointToFramebuffer(screenPos);
-
-                // Update ImGui's mouse position
-
-                if (mouseState != null)
-                {
-                    var mousePos = new Vector2D<int>();
-                    _windowingApi.GetGlobalMouseState(ref mousePos.X, ref mousePos.Y);
-                    // Apply viewport offset if this is not the main window
-
-
-                    // Add mouse position event
-                    io.MouseDown[0] = mouseState.IsButtonPressed(MouseButton.Left);
-                    io.MouseDown[1] = mouseState.IsButtonPressed(MouseButton.Right);
-                    io.MouseDown[2] = mouseState.IsButtonPressed(MouseButton.Middle);
-
-                    io.MousePos = new Vector2(screenPos.X, screenPos.Y);
-
-                    // Update mouse wheel
-                    if (mouseState.ScrollWheels.Count > 0)
-                    {
-                        var wheel = mouseState.ScrollWheels[0];
-                        io.MouseWheel = wheel.Y;
-                        io.MouseWheelH = wheel.X;
-                    }
-                }
-            }
-            var keyboardState = input.Keyboards.Count > 0 ? input.Keyboards[0] : null;
-
-            if (keyboardState != null)
-            {
-                // Only process keyboard input if the window is focused
-
-                foreach (Key key in keyboardState.SupportedKeys)
-                {
-                    if (key == Key.Unknown) continue;
-
-                    if (TryMapKey(key, out ImGuiKey imguikey))
-                    {
-                        io.AddKeyEvent(imguikey, keyboardState.IsKeyPressed(key));
-                    }
-                }
-                while (_pressedChars.Count > 0)
-                {
-                    io.AddInputCharacter(_pressedChars.Dequeue().ch);
-                }
-                io.KeyCtrl = keyboardState.IsKeyPressed(Key.ControlLeft) || keyboardState.IsKeyPressed(Key.ControlRight);
-                io.KeyAlt = keyboardState.IsKeyPressed(Key.AltLeft) || keyboardState.IsKeyPressed(Key.AltRight);
-                io.KeyShift = keyboardState.IsKeyPressed(Key.ShiftLeft) || keyboardState.IsKeyPressed(Key.ShiftRight);
-                io.KeySuper = keyboardState.IsKeyPressed(Key.SuperLeft) || keyboardState.IsKeyPressed(Key.SuperRight);
-            }
-        }
-
 
         private static bool TryMapKey(Key key, out ImGuiKey result)
         {
@@ -524,6 +407,16 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
             // Only start new frame if not already begun
 
             _currentFrame++;
+            foreach (var viewport in _viewportManager.Viewports)
+            {
+                if (!viewport.IsMainViewport)
+                {
+                    viewport.Window.ContinueEvents();
+                    viewport.Window.DoEvents();
+                    //viewport.Window.DoUpdate();
+                    //viewport.Window.DoRender();
+                }
+            }
         }
 
         public void Render(UploadBatch batch, uint frameIndex, WorldRenderer renderer)
@@ -595,7 +488,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
               
                 unsafe
                 {
-                    fixed (ClearValue* pClearValue = renderTarget.ClearValues)
+                    fixed (ClearValue* pClearValue = renderTarget.ClearValues.Span)
                     {
                         var swapchainBeginInfo = new RenderPassBeginInfo
                         {
@@ -649,26 +542,28 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
                 }
 
                 // Upload vertex/index data
-                vertexBuffer.Map(out var pvtx_dst);
-                indexBuffer.Map(out var pidx_dst);
+                using (var pvtx_dst = vertexBuffer.MapMemory())
+                {
+                    using var pidx_dst = indexBuffer.MapMemory();
+                    ImDrawVert* vtx_dst = (ImDrawVert*)pvtx_dst.Pointer;
+                    ushort* idx_dst = (ushort*)pidx_dst.Pointer;
+
+                    for (int n = 0; n < drawData.CmdListsCount; n++)
+                    {
+                        var cmd_list = drawData.CmdLists[n];
+                        Unsafe.CopyBlock(vtx_dst, cmd_list.VtxBuffer.Data.ToPointer(), (uint)(cmd_list.VtxBuffer.Size * Unsafe.SizeOf<ImDrawVert>()));
+                        Unsafe.CopyBlock(idx_dst, cmd_list.IdxBuffer.Data.ToPointer(), (uint)(cmd_list.IdxBuffer.Size * sizeof(ushort)));
+                        vtx_dst += cmd_list.VtxBuffer.Size;
+                        idx_dst += cmd_list.IdxBuffer.Size;
+                    }
+
+                    pvtx_dst.Flush();
+                    pidx_dst.Flush();
+                }
+               
 
               
-                ImDrawVert* vtx_dst = (ImDrawVert*)pvtx_dst;
-                ushort* idx_dst = (ushort*)pidx_dst;
-
-                for (int n = 0; n < drawData.CmdListsCount; n++)
-                {
-                    var cmd_list = drawData.CmdLists[n];
-                    Unsafe.CopyBlock(vtx_dst, cmd_list.VtxBuffer.Data.ToPointer(), (uint)(cmd_list.VtxBuffer.Size * Unsafe.SizeOf<ImDrawVert>()));
-                    Unsafe.CopyBlock(idx_dst, cmd_list.IdxBuffer.Data.ToPointer(), (uint)(cmd_list.IdxBuffer.Size * sizeof(ushort)));
-                    vtx_dst += cmd_list.VtxBuffer.Size;
-                    idx_dst += cmd_list.IdxBuffer.Size;
-                }
-
-                vertexBuffer.Flush();
-                indexBuffer.Flush();
-                vertexBuffer.Unmap();
-                indexBuffer.Unmap();
+               
 
                 // Setup render state
                 uploadBatch.BindPipeline(_pipeline);
@@ -817,7 +712,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
 
         private unsafe void CreateDescriptorSet()
         {
-            _fontTextureBinding = new TextureBinding(0, 0, 0, 1, _fontTexture);
+            _fontTextureBinding = new TextureBinding(0, 0, 0, 1, ImageLayout.ShaderReadOnlyOptimal, _fontTexture);
             _bindingManager.AllocateAndUpdateDescriptorSet(0, _fontTextureBinding, _pipelineLayout);
         }
 
@@ -876,15 +771,24 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
                     );
                 }
 
-                // Build font atlas - this is where the crash occurs
+                // Build font atlas 
                 io.Fonts.Build();
 
                 // Now we can safely get texture data
                 io.Fonts.GetTexDataAsRGBA32(out nint pixels, out int width, out int height, out int bytesPerPixel);
 
                 // Create texture
-                Span<byte> bytes = new Span<byte>((void*)pixels, width * height * bytesPerPixel);
-                _fontTexture = Texture2D.Create(_vkContext, width, height, Format.R8G8B8A8Unorm, bytes);
+                var bytes = new Span<byte>((void*)pixels, width * height * bytesPerPixel).ToArray();
+                TextureData texData = new TextureData()
+                {
+                     Width = (uint)width,
+                     Height = (uint)height,
+                     Format = TextureFormat.R8G8B8A8Unorm,
+                     GenerateMipmaps = false
+                };
+                //byte[] destinationArray = new byte[width * height * bytesPerPixel];
+                //Marshal.Copy(pixels, destinationArray, 0, destinationArray.Length);
+                _fontTexture =  Texture2D.CreateFromBytes(_vkContext, bytes: bytes, texData);
 
                 // Store texture identifier
                 io.Fonts.SetTexID(GetTextureID(_fontTexture));
@@ -893,8 +797,8 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
                 io.Fonts.ClearTexData();
 
                 // Now destroy configs
-                fontConfig.Destroy();
-                iconConfig.Destroy();
+                //fontConfig.Destroy();
+                //iconConfig.Destroy();
             }
             finally
             {
@@ -1030,7 +934,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
                 if (!_textureBindings.TryGetValue(texture, out _))
                 {
                     // Create new texture binding
-                    TextureBinding? binding = new TextureBinding(0, 0, 0, 1, texture);
+                    TextureBinding? binding = new TextureBinding(0, 0, 0, 1, ImageLayout.ShaderReadOnlyOptimal,texture);
                     _textureBindings[texture] = binding;
 
                     // Allocate descriptor sets for all frames

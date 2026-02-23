@@ -115,6 +115,7 @@ namespace RockEngine.Vulkan
             var features2 = new PhysicalDeviceFeatures2();
             var vulkan11Features = new PhysicalDeviceVulkan11Features();
             var vulkan12Features = new PhysicalDeviceVulkan12Features();
+            var vulkan13Features = new PhysicalDeviceVulkan13Features();
 
             // Configure features
             features2.Features = new PhysicalDeviceFeatures
@@ -125,14 +126,21 @@ namespace RockEngine.Vulkan
                 ImageCubeArray = true,
                 GeometryShader = true,
                 DrawIndirectFirstInstance = true,
+                PipelineStatisticsQuery = physicalDevice.Features.PipelineStatisticsQuery
             };
+            
 
             vulkan11Features.SType = StructureType.PhysicalDeviceVulkan11Features;
             vulkan11Features.ShaderDrawParameters = true;
 
+
             vulkan12Features.SType = StructureType.PhysicalDeviceVulkan12Features;
             vulkan12Features.HostQueryReset = true;
             vulkan12Features.ScalarBlockLayout = true;
+
+            vulkan13Features.SType = StructureType.PhysicalDeviceVulkan13Features;
+            vulkan13Features.Synchronization2 = true;
+
             bool pageableDeviceLocalMemoryAvailable = false;
             uint extensionCount = 0;
 
@@ -164,7 +172,8 @@ namespace RockEngine.Vulkan
             using var chain = Chain.Create(
               features2,
               vulkan11Features,
-              vulkan12Features
+              vulkan12Features,
+              vulkan13Features
           );
             chain.Add(pageableDeviceLocalMemoryFeatures);
 

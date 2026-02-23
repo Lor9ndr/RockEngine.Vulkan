@@ -2,14 +2,15 @@
 
 using NLog;
 
-using RockEngine.Core;
+using RockEngine.Assets;
 using RockEngine.Core.Assets;
 using RockEngine.Core.Coroutines;
 using RockEngine.Core.Rendering;
 using RockEngine.Editor.EditorUI;
+using RockEngine.Editor.EditorUI.ImGuiRendering;
+using RockEngine.Editor.EditorUI.Thumbnails;
 using RockEngine.Editor.Extensions;
 using RockEngine.Vulkan;
-
 
 using System.Collections;
 using System.Diagnostics;
@@ -21,6 +22,10 @@ namespace RockEngine.Editor.Layers
     {
         private readonly AssetManager _assetManager;
         private readonly CoroutineScheduler _coroutineScheduler;
+        private readonly IAssetLoader _loader;
+        private readonly IAssetSerializer _serializer;
+        private readonly IThumbnailService _thumbnailService;
+        private readonly ImGuiController _imGuiController;
 
         // UI State
         private string _searchQuery = string.Empty;
@@ -28,21 +33,21 @@ namespace RockEngine.Editor.Layers
         private bool _gridView = true;
         private float _thumbnailSize = 80f;
         private string _basePath;
-        private readonly HashSet<string> _selectedItems = new HashSet<string>();
+        private readonly HashSet<string> _selectedItems = new();
 
         // File System State
-        private readonly List<FileSystemItem> _currentDirectoryItems = new List<FileSystemItem>();
-        private readonly Dictionary<string, FileSystemItem> _itemCache = new Dictionary<string, FileSystemItem>();
+        private readonly List<FileSystemItem> _currentDirectoryItems = new();
+        private readonly Dictionary<string, FileSystemItem> _itemCache = new();
         private bool _needsDirectoryRefresh = true;
 
         // Loading State
-        private readonly Dictionary<string, Coroutine> _activeCoroutines = new Dictionary<string, Coroutine>();
+        private readonly Dictionary<string, Coroutine> _activeCoroutines = new();
         private bool _isLoadingScene = false;
         private string _loadingSceneName = "";
         private float _loadingProgress = 0f;
 
         // Visual State
-        private readonly Dictionary<string, Vector4> _folderColors = new Dictionary<string, Vector4>();
+        private readonly Dictionary<string, Vector4> _folderColors = new();
         private string _currentHoveredItem = null;
         private double _hoverStartTime = 0;
 
@@ -53,15 +58,16 @@ namespace RockEngine.Editor.Layers
             public string Path { get; set; }
             public string Name { get; set; }
             public string DisplayName { get; set; }
-            public char Icon { get; set; } = Icons.File; // fa-file
+            public char Icon { get; set; } = Icons.File;
             public bool IsDirectory { get; set; }
             public bool IsAssetFile { get; set; }
             public bool IsLoading { get; set; }
             public bool IsLoaded { get; set; }
-            public AssetMetadataInfo Metadata { get; set; }
-            public FileInfo FileInfo { get; set; }
-            public DirectoryInfo DirectoryInfo { get; set; }
-            public Stopwatch LoadTimer { get; set; }
+            public AssetHeader? AssetHeader { get; set; } // Changed from AssetMetadata to AssetHeader
+            public IAsset? Asset { get; set; }
+            public FileInfo? FileInfo { get; set; }
+            public DirectoryInfo? DirectoryInfo { get; set; }
+            public Stopwatch? LoadTimer { get; set; }
             public string FileExtension { get; set; }
             public long FileSize { get; set; }
             public DateTime LastModified { get; set; }
@@ -71,73 +77,73 @@ namespace RockEngine.Editor.Layers
         }
 
         // File type icons and handling
-        private static readonly Dictionary<string, char> _fileTypeIcons = new Dictionary<string, char>(StringComparer.OrdinalIgnoreCase)
+        private static readonly Dictionary<string, char> _fileTypeIcons = new(StringComparer.OrdinalIgnoreCase)
         {
             // Asset files
-           [".asset"] = '\uf1b2', // fa-cube
+            [".asset"] = '\uf1b2', // fa-cube
 
             // Image files
-            [".png"] = '\uf1c5',   // fa-file-image
-            [".jpg"] = '\uf1c5',   // fa-file-image
-            [".jpeg"] = '\uf1c5',  // fa-file-image
-            [".bmp"] = '\uf1c5',   // fa-file-image
-            [".tga"] = '\uf1c5',   // fa-file-image
-            [".tiff"] = '\uf1c5',  // fa-file-image
-            [".psd"] = '\uf1c5',   // fa-file-image
-            [".hdr"] = '\uf1c5',   // fa-file-image
+            [".png"] = '\uf1c5',
+            [".jpg"] = '\uf1c5',
+            [".jpeg"] = '\uf1c5',
+            [".bmp"] = '\uf1c5',
+            [".tga"] = '\uf1c5',
+            [".tiff"] = '\uf1c5',
+            [".psd"] = '\uf1c5',
+            [".hdr"] = '\uf1c5',
 
             // 3D model files
-            [".fbx"] = '\uf1b2',   // fa-cube
-            [".obj"] = '\uf1b2',   // fa-cube
-            [".blend"] = '\uf1b2', // fa-cube
-            [".max"] = '\uf1b2',   // fa-cube
-            [".ma"] = '\uf1b2',    // fa-cube
-            [".mb"] = '\uf1b2',    // fa-cube
-            [".3ds"] = '\uf1b2',   // fa-cube
-            [".dae"] = '\uf1b2',   // fa-cube
+            [".fbx"] = '\uf1b2',
+            [".obj"] = '\uf1b2',
+            [".blend"] = '\uf1b2',
+            [".max"] = '\uf1b2',
+            [".ma"] = '\uf1b2',
+            [".mb"] = '\uf1b2',
+            [".3ds"] = '\uf1b2',
+            [".dae"] = '\uf1b2',
 
             // Audio files
-            [".wav"] = '\uf1c7',   // fa-file-audio
-            [".mp3"] = '\uf1c7',   // fa-file-audio
-            [".ogg"] = '\uf1c7',   // fa-file-audio
-            [".flac"] = '\uf1c7',  // fa-file-audio
+            [".wav"] = '\uf1c7',
+            [".mp3"] = '\uf1c7',
+            [".ogg"] = '\uf1c7',
+            [".flac"] = '\uf1c7',
 
             // Video files
-            [".mp4"] = '\uf1c8',   // fa-file-video
-            [".avi"] = '\uf1c8',   // fa-file-video
-            [".mov"] ='\uf1c8',   // fa-file-video
-            [".mkv"] ='\uf1c8',   // fa-file-video
+            [".mp4"] = '\uf1c8',
+            [".avi"] = '\uf1c8',
+            [".mov"] = '\uf1c8',
+            [".mkv"] = '\uf1c8',
 
             // Document files
-            [".txt"] = Icons.FileAlt,   // fa-file-alt
-            [".doc"] = Icons.FileWord,   // fa-file-word
-            [".docx"] = Icons.FileWord,  // fa-file-word
-            [".pdf"] = Icons.FilePdf,   // fa-file-pdf
-            [".md"] = Icons.FileAlt,    // fa-file-alt
+            [".txt"] = Icons.FileAlt,
+            [".doc"] = Icons.FileWord,
+            [".docx"] = Icons.FileWord,
+            [".pdf"] = Icons.FilePdf,
+            [".md"] = Icons.FileAlt,
 
             // Code files
-            [".cs"] = Icons.Code,    // fa-code
-            [".js"] = Icons.Code,    // fa-code
-            [".ts"] = Icons.Code,    // fa-code
-            [".glsl"] = Icons.Code,  // fa-code
+            [".cs"] = Icons.Code,
+            [".js"] = Icons.Code,
+            [".ts"] = Icons.Code,
+            [".glsl"] = Icons.Code,
 
             // Configuration files
-            [".json"] =   Icons.Code,  // fa-file-code
-            [".xml"] =   Icons.Code,   // fa-file-code
-            [".yaml"] =  Icons.Code,  // fa-file-code
-            [".yml"] =   Icons.Code,   // fa-file-code
-            [".config"] = Icons.Code,// fa-file-code
+            [".json"] = Icons.Code,
+            [".xml"] = Icons.Code,
+            [".yaml"] = Icons.Code,
+            [".yml"] = Icons.Code,
+            [".config"] = Icons.Code,
 
             // Archive files
-            [".zip"] = Icons.FileArchive,   // fa-file-archive
-            [".rar"] = Icons.FileArchive,   // fa-file-archive
-            [".7z"] = Icons.FileArchive,    // fa-file-archive
-            [".tar"] = Icons.FileArchive,   // fa-file-archive
-            [".gz"] = Icons.FileArchive,    // fa-file-archive
+            [".zip"] = Icons.FileArchive,
+            [".rar"] = Icons.FileArchive,
+            [".7z"] = Icons.FileArchive,
+            [".tar"] = Icons.FileArchive,
+            [".gz"] = Icons.FileArchive,
         };
 
         // Font Awesome icons for asset types
-        private static readonly Dictionary<string, char> _assetTypeIcons = new Dictionary<string, char>(StringComparer.OrdinalIgnoreCase)
+        private static readonly Dictionary<string, char> _assetTypeIcons = new(StringComparer.OrdinalIgnoreCase)
         {
             ["material"] = Icons.PaintBrush,
             ["texture"] = Icons.FileImage,
@@ -153,13 +159,26 @@ namespace RockEngine.Editor.Layers
             ["font"] = Icons.Font,
         };
 
-        public AssetBrowserLayer(AssetManager assetManager, CoroutineScheduler coroutineScheduler)
+        public AssetBrowserLayer(
+            AssetManager assetManager,
+            CoroutineScheduler coroutineScheduler,
+            IAssetLoader loader,
+            IAssetSerializer serializer, IThumbnailService thumbnailService,
+            ImGuiController imGuiController)
         {
             _assetManager = assetManager;
             _coroutineScheduler = coroutineScheduler;
-
+            _loader = loader;
+            _serializer = serializer;
+            _thumbnailService = thumbnailService;
+            _imGuiController = imGuiController;
             try
             {
+                // Subscribe to events
+                _assetManager.OnProjectLoaded += OnProjectLoaded;
+                _assetManager.OnAssetChanged += OnAssetChanged;
+                _assetManager.OnProjectUnloaded += OnProjectUnloaded;
+
                 // Set initial base path
                 _basePath = string.IsNullOrEmpty(assetManager.BasePath)
                     ? Directory.GetCurrentDirectory()
@@ -214,7 +233,7 @@ namespace RockEngine.Editor.Layers
             ImGui.SetNextItemWidth(ImGui.GetContentRegionAvail().X * 0.4f);
             if (ImGui.InputTextWithHint("##SearchAssets", "Search...", ref _searchQuery, 100))
             {
-                // Search updated - we could add debouncing here
+                // Search updated
             }
 
             ImGui.SameLine();
@@ -297,7 +316,6 @@ namespace RockEngine.Editor.Layers
                     }
                     else
                     {
-                        // Use the full path as ID to ensure uniqueness
                         string buttonId = $"{part}##{currentPath.GetHashCode()}";
                         if (ImGui.Button(buttonId))
                         {
@@ -314,7 +332,6 @@ namespace RockEngine.Editor.Layers
                 ImGui.Text("Navigation error");
             }
         }
-
 
         private void DrawContentArea()
         {
@@ -375,70 +392,45 @@ namespace RockEngine.Editor.Layers
             float itemWidth = _thumbnailSize + ImGui.GetStyle().ItemSpacing.X;
             int columns = Math.Max(1, (int)(availableWidth / itemWidth));
 
-            // Use child window with horizontal scrolling if needed
-            ImGui.BeginChild("##AssetGridContainer", Vector2.Zero);
+            ImGui.BeginChild("##AssetGridContainer",
+                Vector2.Zero,
+                ImGuiChildFlags.None,
+                ImGuiWindowFlags.AlwaysVerticalScrollbar);
 
-            float windowVisibleX = ImGui.GetWindowPos().X;
-            float windowWidth = ImGui.GetWindowWidth();
+            int itemsDrawn = 0;
+            int columnCount = 0;
 
-            int itemCount = 0;
             foreach (var item in _currentDirectoryItems)
             {
                 if (ShouldFilterItem(item)) continue;
-                itemCount++;
-            }
 
-            // Calculate optimal grid layout
-            if (columns > 1)
-            {
-                ImGui.PushStyleVar(ImGuiStyleVar.ItemSpacing, new Vector2(8, 16));
-
-                int currentColumn = 0;
-                foreach (var item in _currentDirectoryItems)
+                if (columns > 1)
                 {
-                    if (ShouldFilterItem(item)) continue;
-
-                    if (currentColumn == 0)
-                    {
-                        ImGui.BeginGroup();
-                    }
-
-                    ImGui.PushID(item.UniqueId);
-                    DrawGridItem(item);
-                    ImGui.PopID();
-
-                    currentColumn++;
-
-                    // Move to next row or same line
-                    if (currentColumn < columns)
+                    if (columnCount > 0 && columnCount < columns)
                     {
                         ImGui.SameLine();
                     }
-                    else
+
+                    ImGui.PushID(item.UniqueId);
+                    ImGui.BeginGroup();
+                    DrawGridItem(item);
+                    ImGui.EndGroup();
+                    ImGui.PopID();
+
+                    columnCount++;
+                    itemsDrawn++;
+
+                    if (columnCount >= columns)
                     {
-                        ImGui.EndGroup();
-                        currentColumn = 0;
+                        columnCount = 0;
                     }
                 }
-
-                // End group if we have an incomplete row
-                if (currentColumn > 0 && currentColumn < columns)
+                else
                 {
-                    ImGui.EndGroup();
-                }
-
-                ImGui.PopStyleVar();
-            }
-            else
-            {
-                // Single column layout for very small windows
-                foreach (var item in _currentDirectoryItems)
-                {
-                    if (ShouldFilterItem(item)) continue;
-
                     ImGui.PushID(item.UniqueId);
                     DrawGridItem(item);
                     ImGui.PopID();
+                    itemsDrawn++;
                 }
             }
 
@@ -450,11 +442,10 @@ namespace RockEngine.Editor.Layers
             if (ImGui.BeginTable("AssetList", 4,
                 ImGuiTableFlags.RowBg | ImGuiTableFlags.Borders | ImGuiTableFlags.Resizable | ImGuiTableFlags.Sortable))
             {
-                // Header
-                ImGui.TableSetupColumn("Name", ImGuiTableColumnFlags.WidthStretch, 0.6f);
-                ImGui.TableSetupColumn("Type", ImGuiTableColumnFlags.WidthStretch, 0.2f);
-                ImGui.TableSetupColumn("Size", ImGuiTableColumnFlags.WidthStretch, 0.1f);
-                ImGui.TableSetupColumn("Modified", ImGuiTableColumnFlags.WidthStretch, 0.1f);
+                ImGui.TableSetupColumn("Name", ImGuiTableColumnFlags.WidthStretch);
+                ImGui.TableSetupColumn("Type", ImGuiTableColumnFlags.WidthStretch);
+                ImGui.TableSetupColumn("Size", ImGuiTableColumnFlags.WidthStretch);
+                ImGui.TableSetupColumn("Modified", ImGuiTableColumnFlags.WidthStretch);
                 ImGui.TableHeadersRow();
 
                 foreach (var item in _currentDirectoryItems)
@@ -473,14 +464,12 @@ namespace RockEngine.Editor.Layers
         {
             bool isSelected = _selectedItems.Contains(item.Path);
 
-            // Calculate item dimensions
-            float iconSize = _thumbnailSize;
-            float textHeight = ImGui.GetTextLineHeight() * 2 + ImGui.GetStyle().ItemSpacing.Y; // Allow for 2 lines of text
+            float iconSize = _thumbnailSize + ImGui.GetStyle().ItemSpacing.X;
+            float textHeight = ImGui.GetTextLineHeight() * 2f + ImGui.GetStyle().ItemSpacing.Y;
             float totalHeight = iconSize + textHeight;
 
             ImGui.BeginGroup();
 
-            // Draw selection background
             if (isSelected)
             {
                 var drawList = ImGui.GetWindowDrawList();
@@ -489,50 +478,60 @@ namespace RockEngine.Editor.Layers
                 drawList.AddRectFilled(min, max, ImGui.GetColorU32(ImGuiCol.Header));
             }
 
-            // Draw icon/button
-            var buttonColor = isSelected ? ImGui.GetStyle().Colors[(int)ImGuiCol.Header]
-                : ImGui.GetStyle().Colors[(int)ImGuiCol.Button];
-
-            ImGui.PushStyleColor(ImGuiCol.Button, buttonColor);
-            ImGui.PushStyleColor(ImGuiCol.ButtonHovered, buttonColor * 1.1f);
-
-            Vector2 buttonSize = new Vector2(iconSize, iconSize);
+            Vector2 buttonSize = new(iconSize, iconSize);
             if (item.IsLoading)
             {
-                // Loading spinner
                 var frame = (int)(ImGui.GetTime() * 8) % 8;
-                var spinnerFrames = new[] { "⣾", "⣽", "⣻", "⢿", "⡿", "⣟", "⣯", "⣷" };
-                ImGui.Button($"{spinnerFrames[frame]}##{item.UniqueId}", buttonSize);
+                ImguiExtensions.Spinner(new Vector2(0), 10, 1, 1);
             }
             else
             {
                 string buttonLabel = $"{item.Icon}##{item.UniqueId}";
-                if (ImGui.Button(buttonLabel, buttonSize))
+                ImGui.PushStyleVar(ImGuiStyleVar.SelectableTextAlign, new Vector2(0.5f, 0.5f));
+                ImGui.SetNextWindowContentSize(buttonSize);
+                ImGui.AlignTextToFramePadding();
+                if(item.IsAssetFile && item.AssetHeader.AssetType == typeof(TextureAsset))
                 {
-                    HandleItemClick(item);
-
-                    if (ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left))
+                    var asset = _assetManager.GetAssetAsync<TextureAsset>(item.AssetHeader.AssetId).GetAwaiter().GetResult();
+                    var thumbnail = _thumbnailService.GetOrCreateThumbnailAsync(asset).GetAwaiter().GetResult();
+                    if(ImGui.ImageButton($"{asset.ID}", _imGuiController.GetTextureID(thumbnail.Texture), buttonSize))
                     {
-                        HandleItemDoubleClick(item);
+                        HandleItemClick(item);
+
+                        if (ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left))
+                        {
+                            HandleItemDoubleClick(item);
+                        }
                     }
                 }
+                else
+                {
+                    if (ImGui.Selectable(buttonLabel, isSelected, ImGuiSelectableFlags.AllowDoubleClick, buttonSize))
+                    {
+                        HandleItemClick(item);
+
+                        if (ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left))
+                        {
+                            HandleItemDoubleClick(item);
+                        }
+                    }
+                }
+             
+
+                ImGui.PopStyleVar();
             }
 
-            ImGui.PopStyleColor(2);
-
-            // Draw name with proper text wrapping and centering
             var displayName = GetDisplayName(item);
+            ImGui.AlignTextToFramePadding();
             DrawGridItemName(displayName, iconSize);
 
             ImGui.EndGroup();
 
-            // Handle hover and tooltips
             if (ImGui.IsItemHovered())
             {
                 _currentHoveredItem = item.Path;
                 _hoverStartTime = ImGui.GetTime();
 
-                // Show tooltip after delay
                 if (ImGui.GetTime() - _hoverStartTime > 0.5)
                 {
                     DrawItemTooltip(item);
@@ -543,34 +542,22 @@ namespace RockEngine.Editor.Layers
                 _currentHoveredItem = null;
             }
 
-            // Handle drag and drop
             HandleItemDragDrop(item);
         }
+
         private void DrawGridItemName(string name, float availableWidth)
         {
-            // Calculate text size and determine if we need wrapping
             var textSize = ImGui.CalcTextSize(name);
-            float textPadding = 4f; // Small padding on sides
-
-            if (textSize.X <= availableWidth - textPadding * 2)
-            {
-                // Text fits, center it
-                float offset = (availableWidth - textSize.X) * 0.5f;
-                ImGui.SetCursorPosX(ImGui.GetCursorPosX() + offset);
-                ImGui.TextUnformatted(name);
-            }
-            else
-            {
-                ImGui.TextWrapped(name);
-            }
+            float textPadding = 4f;
+            float offset = (availableWidth - textSize.X) * 0.5f;
+            ImGui.SetCursorPosX(ImGui.GetCursorPosX() + offset);
+            ImGui.Text(name);
         }
 
         private void DrawListItem(FileSystemItem item)
         {
-            // Use unique ID for list items as well
             ImGui.PushID(item.UniqueId);
 
-            // Name column
             ImGui.TableNextColumn();
             bool isSelected = _selectedItems.Contains(item.Path);
 
@@ -589,7 +576,6 @@ namespace RockEngine.Editor.Layers
                 }
             }
 
-            // Type column
             ImGui.TableNextColumn();
             if (item.IsDirectory)
             {
@@ -604,7 +590,6 @@ namespace RockEngine.Editor.Layers
                 ImGui.Text(item.FileExtension.ToUpper().TrimStart('.'));
             }
 
-            // Size column
             ImGui.TableNextColumn();
             if (item.IsDirectory)
             {
@@ -615,11 +600,9 @@ namespace RockEngine.Editor.Layers
                 ImGui.Text(FormatFileSize(item.FileSize));
             }
 
-            // Modified column
             ImGui.TableNextColumn();
             ImGui.Text(item.LastModified.ToString("yyyy-MM-dd HH:mm"));
 
-            // Handle hover and tooltips
             if (ImGui.IsItemHovered())
             {
                 DrawItemTooltip(item);
@@ -628,22 +611,16 @@ namespace RockEngine.Editor.Layers
             ImGui.PopID();
         }
 
-        private void DrawItemName(string name, float availableWidth)
-        {
-            ImguiExtensions.CenteredTextWrapped(name, availableWidth);
-        }
-
         private void DrawItemTooltip(FileSystemItem item)
         {
             ImGui.BeginTooltip();
-
             ImGui.PushTextWrapPos(400f);
 
             if (item.IsDirectory)
             {
                 ImGui.Text(item.Name);
                 ImGui.Separator();
-                ImGui.Text("\uf07b Folder"); // fa-folder
+                ImGui.Text("\uf07b Folder");
                 try
                 {
                     var dirInfo = new DirectoryInfo(item.Path);
@@ -661,10 +638,10 @@ namespace RockEngine.Editor.Layers
                 ImGui.Text(item.Name);
                 ImGui.Separator();
 
-                if (item.IsAssetFile && item.Metadata != null)
+                if (item.IsAssetFile && item.AssetHeader != null)
                 {
-                    ImGui.Text($"Type: {item.Metadata.Type} Asset");
-                    ImGui.Text($"ID: {item.Metadata.ID}");
+                    ImGui.Text($"Type: {GetSimpleTypeName(item.AssetHeader.AssetTypeName)}");
+                    ImGui.Text($"ID: {item.AssetHeader.AssetId}");
                 }
                 else
                 {
@@ -681,7 +658,6 @@ namespace RockEngine.Editor.Layers
 
         private void StartDirectoryRefreshCoroutine()
         {
-            // Cancel any existing refresh coroutine
             if (_activeCoroutines.TryGetValue("directory_refresh", out var existingCoroutine))
             {
                 _coroutineScheduler.StopCoroutine(existingCoroutine);
@@ -712,8 +688,6 @@ namespace RockEngine.Editor.Layers
             string[] directories = Array.Empty<string>();
             string[] allFiles = Array.Empty<string>();
 
-
-            // Load directories
             directories = Directory.GetDirectories(_basePath);
             _logger.Debug("Found {Count} directories in {Path}", directories.Length, _basePath);
 
@@ -726,7 +700,6 @@ namespace RockEngine.Editor.Layers
 
             yield return new WaitForNextFrame();
 
-            // Load files
             allFiles = Directory.GetFiles(_basePath);
             _logger.Debug("Found {Count} files in {Path}", allFiles.Length, _basePath);
 
@@ -735,31 +708,25 @@ namespace RockEngine.Editor.Layers
             foreach (var file in allFiles)
             {
                 var fileInfo = new FileInfo(file);
-                var relativePath = GetRelativePath(file);
-
-                // Use the file's unique path for cache key
-                string cacheKey = fileInfo.FullName;
+                var cacheKey = fileInfo.FullName;
                 if (!_itemCache.TryGetValue(cacheKey, out var item))
                 {
                     item = CreateFileItem(fileInfo);
                     _itemCache[cacheKey] = item;
 
-                    // Start metadata loading for asset files
                     if (item.IsAssetFile)
                     {
-                        StartAssetMetadataCoroutine(item);
+                        StartAssetHeaderCoroutine(item);
                     }
                 }
 
                 _currentDirectoryItems.Add(item);
                 filesProcessed++;
 
-                // Yield every 20 files to keep UI responsive
                 if (filesProcessed % 20 == 0)
                     yield return new WaitForNextFrame();
             }
 
-            // Sort items: directories first, then files alphabetically
             _currentDirectoryItems.Sort((a, b) =>
             {
                 if (a.IsDirectory && !b.IsDirectory) return -1;
@@ -771,8 +738,6 @@ namespace RockEngine.Editor.Layers
                 directories.Length, allFiles.Length);
         }
 
-
-
         private FileSystemItem CreateDirectoryItem(DirectoryInfo dirInfo)
         {
             return new FileSystemItem
@@ -780,7 +745,7 @@ namespace RockEngine.Editor.Layers
                 Path = dirInfo.FullName,
                 Name = dirInfo.Name,
                 DisplayName = dirInfo.Name,
-                Icon = Icons.Folder, // fa-folder
+                Icon = Icons.Folder,
                 IsDirectory = true,
                 IsAssetFile = false,
                 IsLoaded = true,
@@ -792,7 +757,7 @@ namespace RockEngine.Editor.Layers
         private FileSystemItem CreateFileItem(FileInfo fileInfo)
         {
             var extension = fileInfo.Extension.ToLower();
-            var isAssetFile = extension == AssetPath.Empty.Extension;
+            var isAssetFile = extension == AssetConstants.AssetExtension;
 
             return new FileSystemItem
             {
@@ -802,7 +767,7 @@ namespace RockEngine.Editor.Layers
                 Icon = GetFileIcon(extension),
                 IsDirectory = false,
                 IsAssetFile = isAssetFile,
-                IsLoaded = !isAssetFile, // Non-asset files are immediately "loaded"
+                IsLoaded = !isAssetFile,
                 IsLoading = isAssetFile,
                 FileInfo = fileInfo,
                 FileExtension = extension,
@@ -815,10 +780,10 @@ namespace RockEngine.Editor.Layers
         {
             return _fileTypeIcons.TryGetValue(extension, out var icon)
                 ? icon
-                : '\uf15b'; // fa-file
+                : '\uf15b';
         }
 
-        private void StartAssetMetadataCoroutine(FileSystemItem item)
+        private void StartAssetHeaderCoroutine(FileSystemItem item)
         {
             var coroutineKey = $"metadata_{item.UniqueId}";
 
@@ -831,7 +796,7 @@ namespace RockEngine.Editor.Layers
             item.LoadTimer = Stopwatch.StartNew();
 
             var metadataCoroutine = _coroutineScheduler.StartCoroutine(
-                LoadAssetMetadataCoroutine(item),
+                LoadAssetHeaderCoroutine(item),
                 $"LoadMetadata_{item.UniqueId}"
             );
 
@@ -840,58 +805,90 @@ namespace RockEngine.Editor.Layers
             metadataCoroutine.OnCompleted += (coroutine) =>
             {
                 _activeCoroutines.Remove(coroutineKey);
-                _logger.Debug("Metadata loaded for: {Asset}", item.Name);
+                _logger.Debug("Asset header loaded for: {Asset}", item.Name);
             };
 
             metadataCoroutine.OnError += (coroutine, error) =>
             {
                 _activeCoroutines.Remove(coroutineKey);
-                item.Icon = Icons.Times; // fa-times
+                item.Icon = Icons.Times;
                 item.IsLoading = false;
-                _logger.Warn("Failed to load metadata for {Asset}: {Error}", item.Name, error.Message);
+                _logger.Warn("Failed to load asset header for {Asset}: {Error}", item.Name, error.Message);
             };
         }
 
-        private IEnumerator LoadAssetMetadataCoroutine(FileSystemItem item)
+        private IEnumerator LoadAssetHeaderCoroutine(FileSystemItem item)
         {
-            _logger.Debug("Starting metadata coroutine for: {Asset}", item.Name);
+            _logger.Debug("Starting asset header coroutine for: {Asset}", item.Name);
 
-            var metadataTask = _assetManager.LoadAssetAsync<IAsset>(item.Path);
-            yield return new WaitForTask(metadataTask);
+           
+                using var stream = File.OpenRead(item.Path);
+                var headerTask = _serializer.DeserializeHeaderAsync(stream);
+                yield return new WaitForTask(headerTask);
 
-            if (metadataTask.IsCompletedSuccessfully)
+            try
             {
-                var metadata = metadataTask.Result;
-                item.Metadata = new AssetMetadataInfo(metadata.ID, metadata.Name, metadata.GetType().Name.Replace("Asset", ""), metadata.Path.ToString());
+                if (headerTask.IsCompletedSuccessfully)
+                {
+                    var header = headerTask.Result;
+                    item.AssetHeader = header;
+                    item.Icon = GetAssetTypeIcon(GetSimpleTypeName(header.AssetTypeName));
+                    item.IsLoaded = true;
+                    item.IsLoading = false;
 
-                // Update icon based on asset type
-                item.Icon = GetAssetTypeIcon(item.Metadata.Type);
-                item.IsLoaded = true;
-                item.IsLoading = false;
-
-                _logger.Debug("Metadata loaded successfully for: {Asset} ({Type})",
-                    item.Name, item.Metadata.Type);
+                    _logger.Debug("Asset header loaded successfully for: {Asset} ({Type})",
+                        item.Name, header.AssetTypeName);
+                }
+                else
+                {
+                    throw headerTask.Exception ?? new Exception("Failed to load asset header");
+                }
             }
-            else
+            catch (Exception ex)
             {
-                item.Icon = Icons.Times; // fa-times
+                item.Icon = Icons.Times;
                 item.IsLoading = false;
-                throw new Exception($"Failed to load metadata for {item.Name}", metadataTask.Exception);
+                throw new Exception($"Failed to load asset header for {item.Name}", ex);
             }
+        }
+
+        private string GetSimpleTypeName(string assemblyQualifiedName)
+        {
+            if (string.IsNullOrEmpty(assemblyQualifiedName))
+                return "Unknown";
+
+            var typeName = assemblyQualifiedName;
+            var commaIndex = typeName.IndexOf(',');
+            if (commaIndex > 0)
+            {
+                typeName = typeName.Substring(0, commaIndex);
+            }
+
+            var lastDot = typeName.LastIndexOf('.');
+            if (lastDot > 0)
+            {
+                typeName = typeName.Substring(lastDot + 1);
+            }
+
+            if (typeName.EndsWith("Asset", StringComparison.OrdinalIgnoreCase))
+            {
+                typeName = typeName.Substring(0, typeName.Length - 5);
+            }
+
+            return typeName;
         }
 
         private char GetAssetTypeIcon(string assetType)
         {
             return _assetTypeIcons.TryGetValue(assetType?.ToLower() ?? "", out var icon)
                 ? icon
-                : Icons.Cube; // fa-cube (default)
+                : Icons.Cube;
         }
 
         private void HandleItemClick(FileSystemItem item)
         {
             if (ImGui.GetIO().KeyCtrl)
             {
-                // Toggle selection
                 if (!_selectedItems.Remove(item.Path))
                 {
                     _selectedItems.Add(item.Path);
@@ -912,40 +909,27 @@ namespace RockEngine.Editor.Layers
                 _needsDirectoryRefresh = true;
                 _selectedItems.Clear();
             }
-            else if (item.IsAssetFile && item.Metadata?.Type == "Scene")
+            else if (item.IsAssetFile)
             {
-                StartSceneLoadingCoroutine(item.Path, item.Name);
+                // Handle asset file double-click
+                OpenAssetFile(item);
             }
             else
             {
-                // Open file with default system application
                 OpenFileWithDefaultApplication(item.Path);
             }
         }
 
-        private void HandleItemDragDrop(FileSystemItem item)
+        private void OpenAssetFile(FileSystemItem item)
         {
-            // Implement drag and drop functionality here
-            // This would handle dragging assets into the scene, between folders, etc.
-        }
+            // You need to implement this based on your asset types
+            // For example, if it's a scene, you might load it
+            if (item.IsAssetFile && item.AssetHeader?.AssetTypeName.Contains("Scene", StringComparison.OrdinalIgnoreCase) == true)
+            {
+                StartSceneLoadingCoroutine(item.Path, item.Name);
 
-        private void OpenFileWithDefaultApplication(string filePath)
-        {
-            try
-            {
-                var processStartInfo = new ProcessStartInfo
-                {
-                    FileName = filePath,
-                    UseShellExecute = true
-                };
-                Process.Start(processStartInfo);
-            }
-            catch (Exception ex)
-            {
-                _logger.Warn("Failed to open file {File}: {Error}", filePath, ex.Message);
             }
         }
-
         private void StartSceneLoadingCoroutine(string scenePath, string sceneName)
         {
             var coroutineKey = $"scene_load_{scenePath.GetHashCode()}";
@@ -1015,7 +999,7 @@ namespace RockEngine.Editor.Layers
                     _loadingProgress = 0.9f;
 
                     yield return new WaitForNextFrame();
-                    var sceneInitTask =  sceneAsset.InstantiateEntities();
+                    var sceneInitTask = sceneAsset.InstantiateEntities();
 
                     yield return new WaitForTask(sceneInitTask);
                     if (!sceneInitTask.IsCompletedSuccessfully)
@@ -1032,11 +1016,41 @@ namespace RockEngine.Editor.Layers
                 {
                     throw new Exception($"Failed to load scene asset: {scenePath}", loadTask.Exception);
                 }
+
+
             }
             finally
             {
                 _isLoadingScene = false;
                 _loadingProgress = 0f;
+            }
+        }
+        private float GetEstimatedProgress(Task task)
+        {
+            if (task.IsCompleted) return 1.0f;
+            return Math.Min(0.95f, DateTime.Now.Ticks % 1000000 / 1000000f);
+        }
+
+
+        private void HandleItemDragDrop(FileSystemItem item)
+        {
+            // Implement drag and drop if needed
+        }
+
+        private void OpenFileWithDefaultApplication(string filePath)
+        {
+            try
+            {
+                var processStartInfo = new ProcessStartInfo
+                {
+                    FileName = filePath,
+                    UseShellExecute = true
+                };
+                Process.Start(processStartInfo);
+            }
+            catch (Exception ex)
+            {
+                _logger.Warn("Failed to open file {File}: {Error}", filePath, ex.Message);
             }
         }
 
@@ -1048,18 +1062,6 @@ namespace RockEngine.Editor.Layers
             var itemName = item.Name.ToLowerInvariant();
 
             return !itemName.Contains(searchText);
-        }
-
-        private string GetRelativePath(string fullPath)
-        {
-            try
-            {
-                return Path.GetRelativePath(_basePath, fullPath);
-            }
-            catch
-            {
-                return fullPath;
-            }
         }
 
         private string GetDisplayName(FileSystemItem item)
@@ -1106,6 +1108,7 @@ namespace RockEngine.Editor.Layers
 
         private void DrawContextMenus()
         {
+            // Implement context menus if needed
         }
 
         private void DrawMenuBar()
@@ -1114,7 +1117,7 @@ namespace RockEngine.Editor.Layers
             {
                 if (ImGui.BeginMenu("File"))
                 {
-                    if (ImGui.MenuItem("\uf65e New Folder")) // fa-folder-plus
+                    if (ImGui.MenuItem("\uf65e New Folder"))
                     {
                         CreateNewFolder();
                     }
@@ -1123,8 +1126,8 @@ namespace RockEngine.Editor.Layers
 
                 if (ImGui.BeginMenu("View"))
                 {
-                    ImGui.MenuItem("\uf15c Show File Extensions", "", ref _showFileExtensions); // fa-file-alt
-                    ImGui.MenuItem("\uf00a Grid View", "", ref _gridView); // fa-th
+                    ImGui.MenuItem("\uf15c Show File Extensions", "", ref _showFileExtensions);
+                    ImGui.MenuItem("\uf00a Grid View", "", ref _gridView);
                     ImGui.EndMenu();
                 }
 
@@ -1156,12 +1159,6 @@ namespace RockEngine.Editor.Layers
             }
         }
 
-        private float GetEstimatedProgress(Task task)
-        {
-            if (task.IsCompleted) return 1.0f;
-            return Math.Min(0.95f, DateTime.Now.Ticks % 1000000 / 1000000f);
-        }
-
         public void OnUpdate()
         {
             // Coroutines are processed by the Application's CoroutineScheduler
@@ -1175,16 +1172,7 @@ namespace RockEngine.Editor.Layers
         public Task OnAttach()
         {
             _logger.Info("AssetBrowserLayer attached");
-
-          
-
-            // Subscribe to project events
-            _assetManager.OnProjectLoaded += OnProjectLoaded;
-            _assetManager.OnAssetRegistered += OnAssetRegistered;
-
-            // Initial refresh
             _needsDirectoryRefresh = true;
-
             return Task.CompletedTask;
         }
 
@@ -1199,10 +1187,11 @@ namespace RockEngine.Editor.Layers
             _activeCoroutines.Clear();
 
             _assetManager.OnProjectLoaded -= OnProjectLoaded;
-            _assetManager.OnAssetRegistered -= OnAssetRegistered;
+            _assetManager.OnAssetChanged -= OnAssetChanged;
+            _assetManager.OnProjectUnloaded -= OnProjectUnloaded;
         }
 
-        private void OnProjectLoaded(ProjectAsset project)
+        private void OnProjectLoaded(IProject project)
         {
             _basePath = _assetManager.BasePath;
             _needsDirectoryRefresh = true;
@@ -1217,17 +1206,52 @@ namespace RockEngine.Editor.Layers
             _logger.Info("Project loaded, base path: {BasePath}", _basePath);
         }
 
-        private void OnAssetRegistered(IAsset asset)
+        private void OnProjectUnloaded()
         {
-            _logger.Debug("Asset registered: {AssetName} ({AssetType})", asset.Name, asset.GetType().Name);
+            _basePath = Directory.GetCurrentDirectory();
+            _needsDirectoryRefresh = true;
+            _itemCache.Clear();
+            _currentDirectoryItems.Clear();
+            _selectedItems.Clear();
 
-            var assetPath = asset.Path.ToString();
-            if (_itemCache.TryGetValue(assetPath, out var cachedItem))
+            foreach (var coroutine in _activeCoroutines.Values)
             {
-                cachedItem.Metadata = new AssetMetadataInfo(asset.ID, asset.Name, asset.GetType().Name.Replace("Asset", ""), assetPath);
-                cachedItem.Icon = GetAssetTypeIcon(cachedItem.Metadata.Type);
+                _coroutineScheduler.StopCoroutine(coroutine);
+            }
+            _activeCoroutines.Clear();
+
+            _logger.Info("Project unloaded, reset to: {BasePath}", _basePath);
+        }
+
+        private void OnAssetChanged(AssetChangedEventArgs args)
+        {
+            _logger.Debug("Asset changed: {AssetName} ({ChangeType}) at {Path}",
+                args.Asset.Name, args.ChangeType, args.Path);
+
+            var normalizedPath = AssetPathNormalizer.Normalize(args.Path);
+
+            // Update cache if this item is cached
+            if (_itemCache.TryGetValue(normalizedPath, out var cachedItem))
+            {
+                cachedItem.AssetHeader = new AssetHeader
+                {
+                    AssetId = args.Asset.ID,
+                    AssetTypeName = args.Asset.GetType().AssemblyQualifiedName,
+                    Name = args.Asset.Name,
+                    Created = args.Asset.Created,
+                    Modified = args.Asset.Modified
+                };
+                cachedItem.Icon = GetAssetTypeIcon(GetSimpleTypeName(cachedItem.AssetHeader.AssetTypeName));
                 cachedItem.IsLoaded = true;
                 cachedItem.IsLoading = false;
+            }
+
+            // Refresh if this is in the current directory
+            var directory = Path.GetDirectoryName(normalizedPath);
+            if (!string.IsNullOrEmpty(directory) &&
+                Path.GetFullPath(directory) == Path.GetFullPath(_basePath))
+            {
+                _needsDirectoryRefresh = true;
             }
         }
     }

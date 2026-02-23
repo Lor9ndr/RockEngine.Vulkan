@@ -27,35 +27,44 @@
 
   <ItemGroup>
     <PackageReference Include="AssimpNet" Version="4.1.0" />
-    <PackageReference Include="JoltPhysicsSharp" Version="2.19.5" />
-    <PackageReference Include="Microsoft.Extensions.Caching.Memory" Version="10.0.1" />
-    <PackageReference Include="Microsoft.Extensions.ObjectPool" Version="10.0.1" />
-    <PackageReference Include="NLog" Version="6.0.7" />
-    <PackageReference Include="Silk.NET.Input" Version="2.22.0" />
-    <PackageReference Include="Silk.NET.Input.Extensions" Version="2.22.0" />
-    <PackageReference Include="Silk.NET.Input.Sdl" Version="2.22.0" />
-    <PackageReference Include="Silk.NET.Windowing" Version="2.22.0" />
+    <PackageReference Include="JoltPhysicsSharp" Version="2.20.1" />
+    <PackageReference Include="MessagePackAnalyzer" Version="3.1.4">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.Extensions.Caching.Memory" Version="10.0.3" />
+    <PackageReference Include="Microsoft.Extensions.ObjectPool" Version="10.0.3" />
+    <PackageReference Include="NLog" Version="6.1.0" />
+    <PackageReference Include="Silk.NET.Input" Version="2.23.0" />
+    <PackageReference Include="Silk.NET.Input.Extensions" Version="2.23.0" />
+    <PackageReference Include="Silk.NET.Input.Sdl" Version="2.23.0" />
+    <PackageReference Include="Silk.NET.Windowing" Version="2.23.0" />
     <PackageReference Include="SimpleInjector" Version="5.5.0" />
     <PackageReference Include="SixLabors.ImageSharp" Version="3.1.12" />
-    <PackageReference Include="SkiaSharp" Version="3.119.1" />
+    <PackageReference Include="SkiaSharp" Version="3.119.2" />
     <PackageReference Include="ZLinq" Version="1.5.4" />
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\RockEngine.Assets\RockEngine.Assets.csproj" />
     <ProjectReference Include="..\RockEngine.CodeGenerator\RockEngine.CodeGenerator.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
     <ProjectReference Include="..\RockEngine.Math\RockEngine.Mathematics.csproj" />
     <ProjectReference Include="..\RockEngine.Shading\RockEngine.Shading.csproj" />
     <ProjectReference Include="..\RockEngine.Vulkan\RockEngine.Vulkan.csproj" />
-  </ItemGroup>
-  <ItemGroup>
     <ProjectReference Include="..\RockEngine.Analyzer\RockEngine.Analyzer\RockEngine.Analyzer.csproj" ReferenceOutputAssembly="false" OutputItemType="Analyzer" />
     <ProjectReference Include="..\RockEngine.Analyzer\RockEngine.Analyzer\RockEngine.CodeFixes.csproj" ReferenceOutputAssembly="false" OutputItemType="Analyzer" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AdditionalFiles Update="Shaders\Compute\ComputeCopyImage.comp">
+      <LinkBase>$([MSBuild]::EnsureTrailingSlash(%(LinkBase)))</LinkBase>
+    </AdditionalFiles>
   </ItemGroup>
   
 
 
   <ItemGroup>
-    <None Update="appsettings.json">
+    <None Update="appsettings.yaml">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
   </ItemGroup>

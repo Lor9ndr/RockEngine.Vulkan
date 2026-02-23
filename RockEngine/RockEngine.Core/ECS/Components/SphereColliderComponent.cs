@@ -2,12 +2,17 @@
 
 using JoltPhysicsSharp;
 
+using MessagePack;
+
 namespace RockEngine.Core.ECS.Components
 {
+    [MessagePackObject]
     public partial class SphereColliderComponent : ColliderComponent
     {
+        [IgnoreMember]
         private float _radius = 0.5f;
 
+        [Key(7)]
         public float Radius
         {
             get => _radius;
@@ -21,6 +26,7 @@ namespace RockEngine.Core.ECS.Components
             }
         }
 
+        [Key(8)]
         public float Diameter
         {
             get => _radius * 2;

@@ -17,7 +17,7 @@ namespace RockEngine.Core.Rendering
 
     public class LayerStack : ILayerStack, IDisposable
     {
-        private ILayer[] _activeLayers = Array.Empty<ILayer>();
+        private ILayer[] _activeLayers = [];
         private int _activeLayerCount = 0;
 
         // Thread-safe queues for layer operations
@@ -37,10 +37,7 @@ namespace RockEngine.Core.Rendering
 
         public async Task PushLayer(ILayer layer)
         {
-            if (_disposed)
-            {
-                throw new ObjectDisposedException(nameof(LayerStack));
-            }
+            ObjectDisposedException.ThrowIf(_disposed,this);
 
             if (_activeLayers.Contains(layer))
             {
@@ -124,13 +121,14 @@ namespace RockEngine.Core.Rendering
 
             // Use a stack-allocated span for iteration (no heap allocation)
 
-            for (int i = 0; i < _activeLayerCount; i++)
+            Span<ILayer> layersToRender = _activeLayers.AsSpan(0, _activeLayerCount);
+
+            for (int i = 0; i < layersToRender.Length; i++)
             {
-                 _activeLayers[i].OnImGuiRender(batch);
+                layersToRender[i].OnImGuiRender(batch);
             }
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void AddLayerInternal(ILayer layer)
         {
             lock (_syncLock)
@@ -159,7 +157,6 @@ namespace RockEngine.Core.Rendering
             }
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void RemoveLayerInternal(ILayer layer)
         {
             lock (_syncLock)

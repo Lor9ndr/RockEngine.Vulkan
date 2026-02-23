@@ -1,6 +1,7 @@
 ﻿using RockEngine.Core.ECS.Components;
 using RockEngine.Core.Internal;
 using RockEngine.Core.Rendering.Materials;
+using RockEngine.Core.Rendering.Objects;
 using RockEngine.Core.Rendering.ResourceBindings;
 using RockEngine.Vulkan;
 
@@ -15,7 +16,7 @@ namespace RockEngine.Core.Rendering.Managers
         private readonly VulkanContext _context;
         private readonly DescriptorPoolManager _descriptorPoolManager;
         private readonly GraphicsContext _graphicsEngine;
-        private readonly Lock _updateLocker = new Lock();
+        private readonly object _updateLocker = new object();
 
         public BindingManager(VulkanContext context, DescriptorPoolManager descriptorPool, GraphicsContext graphicsEngine)
         {
@@ -24,7 +25,7 @@ namespace RockEngine.Core.Rendering.Managers
             _graphicsEngine = graphicsEngine;
         }
 
-        public unsafe void BindResourcesForMaterial(
+        public void BindResourcesForMaterial(
              uint frameIndex,
              MaterialPass materialPass,
              UploadBatch batch,
@@ -32,10 +33,10 @@ namespace RockEngine.Core.Rendering.Managers
              Span<uint> skipSets = default)
         {
             int maxSets = materialPass.Bindings.Count;
-            if (maxSets <= 8) 
+            if (maxSets <= 8)
             {
                 Span<DescriptorSet> setsToBind = stackalloc DescriptorSet[maxSets];
-                Span<uint> dynamicOffsets = stackalloc uint[16]; 
+                Span<uint> dynamicOffsets = stackalloc uint[16];
 
                 int setIndex = 0;
                 int dynamicIndex = 0;
@@ -68,11 +69,12 @@ namespace RockEngine.Core.Rendering.Managers
 
                 if (setIndex > 0)
                 {
+                    materialPass.PrepareToRender(batch);
                     BindDescriptorSetsToCommandBuffer(
                         batch,
                         materialPass.Pipeline.Layout,
-                        setsToBind.Slice(0, setIndex),
-                        dynamicOffsets.Slice(0, dynamicIndex),
+                        setsToBind[..setIndex],
+                        dynamicOffsets[..dynamicIndex],
                         materialPass.Bindings.MinSetLocation,
                         isCompute
                     );
@@ -91,18 +93,15 @@ namespace RockEngine.Core.Rendering.Managers
                         continue;
                     }
                     ProcessSet(frameIndex, materialPass.Pipeline.Layout, setLocation, perSetBindings, setsToBind, ref index);
-                    /*batch.AddDependency(() =>
-                    {
-                        var copy = perSetBindings;
-                    });*/
                 }
                 if (index == 0)
                 {
                     return;
                 }
+                materialPass.PrepareToRender(batch);
 
                 BindDescriptorSetsToCommandBuffer(
-                    batch,//batch.CommandBuffer,
+                    batch,
                     materialPass.Pipeline.Layout,
                     setsToBind,
                     CollectionsMarshal.AsSpan(materialPass.Bindings.DynamicOffsets),
@@ -111,128 +110,97 @@ namespace RockEngine.Core.Rendering.Managers
                 );
             }
         }
+
         public void BindResource(
           uint frameIndex,
           ResourceBinding binding,
-          UploadBatch commandBuffer,
+          UploadBatch batch,
           VkPipelineLayout pipelineLayout,
           bool isCompute = false)
         {
-            // 1. Проверка существования сета в pipeline layout
             var setLocation = binding.SetLocation;
             var setLayout = pipelineLayout.GetSetLayout(setLocation);
-            if (setLayout == default || setLayout.Bindings.Length == 0 || setLayout.Bindings.Any(s => s.DescriptorType != binding.DescriptorType))
+            if (setLayout == default || setLayout.Bindings.Length == 0 ||
+                setLayout.Bindings.Any(s => s.DescriptorType != binding.DescriptorType))
             {
                 return;
-                throw new InvalidOperationException(
-                    $"Set {setLocation} not found in pipeline layout");
             }
 
-            // 2. Создаем временную коллекцию и собираем смещения
             var perSetBindings = new PerSetBindings(setLocation);
-            var dynamicOffsets = new List<uint>();
+            Span<uint> dynamicOffsets = [];
 
             perSetBindings.Add(binding);
             if (binding is UniformBufferBinding uboBinding && uboBinding.Buffer.IsDynamic)
             {
-                dynamicOffsets.Add((uint)uboBinding.Offset);
+                dynamicOffsets = new Span<uint>([(uint)uboBinding.Offset]);
             }
 
-            // 3. Получаем или создаем дескрипторный набор
             var descriptorSet = GetOrCreateDescriptorSet(frameIndex, pipelineLayout, setLocation, perSetBindings);
 
-            // 4. Биндим с учетом динамических смещений
-            BindDescriptorSetsToCommandBuffer(commandBuffer, pipelineLayout, [descriptorSet], CollectionsMarshal.AsSpan(dynamicOffsets), perSetBindings.Set, isCompute);
-
+            BindDescriptorSetsToCommandBuffer(batch, pipelineLayout, [descriptorSet], dynamicOffsets, perSetBindings.Set, isCompute);
+        }
+        public void BindResource(
+         uint frameIndex,
+         UploadBatch batch,
+         RckPipeline pipeline,
+         bool isCompute,
+         params Span<ResourceBinding> bindings)
+        {
+            MaterialPass materialPass = new MaterialPass(pipeline);
+            foreach (var binding in bindings)
+            {
+                materialPass.BindResource(binding);
+            }
+            BindResourcesForMaterial(frameIndex, materialPass,batch, isCompute);
         }
 
-        private void ProcessSet(uint frameIndex, VkPipelineLayout pipelineLayout, uint setLocation, PerSetBindings perSetBindings, Span<DescriptorSet> setsToBind, ref int index)
+        private void ProcessSet(uint frameIndex, VkPipelineLayout pipelineLayout, uint setLocation,
+            PerSetBindings perSetBindings, Span<DescriptorSet> setsToBind, ref int index)
         {
-            // Get or allocate descriptor set
             var descriptorSet = GetOrCreateDescriptorSet(frameIndex, pipelineLayout, setLocation, perSetBindings);
-
             setsToBind[index++] = descriptorSet;
         }
 
-        private VkDescriptorSet GetOrCreateDescriptorSet(uint frameIndex, VkPipelineLayout pipelineLayout, uint setLocation, PerSetBindings perSetBindings)
+        private VkDescriptorSet GetOrCreateDescriptorSet(uint frameIndex, VkPipelineLayout pipelineLayout,
+            uint setLocation, PerSetBindings perSetBindings)
         {
             lock (_updateLocker)
             {
-                // Проверяем, есть ли актуальный набор дескрипторов
-                var existingSet = perSetBindings.FirstOrDefault(b => b.DescriptorSets is not null && b.DescriptorSets[frameIndex] != null)?.DescriptorSets[frameIndex];
-                bool needsUpdate = perSetBindings.NeedToUpdate;
+                var setLayout = pipelineLayout.GetSetLayout(setLocation);
 
-                if (existingSet is not null && !needsUpdate)
+                // Check if any binding already has a descriptor set for this layout
+                VkDescriptorSet existingSet = null;
+                foreach (var binding in perSetBindings)
+                {
+                    existingSet = binding.GetDescriptorSetForLayout(setLayout, frameIndex);
+                    if (existingSet != null)
+                    {
+                        break;
+                    }
+                }
+                if (existingSet is not null && !existingSet.IsDirty)
                 {
                     return existingSet;
                 }
 
-                // Выделяем новый набор или обновляем существующий
-                var setLayout = pipelineLayout.GetSetLayout(setLocation);
                 var descriptorSet = existingSet ?? _descriptorPoolManager.AllocateDescriptorSet(setLayout);
 
+                // Update all bindings with this new descriptor set
                 foreach (var binding in perSetBindings)
                 {
-                    binding.DescriptorSets[frameIndex] = descriptorSet;
+                    if(existingSet is null)
+                    {
+                        binding.SetDescriptorSetForLayout(setLayout, frameIndex, descriptorSet);
+                    }
                     if (descriptorSet.IsDirty)
                     {
-                        binding.UpdateDescriptorSet(_context, frameIndex);
+                        binding.UpdateDescriptorSet(_context, frameIndex, setLayout);
                     }
                 }
                 descriptorSet.IsDirty = false;
+
                 return descriptorSet;
             }
-
-        }
-
-
-        private void ProcessBinding(
-            uint frameIndex,
-            ResourceBinding binding,
-            VkPipelineLayout pipelineLayout,
-            DescriptorSet[] descriptorSets,
-            ref int index)
-        {
-            if (binding is UniformBufferBinding uboBinding)
-            {
-                HandleUniformBufferBinding(frameIndex, uboBinding, pipelineLayout);
-            }
-
-            if (binding.DescriptorSets[frameIndex] is null)
-            {
-                AllocateAndUpdateDescriptorSet(frameIndex, binding, pipelineLayout);
-            }
-
-            descriptorSets[index++] = binding.DescriptorSets[frameIndex]!;
-        }
-
-
-
-        private static void HandleUniformBufferBinding(uint frameIndex, UniformBufferBinding uboBinding, VkPipelineLayout pipelineLayout)
-        {
-            // Check if the descriptor set is already cached for this pipeline layout
-            if (!uboBinding.Buffer.DescriptorSets.TryGetValue(pipelineLayout, out var cachedDescriptorSet) || cachedDescriptorSet is not null)
-            {
-                // If not, cache it
-                uboBinding.Buffer.DescriptorSets[pipelineLayout] = uboBinding.DescriptorSets[frameIndex];
-            }
-            else
-            {
-                // If it is, reuse the cached descriptor set
-                uboBinding.DescriptorSets[frameIndex] = cachedDescriptorSet;
-            }
-        }
-
-        public void AllocateAndUpdateDescriptorSet(uint frameIndex, ResourceBinding binding, VkPipelineLayout pipelineLayout)
-        {
-            AllocateDescriptorSet(frameIndex, binding, pipelineLayout);
-            binding.UpdateDescriptorSet(_context, frameIndex);
-        }
-        public void AllocateDescriptorSet(uint frameIndex, ResourceBinding binding, VkPipelineLayout pipelineLayout)
-        {
-            var setLayout = pipelineLayout.GetSetLayout(binding.SetLocation);
-            var set = _descriptorPoolManager.AllocateDescriptorSet(setLayout);
-            binding.DescriptorSets[frameIndex] = set;
         }
 
         private unsafe void BindDescriptorSetsToCommandBuffer(
@@ -243,16 +211,27 @@ namespace RockEngine.Core.Rendering.Managers
                 uint minSetIndex,
                 bool isCompute)
         {
-
-            {
-                batch.BindDescriptorSets(
-                    isCompute ? PipelineBindPoint.Compute : PipelineBindPoint.Graphics,
-                    pipelineLayout,
-                    minSetIndex,
-                    descriptorSets,
-                    dynamicOffsets);
-            }
+            batch.BindDescriptorSets(
+                isCompute ? PipelineBindPoint.Compute : PipelineBindPoint.Graphics,
+                pipelineLayout,
+                minSetIndex,
+                descriptorSets,
+                dynamicOffsets);
         }
 
+        public void AllocateAndUpdateDescriptorSet(uint frameIndex, ResourceBinding binding, VkPipelineLayout pipelineLayout)
+        {
+            var setLayout = pipelineLayout.GetSetLayout(binding.SetLocation);
+            var set = _descriptorPoolManager.AllocateDescriptorSet(setLayout);
+            binding.SetDescriptorSetForLayout(setLayout, frameIndex, set);
+            binding.UpdateDescriptorSet(_context, frameIndex, setLayout);
+        }
+
+        public void AllocateDescriptorSet(uint frameIndex, ResourceBinding binding, VkPipelineLayout pipelineLayout)
+        {
+            var setLayout = pipelineLayout.GetSetLayout(binding.SetLocation);
+            var set = _descriptorPoolManager.AllocateDescriptorSet(setLayout);
+            binding.SetDescriptorSetForLayout(setLayout, frameIndex, set);
+        }
     }
 }

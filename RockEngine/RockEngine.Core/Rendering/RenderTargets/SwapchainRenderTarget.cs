@@ -23,11 +23,12 @@ namespace RockEngine.Core.Rendering.RenderTargets
         {
             CreateFramebuffers();
 
-            ClearValues =
-            [
+            ClearValues =new Memory<ClearValue>(
+                [ 
                 new ClearValue { Color = new ClearColorValue(0) },
                 new ClearValue { DepthStencil = new ClearDepthStencilValue(1.0f, 0) }
-            ];
+                ]);
+            
 
             UpdateViewportAndScissor();
         }

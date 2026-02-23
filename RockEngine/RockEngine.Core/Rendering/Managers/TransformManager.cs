@@ -141,9 +141,9 @@ namespace RockEngine.Core.Rendering.Managers
             if (_meshGroupIndices.TryGetValue(groupKey, out var indices))
             {
                 // Return sorted indices (they should already be sorted, but ensure it)
-                return indices.OrderBy(x => x).ToList();
+                return [.. indices.OrderBy(x => x)];
             }
-            return new List<int>();
+            return [];
         }
 
         /// <summary>
@@ -212,38 +212,38 @@ namespace RockEngine.Core.Rendering.Managers
             }
 
             // Barrier before update
-            var preBarrier = new BufferMemoryBarrier
+            var preBarrier = new BufferMemoryBarrier2
             {
-                SType = StructureType.BufferMemoryBarrier,
-                SrcAccessMask = AccessFlags.VertexAttributeReadBit | AccessFlags.IndexReadBit,
-                DstAccessMask = AccessFlags.TransferWriteBit,
+                SType = StructureType.BufferMemoryBarrier2,
+                SrcAccessMask = AccessFlags2.VertexAttributeReadBit | AccessFlags2.IndexReadBit,
+                DstAccessMask = AccessFlags2.TransferWriteBit,
                 Buffer = buffer.Buffer,
                 Offset = 0,
-                Size = Vk.WholeSize
+                Size = Vk.WholeSize,
+                SrcStageMask = PipelineStageFlags2.VertexInputBit | PipelineStageFlags2.IndexInputBit,
+                DstStageMask = PipelineStageFlags2.TransferBit
             };
 
             batch.PipelineBarrier(
-                srcStage: PipelineStageFlags.VertexInputBit,
-                dstStage: PipelineStageFlags.TransferBit,
                 bufferMemoryBarriers: new[] { preBarrier }
             );
 
             buffer.StageData(batch, activeTransforms.ToArray());
 
             // Barrier after update
-            var postBarrier = new BufferMemoryBarrier
+            var postBarrier = new BufferMemoryBarrier2
             {
-                SType = StructureType.BufferMemoryBarrier,
-                SrcAccessMask = AccessFlags.TransferWriteBit,
-                DstAccessMask = AccessFlags.VertexAttributeReadBit | AccessFlags.IndexReadBit,
+                SType = StructureType.BufferMemoryBarrier2,
+                SrcAccessMask = AccessFlags2.TransferWriteBit,
+                DstAccessMask = AccessFlags2.VertexAttributeReadBit | AccessFlags2.IndexReadBit,
                 Buffer = buffer.Buffer,
                 Offset = 0,
-                Size = Vk.WholeSize
+                Size = Vk.WholeSize,
+                SrcStageMask = PipelineStageFlags2.TransferBit,
+                DstStageMask = PipelineStageFlags2.VertexInputBit | PipelineStageFlags2.IndexInputBit
             };
 
             batch.PipelineBarrier(
-                srcStage: PipelineStageFlags.TransferBit,
-                dstStage: PipelineStageFlags.VertexInputBit,
                 bufferMemoryBarriers: new[] { postBarrier }
             );
 

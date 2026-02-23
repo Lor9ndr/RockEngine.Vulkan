@@ -1,0 +1,10 @@
+# RockEngine Configuration
+Name: "RockEngine"
+LoadSize:
+  X: 1280
+  Y: 720
+MaxFramesPerFlight: 3
+EnableValidationLayers: true
+MaxCamerasSupported: 10
+InitialVertexSize: 268435456  # 256 MB
+InitialIndexSize: 134217728   # 128 MB

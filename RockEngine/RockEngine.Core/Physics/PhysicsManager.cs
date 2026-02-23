@@ -64,7 +64,7 @@ namespace RockEngine.Core.Physics
         private PhysicsSystem? _physicsSystem;
 
         // Body management
-        private readonly Dictionary<uint, BodyID> _entityToBodyMap = new();
+        private readonly Dictionary<ulong, BodyID> _entityToBodyMap = new();
         private readonly Dictionary<BodyID, Entity> _bodyToEntityMap = new();
         private readonly ConcurrentQueue<PhysicsUpdate> _updateQueue = new();
         private readonly HashSet<BodyID> _ignoreDrawBodies = new();
@@ -207,7 +207,9 @@ namespace RockEngine.Core.Physics
 
         private void ProcessPhysicsUpdate(PhysicsUpdate update)
         {
-            if (_physicsSystem.BodyInterface.IsNull || !_entityToBodyMap.TryGetValue(update.EntityId, out var bodyId))
+            CheckPhysicsInitialized();
+
+            if ( !_entityToBodyMap.TryGetValue(update.EntityId, out var bodyId))
                 return;
 
             try
@@ -215,37 +217,37 @@ namespace RockEngine.Core.Physics
                 switch (update.Type)
                 {
                     case PhysicsUpdateType.SetPosition:
-                        _physicsSystem.BodyInterface.SetPosition(bodyId, update.Position.Value, Activation.Activate);
+                        _physicsSystem!.BodyInterface.SetPosition(bodyId, update.Position.Value, Activation.Activate);
                         break;
 
                     case PhysicsUpdateType.SetRotation:
-                        _physicsSystem.BodyInterface.SetRotation(bodyId, update.Rotation.Value, Activation.Activate);
+                        _physicsSystem!.BodyInterface.SetRotation(bodyId, update.Rotation.Value, Activation.Activate);
                         break;
 
                     case PhysicsUpdateType.SetLinearVelocity:
-                        _physicsSystem.BodyInterface.SetLinearVelocity(bodyId, update.LinearVelocity.Value);
+                        _physicsSystem!.BodyInterface.SetLinearVelocity(bodyId, update.LinearVelocity.Value);
                         break;
 
                     case PhysicsUpdateType.SetAngularVelocity:
-                        _physicsSystem.BodyInterface.SetAngularVelocity(bodyId, update.AngularVelocity.Value);
+                        _physicsSystem!.BodyInterface.SetAngularVelocity(bodyId, update.AngularVelocity.Value);
                         break;
 
                     case PhysicsUpdateType.AddForce:
-                        _physicsSystem.BodyInterface.AddForce(bodyId, update.Force.Value);
+                        _physicsSystem!.BodyInterface.AddForce(bodyId, update.Force.Value);
                         break;
 
                     case PhysicsUpdateType.AddImpulse:
-                        _physicsSystem.BodyInterface.AddImpulse(bodyId, update.Impulse.Value);
+                        _physicsSystem!.BodyInterface.AddImpulse(bodyId, update.Impulse.Value);
                         break;
 
                     case PhysicsUpdateType.SetFriction:
                         if (update.Force.HasValue)
-                            _physicsSystem.BodyInterface.SetFriction(bodyId, update.Force.Value.X);
+                            _physicsSystem!.BodyInterface.SetFriction(bodyId, update.Force.Value.X);
                         break;
 
                     case PhysicsUpdateType.SetRestitution:
                         if (update.Force.HasValue)
-                            _physicsSystem.BodyInterface.SetRestitution(bodyId, update.Force.Value.Y);
+                            _physicsSystem!.BodyInterface.SetRestitution(bodyId, update.Force.Value.Y);
                         break;
 
                    /* case PhysicsUpdateType.SetLinearDamping:
@@ -267,8 +269,7 @@ namespace RockEngine.Core.Physics
 
         private void SynchronizeTransforms()
         {
-            if (_physicsSystem.BodyInterface.IsNull)
-                return;
+            CheckPhysicsInitialized();
 
             // Update transforms for all active bodies
             foreach (var bodyId in _bodies)
@@ -280,8 +281,8 @@ namespace RockEngine.Core.Physics
                         continue;
 
                     // Get position and rotation from physics body
-                    var position = _physicsSystem.BodyInterface.GetPosition(bodyId);
-                    var rotation = _physicsSystem.BodyInterface.GetRotation(bodyId);
+                    var position = _physicsSystem!.BodyInterface.GetPosition(bodyId);
+                    var rotation = _physicsSystem!.BodyInterface.GetRotation(bodyId);
 
                     // Update transform (we need to avoid triggering the dirty flag)
                     UpdateTransformWithoutDirty(transform, position, rotation);
@@ -313,18 +314,17 @@ namespace RockEngine.Core.Physics
                 //rotationField?.SetValue(transform, rotation);
                 transform.Position = position;
                 transform.Rotation = rotation;
-                isDirtyField?.SetValue(transform, true);
-                worldMatrixField?.SetValue(transform, transform.WorldMatrix); // Force recompute
+                //isDirtyField?.SetValue(transform, true);
+                //worldMatrixField?.SetValue(transform, transform.WorldMatrix); // Force recompute
 
             }
         }
 
         public BodyID CreateRigidBody(Entity entity, BodyCreationSettings creationSettings)
         {
-            if (_physicsSystem.BodyInterface.IsNull)
-                throw new InvalidOperationException("Physics system not initialized");
+            CheckPhysicsInitialized();
 
-            var bodyId = _physicsSystem.BodyInterface.CreateAndAddBody(creationSettings, Activation.Activate);
+            var bodyId = _physicsSystem!.BodyInterface.CreateAndAddBody(creationSettings, Activation.Activate);
 
             _entityToBodyMap[entity.ID] = bodyId;
             _bodyToEntityMap[bodyId] = entity;
@@ -335,7 +335,10 @@ namespace RockEngine.Core.Physics
 
         public void RemoveRigidBody(Entity entity)
         {
-            if (_physicsSystem.BodyInterface.IsNull || !_entityToBodyMap.TryGetValue(entity.ID, out var bodyId))
+            if (_physicsSystem is null
+                || _physicsSystem.IsDisposed
+                || _physicsSystem.BodyInterface.IsNull
+                || !_entityToBodyMap.TryGetValue(entity.ID, out var bodyId))
                 return;
 
             _physicsSystem.BodyInterface.RemoveAndDestroyBody(bodyId);
@@ -345,7 +348,7 @@ namespace RockEngine.Core.Physics
             _bodies.Remove(bodyId);
         }
 
-        public void QueueUpdate(uint entityId, PhysicsUpdate update)
+        public void QueueUpdate(ulong entityId, PhysicsUpdate update)
         {
             update.EntityId = entityId;
             _updateQueue.Enqueue(update);
@@ -391,28 +394,28 @@ namespace RockEngine.Core.Physics
         public BodyID CreateBox(Vector3 halfExtent, Vector3 position, Quaternion rotation,
             MotionType motionType, ObjectLayer layer, Activation activation = Activation.Activate)
         {
-            if (_physicsSystem.BodyInterface.IsNull)
-                throw new InvalidOperationException("Physics system not initialized");
+            CheckPhysicsInitialized();
 
             var shape = new BoxShape(halfExtent);
             var creationSettings = new BodyCreationSettings(shape, position, rotation, motionType, layer);
 
-            var bodyId = _physicsSystem.BodyInterface.CreateAndAddBody(creationSettings, activation);
+            var bodyId = _physicsSystem!.BodyInterface.CreateAndAddBody(creationSettings, activation);
             _bodies.Add(bodyId);
 
             return bodyId;
         }
 
+      
+
         public BodyID CreateSphere(float radius, Vector3 position, Quaternion rotation,
             MotionType motionType, ObjectLayer layer, Activation activation = Activation.Activate)
         {
-            if (_physicsSystem.BodyInterface.IsNull)
-                throw new InvalidOperationException("Physics system not initialized");
+            CheckPhysicsInitialized();
 
             var shape = new SphereShape(radius);
             var creationSettings = new BodyCreationSettings(shape, position, rotation, motionType, layer);
 
-            var bodyId = _physicsSystem.BodyInterface.CreateAndAddBody(creationSettings, activation);
+            var bodyId = _physicsSystem!.BodyInterface.CreateAndAddBody(creationSettings, activation);
             _bodies.Add(bodyId);
 
             return bodyId;
@@ -420,14 +423,13 @@ namespace RockEngine.Core.Physics
 
         public BodyID CreateFloor(float size, ObjectLayer layer)
         {
-            if (_physicsSystem.BodyInterface.IsNull)
-                throw new InvalidOperationException("Physics system not initialized");
+            CheckPhysicsInitialized();
 
             var shape = new BoxShape(new Vector3(size, 5.0f, size));
             var creationSettings = new BodyCreationSettings(shape, new Vector3(0, -5.0f, 0),
                 Quaternion.Identity, MotionType.Static, layer);
 
-            var bodyId = _physicsSystem.BodyInterface.CreateAndAddBody(creationSettings, Activation.DontActivate);
+            var bodyId = _physicsSystem!.BodyInterface.CreateAndAddBody(creationSettings, Activation.DontActivate);
             _bodies.Add(bodyId);
             _ignoreDrawBodies.Add(bodyId);
 
@@ -437,6 +439,15 @@ namespace RockEngine.Core.Physics
         public void OptimizeBroadPhase()
         {
             _physicsSystem?.OptimizeBroadPhase();
+        }
+        private void CheckPhysicsInitialized()
+        {
+            if (_physicsSystem is null
+                            || _physicsSystem.IsDisposed
+                            || _physicsSystem.BodyInterface.IsNull)
+            {
+                throw new InvalidOperationException("Physics system not initialized");
+            }
         }
 
         #region Event Handlers
@@ -481,7 +492,6 @@ namespace RockEngine.Core.Physics
             try
             {
                 _isInitialized = false;
-
                 // Clean up all bodies
                 foreach (var bodyId in _bodies.ToArray())
                 {
@@ -515,7 +525,7 @@ namespace RockEngine.Core.Physics
 
     public struct PhysicsUpdate
     {
-        public uint EntityId;
+        public ulong EntityId;
         public PhysicsUpdateType Type;
         public Vector3? Position;
         public Quaternion? Rotation;

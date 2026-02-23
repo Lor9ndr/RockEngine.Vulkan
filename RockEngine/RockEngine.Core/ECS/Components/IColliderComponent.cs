@@ -1,11 +1,17 @@
 ﻿using JoltPhysicsSharp;
 
+using MessagePack;
+
+using RockEngine.Core.ECS.Components.Physics;
 using RockEngine.Core.Rendering;
 
 using System.Numerics;
 
 namespace RockEngine.Core.ECS.Components
 {
+    [Union(0, typeof(BoxColliderComponent))]
+    [Union(1, typeof(SphereColliderComponent))]
+    [Union(2, typeof(CapsuleColliderComponent))]
     public interface IColliderComponent : IComponent
     {
         bool IsTrigger { get; set; }
@@ -16,9 +22,14 @@ namespace RockEngine.Core.ECS.Components
 
     public abstract class ColliderComponent : Component, IColliderComponent
     {
+        [IgnoreMember]
+
         private Vector3 _center = Vector3.Zero;
+        [IgnoreMember]
+
         private bool _isTrigger = false;
 
+        [MessagePack.Key(3)]
         public Vector3 Center
         {
             get => _center;
@@ -32,6 +43,7 @@ namespace RockEngine.Core.ECS.Components
             }
         }
 
+        [MessagePack.Key(4)]
         public bool IsTrigger
         {
             get => _isTrigger;

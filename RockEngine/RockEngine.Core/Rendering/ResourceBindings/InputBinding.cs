@@ -24,22 +24,25 @@ namespace RockEngine.Core.Rendering.ResourceBindings
 
         private void Attachment_WasUpdated()
         {
-            foreach (var descriptorSet in DescriptorSets)
+            foreach (var descriptorSetkvp in _descriptorSetsByLayout)
             {
-                if(descriptorSet is null)
+                foreach(var vkDescriptorSet in descriptorSetkvp.Value)
                 {
-                    continue;
-                }
+                    if (vkDescriptorSet is null)
+                    {
+                        continue;
+                    }
 
-                descriptorSet.IsDirty = true;
+                    vkDescriptorSet.IsDirty = true;
+                }
             }
         }
 
-        public override unsafe void UpdateDescriptorSet(VulkanContext context, uint frameIndex)
+        public override unsafe void UpdateDescriptorSet(VulkanContext context, uint frameIndex, VkDescriptorSetLayout layout)
         {
+            var descriptor = GetDescriptorSetForLayout(layout,frameIndex);
             var imageInfos = stackalloc DescriptorImageInfo[Attachments.Length];
             var writes = stackalloc WriteDescriptorSet[Attachments.Length];
-            var descriptor = DescriptorSets[frameIndex];
             for (int i = 0; i < Attachments.Length; i++)
             {
                 imageInfos[i] = new DescriptorImageInfo

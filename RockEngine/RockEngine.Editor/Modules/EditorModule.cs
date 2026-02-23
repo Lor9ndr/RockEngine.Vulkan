@@ -1,9 +1,12 @@
-﻿using RockEngine.Core.DI;
+﻿using RockEngine.Assets;
+using RockEngine.Core.DI;
+using RockEngine.Core.Registries;
 using RockEngine.Core.Rendering;
 using RockEngine.Core.Rendering.Passes;
 using RockEngine.Editor.EditorComponents;
 using RockEngine.Editor.EditorUI.ImGuiRendering;
 using RockEngine.Editor.EditorUI.Logging;
+using RockEngine.Editor.EditorUI.Thumbnails;
 using RockEngine.Editor.Layers;
 using RockEngine.Editor.Rendering.Passes;
 using RockEngine.Editor.Rendering.Passes.SubPasses;
@@ -34,6 +37,9 @@ namespace RockEngine.Editor.Modules
             container.Register<TransformGizmo>();
             container.Register<ISelectionManager, EntitySelectionManager>();
             container.Register<RenderDocIntegration>();
+            container.Register<IThumbnailRenderer, ThumbnailRenderer>();
+            container.Register<IThumbnailService, ThumbnailService>();
+            container.Register<IRegistry<Thumbnail, IAsset>, ThumbnailCache>();
 
             //container.Collection.Append<ILayer, TitleBarLayer>();
 

@@ -1,19 +1,27 @@
-﻿using RockEngine.Core.Assets;
-using RockEngine.Core.Assets.AssetData;
+﻿using MessagePack;
+
+using RockEngine.Assets;
+using RockEngine.Core.Assets;
 using RockEngine.Core.DI;
 using RockEngine.Core.Rendering;
 using RockEngine.Core.Rendering.Passes.SubPasses;
 
 namespace RockEngine.Core.ECS.Components
 {
+    [MessagePackObject]
     public partial class Skybox : Component
     {
+        public Skybox()
+        {
+        }
+
+        [Key(7)]
         public AssetReference<TextureAsset> Cubemap { get; set; }
 
         public override async ValueTask OnStart(WorldRenderer renderer)
         {
             var assetFactory = IoC.Container.GetInstance<AssetFactory>();
-            var assetManager = IoC.Container.GetInstance<AssetManager>();
+            var assetManager = IoC.Container.GetInstance<IAssetManager>();
 
 
             var tmpAsset = assetFactory.Create<MeshAsset>(new AssetPath("tmp", "tmpMesh"));
@@ -27,8 +35,8 @@ namespace RockEngine.Core.ECS.Components
                 Textures = [Cubemap]
             });
             tmpAsset.SetGeometry(DefaultMeshes.Cube.Vertices, DefaultMeshes.Cube.Indices);
-            await assetManager.SaveAsync(tmpAsset);
-            await assetManager.SaveAsync(tmpMatAsset);
+           // await assetManager.SaveAsync(tmpAsset);
+           // await assetManager.SaveAsync(tmpMatAsset);
             var mesh = Entity.AddComponent<MeshRenderer>();
             mesh.SetProviders(tmpAsset, tmpMatAsset);
 
@@ -37,7 +45,6 @@ namespace RockEngine.Core.ECS.Components
             {
                 return;
             }
-
             await Cubemap.Asset.LoadGpuResourcesAsync().ConfigureAwait(false);
             // Ожидаем генерацию всех IBL текстур
             var irradiance = await renderer.IBLManager.GenerateIrradianceMap(Cubemap.Asset.Texture, 128);

@@ -59,6 +59,10 @@ namespace RockEngine.Editor.EditorUI.Logging
             // Reset to original colors
             Console.ForegroundColor = originalForeground;
             Console.BackgroundColor = originalBackground;
+            if (logEvent.Exception is not null)
+            {
+                //throw logEvent.Exception;
+            }
         }
     }
 }

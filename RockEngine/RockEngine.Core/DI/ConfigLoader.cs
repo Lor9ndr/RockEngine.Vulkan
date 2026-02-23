@@ -2,17 +2,18 @@
 
 using Microsoft.Extensions.DependencyInjection;
 
-using RockEngine.Core.Assets.Serializers;
+using RockEngine.Assets;
 using RockEngine.Vulkan;
 
 namespace RockEngine.Core.DI
 {
-    internal class ConfigLoader
+    internal static class ConfigLoader
     {
-        internal static AppSettings LoadConfig(IServiceProvider serviceProvider)
+        internal static async Task<AppSettings> LoadConfigAsync(IServiceProvider serviceProvider)
         {
-            var file = File.ReadAllText(Directory.GetCurrentDirectory() + "\\appsettings.json");
-            return JsonSerializer.Deserialize<AppSettings>(file, (serviceProvider.GetService<IAssetSerializer>()).Options);
+            using var file = File.OpenRead(Directory.GetCurrentDirectory() + "\\appsettings.yaml");
+            var serializer = serviceProvider.GetRequiredService<IYamlSerializer>();
+            return  (AppSettings) await serializer.DeserializeAsync(file, typeof(AppSettings));
         }
     }
 }
