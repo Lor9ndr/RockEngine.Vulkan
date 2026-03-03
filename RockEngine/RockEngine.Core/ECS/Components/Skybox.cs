@@ -20,12 +20,17 @@ namespace RockEngine.Core.ECS.Components
 
         public override async ValueTask OnStart(WorldRenderer renderer)
         {
+            if (Cubemap is null)
+            {
+                return;
+            }
             var assetFactory = IoC.Container.GetInstance<AssetFactory>();
             var assetManager = IoC.Container.GetInstance<IAssetManager>();
-
+            
 
             var tmpAsset = assetFactory.Create<MeshAsset>(new AssetPath("tmp", "tmpMesh"));
             var tmpMatAsset = assetFactory.Create<MaterialAsset>(new AssetPath("tmp", "tmpMeshMat"));
+            
             var texAsset = await Cubemap.GetAssetAsync();
             await texAsset.LoadDataAsync();
             await assetManager.SaveAsync(texAsset);

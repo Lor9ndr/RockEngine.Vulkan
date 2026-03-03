@@ -7,7 +7,9 @@ using Silk.NET.Vulkan;
 using Silk.NET.Vulkan.Extensions.KHR;
 using Silk.NET.Windowing;
 
+using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Text;
 
 namespace RockEngine.Vulkan
 {
@@ -15,7 +17,7 @@ namespace RockEngine.Vulkan
     {
         private static readonly Logger _logger = LogManager.GetCurrentClassLogger();
 
-        public static Vk Vk = Vk.GetApi();
+        public static readonly Vk Vk = Vk.GetApi();
         public VkLogicalDevice Device { get; }
         public VkInstance Instance { get; }
         public ISurfaceHandler Surface { get; }
@@ -28,9 +30,9 @@ namespace RockEngine.Vulkan
 
         public DebugUtilsFunctions DebugUtils => _debugUtilsFunctions;
 
-        private static VulkanContext? _renderingContext;
+        private static VulkanContext? _singleton;
 
-        public static VulkanContext GetCurrent() => _renderingContext ?? throw new InvalidOperationException("Rendering context was not created yet");
+        public static VulkanContext GetCurrent() => _singleton ?? throw new InvalidOperationException("Rendering context was not created yet");
 
         public static ref AllocationCallbacks CustomAllocator<T>() => ref VulkanAllocator.CreateCallbacks<T>();
 
@@ -44,7 +46,7 @@ namespace RockEngine.Vulkan
         public VulkanContext(IWindow window, AppSettings settings)
         {
             _settings = settings;
-            if (_renderingContext is not null)
+            if (_singleton is not null)
             {
                 // Have to think about supporting multiple windows with different contexts
                 throw new NotSupportedException("For now it is unsupported to have multiple contexts");
@@ -57,7 +59,7 @@ namespace RockEngine.Vulkan
             Device.NameQueues();
 
             MaxFramesPerFlight = _settings.MaxFramesPerFlight;
-            _renderingContext = this;
+            _singleton = this;
             SamplerCache = new SamplerCache(this);
 
             GraphicsSubmitContext =  new SubmitContext(this, Device.GraphicsQueue);
@@ -123,39 +125,94 @@ namespace RockEngine.Vulkan
             return instance;
         }
         private static unsafe uint DebugUtilsMessengerCallbackFunctionEXT(
-       DebugUtilsMessageSeverityFlagsEXT messageSeverity,
-       DebugUtilsMessageTypeFlagsEXT messageTypes,
-       DebugUtilsMessengerCallbackDataEXT* pCallbackData,
-       void* pUserData)
+     DebugUtilsMessageSeverityFlagsEXT messageSeverity,
+     DebugUtilsMessageTypeFlagsEXT messageTypes,
+     DebugUtilsMessengerCallbackDataEXT* pCallbackData,
+     void* pUserData)
         {
-            var message = Marshal.PtrToStringUTF8((nint)pCallbackData->PMessage);
-            var logLevel = LogLevel.Trace;
+            // Extract main message
+            string message = Marshal.PtrToStringUTF8((nint)pCallbackData->PMessage) ?? string.Empty;
 
-            switch (messageSeverity)
+            // Extract message ID (if available)
+            string messageIdName = pCallbackData->PMessageIdName != null
+                ? Marshal.PtrToStringUTF8((nint)pCallbackData->PMessageIdName) ?? "unknown"
+                : "unknown";
+            int messageIdNumber = pCallbackData->MessageIdNumber;
+
+            // Build detailed log message
+            var sb = new StringBuilder();
+            sb.AppendLine($"Vulkan Validation [{messageIdName} (0x{messageIdNumber:X8})]: {message}");
+
+            // Add related objects
+            if (pCallbackData->ObjectCount > 0 && pCallbackData->PObjects != null)
             {
-                case DebugUtilsMessageSeverityFlagsEXT.ErrorBitExt:
-                    logLevel = LogLevel.Error;
-                    _logger.Log(logLevel, $"{message}\n{Environment.StackTrace}");
-                    throw new VulkanException(messageSeverity, message);
+                sb.AppendLine("  Related objects:");
+                for (uint i = 0; i < pCallbackData->ObjectCount; i++)
+                {
+                    var obj = pCallbackData->PObjects[i];
+                    string objType = obj.ObjectType.ToString(); // enum name
+                    ulong handle = obj.ObjectHandle;
+                    string objName = obj.PObjectName != null
+                        ? Marshal.PtrToStringUTF8((nint)obj.PObjectName) ?? ""
+                        : "";
 
-                case DebugUtilsMessageSeverityFlagsEXT.WarningBitExt:
-                    logLevel = LogLevel.Warn;
-                    _logger.Log(logLevel, message);
-                    break;
-
-                case DebugUtilsMessageSeverityFlagsEXT.InfoBitExt:
-                    logLevel = LogLevel.Info;
-                    _logger.Log(logLevel, message);
-                    break;
-
-                case DebugUtilsMessageSeverityFlagsEXT.VerboseBitExt:
-                    // Optionally skip verbose messages entirely
-                    logLevel = LogLevel.Trace;
-                    _logger.Log(logLevel, message);
-                    break;
+                    sb.Append($"    - Type: {objType}, Handle: 0x{handle:X16}");
+                    if (!string.IsNullOrEmpty(objName))
+                        sb.Append($", Name: \"{objName}\"");
+                    sb.AppendLine();
+                }
             }
 
-            return Vk.False;
+            // Add queue labels
+            if (pCallbackData->QueueLabelCount > 0 && pCallbackData->PQueueLabels != null)
+            {
+                sb.AppendLine("  Queue labels:");
+                for (uint i = 0; i < pCallbackData->QueueLabelCount; i++)
+                {
+                    var label = pCallbackData->PQueueLabels[i];
+                    string labelName = label.PLabelName != null
+                        ? Marshal.PtrToStringUTF8((nint)label.PLabelName) ?? "unnamed"
+                        : "unnamed";
+                    sb.AppendLine($"    - \"{labelName}\" (color: [{label.Color[0]}, {label.Color[1]}, {label.Color[2]}, {label.Color[3]}])");
+                }
+            }
+
+            // Add command buffer labels
+            if (pCallbackData->CmdBufLabelCount > 0 && pCallbackData->PCmdBufLabels != null)
+            {
+                sb.AppendLine("  Command buffer labels:");
+                for (uint i = 0; i < pCallbackData->CmdBufLabelCount; i++)
+                {
+                    var label = pCallbackData->PCmdBufLabels[i];
+                    string labelName = label.PLabelName != null
+                        ? Marshal.PtrToStringUTF8((nint)label.PLabelName) ?? "unnamed"
+                        : "unnamed";
+                    sb.AppendLine($"    - \"{labelName}\"");
+                }
+            }
+
+            // Map severity to log level
+            LogLevel logLevel = messageSeverity switch
+            {
+                DebugUtilsMessageSeverityFlagsEXT.ErrorBitExt => LogLevel.Error,
+                DebugUtilsMessageSeverityFlagsEXT.WarningBitExt => LogLevel.Warn,
+                DebugUtilsMessageSeverityFlagsEXT.InfoBitExt => LogLevel.Info,
+                DebugUtilsMessageSeverityFlagsEXT.VerboseBitExt => LogLevel.Trace,
+                _ => LogLevel.Debug
+            };
+
+            // Log the detailed message
+            _logger.Log(logLevel, sb.ToString());
+
+            // Optionally, for errors you might want to capture a stack trace or break into debugger
+            if (messageSeverity == DebugUtilsMessageSeverityFlagsEXT.ErrorBitExt)
+            {
+                Debugger.Break();
+                // If you still want to throw an exception (though this may crash the app)
+                throw new VulkanException(messageSeverity, sb.ToString());
+            }
+
+            return Vk.False; // Returning false tells the messenger to continue normal operation
         }
 
 

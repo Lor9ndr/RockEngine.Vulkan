@@ -2,8 +2,6 @@
 
 using NLog;
 
-using RockEngine.Assets;
-using RockEngine.Core.DI;
 using RockEngine.Core.ECS;
 using RockEngine.Core.ECS.Components;
 using RockEngine.Core.Rendering;
@@ -55,7 +53,7 @@ namespace RockEngine.Core.Assets
             {
                 if (entity.TryGetComponent<MeshRenderer>(out var renderer))
                 {
-                    if (renderer.Mesh != null)
+                    if (renderer!.Mesh != null)
                     {
                         var model = await renderer.MeshProvider.GetAsync();
                         if (model is IGpuResource gpuModel)
@@ -114,16 +112,27 @@ namespace RockEngine.Core.Assets
         }
 
 
-        public async Task InstantiateEntities()
+        public async Task InstantiateEntities(IProgress<int>? progress = null)
         {
             if (Data == null || IsLoaded) return;
 
             try
             {
                 var entityMap = new ConcurrentDictionary<ulong, Entity>();
+                int totalEntities = Data.Entities.Count;
+                if (totalEntities == 0)
+                {
+                    IsLoaded = true;
+                    Data = null;
+                    _logger.Debug($"Scene {Name} has no entities to instantiate.");
+                    return;
+                }
+
+                int totalSteps = totalEntities * 2; // creation + linking
+                int currentStep = 0;
 
                 // First pass: create all entities
-                await Parallel.ForEachAsync(Data.Entities, async (entityData, ct) =>
+                foreach (var entityData in Data.Entities)
                 {
                     var entity = CreateEntity(entityData.Name);
                     entityMap[entityData.ID] = entity;
@@ -137,7 +146,6 @@ namespace RockEngine.Core.Assets
                     // Deserialize components
                     foreach (var componentData in entityData.Components)
                     {
-
                         entity.AddComponent(componentData);
 
                         // Special handling for MeshRendererComponent
@@ -155,9 +163,10 @@ namespace RockEngine.Core.Assets
                                 await meshRenderer.MeshProvider.GetAsync();
                             }
                         }
-
                     }
-                });
+                    currentStep++;
+                    progress?.Report((currentStep * 100) / totalSteps);
+                }
 
                 // Second pass: establish parent-child relationships
                 foreach (var entityData in Data.Entities)
@@ -168,6 +177,9 @@ namespace RockEngine.Core.Assets
                     {
                         parent.AddChild(child);
                     }
+
+                    currentStep++;
+                    progress?.Report((currentStep * 100) / totalSteps);
                 }
 
                 IsLoaded = true;

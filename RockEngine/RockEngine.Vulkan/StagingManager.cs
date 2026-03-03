@@ -24,10 +24,9 @@ namespace RockEngine.Vulkan
 
         public VkBuffer StagingBuffer => _stagingBuffer;
 
-        public StagingManager(VulkanContext context, SubmitContext submitContext, ulong initialSize =  1024 * 1024)
+        public StagingManager(VulkanContext context,  ulong initialSize = 1 * 1024) 
         {
             _context = context;
-            _submitContext = submitContext;
             _bufferSize = initialSize;
             _initialSize = initialSize;
             _stagingBuffer = VkBuffer.Create(context, _bufferSize,
@@ -36,7 +35,7 @@ namespace RockEngine.Vulkan
             _stagingBuffer.LabelObject("StagingBuffer");
 
             _alignment = context.Device.PhysicalDevice.Properties.Limits.MinMemoryMapAlignment;
-            _lastResetTime = DateTime.Now;
+            _lastResetTime = DateTime.UtcNow;
         }
 
         public unsafe bool TryStage<T>(UploadBatch batch, T[] data, out ulong offset, out ulong size) where T : unmanaged
@@ -126,7 +125,7 @@ namespace RockEngine.Vulkan
                 MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit);
 
             // Retire old buffer
-            batch.SubmitContext.AddDependency(_stagingBuffer);
+            batch.AddDependency(_stagingBuffer);
 
             // Update references
             _stagingBuffer = newBuffer;

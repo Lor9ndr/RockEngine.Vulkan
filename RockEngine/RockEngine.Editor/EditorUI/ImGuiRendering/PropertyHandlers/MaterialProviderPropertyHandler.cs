@@ -4,6 +4,8 @@ using RockEngine.Core.Assets;
 using RockEngine.Core.ECS.Components;
 using RockEngine.Core.Helpers;
 using RockEngine.Core.ResourceProviders;
+using RockEngine.Editor.EditorUI.UndoRedo;
+using RockEngine.Editor.EditorUI.UndoRedo.Commands;
 
 using System.Numerics;
 
@@ -12,109 +14,63 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.PropertyHandlers
     [PropertyHandler(typeof(MaterialProvider))]
     public class MaterialProviderPropertyHandler : IPropertyHandler
     {
+        private readonly Dictionary<string, object> _editingParamOldValues = new();
+
         public bool CanHandle(Type propertyType) => propertyType == typeof(MaterialProvider);
 
         public void Draw(IComponent component, UIPropertyAccessor accessor, object value, PropertyDrawer drawer)
         {
-            var provider = value as MaterialProvider;
+            if (value is not MaterialProvider materialProvider || !materialProvider.IsAssetBased)
+                return;
+
+            var material = materialProvider.AssetReference.Asset;
+            if (material == null) return;
 
             ImGui.NewLine();
-            // Main control: button showing current material name
-            string label = $"{accessor.DisplayName}: {GetMaterialDisplayName(provider)}";
+            ImGui.PushID(material.GetHashCode());
+
             ImGui.AlignTextToFramePadding();
-            ImGui.BeginGroup();
-            ImGui.Text(label);
-
+            ImGui.TextUnformatted($"Material: {material.Name}");
             ImGui.SameLine();
-            if (ImGui.SmallButton($"Clear##{accessor.Name}"))
-            {
-                accessor.SetValue(component, null);
-            }
 
-            // Drag-drop target
-            if (ImGui.BeginDragDropTarget())
-            {
-                HandleDragDrop(component, accessor, drawer);
-                ImGui.EndDragDropTarget();
-            }
+            if (ImGui.CollapsingHeader($"Textures ({material.Textures.Count})", ImGuiTreeNodeFlags.DefaultOpen))
+                DrawTextureList(material, drawer);
 
-            // Tooltip on hover
-            ImGui.EndGroup();
-            if (ImGui.IsItemHovered() && provider != null)
-            {
-                ImGui.BeginTooltip();
-                DrawMaterialTooltipContent(provider, drawer);
-                ImGui.EndTooltip();
-            }
+            if (ImGui.CollapsingHeader($"Parameters ({material.Parameters.Count})", ImGuiTreeNodeFlags.DefaultOpen))
+                DrawParameterList(material, drawer);
+
+            ImGui.PopID();
         }
 
-        private string GetMaterialDisplayName(MaterialProvider provider)
+        private void DrawTextureList(MaterialAsset material, PropertyDrawer drawer)
         {
-            if (provider == null) return "None";
-            if (provider.IsAssetBased && provider.AssetReference?.Asset is MaterialAsset mat)
-                return mat.Name;
-            if (provider.DirectMaterial != null)
-                return $"Direct: {provider.DirectMaterial.Name}";
-            return "Material Provider";
-        }
-
-        private void HandleDragDrop(IComponent component, UIPropertyAccessor accessor, PropertyDrawer drawer)
-        {
-            if (AssetDragDrop.AcceptAssetDrop(out var assetID))
+            for (int i = 0; i < material.Textures.Count; i++)
             {
-                var materialAsset = drawer.AssetManager.GetAssetAsync<MaterialAsset>(assetID).GetAwaiter().GetResult();
-                if (materialAsset != null)
+                var texRef = material.Textures[i];
+                ImGui.PushID(i);
+
+                ImGui.BeginGroup();
+                DrawTextureThumbnail(texRef, drawer);
+                ImGui.SameLine();
+                ImGui.BeginGroup();
+                ImGui.Text(texRef.Asset?.Name ?? texRef.AssetID.ToString());
+                ImGui.TextDisabled($"Slot {i}");
+                ImGui.SameLine();
+                if (ImGui.SmallButton("X"))
                 {
-                    var provider = new MaterialProvider(new AssetReference<MaterialAsset>(materialAsset));
-                    accessor.SetValue(component, provider);
+                    var cmd = new ChangeMaterialTextureCommand(material, i, texRef, null);
+                    UndoRedoService.Instance.Execute(cmd);
                 }
-            }
-        }
+                ImGui.EndGroup();
+                ImGui.EndGroup();
 
-        private void DrawMaterialTooltipContent(MaterialProvider provider, PropertyDrawer drawer)
-        {
-            ImGui.Text($"Type: Material");
-
-            if (provider.IsAssetBased && provider.AssetReference?.Asset is MaterialAsset materialAsset)
-            {
-                ImGui.Text($"Asset: {materialAsset.Name}");
-                ImGui.Text($"Path: {materialAsset.Path}");
-
-                if (materialAsset.Textures.Count > 0)
+                if (ImGui.BeginDragDropTarget())
                 {
-                    ImGui.Separator();
-                    ImGui.Text("Textures:");
-
-                    // Use a table for clean layout: thumbnail | name
-                    if (ImGui.BeginTable("##materialTextures", 2, ImGuiTableFlags.SizingFixedFit))
-                    {
-                        ImGui.TableSetupColumn("", ImGuiTableColumnFlags.WidthFixed, 128);
-                        ImGui.TableSetupColumn("", ImGuiTableColumnFlags.WidthStretch);
-
-                        foreach (var texRef in materialAsset.Textures)
-                        {
-                            ImGui.TableNextRow();
-
-                            // Thumbnail column
-                            ImGui.TableSetColumnIndex(0);
-                            DrawTextureThumbnail(texRef, drawer);
-
-                            // Name column
-                            ImGui.TableSetColumnIndex(1);
-                            ImGui.AlignTextToFramePadding();
-                            ImGui.Text(texRef.Asset?.Name ?? texRef.AssetID.ToString());
-                        }
-                        ImGui.EndTable();
-                    }
+                    HandleTextureDrop(material, i, drawer);
+                    ImGui.EndDragDropTarget();
                 }
-            }
-            else
-            {
-                ImGui.Text("Source: Direct Object");
-                if (provider.DirectMaterial != null)
-                {
-                    ImGui.Text($"Material: {provider.DirectMaterial.Name}");
-                }
+
+                ImGui.PopID();
             }
         }
 
@@ -123,34 +79,111 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.PropertyHandlers
             var textureAsset = texRef.Asset;
             if (textureAsset == null)
             {
-                // Not loaded yet – show placeholder and start loading
                 ImGui.Text("[...]");
                 _ = drawer.ThumbnailService.GetOrCreateThumbnailAsync(texRef.Asset);
                 return;
             }
 
-            // Try to get cached thumbnail
             var thumbnail = drawer.ThumbnailService.GetOrCreateThumbnailAsync(textureAsset).GetAwaiter().GetResult();
-            if (thumbnail != null )
+            if (thumbnail?.Texture != null)
             {
-                
-                ImGui.Image(drawer.ImGuiController.GetTextureID(thumbnail.Texture), new Vector2(128, 128));
+                ImGui.Image(drawer.ImGuiController.GetTextureID(thumbnail.Texture), new Vector2(64, 64));
                 return;
             }
 
-            // Fallback: use original texture if available
             if (textureAsset.Texture != null)
             {
                 var texId = drawer.ImGuiController.GetTextureID(textureAsset.Texture);
                 if (texId != 0)
                 {
-                    ImGui.Image(texId, new Vector2(128, 128));
+                    ImGui.Image(texId, new Vector2(64, 64));
                     return;
                 }
             }
 
-            // No thumbnail and no GPU texture
             ImGui.Text($"[{Icons.QuestionCircle}]");
+        }
+
+        private void HandleTextureDrop(MaterialAsset material, int slot, PropertyDrawer drawer)
+        {
+            if (AssetDragDrop.AcceptAssetDrop(out var assetID))
+            {
+                var textureAsset = drawer.AssetManager.GetAssetAsync<TextureAsset>(assetID).GetAwaiter().GetResult();
+                if (textureAsset != null)
+                {
+                    var newRef = new AssetReference<TextureAsset>(textureAsset);
+                    var oldRef = slot < material.Textures.Count ? material.Textures[slot] : null;
+                    var cmd = new ChangeMaterialTextureCommand(material, slot, oldRef, newRef);
+                    UndoRedoService.Instance.Execute(cmd);
+                }
+            }
+        }
+
+        private void DrawParameterList(MaterialAsset material, PropertyDrawer drawer)
+        {
+            foreach (var kvp in material.Parameters.ToList())
+            {
+                ImGui.PushID(kvp.Key);
+
+                ImGui.AlignTextToFramePadding();
+                ImGui.Text($"{kvp.Key}:");
+                ImGui.SameLine();
+
+                var value = kvp.Value;
+                bool changed = false;
+                object newValue = null;
+                string controlId = $"{material.GetHashCode()}_{kvp.Key}";
+
+                if (ImGui.IsItemActivated())
+                    _editingParamOldValues[controlId] = value;
+
+                switch (value)
+                {
+                    case float f:
+                        float fVal = f;
+                        changed = ImGui.DragFloat("##value", ref fVal, 0.01f);
+                        newValue = fVal;
+                        break;
+                    case Vector3 v3:
+                        Vector3 v3Val = v3;
+                        changed = ImGui.DragFloat3("##value", ref v3Val, 0.01f);
+                        newValue = v3Val;
+                        break;
+                    case Vector4 v4:
+                        Vector4 v4Val = v4;
+                        changed = ImGui.DragFloat4("##value", ref v4Val, 0.01f);
+                        newValue = v4Val;
+                        break;
+                    case int i:
+                        int iVal = i;
+                        changed = ImGui.DragInt("##value", ref iVal);
+                        newValue = iVal;
+                        break;
+                    case bool b:
+                        bool bVal = b;
+                        changed = ImGui.Checkbox("##value", ref bVal);
+                        newValue = bVal;
+                        break;
+                    default:
+                        ImGui.Text(value?.ToString() ?? "null");
+                        break;
+                }
+
+                if (changed)
+                    material.UpdateParameter(kvp.Key, newValue);
+
+                if (ImGui.IsItemDeactivatedAfterEdit())
+                {
+                    if (_editingParamOldValues.TryGetValue(controlId, out var oldValue))
+                    {
+                        var cmd = new ChangeMaterialParameterCommand(material, kvp.Key, oldValue, newValue);
+                        UndoRedoService.Instance.Execute(cmd);
+                        _editingParamOldValues.Remove(controlId);
+                    }
+                }
+
+                ImGui.PopID();
+            }
         }
     }
 }

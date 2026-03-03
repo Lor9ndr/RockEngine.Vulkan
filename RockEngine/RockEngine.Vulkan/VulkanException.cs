@@ -3,13 +3,15 @@
 namespace RockEngine.Vulkan
 {
     [Serializable]
-    internal class VulkanException : Exception
+    public class VulkanException : Exception
     {
+        public Result Result { get; private set; }
 
         public VulkanException(Result result, string message) :
             base(message + Environment.NewLine + $"Result: {result}")
         {
             Data["Result"] = result;
+            Result = result;
         }
 
         public VulkanException(DebugUtilsMessageSeverityFlagsEXT messageSeverity, string? message):

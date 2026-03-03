@@ -1,4 +1,5 @@
 ﻿using System.Collections;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 
@@ -145,6 +146,7 @@ namespace RockEngine.Core.Coroutines
         private readonly List<Coroutine> _activeCoroutines = new List<Coroutine>();
         private readonly List<Coroutine> _coroutinesToAdd = new List<Coroutine>();
         private readonly List<Coroutine> _coroutinesToRemove = new List<Coroutine>();
+        private readonly ConcurrentQueue<Coroutine> _readyCoroutines = new ConcurrentQueue<Coroutine>();
         private bool _isUpdating;
 
         public Coroutine StartCoroutine(IEnumerator routine, string name = null)

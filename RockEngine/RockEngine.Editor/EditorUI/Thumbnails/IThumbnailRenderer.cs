@@ -53,7 +53,7 @@ namespace RockEngine.Editor.EditorUI.Thumbnails
             if (!sourceTexture.Image.Usage.HasFlag(ImageUsageFlags.TransferSrcBit))
             {
                 sourceTexture = sourceTexture.CopyWithNewUsage(pipelineManager, bindingManager,
-                    ImageUsageFlags.TransferSrcBit, disposeOriginal: true);
+                    ImageUsageFlags.TransferSrcBit);
             }
 
             // Determine if this is a cube map
@@ -177,9 +177,6 @@ namespace RockEngine.Editor.EditorUI.Thumbnails
                 levelCount: 1,
                 baseArrayLayer: 0,
                 layerCount: sourceTexture.Image.ArrayLayers);
-
-            await _context.GraphicsSubmitContext.SubmitSingle(batch, VkFence.CreateNotSignaled(_context));
-
             // Create sampler and wrap in Texture2D
             var samplerCreateInfo = new SamplerCreateInfo
             {
@@ -195,7 +192,10 @@ namespace RockEngine.Editor.EditorUI.Thumbnails
             };
             var sampler = _context.SamplerCache.GetSampler(samplerCreateInfo);
 
-            return new Texture2D(_context, thumbnailImage, sampler);
+            var texture = new Texture2D(_context, thumbnailImage, sampler);
+            batch.AddSignalSemaphore(texture.CompletionSemaphore);
+            await _context.GraphicsSubmitContext.SubmitSingle(batch);
+            return texture;
         }
     }
 }

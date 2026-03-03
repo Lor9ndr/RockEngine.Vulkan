@@ -447,8 +447,7 @@ namespace RockEngine.Core.Rendering.Buffers
                 transferBatch.PipelineBarrier([], [vertexBarrier, indexBarrier], []);
 
                 // Submit the transfer batch
-                using var fence = VkFence.CreateNotSignaled(_context);
-                await _context.TransferSubmitContext.SubmitSingle(transferBatch, fence);
+                await _context.TransferSubmitContext.SubmitSingle(transferBatch);
 
 
                 // Now update the internal state

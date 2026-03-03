@@ -1,6 +1,5 @@
 ﻿using ImGuiNET;
 
-using RockEngine.Core;
 using RockEngine.Core.Rendering;
 using RockEngine.Core.Rendering.Objects;
 using RockEngine.Core.Rendering.RenderTargets;
@@ -11,11 +10,12 @@ using Silk.NET.Maths;
 using Silk.NET.Vulkan;
 using Silk.NET.Windowing;
 
-using System.Collections.Concurrent;
 using System.Numerics;
 using System.Runtime.InteropServices;
 
 using static RockEngine.Editor.EditorUI.ImGuiRendering.ImGuiController;
+
+using Application = RockEngine.Core.Application;
 
 namespace RockEngine.Editor.EditorUI.ImGuiRendering.MultiWindowing
 {
@@ -37,8 +37,14 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.MultiWindowing
             ViewportPtr = viewportPtr;
             InputContext = inputContext;
             IsMainViewport = isMainViewport;
+            var io = ImGui.GetIO();
+            io.ClearInputMouse();
+            io.ClearInputKeys();
             Window.FocusChanged += (isFocused) =>
             {
+                var io = ImGui.GetIO();
+                io.ClearInputMouse();
+                io.ClearInputKeys();
                 IsFocused = isFocused;
             };
         }
@@ -133,8 +139,6 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.MultiWindowing
                 ImGuiNative.ImGuiPlatformIO_Set_Platform_GetWindowSize(platformIO.NativePtr, Marshal.GetFunctionPointerForDelegate(_getWindowSize));
             }
 
-
-
             if (io.BackendFlags.HasFlag(ImGuiBackendFlags.RendererHasViewports))
             {
                 _rendererCreateWindow = RendererCreateWindow;
@@ -146,12 +150,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.MultiWindowing
                 platformIO.Renderer_RenderWindow = Marshal.GetFunctionPointerForDelegate(_rendererRenderWindow);
                 platformIO.Platform_SwapBuffers = Marshal.GetFunctionPointerForDelegate(_rendererSwapBuffers);
             }
-
-            //platformIO.Renderer_SwapBuffers = Marshal.GetFunctionPointerForDelegate(_rendererSwapBuffers);
-
-          
         }
-
 
         public void RegisterMainViewport(IWindow mainWindow, IInputContext mainInputContext)
         {
@@ -164,6 +163,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.MultiWindowing
 
             _viewports.Add(viewport);
             _viewportMap[mainViewport.ID] = viewport;
+            AttachInputHandlers(viewport, mainInputContext);
 
             Console.WriteLine($"Registered main viewport with handle: {mainWindow.Handle}");
         }
@@ -172,25 +172,24 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.MultiWindowing
         {
             try
             {
-
                 var windowOptions = WindowOptions.DefaultVulkan with
                 {
                     IsContextControlDisabled = true,
                     //IsEventDriven = true,
                     IsVisible = true,
                     WindowBorder = WindowBorder.Hidden,
+                    UpdatesPerSecond = 60,
                 };
 
-                var window = _graphicsContext.MainSwapchain.Surface.Window.CreateWindow(windowOptions);
+                var window = Window.Create(windowOptions);
                 window.Initialize();
 
                 var inputContext = window.CreateInput();
-
                 var viewport = new RckImGuiViewport(window, viewportPtr, inputContext,this);
-               
+                AttachInputHandlers(viewport, inputContext);
+
                 _viewports.Add(viewport);
                 _viewportMap[viewportPtr.ID] = viewport;
-
 
                 // Store window handle
                 viewportPtr.PlatformUserData = window.Handle;
@@ -202,6 +201,25 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.MultiWindowing
             catch (Exception ex)
             {
                 Console.WriteLine($"Failed to create ImGui viewport window: {ex.Message}");
+            }
+        }
+        private void AttachInputHandlers(RckImGuiViewport viewport, IInputContext input)
+        {
+            var mouse = input.Mice.Count > 0 ? input.Mice[0] : null;
+            if (mouse != null)
+            {
+                mouse.MouseMove += (_, pos) => _controller.OnMouseMove(viewport, pos);
+                mouse.MouseDown += (_, btn) => _controller.OnMouseButton(viewport, btn, true);
+                mouse.MouseUp += (_, btn) => _controller.OnMouseButton(viewport, btn, false);
+                mouse.Scroll += (_, scroll) => _controller.OnMouseScroll(viewport, scroll);
+            }
+
+            var keyboard = input.Keyboards.Count > 0 ? input.Keyboards[0] : null;
+            if (keyboard != null)
+            {
+                keyboard.KeyDown += (_, key, _) => _controller.OnKey(viewport, key, true);
+                keyboard.KeyUp += (_, key, _) => _controller.OnKey(viewport, key, false);
+                keyboard.KeyChar += (_, ch) => _controller.OnChar(viewport, ch);
             }
         }
         private void SetWindowAlpha(ImGuiViewportPtr vp, float alpha)
@@ -362,49 +380,6 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.MultiWindowing
 
                     viewport.RenderTarget = renderTarget;
                     vp.RendererUserData = GCHandle.ToIntPtr(GCHandle.Alloc(renderTarget));
-
-                    // CRITICAL: Ensure swapchain images are in correct layout
-                    // The swapchain.Create method should handle this, but we'll ensure it here too
-                    var batch = _vkContext.GraphicsSubmitContext.CreateBatch();
-
-                    Span<ImageMemoryBarrier2> barriers = stackalloc ImageMemoryBarrier2[swapchain.SwapChainImagesCount];
-                    for (int i = 0; i < swapchain.SwapChainImagesCount; i++)
-                    {
-                        var image = swapchain.VkImages[i];
-                        var barrier = new ImageMemoryBarrier2
-                        {
-                            SType = StructureType.ImageMemoryBarrier2,
-                            OldLayout = ImageLayout.Undefined,
-                            NewLayout = ImageLayout.PresentSrcKhr,
-                            SrcQueueFamilyIndex = Vk.QueueFamilyIgnored,
-                            DstQueueFamilyIndex = Vk.QueueFamilyIgnored,
-                            Image = image.VkObjectNative,
-                            SubresourceRange = new ImageSubresourceRange
-                            {
-                                AspectMask = ImageAspectFlags.ColorBit,
-                                BaseMipLevel = 0,
-                                LevelCount = 1,
-                                BaseArrayLayer = 0,
-                                LayerCount = 1
-                            },
-                            SrcAccessMask = AccessFlags2.None,
-                            DstAccessMask = AccessFlags2.ColorAttachmentWriteBit,
-                            SrcStageMask = PipelineStageFlags2.None,
-                            DstStageMask = PipelineStageFlags2.ColorAttachmentOutputBit,
-
-                        };
-                        barriers[i] = barrier;
-
-
-
-                    }
-                    batch.PipelineBarrier([], [], barriers);
-
-                    using var fence = VkFence.CreateNotSignaled(_vkContext);
-                    _vkContext.GraphicsSubmitContext.SubmitSingle(batch, fence).Wait();
-                    fence.Wait();
-
-                    Console.WriteLine($"Created render resources for viewport {vp.ID}");
                 }
                 catch (Exception ex)
                 {
@@ -416,7 +391,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.MultiWindowing
         {
             if (_viewportMap.TryGetValue(vp.ID, out var viewport))
             {
-                    if (vp.RendererUserData != IntPtr.Zero)
+                if (vp.RendererUserData != IntPtr.Zero)
                 {
                     try
                     {
@@ -453,9 +428,8 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.MultiWindowing
                 var renderContext = (SwapchainRenderTarget)handle.Target;
 
                 // Check if viewport is valid and visible
-                if (!_viewportMap.TryGetValue(vp.ID, out var rckViewport) || vp.Size.X <= 0 || vp.Size.Y <= 0)
+                if (!_viewportMap.TryGetValue(vp.ID, out var rckViewport) ||rckViewport.Window.WindowState == WindowState.Minimized)
                     return;
-
                 try
                 {
                    

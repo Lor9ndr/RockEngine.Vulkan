@@ -1,6 +1,5 @@
 ﻿using Silk.NET.Vulkan;
 
-using System.Drawing;
 using System.Runtime.CompilerServices;
 
 using static RockEngine.Vulkan.SubmitContext;
@@ -30,6 +29,7 @@ namespace RockEngine.Vulkan
         public SubmitContext SubmitContext => _submitContext;
         internal CommandPoolContext Context { get; }
         public CommandBufferLevel Level => _level;
+        public StagingManager StagingManager => _stagingManager;
 
         public CommandBufferInheritanceInfo? InheritanceInfo
         {
@@ -100,6 +100,7 @@ namespace RockEngine.Vulkan
                 return;
             }
 
+            _stagingManager.Reset();
             _disposables.Clear();
             SignalSemaphores.Clear();
             WaitSemaphores.Clear();
@@ -228,9 +229,7 @@ namespace RockEngine.Vulkan
             Span<MemoryBarrier2> mem = [];
             Span<BufferMemoryBarrier2> buff = [];
             PipelineBarrier(mem, buff, imageMemoryBarriers, dependencyFlags);
-
         }
-
 
         public void CopyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, ulong srcOffset, ulong dstOffset, ulong size)
         {
@@ -249,6 +248,7 @@ namespace RockEngine.Vulkan
                 in copyRegion
             );
         }
+
         public void CopyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, in BufferCopy copyRegion)
         {
             VulkanContext.Vk.CmdCopyBuffer(

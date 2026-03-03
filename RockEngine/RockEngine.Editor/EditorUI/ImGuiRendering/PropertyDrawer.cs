@@ -70,12 +70,13 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
 
         public void DrawProperty(IComponent component, UIPropertyAccessor accessor)
         {
-            ImGui.PushID($"{component.GetType().Name}_{accessor.Name}");
-
             if (!accessor.CanWrite)
             {
-                ImGui.BeginDisabled();
+                return;
             }
+            ImGui.PushID($"{component.GetType().Name}_{accessor.Name}");
+
+            
 
             try
             {
@@ -249,19 +250,6 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
             ImGui.Image(texId, previewSize);
             ImGui.Text($"Resolution: {texture.Width}x{texture.Height}");
             ImGui.Text($"Mip Levels: {texture.LoadedMipLevels}/{texture.TotalMipLevels}");
-        }
-
-        public void CreateNewMaterialForProperty(IComponent component, UIPropertyAccessor accessor)
-        {
-            try
-            {
-                // Your material creation logic here
-                // This could create a new material asset and assign it to the property
-            }
-            catch (Exception ex)
-            {
-                // Log error
-            }
         }
     }
 }

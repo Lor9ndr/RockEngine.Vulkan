@@ -16,7 +16,6 @@ namespace RockEngine.Vulkan
 
         private readonly VulkanContext _context;
         private readonly VkQueue _targetQueue;
-        private readonly StagingManager _stagingManager;
         private readonly SemaphoreSlim _submissionLock = new SemaphoreSlim(1, 1);
         private readonly int _ownerThreadId;
 
@@ -25,6 +24,7 @@ namespace RockEngine.Vulkan
         private readonly ConcurrentQueue<UploadBatch> _queueB = new();
         private ConcurrentQueue<UploadBatch> _activeQueue;
         private ConcurrentQueue<UploadBatch> _submissionQueue;
+        private SubmitOperation _lastSubmitOperation;
 
         // Thread-local command pools
         private readonly ThreadLocal<CommandPoolContext> _threadCommandContext;
@@ -45,15 +45,12 @@ namespace RockEngine.Vulkan
 
         private readonly ConcurrentBag<(List<UploadBatch> batches, List<IDisposable> disposables)> _pendingNoFenceResources = new();
 
-        public StagingManager StagingManager => _stagingManager;
-
         public uint QueueFamily => _targetQueue.FamilyIndex;
 
         public SubmitContext(VulkanContext context, VkQueue targetQueue)
         {
             _context = context;
             _targetQueue = targetQueue;
-            _stagingManager = new StagingManager(context, this);
             _activeQueue = _queueA;
             _submissionQueue = _queueB;
 
@@ -89,7 +86,7 @@ namespace RockEngine.Vulkan
         private UploadBatch CreateNewBatch(CommandPoolContext context, CommandBufferLevel level, CommandBufferInheritanceInfo? inheritanceInfo = null)
         {
             var commandBuffer = context.Pool.AllocateCommandBuffer(level);
-            return new UploadBatch(context, _stagingManager, this, commandBuffer, level, inheritanceInfo);
+            return new UploadBatch(context, new StagingManager(_context), this, commandBuffer, level, inheritanceInfo);
         }
 
         public UploadBatch CreateBatch(BatchCreationParams? parameters = null)
@@ -164,6 +161,8 @@ namespace RockEngine.Vulkan
         {
             batch.End();
 
+            _lastSubmitOperation?.Wait();
+
             // Only lock during submission preparation
             _submissionLock.Wait();
             try
@@ -191,6 +190,10 @@ namespace RockEngine.Vulkan
                     stages[j] = kvp.Value;
                     j++;
                 }
+                var collectedSemaphores = new List<VkSemaphore>();
+                collectedSemaphores.AddRange(batch.SignalSemaphores);
+                collectedSemaphores.AddRange(batch.WaitSemaphores.Keys);
+                fence ??= VkFence.CreateNotSignaled(_context);
 
                 _targetQueue.Submit(
                     batch.CommandBuffer,
@@ -200,37 +203,28 @@ namespace RockEngine.Vulkan
                     fence
                 );
 
-                if (fence != null)
+                foreach (var (batches, disposables) in _pendingNoFenceResources)
                 {
-                    foreach (var (batches, disposables) in _pendingNoFenceResources)
-                    {
-                        batchList.AddRange(batches);
-                        disposableList.AddRange(disposables);
-                    }
-                    _pendingNoFenceResources.Clear();
-                    // When fence is provided, SubmitOperation will handle cleanup
-                    return new SubmitOperation(
-                        this,
-                        fence,
-                        batchList,
-                        disposableList
-                    );
+                    batchList.AddRange(batches);
+                    disposableList.AddRange(disposables);
                 }
-                else
-                {
-                    // No fence - keep resources in SubmitContext for later cleanup
-                    _pendingNoFenceResources.Add((batchList, disposableList));
+                _pendingNoFenceResources.Clear();
+                // When fence is provided, SubmitOperation will handle cleanup
+                _lastSubmitOperation = new SubmitOperation(
+                    this,
+                    fence,
+                    batchList,
+                    disposableList,
+                    collectedSemaphores
+                );
+                return _lastSubmitOperation;
 
-                    // Return a completed operation that doesn't own resources
-                    var operation = new SubmitOperation(this, null, [], []);
-                    operation.SetCompleted(true);
-                    return operation;
-                }
             }
             finally
             {
                 _submissionLock.Release();
             }
+           
         }
 
         private SubmitOperation SubmitInternal(VkFence? fence = null)
@@ -239,46 +233,41 @@ namespace RockEngine.Vulkan
             _submissionLock.Wait();
             try
             {
+                _lastSubmitOperation?.Wait();
                 // Swap active and submission queues
                 (_submissionQueue, _activeQueue) = (_activeQueue, _submissionQueue);
 
-               
                 PrepareSubmissionData();
+                fence ??= VkFence.CreateNotSignaled(_context);
                 SubmitCommandBuffers(fence);
-               
 
-                if (fence != null)
+                foreach (var (batches, disposables) in _pendingNoFenceResources)
                 {
-                    foreach (var (batches, disposables) in _pendingNoFenceResources)
-                    {
-                        _batchList.AddRange(batches);
-                        _disposableList.AddRange(disposables);
-                    }
-                    _pendingNoFenceResources.Clear();
-                    // Create operation that will handle cleanup when fence passes
-                    var operation = CreateFlushOperation(fence);
-                    ResetState();
-                    StagingManager.Reset();
-
-                    return operation;
+                    _batchList.AddRange(batches);
+                    _disposableList.AddRange(disposables);
                 }
-                else
+                _pendingNoFenceResources.Clear();
+                var semaphores = new List<VkSemaphore>();
+                semaphores.AddRange(_signalSemaphores);
+                foreach (var item in _waitSemaphores)
                 {
-                    // No fence - keep resources in SubmitContext
-                    var batchesCopy = new List<UploadBatch>(_batchList);
-                    var disposablesCopy = new List<IDisposable>(_disposableList);
-
-                    // Store for later cleanup
-                    _pendingNoFenceResources.Add((batchesCopy, disposablesCopy));
-
-                    // Reset state (transferred ownership to pending resources)
-                    ResetState();
-
-                    // Return completed operation that doesn't own resources
-                    var operation = new SubmitOperation(this, null, [], []);
-                    operation.SetCompleted(true);
-                    return operation;
+                    semaphores.Add(item.Key);
                 }
+                foreach (var batch in _batchList)
+                {
+                    semaphores.AddRange(batch.SignalSemaphores);
+                    semaphores.AddRange(batch.WaitSemaphores.Keys);
+                }
+                // Create operation that will handle cleanup when fence passes
+                var operation = new SubmitOperation(this, fence,
+               [.. _batchList],
+               [.. _disposableList],
+               semaphores);
+                ResetState();
+                _lastSubmitOperation = operation;
+
+                return operation;
+
             }
             finally
             {
@@ -298,7 +287,6 @@ namespace RockEngine.Vulkan
                 {
                     item.Dispose();
                 }
-
             }
             _pendingNoFenceResources.Clear();
         }
@@ -321,35 +309,62 @@ namespace RockEngine.Vulkan
 
         private void SubmitCommandBuffers(VkFence? fence = null)
         {
+            int signalCount = _signalSemaphores.Count + _batchList.Sum(b => b.SignalSemaphores.Count);
+            int waitCount = _waitSemaphores.Count + _batchList.Sum(b => b.WaitSemaphores.Count);
 
-            var signalSemaphores = _signalSemaphores
-                .AsValueEnumerable()
-                .Union(_batchList.SelectMany(b => b.SignalSemaphores))
-                .Select(s => s.VkObjectNative)
-                .ToArray();
+            var signalPool = ArrayPool<Semaphore>.Shared;
+            var waitPool = ArrayPool<Semaphore>.Shared;
+            var stagePool = ArrayPool<PipelineStageFlags>.Shared;
 
-            var waitSemaphores = _waitSemaphores
-                .AsValueEnumerable()
-                .Concat(_batchList.SelectMany(b => b.WaitSemaphores))
-                .Select(kvp => kvp.Key.VkObjectNative)
-                .ToArray();
+            var signalSemaphores = signalPool.Rent(signalCount);
+            var waitSemaphores = waitPool.Rent(waitCount);
+            var waitStages = stagePool.Rent(waitCount);
 
-            var waitStages = _waitSemaphores
-                .AsValueEnumerable()
-                .Concat(_batchList.SelectMany(b => b.WaitSemaphores))
-                .Select(kvp => kvp.Value)
-                .ToArray();
+            try
+            {
+                // Fill signalSemaphores
+                int index = 0;
+                foreach (var s in _signalSemaphores)
+                    signalSemaphores[index++] = s.VkObjectNative;
+                foreach (var b in _batchList)
+                    foreach (var s in b.SignalSemaphores)
+                        signalSemaphores[index++] = s.VkObjectNative;
 
-            _targetQueue.Submit(
-                CollectionsMarshal.AsSpan(_commandBufferList),
-                signalSemaphores,
-                waitSemaphores,
-                waitStages,
-                fence
-            );
+                // Fill waitSemaphores and waitStages
+                index = 0;
+                foreach (var (sem, stage) in _waitSemaphores)
+                {
+                    waitSemaphores[index] = sem.VkObjectNative;
+                    waitStages[index] = stage;
+                    index++;
+                }
+                foreach (var b in _batchList)
+                {
+                    foreach (var (sem, stage) in b.WaitSemaphores)
+                    {
+                        waitSemaphores[index] = sem.VkObjectNative;
+                        waitStages[index] = stage;
+                        index++;
+                    }
+                }
+
+                _targetQueue.Submit(
+                    CollectionsMarshal.AsSpan(_commandBufferList),
+                    signalSemaphores.AsSpan(0, signalCount),
+                    waitSemaphores.AsSpan(0, waitCount),
+                    waitStages.AsSpan(0, waitCount),
+                    fence
+                );
+            }
+            finally
+            {
+                signalPool.Return(signalSemaphores);
+                waitPool.Return(waitSemaphores);
+                stagePool.Return(waitStages);
+            }
         }
 
-        private SubmitOperation CreateFlushOperation(VkFence? fence = null)
+        /*private SubmitOperation CreateFlushOperation(VkFence? fence = null)
         {
             return new SubmitOperation(
                 this,
@@ -357,7 +372,7 @@ namespace RockEngine.Vulkan
                 [.. _batchList],
                 [.. _disposableList]
             );
-        }
+        }*/
 
         private void ResetState()
         {
@@ -373,8 +388,6 @@ namespace RockEngine.Vulkan
 
         public void Dispose()
         {
-            _stagingManager.Dispose();
-
             foreach (var context in _allContexts)
             {
                 context.Pool.Dispose();

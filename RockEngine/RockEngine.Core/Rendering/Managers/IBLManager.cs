@@ -214,7 +214,7 @@ namespace RockEngine.Core.Rendering.Managers
                 envMap.Image.TransitionImageLayout(batch, ImageLayout.General, ImageLayout.ShaderReadOnlyOptimal, baseMipLevel: 0, envMap.Image.MipLevels, 0, 6);
             }
 
-            await _context.ComputeSubmitContext.SubmitSingle(batch, VkFence.CreateNotSignaled(_context));
+            await _context.ComputeSubmitContext.SubmitSingle(batch);
             return output;
         }
         public async Task<Texture> GenerateBRDFLUT(uint size = 512)
@@ -248,7 +248,7 @@ namespace RockEngine.Core.Rendering.Managers
                 semaphore.LabelObject("BRDFLUT SEMAPHORE");
             }
 
-            await _context.ComputeSubmitContext.SubmitSingle(batch, VkFence.CreateNotSignaled(_context));
+            await _context.ComputeSubmitContext.SubmitSingle(batch);
 
             return output;
         }

@@ -28,6 +28,7 @@ namespace RockEngine.Core.Rendering.Texturing
         // Vulkan image resources
         protected VkImage _image;
         protected VkSampler _sampler;
+        protected VkSemaphore _completionSemaphore;
 
         // Resource management flags
         private bool _disposed;
@@ -59,6 +60,8 @@ namespace RockEngine.Core.Rendering.Texturing
         }
         private readonly WeakEvent<TextureUpdate> _onTextureUpdated = new WeakEvent<TextureUpdate>();
 
+        public VkSemaphore CompletionSemaphore => _completionSemaphore;
+
         protected Texture(VulkanContext context, VkImage image, VkSampler sampler)
         {
             _context = context;
@@ -66,6 +69,8 @@ namespace RockEngine.Core.Rendering.Texturing
             _sampler = sampler;
             LoadedMipLevels = 1;
             Image.OnImageResized += (img) => NotifyTextureUpdated();
+            _completionSemaphore = VkSemaphore.Create(context);  // binary, initially unsignaled
+            _completionSemaphore.LabelObject($"CompletionSemaphore of Image {image.VkObjectNative}");
         }
 
         protected void NotifyTextureUpdated()
@@ -150,6 +155,7 @@ namespace RockEngine.Core.Rendering.Texturing
         {
             if (!_disposed)
             {
+                _completionSemaphore?.Dispose();
                 _image?.Dispose();
                 _disposed = true;
             }

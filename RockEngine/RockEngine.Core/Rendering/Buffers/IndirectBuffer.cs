@@ -51,19 +51,13 @@ namespace RockEngine.Core.Rendering.Buffers
             }
 
             // Запись данных в стаджинг буфер
-            if (!batch.SubmitContext.StagingManager.TryStage<DrawIndexedIndirectCommand>(batch, commands, out var stageOffset, out var stagedSize))
+            if (!batch.StagingManager.TryStage<DrawIndexedIndirectCommand>(batch, commands, out var stageOffset, out var stagedSize))
             {
                 throw new InvalidOperationException("Failed to stage indirect commands");
             }
 
             // Копирование из стаджинг буфера в GPU буфер
-            var copyRegion = new BufferCopy
-            {
-                SrcOffset = stageOffset,
-                DstOffset = 0,
-                Size = size
-            };
-            batch.CopyBuffer(_context.GraphicsSubmitContext.StagingManager.StagingBuffer,_deviceBuffer, stageOffset, 0, size);
+            batch.CopyBuffer(batch.StagingManager.StagingBuffer,_deviceBuffer, stageOffset, 0, size);
 
         }
 

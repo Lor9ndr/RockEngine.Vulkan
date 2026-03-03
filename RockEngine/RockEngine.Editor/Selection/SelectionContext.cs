@@ -58,7 +58,5 @@ namespace RockEngine.Editor.Selection
         ViewportPicking,
         Gizmo,
         Script,
-        UndoRedo,
-        CopyPaste
     }
 }

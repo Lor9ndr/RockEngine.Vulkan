@@ -291,11 +291,11 @@ namespace RockEngine.Vulkan
                 }
                 if (_deviceMemory.IsMapped)
                 {
-                    _deviceMemory.Unmap();
+                    //_deviceMemory.Unmap();
                 }
-                VulkanAllocator.DeviceMemoryTracker.DisassociateObject(_vkObject.Handle);
                 VulkanContext.Vk.DestroyBuffer(_context.Device, _vkObject, in VulkanContext.CustomAllocator<VkBuffer>());
                 _deviceMemory.Dispose();
+                VulkanAllocator.DeviceMemoryTracker.DisassociateObject(_vkObject.Handle);
 
                 _disposed = true;
             }

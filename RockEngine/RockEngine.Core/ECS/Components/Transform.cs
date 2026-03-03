@@ -1,5 +1,6 @@
 ﻿using MessagePack;
 
+using RockEngine.Core.Attributes;
 using RockEngine.Core.Extensions;
 using RockEngine.Core.Rendering;
 
@@ -33,14 +34,8 @@ namespace RockEngine.Core.ECS.Components
             set { _position = value; SetDirty(); }
         }
 
-        [Key(14)]
-        public Vector3 LocalPosition
-        {
-            get => _position;
-            set { _position = value; SetDirty(); }
-        }
 
-        [Key(15)]
+        [Key(15),UIEditable("Rotation")]
         public Vector3 EulerAngles
         {
             get => _rotation.QuaternionToEuler();
@@ -51,14 +46,14 @@ namespace RockEngine.Core.ECS.Components
             }
         }
 
-        [Key(16)]
+        [Key(16),SerializeIgnore]
         public Quaternion Rotation
         {
             get => _rotation;
             set { _rotation = value; SetDirty(); }
         }
 
-        [Key(17)]
+        [Key(17), SerializeIgnore]
         public Quaternion LocalRotation
         {
             get => _rotation;
@@ -72,21 +67,21 @@ namespace RockEngine.Core.ECS.Components
             set { _scale = value; SetDirty(); }
         }
 
-        [Key(19)]
+        [Key(19), SerializeIgnore]
         public Vector3 LocalScale
         {
             get => _scale;
             set { _scale = value; SetDirty(); }
         }
 
-        [IgnoreMember]
+        [IgnoreMember, SerializeIgnore]
         public Transform? Parent
         {
             get => _parent;
             set => SetParent(value);
         }
 
-        [IgnoreMember]
+        [IgnoreMember, SerializeIgnore]
         public Matrix4x4 LocalMatrix
         {
             get
@@ -97,7 +92,7 @@ namespace RockEngine.Core.ECS.Components
             }
         }
 
-        [IgnoreMember]
+        [IgnoreMember, SerializeIgnore]
 
         public Matrix4x4 WorldMatrix
         {
@@ -111,11 +106,11 @@ namespace RockEngine.Core.ECS.Components
             }
         }
 
-        [IgnoreMember]
+        [IgnoreMember, SerializeIgnore]
 
         public Vector3 WorldPosition => WorldMatrix.Translation;
 
-        [IgnoreMember]
+        [IgnoreMember, SerializeIgnore]
         public Quaternion WorldRotation
         {
             get
@@ -129,7 +124,7 @@ namespace RockEngine.Core.ECS.Components
             }
         }
 
-        [IgnoreMember]
+        [IgnoreMember, SerializeIgnore]
         public Vector3 WorldScale
         {
             get

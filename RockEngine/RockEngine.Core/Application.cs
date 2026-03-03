@@ -55,12 +55,12 @@ namespace RockEngine.Core
             {
                  OnWindowLoad().GetAwaiter().GetResult();
             };
-            _window.Closing += OnWindowClosing;
             _window.Update +=  (delta) =>  OnWindowUpdate(delta).GetAwaiter().GetResult();
             _window.Render += (delta) => OnWindowRender(delta).GetAwaiter().GetResult();
-            _window.Resize += OnWindowResize;
             _window.Initialize();
         }
+
+        
 
         private async Task OnWindowLoad()
         {
@@ -147,11 +147,6 @@ namespace RockEngine.Core
             // Begin frame
             var batch = _graphicsEngine.BeginFrame();
             
-            if(batch is null)
-            {
-                return;
-            }
-
             try
             {
                 // Render ImGui
@@ -167,6 +162,9 @@ namespace RockEngine.Core
 
                 _graphicsEngine.SubmitAndPresent();
 
+            }
+            catch (VulkanException ex) 
+            {
             }
             catch (Exception ex)
             {
@@ -216,18 +214,6 @@ namespace RockEngine.Core
             }
         }
 
-        private void OnWindowResize(Silk.NET.Maths.Vector2D<int> size)
-        {
-            if (!_isInitialized || size.X <= 0 || size.Y <= 0)
-            {
-                while(size.X <= 0 || size.Y <= 0)
-                {
-                    _window.DoEvents();
-                    _window.DoUpdate();
-                }
-            }
-        }
-     
         public void Run()
         {
             try
@@ -241,7 +227,8 @@ namespace RockEngine.Core
             }
             finally
             {
-                Dispose();
+                // GC will correctly collect the vk objects and dispose them since they are disposable
+                //Dispose();
             }
         }
         public void Stop()
@@ -258,10 +245,6 @@ namespace RockEngine.Core
             }
         }
 
-        private void OnWindowClosing()
-        {
-            Dispose();
-        }
 
         public virtual void Dispose()
         {

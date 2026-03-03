@@ -204,7 +204,7 @@ namespace RockEngine.Core.Rendering
             }
         }
 
-        public UploadBatch? BeginFrame()
+        public UploadBatch BeginFrame()
         {
             if (_disposed) ThrowDisposed();
 
@@ -362,17 +362,8 @@ namespace RockEngine.Core.Rendering
             }
 
 
-            
-            if(_currentFrameIndex == 0)
-            {
-                _context.TransferSubmitContext.Submit(_transferFence).Wait();
-                _transferFence.Reset();
-            }
-            else
-            {
-                _context.TransferSubmitContext.Submit();
+            _context.TransferSubmitContext.Submit();
 
-            }
 
             // Submit the batch
             frame.CurrentBatch.Submit();

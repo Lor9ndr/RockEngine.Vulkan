@@ -225,8 +225,6 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
                 mouseFocusedViewport = _viewportManager.Viewports.FirstOrDefault(s => s.IsFocused);
             }
 
-           
-
             // Update input for each viewport based on focus
             // Update keyboard input for the viewport that has keyboard focus
             if(mouseFocusedViewport is not null)
@@ -245,8 +243,42 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
                 _pressedChars.Clear();
             }
         }
-        
-     
+        public void OnMouseMove(RckImGuiViewport viewport, Vector2 pos)
+        {
+            var windowPos = viewport.Window.Position;
+            ImGui.GetIO().AddMousePosEvent(windowPos.X + pos.X, windowPos.Y + pos.Y);
+        }
+
+        public void OnMouseButton(RckImGuiViewport viewport, MouseButton btn, bool down)
+        {
+            int button = btn switch
+            {
+                MouseButton.Left => 0,
+                MouseButton.Right => 1,
+                MouseButton.Middle => 2,
+                _ => -1
+            };
+            if (button >= 0)
+                ImGui.GetIO().AddMouseButtonEvent(button, down);
+        }
+
+        public void OnMouseScroll(RckImGuiViewport viewport, ScrollWheel scroll)
+        {
+            ImGui.GetIO().AddMouseWheelEvent(scroll.X, scroll.Y);
+        }
+
+        public void OnKey(RckImGuiViewport viewport, Key key, bool down)
+        {
+            if (TryMapKey(key, out ImGuiKey imKey))
+                ImGui.GetIO().AddKeyEvent(imKey, down);
+        }
+
+        public void OnChar(RckImGuiViewport viewport, char ch)
+        {
+            ImGui.GetIO().AddInputCharacter(ch);
+        }
+
+
         private void UpdateKeyboardInputForViewport(IInputContext input, ImGuiIOPtr io)
         {
             var keyboardState = input.Keyboards.Count > 0 ? input.Keyboards[0] : null;
@@ -255,22 +287,23 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
             {
                 return;
             }
+            var state = keyboardState.CaptureState();
             // Update key states for this specific viewport
-            foreach (Key key in keyboardState.SupportedKeys)
+            foreach (Key key in state.GetSupportedKeys())
             {
                 if (key == Key.Unknown) continue;
 
                 if (TryMapKey(key, out ImGuiKey imguikey))
                 {
-                    io.AddKeyEvent(imguikey, keyboardState.IsKeyPressed(key));
+                    io.AddKeyEvent(imguikey, state.IsKeyPressed(key));
                 }
             }
 
             // Update modifier keys
-            io.KeyCtrl = keyboardState.IsKeyPressed(Key.ControlLeft) || keyboardState.IsKeyPressed(Key.ControlRight);
-            io.KeyAlt = keyboardState.IsKeyPressed(Key.AltLeft) || keyboardState.IsKeyPressed(Key.AltRight);
-            io.KeyShift = keyboardState.IsKeyPressed(Key.ShiftLeft) || keyboardState.IsKeyPressed(Key.ShiftRight);
-            io.KeySuper = keyboardState.IsKeyPressed(Key.SuperLeft) || keyboardState.IsKeyPressed(Key.SuperRight);
+            io.KeyCtrl = state.IsKeyPressed(Key.ControlLeft) || state.IsKeyPressed(Key.ControlRight);
+            io.KeyAlt = state.IsKeyPressed(Key.AltLeft) || state.IsKeyPressed(Key.AltRight);
+            io.KeyShift = state.IsKeyPressed(Key.ShiftLeft) || state.IsKeyPressed(Key.ShiftRight);
+            io.KeySuper = state.IsKeyPressed(Key.SuperLeft) || state.IsKeyPressed(Key.SuperRight);
         }
 
         private void UpdateMainViewportInput(ImGuiIOPtr io, IInputContext input)
@@ -391,7 +424,14 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
             CleanupTextureCache();
 
             SetPerFrameImGuiData(Time.DeltaTime);
-            UpdateImGuiInput();
+            //UpdateImGuiInput();
+            foreach (var viewport in _viewportManager.Viewports)
+            {
+                if (!viewport.IsMainViewport)
+                {
+                    viewport.Window.DoEvents();
+                }
+            }
             if ((ImGui.GetIO().ConfigFlags & ImGuiConfigFlags.ViewportsEnable) != 0 && !_frameBegun)
             {
                 ImGui.UpdatePlatformWindows();
@@ -407,16 +447,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
             // Only start new frame if not already begun
 
             _currentFrame++;
-            foreach (var viewport in _viewportManager.Viewports)
-            {
-                if (!viewport.IsMainViewport)
-                {
-                    viewport.Window.ContinueEvents();
-                    viewport.Window.DoEvents();
-                    //viewport.Window.DoUpdate();
-                    //viewport.Window.DoRender();
-                }
-            }
+
         }
 
         public void Render(UploadBatch batch, uint frameIndex, WorldRenderer renderer)

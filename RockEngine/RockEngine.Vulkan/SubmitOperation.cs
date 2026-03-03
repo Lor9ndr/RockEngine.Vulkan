@@ -10,49 +10,46 @@ namespace RockEngine.Vulkan
     public sealed class SubmitOperation : IDisposable, IAsyncDisposable
     {
         private readonly SubmitContext _context;
-        private readonly VkFence? _fence;
         private readonly List<UploadBatch> _batches;
         private readonly List<IDisposable> _disposables;
+        private readonly List<VkSemaphore> _semaphores;
+        private VkFence _fence;
         private bool _completed;
 
-        public VkFence? Fence => _fence;
+        public VkFence Fence => _fence;
         public bool IsCompleted => _completed;
+        private readonly Lock _lock = new Lock();
+       
 
         internal SubmitOperation(
             SubmitContext context,
-            VkFence? fence,
+            VkFence fence,
             List<UploadBatch> batches,
-            List<IDisposable> disposables)
+            List<IDisposable> disposables,
+            List<VkSemaphore> semaphores)
         {
             _context = context;
             _fence = fence;
             _batches = batches;
             _disposables = disposables;
+            _semaphores = semaphores;
         }
 
         public void Wait()
         {
-            if (_completed)
-            {
-                return;
-            }
-
-            if (_fence is not null && !_fence.IsDisposed)
+            if (_completed) return;
+            if (_fence != null && !_fence.IsDisposed)
             {
                 _fence.Wait();
             }
-            
             Complete();
         }
 
-        public async Task WaitAsync(CancellationToken cancellationToken = default)
+        private async Task WaitAsync(CancellationToken cancellationToken = default)
         {
-            if (_completed)
-            {
-                return;
-            }
-
-            if (_fence is not null && !_fence.IsDisposed)
+            
+            if (_completed) return;
+            if (_fence != null && !_fence.IsDisposed)
             {
                 await _fence.WaitAsync(cancellationToken).ConfigureAwait(false);
             }
@@ -63,63 +60,38 @@ namespace RockEngine.Vulkan
 
         private void Complete()
         {
-            if (_completed)
+           if (_completed) return;
+            lock (_lock)
             {
-                return;
-            }
+                if (_completed) return;
 
-            foreach (var disposable in _disposables)
-            {
-                disposable.Dispose();
-            }
+                // Dispose all user‑provided disposables
+                foreach (var d in _disposables) d.Dispose();
 
-            foreach (var batch in _batches)
-            {
-                _context.ReturnBatchToPool(batch);
-            }
+                // Return batches to their pools
+                foreach (var b in _batches) _context.ReturnBatchToPool(b);
 
-            _completed = true;
+                _fence = null;
+
+                // Clear lists (semaphores are just references, not disposed)
+                _batches.Clear();
+                _disposables.Clear();
+                _semaphores.Clear();
+                _completed = true;
+            }
+           
         }
-
-        internal void SetCompleted(bool completed) => _completed = completed;
 
         public void Dispose()
         {
-            if (!_completed)
-            {
-                Wait();
-            }
-
-            _batches.Clear();
-            _disposables.Clear();
+            if (!_completed) Wait();   // synchronous wait, but user should have awaited
             GC.SuppressFinalize(this);
         }
 
         public async ValueTask DisposeAsync()
         {
-            if (!_completed)
-            {
-                await WaitAsync();
-            }
-
-            _batches.Clear();
-            _disposables.Clear();
+            if (!_completed) await WaitAsync();
             GC.SuppressFinalize(this);
-        }
-
-        ~SubmitOperation()
-        {
-            if (!_completed)
-            {
-                try
-                {
-                    Dispose();
-                }
-                catch
-                {
-                    // Ignore exceptions in finalizer
-                }
-            }
         }
     }
 }

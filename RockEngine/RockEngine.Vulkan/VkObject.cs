@@ -10,7 +10,7 @@ namespace RockEngine.Vulkan
     public abstract class VkObject<T> : IVkObject<T>, IDisposable where T : struct
     {
         protected T _vkObject;
-        protected bool _disposed;
+        protected volatile bool _disposed;
         public T VkObjectNative => _vkObject;
         protected Vk Vk => VulkanContext.Vk;
 

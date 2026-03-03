@@ -203,7 +203,7 @@ namespace RockEngine.Core.Rendering.Managers
             }
         }
 
-        private unsafe void BindDescriptorSetsToCommandBuffer(
+        private void BindDescriptorSetsToCommandBuffer(
                 UploadBatch batch,
                 VkPipelineLayout pipelineLayout,
                 Span<DescriptorSet> descriptorSets,

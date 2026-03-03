@@ -82,6 +82,7 @@ namespace RockEngine.Vulkan
                 ImageExtent = extent,
                 ImageArrayLayers = 1,
                 ImageUsage = ImageUsageFlags.ColorAttachmentBit /*| ImageUsageFlags.TransferSrcBit*/,
+                ImageSharingMode = SharingMode.Exclusive,
                 PreTransform = swapChainSupport.Capabilities.CurrentTransform,
                 CompositeAlpha = CompositeAlphaFlagsKHR.OpaqueBitKhr,
                 PresentMode = presentMode,
@@ -118,7 +119,7 @@ namespace RockEngine.Vulkan
             {
                 SType = StructureType.ImageCreateInfo,
                 Format = surfaceFormat.Format,
-                InitialLayout = ImageLayout.Undefined,
+                InitialLayout = ImageLayout.PresentSrcKhr,
                 MipLevels = 1,
                 ArrayLayers = 1
             };

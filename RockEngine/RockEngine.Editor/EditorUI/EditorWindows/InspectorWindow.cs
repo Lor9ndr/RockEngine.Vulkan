@@ -37,10 +37,10 @@ namespace RockEngine.Editor.EditorUI.EditorWindows
 
             // Transform component
             var transform = _selectionManager.CurrentSelection.PrimaryEntity.Transform;
-            DrawTransformComponent(transform);
+            //DrawTransformComponent(transform);
 
             // Other components
-            foreach (var component in _selectionManager.CurrentSelection.PrimaryEntity.Components.Except([transform]))
+            foreach (var component in _selectionManager.CurrentSelection.PrimaryEntity.Components.ToArray())
             {
                 DrawComponent(component);
             }
@@ -69,28 +69,6 @@ namespace RockEngine.Editor.EditorUI.EditorWindows
             PopWindowStyling();
         }
 
-        private void DrawTransformComponent(Transform transform)
-        {
-            if (ImGui.CollapsingHeader("Transform", ImGuiTreeNodeFlags.DefaultOpen))
-            {
-                var position = transform.Position;
-                var rotation = transform.EulerAngles;
-                var scale = transform.Scale;
-
-                bool changed = false;
-                changed |= ImGui.DragFloat3("Position", ref position, 0.1f);
-                changed |= ImGui.DragFloat3("Rotation", ref rotation, 0.1f);
-                changed |= ImGui.DragFloat3("Scale", ref scale, 0.1f);
-
-                if (changed)
-                {
-                    transform.Position = position;
-                    transform.EulerAngles = rotation;
-                    transform.Scale = scale;
-                }
-            }
-        }
-
         private void DrawComponent(IComponent component)
         {
             var typeName = component.GetType().Name;
@@ -98,11 +76,10 @@ namespace RockEngine.Editor.EditorUI.EditorWindows
 
             if (ImGui.BeginPopupContextItem())
             {
-                if (ImGui.MenuItem("Remove Component")) 
-                    {
+                if (ImGui.MenuItem("Remove Component"))
+                {
                     component.Entity.RemoveComponent(component);
-                    }
-                if (ImGui.MenuItem("Reset")) { }
+                }
                 ImGui.EndPopup();
             }
 

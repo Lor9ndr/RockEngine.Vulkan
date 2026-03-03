@@ -115,7 +115,7 @@ namespace RockEngine.Core.Diagnostics
         {
             // Check if GPU timestamps are supported
             var properties = context.Device.PhysicalDevice.Properties;
-            _gpuTimestampsSupported = properties.Limits.TimestampComputeAndGraphics;
+            _gpuTimestampsSupported = false;//properties.Limits.TimestampComputeAndGraphics;
 
             if (!_gpuTimestampsSupported)
             {

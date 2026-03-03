@@ -7,9 +7,6 @@ using System.Collections.Concurrent;
 
 namespace RockEngine.Assets
 {
-    /// <summary>
-    /// Complete ImprovedAssetManager implementation
-    /// </summary>
     public sealed class AssetManager : IDisposable, IAssetManager, IProjectManager
     {
         private static readonly Logger _logger = LogManager.GetCurrentClassLogger();
@@ -61,42 +58,6 @@ namespace RockEngine.Assets
 
         #region IAssetManager Implementation
 
-        public IAsyncEnumerable<AssetInfo> DiscoverAssets(string directory = "")
-        {
-            var basePath = string.IsNullOrEmpty(directory) ? BasePath : directory;
-            var searchPattern = "*" + AssetConstants.AssetExtension;
-
-            if (!Directory.Exists(basePath))
-                return AsyncEnumerable.Empty<AssetInfo>();
-
-            return Directory.EnumerateFiles(basePath, searchPattern, SearchOption.AllDirectories)
-                .Select(filePath =>
-                {
-                    var relativePath = Path.GetRelativePath(basePath, filePath);
-
-                    // Try to get header for type information
-                    string assetType = "Unknown";
-                    try
-                    {
-                        using var stream = File.OpenRead(filePath);
-                        var header = _serializer.DeserializeHeaderAsync(stream).GetAwaiter().GetResult();
-                        assetType = header.AssetTypeName;
-                    }
-                    catch
-                    {
-                        // If we can't read the header, just use "Unknown"
-                    }
-
-                    return new AssetInfo
-                    {
-                        Path = relativePath,
-                        Name = Path.GetFileNameWithoutExtension(filePath),
-                        Type = assetType,
-                        Size = new FileInfo(filePath).Length,
-                        LastModified = File.GetLastWriteTime(filePath)
-                    };
-                }).ToAsyncEnumerable();
-        }
 
         public async Task<T> GetAssetAsync<T>(Guid assetId) where T : class, IAsset
         {

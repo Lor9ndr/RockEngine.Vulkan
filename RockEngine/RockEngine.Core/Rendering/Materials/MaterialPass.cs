@@ -5,12 +5,9 @@ using RockEngine.Core.Rendering.Objects;
 using RockEngine.Core.Rendering.ResourceBindings;
 using RockEngine.Vulkan;
 
-using Silk.NET.Vulkan;
-
 using System.Numerics;
 using System.Reflection;
 using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
 
 using ZLinq;
 

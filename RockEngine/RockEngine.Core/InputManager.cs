@@ -19,7 +19,6 @@ namespace RockEngine.Core
             InputOwner = inputOwner;
             Context = inputContext;
             OnInputActionChanged?.Invoke(tmp, Context);
-
         }
     }
 }

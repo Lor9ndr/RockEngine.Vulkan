@@ -28,7 +28,7 @@ namespace RockEngine.Core.ECS
         public ulong ID { get; set; }   // ← now settable, assigned in ctor or deserialization
 
         [Key(3)]
-        private List<IComponent> _components { get; set; } = [];
+        private List<IComponent> _components = [];
 
         [IgnoreMember]
         public IReadOnlyList<IComponent> Components => _components;
@@ -82,7 +82,7 @@ namespace RockEngine.Core.ECS
             return component;
         }
 
-        internal void AddComponent(IComponent component)
+        public void AddComponent(IComponent component)
         {
             if (component is Transform && Transform is not null)
             {
