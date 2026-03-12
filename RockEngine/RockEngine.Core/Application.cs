@@ -1,170 +1,287 @@
 ﻿using NLog;
 
+using RockEngine.Core.Coroutines;
 using RockEngine.Core.DI;
+using RockEngine.Core.Diagnostics;
 using RockEngine.Core.ECS;
+using RockEngine.Core.Extensions;
+using RockEngine.Core.Physics;
 using RockEngine.Core.Rendering;
 using RockEngine.Core.Rendering.Managers;
 using RockEngine.Vulkan;
 
-using Silk.NET.Input;
 using Silk.NET.Windowing;
 
 using SimpleInjector;
 using SimpleInjector.Lifestyles;
 
-using System.Diagnostics;
-
 namespace RockEngine.Core
 {
     public abstract class Application : IDisposable
     {
-        protected VulkanContext _context;
+        private readonly Scope _applicationScope;
+        private readonly Logger _logger = LogManager.GetCurrentClassLogger();
+
+        // Core components
         protected IWindow _window;
+        protected VulkanContext _context;
+        protected GraphicsContext _graphicsEngine;
+        private CoroutineScheduler _coroutineSheduler;
+        protected WorldRenderer _renderer;
         protected LayerStack _layerStack;
-        protected GraphicsEngine _graphicsEngine;
-        protected IInputContext _inputContext;
-        protected Renderer _renderer;
         protected World _world;
-        protected PipelineManager _pipelineManager;
-        protected AssimpLoader _assimpLoader;
-        protected readonly AppSettings _appSettings;
+        private PhysicsManager _physicsManager;
 
-        private readonly Container _container;
-        private Scope _applicationScope;
-
-        public CancellationTokenSource CancellationTokenSource { get; set; }
-        protected CancellationToken CancellationToken => CancellationTokenSource.Token;
-        private static readonly Logger _logger = LogManager.GetCurrentClassLogger();
-
-
-        public Application()
+        // Synchronization
+        private readonly CancellationTokenSource _appCts = new();
+        private readonly ManualResetEventSlim _initialized = new(false);
+        private bool _isInitialized;
+        private bool _isMinimized;
+        protected Application()
         {
-            // Initialize DI container if not already initialized
-            if (!IoC.Container.IsLocked)
-            {
-                IoC.Initialize();
-            }
+            IoC.Initialize(this);
             _applicationScope = AsyncScopedLifestyle.BeginScope(IoC.Container);
-
-            _appSettings = IoC.Container.GetInstance<AppSettings>();
+            ConfigureWindow();
         }
 
-        public async Task Run()
+        private void ConfigureWindow()
         {
-            CancellationTokenSource = new CancellationTokenSource();
-            // Configure window
+            var settings = IoC.Container.GetInstance<AppSettings>();
+
             _window = IoC.Container.GetInstance<IWindow>();
-            _window.Title = _appSettings.Name;
-            _window.Size = _appSettings.LoadSize;
 
-            // Resolve other dependencies
-            _world = IoC.Container.GetInstance<World>();
-            _assimpLoader = IoC.Container.GetInstance<AssimpLoader>();
-
-            _window.Load += async() => await OnWindowLoad();
-
-            await Task.Factory.StartNew(
-                _window.Run,
-                CancellationToken,
-                TaskCreationOptions.LongRunning,
-                TaskScheduler.Default
-            );
+            // Setup event handlers
+            _window.Load +=  () =>
+            {
+                 OnWindowLoad().GetAwaiter().GetResult();
+            };
+            _window.Update +=  (delta) =>  OnWindowUpdate(delta).GetAwaiter().GetResult();
+            _window.Render += (delta) => OnWindowRender(delta).GetAwaiter().GetResult();
+            _window.Initialize();
         }
+
+        
 
         private async Task OnWindowLoad()
         {
             try
             {
-                Stopwatch loadWatch = Stopwatch.StartNew();
-                _inputContext = IoC.Container.GetInstance<IInputContext>();
+                _logger.Info("Initializing application...");
 
-                // Resolve window-dependent components
+                // Initialize on window thread (required for Vulkan)
                 _context = IoC.Container.GetInstance<VulkanContext>();
-                _graphicsEngine = IoC.Container.GetInstance<GraphicsEngine>();
-                _pipelineManager = IoC.Container.GetInstance<PipelineManager>();
-                _renderer = IoC.Container.GetInstance<Renderer>();
-
-
+                _graphicsEngine = IoC.Container.GetInstance<GraphicsContext>();
+                _coroutineSheduler = IoC.Container.GetInstance<CoroutineScheduler>();
                 PerformanceTracer.Initialize(_context);
-
-                _logger.Info($"Core systems initialized in: {loadWatch.ElapsedMilliseconds} ms");
-                await _renderer.InitializeAsync().ConfigureAwait(false);
-                await _world.Start(_renderer).ConfigureAwait(false);
+                var surface = SurfaceHandler.CreateSurface(_window, _context);
+                
+                _graphicsEngine.AddSwapchain(VkSwapchain.Create(_context, surface));
+                _renderer = IoC.Container.GetInstance<WorldRenderer>();
                 _layerStack = IoC.Container.GetInstance<LayerStack>();
-                await Load().ConfigureAwait(false);
+                _world = IoC.Container.GetInstance<World>();
+                _physicsManager = IoC.Container.GetInstance<PhysicsManager>();
 
-                _window.Render += async (s) => await Render(s);
-                _window.Update += async (s) => await Update(s);
+                // Initialize shaders
+                var shaderManager = IoC.Container.GetInstance<IShaderManager>();
+                await shaderManager.CompileAllShadersAsync();
 
-                loadWatch.Stop();
-                _logger.Info($"Application loaded in: {loadWatch.ElapsedMilliseconds} ms");
+                // Initialize renderer
+                await _renderer.InitializeAsync();
+                await _world.Start(_renderer);
+                _physicsManager.Initialize();
+
+                // Load application content
+                await Load();
+
+                _isInitialized = true;
+                _initialized.Set();
+
+                _logger.Info("Application initialized successfully");
             }
             catch (Exception ex)
             {
-                _logger.Info($"Initialization failed: {ex}");
+                _logger.Error(ex, "Failed to initialize application");
+                _window.Close();
                 throw;
             }
         }
 
-
-        protected virtual Task Load() => Task.CompletedTask;
-
-
-        protected virtual async Task Update(double deltaTime)
+        private async Task OnWindowUpdate(double _)
         {
-            Time.Update(_window.Time, deltaTime);
-            _layerStack.Update();
-            await _world.Update(_renderer);
-            await _renderer.UpdateFrameData();
+            if (!_isInitialized || _appCts.IsCancellationRequested)
+                return;
+
+            try
+            {
+                // Update time system
+                Time.Update(_window.Time);
+
+                // Update layers
+                _layerStack.Update();
+
+                // Update world
+                await _world.Update(_renderer);
+                _physicsManager.Update(Time.DeltaTime);
+
+
+                // Update renderer frame data
+                await _renderer.UpdateFrameData();
+                _coroutineSheduler.Update();
+            }
+            catch (Exception ex)
+            {
+                _logger.Error(ex, "Update failed");
+            }
+
         }
 
-        protected virtual async Task Render(double time)
+        private async Task OnWindowRender(double deltaTime)
         {
-            using (PerformanceTracer.BeginSection("Whole Render"))
+            if (!_isInitialized  || _appCts.IsCancellationRequested)
+                return;
+
+            PerformanceTracer.ProcessQueries(_context, _graphicsEngine.FrameIndex);
+
+            PerformanceTracer.BeginFrame(_graphicsEngine.FrameIndex);
+
+            // Begin frame
+            _graphicsEngine.BeginFrame();
+            
+            try
             {
-                if (_layerStack.Count == 0) return;
+                RenderContext renderContext = new RenderContext(
+                    _graphicsEngine.FrameIndex,
+                    _context.GraphicsSubmitContext,
+                    _context.TransferSubmitContext,
+                    _context.ComputeSubmitContext,
+                    _renderer);
 
-                var batch = _graphicsEngine.Begin();
-                if (batch is null) return;
+                // Render ImGui
+                RenderImGui(renderContext);
 
+                // Render layers
+                RenderLayers(renderContext);
 
-                using (PerformanceTracer.BeginSection("_layerStack.RenderImGui"))
-                    _layerStack.RenderImGui(batch.CommandBuffer);
+                // Render world
+                await RenderWorld(renderContext);
 
-                using (PerformanceTracer.BeginSection("_layerStack.Render"))
-                    _layerStack.Render(batch.CommandBuffer);
+                // Submit and present
 
-                await _renderer.Render(batch.CommandBuffer);
+                _graphicsEngine.SubmitAndPresent();
 
-                using (PerformanceTracer.BeginSection("_graphicsEngine.end & Submit"))
+            }
+            catch (VulkanException ex) 
+            {
+            }
+            catch (Exception ex)
+            {
+                _logger.Error(ex, "Render failed");
+            }
+
+           
+        }
+       
+
+        private void RenderImGui(RenderContext renderContext)
+        {
+            var batch = _context.GraphicsSubmitContext.CreateBatch();
+            using (PerformanceTracer.BeginSection("ImGui Render"))
+            {
+                using (batch.BeginSection("ImGui", _graphicsEngine.FrameIndex))
                 {
-                    _graphicsEngine.SubmitAndPresent(batch);
+                    _layerStack.RenderImGui(batch);
                 }
+            }
+            batch.Submit();
+
+        }
+
+        private void RenderLayers(RenderContext renderContext)
+        {
+            var batch = _context.GraphicsSubmitContext.CreateBatch();
+            using (PerformanceTracer.BeginSection("Layer Render"))
+            {
+                using (batch.BeginSection("Layers", _graphicsEngine.FrameIndex))
+                {
+                    _layerStack.Render(batch);
+                }
+            }
+            batch.Submit();
+        }
+
+        private async Task RenderWorld(RenderContext renderContext)
+        {
+            using (PerformanceTracer.BeginSection("World Render"))
+            {
+               await _renderer.Render(renderContext);
             }
         }
 
-        public Task PushLayer(ILayer layer) => _layerStack.PushLayer(layer);
-        public void PopLayer(ILayer layer) => _layerStack.PopLayer(layer);
+        public void Run()
+        {
+            try
+            {
+                _window.Run();
+            }
+            catch (Exception ex)
+            {
+                _logger.Fatal(ex, "Application crashed");
+                throw;
+            }
+            finally
+            {
+                // GC will correctly collect the vk objects and dispose them since they are disposable
+                //Dispose();
+            }
+        }
+        public void Stop()
+        {
+            _window?.Close();
+        }
+
+        protected virtual async Task Load()
+        {
+            var layers = IoC.Container.GetAllInstances<ILayer>();
+            foreach (var item in layers)
+            {
+                await _layerStack.PushLayer(item);
+            }
+        }
+
 
         public virtual void Dispose()
         {
-            CancellationTokenSource?.Cancel();
-            _context.Device.GraphicsQueue.WaitIdle();
-            _context.Device.ComputeQueue.WaitIdle();
+            if (_appCts.IsCancellationRequested)
+                return;
 
-            _renderer?.Dispose();
-            _graphicsEngine?.Dispose();
-            _context?.Dispose();
+            _appCts.Cancel();
 
-            if (_window != null)
+            try
             {
-                _window.Close();
-                _window.Dispose();
-            }
+                _initialized.Wait(TimeSpan.FromSeconds(5));
 
-            _applicationScope?.Dispose();
-            _container?.Dispose();
-            GC.SuppressFinalize(this);
+                _logger.Info("Shutting down application...");
+                _context?.Device?.WaitIdle();
+                _world?.Dispose();
+                _layerStack?.Dispose();
+                _renderer?.Dispose();
+                _graphicsEngine?.Dispose();
+                _context?.Dispose();
+               
+                _applicationScope?.Dispose();
+
+                _logger.Info("Application shutdown complete");
+            }
+            catch (Exception ex)
+            {
+                _logger.Error(ex, "Error during shutdown");
+            }
+            finally
+            {
+                _appCts.Dispose();
+                _initialized.Dispose();
+                GC.SuppressFinalize(this);
+            }
         }
     }
 }

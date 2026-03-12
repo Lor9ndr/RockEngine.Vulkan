@@ -1,5 +1,7 @@
 ﻿using Silk.NET.Vulkan;
 
+using System.Drawing;
+
 namespace RockEngine.Vulkan
 {
     public class VkDeviceMemory : VkObject<DeviceMemory>
@@ -24,10 +26,15 @@ namespace RockEngine.Vulkan
             _memory = memory;
             _size = size;
             _properties = properties;
+            VulkanAllocator.DeviceMemoryTracker.RegisterDeviceMemory(
+            _memory,
+            size,
+            properties,
+            "VkDeviceMemory");
         }
 
 
-        public static unsafe VkDeviceMemory Allocate(VulkanContext context, MemoryRequirements memRequirements, MemoryPropertyFlags properties)
+        public static VkDeviceMemory Allocate(VulkanContext context, MemoryRequirements memRequirements, MemoryPropertyFlags properties)
         {
             var allocInfo = new MemoryAllocateInfo
             {
@@ -38,7 +45,6 @@ namespace RockEngine.Vulkan
 
             VulkanContext.Vk.AllocateMemory(context.Device, in allocInfo, in VulkanContext.CustomAllocator<VkDeviceMemory>(), out var memory)
                  .VkAssertResult("Failed to allocate memory!");
-
             return new VkDeviceMemory(context, memory, memRequirements.Size, properties);
         }
 
@@ -89,7 +95,11 @@ namespace RockEngine.Vulkan
 
         protected override unsafe void Dispose(bool disposing)
         {
-            if (_disposed) return;
+            if (_disposed)
+            {
+                return;
+            }
+            VulkanAllocator.DeviceMemoryTracker.UnregisterDeviceMemory(_memory);
             VulkanContext.Vk.FreeMemory(_context.Device, _memory, in VulkanContext.CustomAllocator<VkDeviceMemory>());
             _mappedData = null;
             _disposed = true;

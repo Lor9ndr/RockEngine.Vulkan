@@ -19,6 +19,12 @@ namespace RockEngine.Core.Builders
             _attributeDescription.AddRange(attributeDescription);
             return this;
         }
+        public VulkanPipelineVertexInputStateBuilder Add<T>() where T:IVertex
+        {
+            _vertexBindingDescriptions.Add(T.GetBindingDescription());
+            _attributeDescription.AddRange(T.GetAttributeDescriptions());
+            return this;
+        }
 
         public unsafe MemoryHandle Build()
         {

@@ -16,6 +16,9 @@ namespace RockEngine.Core.Builders
         private CullModeFlags _cull = CullModeFlags.None;
         private FrontFace _frontFace = Silk.NET.Vulkan.FrontFace.Clockwise;
         private Bool32 _depthBias = true;
+        private float _depthBiasConstantFactor;
+        private float _depthBiasClamp;
+        private float _depthBiasSlopeFactor;
 
         public VulkanRasterizerBuilder DepthClamp(Bool32 depthclamp)
         {
@@ -57,6 +60,21 @@ namespace RockEngine.Core.Builders
             _depthBias = enable;
             return this;
         }
+        public VulkanRasterizerBuilder DepthBiasConstantFactor(float value)
+        {
+            _depthBiasConstantFactor = value;
+            return this;
+        }
+        public VulkanRasterizerBuilder DepthBiasClamp(float value)
+        {
+            _depthBiasClamp = value;
+            return this;
+        }
+        public VulkanRasterizerBuilder DepthBiasSlopeFactor(float value)
+        {
+            _depthBiasSlopeFactor = value;
+            return this;
+        }
 
         public MemoryHandle Build()
         {
@@ -70,8 +88,12 @@ namespace RockEngine.Core.Builders
                 PolygonMode = _mode,
                 LineWidth = _width,
                 RasterizerDiscardEnable = _rasterDiscard,
+                DepthBiasConstantFactor = _depthBiasConstantFactor,
+                DepthBiasClamp = _depthBiasClamp,
+                DepthBiasSlopeFactor = _depthBiasSlopeFactor,
             }]);
         }
 
+        
     }
 }

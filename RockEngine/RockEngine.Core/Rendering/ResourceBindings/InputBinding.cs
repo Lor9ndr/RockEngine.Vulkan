@@ -10,10 +10,10 @@ namespace RockEngine.Core.Rendering.ResourceBindings
 
         public VkImageView[] Attachments => _attachments;
 
-        protected override DescriptorType DescriptorType =>  DescriptorType.InputAttachment;
+        public override DescriptorType DescriptorType =>  DescriptorType.InputAttachment;
 
         public InputAttachmentBinding(uint setLocation, uint bindingLocation, params VkImageView[] attachments)
-            : base(setLocation, bindingLocation)
+            : base(setLocation, new Internal.UIntRange(bindingLocation, (uint)(bindingLocation + attachments.Length -1)))
         {
             _attachments = attachments;
             foreach (var attachment in _attachments)
@@ -24,22 +24,25 @@ namespace RockEngine.Core.Rendering.ResourceBindings
 
         private void Attachment_WasUpdated()
         {
-            foreach (var descriptorSet in DescriptorSets)
+            foreach (var descriptorSetkvp in _descriptorSetsByLayout)
             {
-                if(descriptorSet is null)
+                foreach(var vkDescriptorSet in descriptorSetkvp.Value)
                 {
-                    continue;
-                }
+                    if (vkDescriptorSet is null)
+                    {
+                        continue;
+                    }
 
-                descriptorSet.IsDirty = true;
+                    vkDescriptorSet.IsDirty = true;
+                }
             }
         }
 
-        public override unsafe void UpdateDescriptorSet(VulkanContext context, uint frameIndex)
+        public override unsafe void UpdateDescriptorSet(VulkanContext context, uint frameIndex, VkDescriptorSetLayout layout)
         {
+            var descriptor = GetDescriptorSetForLayout(layout,frameIndex);
             var imageInfos = stackalloc DescriptorImageInfo[Attachments.Length];
             var writes = stackalloc WriteDescriptorSet[Attachments.Length];
-            var descriptor = DescriptorSets[frameIndex];
             for (int i = 0; i < Attachments.Length; i++)
             {
                 imageInfos[i] = new DescriptorImageInfo
@@ -53,7 +56,7 @@ namespace RockEngine.Core.Rendering.ResourceBindings
                 {
                     SType = StructureType.WriteDescriptorSet,
                     DstSet = descriptor,
-                    DstBinding = BindingLocation + (uint)i,
+                    DstBinding = BindingLocation.Start + (uint)i,
                     DstArrayElement = 0,
                     DescriptorCount = 1,
                     DescriptorType = DescriptorType,
@@ -62,16 +65,6 @@ namespace RockEngine.Core.Rendering.ResourceBindings
             }
 
             VulkanContext.Vk.UpdateDescriptorSets(context.Device, (uint)Attachments.Length, writes, 0, null);
-        }
-        public override int GetResourceHash()
-        {
-            HashCode hash = new HashCode();
-            hash.Add(base.GetResourceHash());
-            foreach (var attachments in _attachments)
-            {
-                hash.Add(attachments.GetHashCode());
-            }
-            return hash.ToHashCode();
         }
 
         public void Dispose()
@@ -82,6 +75,11 @@ namespace RockEngine.Core.Rendering.ResourceBindings
             }
             _attachments = [];
             GC.SuppressFinalize(this);
+        }
+
+        public override InputAttachmentBinding Clone()
+        {
+            return new InputAttachmentBinding(SetLocation, BindingLocation.Start, Attachments);
         }
     }
 }

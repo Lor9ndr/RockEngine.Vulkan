@@ -1,4 +1,5 @@
-﻿using RockEngine.Vulkan;
+﻿using RockEngine.Core.Rendering.Objects;
+using RockEngine.Vulkan;
 using RockEngine.Vulkan.Builders;
 
 using Silk.NET.Core.Native;
@@ -33,7 +34,7 @@ namespace RockEngine.Core.Builders
             return this;
         }
 
-        public unsafe VkPipeline Build()
+        public unsafe RckPipeline Build() // Changed return type to RckPipeline
         {
             _layout ??= VkPipelineLayout.Create(_context, _shaderModule);
 
@@ -63,7 +64,9 @@ namespace RockEngine.Core.Builders
 
             _context.DebugUtils.SetDebugUtilsObjectName(pipeline, ObjectType.Pipeline, _name);
 
-            return new VkPipeline(_context, _name, pipeline, _layout);
+            var vkPipeline = new VkPipeline(_context, _name, pipeline, _layout);
+
+            return new RckPipeline(vkPipeline, _name, _layout);
         }
 
         protected override void Dispose(bool disposing)

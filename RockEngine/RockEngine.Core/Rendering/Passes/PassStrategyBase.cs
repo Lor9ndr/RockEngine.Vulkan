@@ -1,7 +1,12 @@
-﻿using RockEngine.Core.Builders;
+﻿using NLog;
+
+using RockEngine.Core.Builders;
 using RockEngine.Core.Rendering.Managers;
-using RockEngine.Core.Rendering.SubPasses;
+using RockEngine.Core.Rendering.Objects;
+using RockEngine.Core.Rendering.Passes.SubPasses;
 using RockEngine.Vulkan;
+
+using Silk.NET.Vulkan;
 
 namespace RockEngine.Core.Rendering.Passes
 {
@@ -13,18 +18,23 @@ namespace RockEngine.Core.Rendering.Passes
         /// <summary>
         /// Builded renderpass
         /// </summary>
-        protected EngineRenderPass _renderPass;
+        private RckRenderPass? _renderPass;
 
         public abstract int Order { get; }
 
         public IReadOnlyCollection<IRenderSubPass> SubPasses => _subPasses;
+
+        public List<AttachmentDescription> Attachments { get; private set; }
+        public RckRenderPass? RenderPass { get => _renderPass; protected set => _renderPass = value; }
+        protected Logger _logger = LogManager.GetCurrentClassLogger();
+
         protected PassStrategyBase(VulkanContext context, IEnumerable<IRenderSubPass> subPasses)
         {
             _context = context;
             _subPasses = subPasses.ToArray();
         }
 
-        public EngineRenderPass BuildRenderPass(GraphicsEngine graphicsEngine)
+        public RckRenderPass BuildRenderPass()
         {
             if (_renderPass is not null)
             {
@@ -33,10 +43,11 @@ namespace RockEngine.Core.Rendering.Passes
             var builder = new RenderPassBuilder(_context);
 
             // Collect all attachment descriptions
-            foreach (var pass in _subPasses.OrderBy(p => p.Order))
+            foreach (var pass in _subPasses)
             {
                 pass.SetupAttachmentDescriptions(builder);
             }
+            Attachments = builder.Attachments;
 
             // Configure subpasses
             for (uint i = 0; i < _subPasses.Length; i++)
@@ -51,8 +62,9 @@ namespace RockEngine.Core.Rendering.Passes
             {
                 _subPasses[i].SetupDependencies(builder, i);
             }
-
-            _renderPass = new EngineRenderPass(builder.Build());
+           
+            _renderPass = new RckRenderPass(builder.Build(), _subPasses);
+            _renderPass.RenderPass.LabelObject(GetType().Name);
             return _renderPass;
         }
 
@@ -60,9 +72,9 @@ namespace RockEngine.Core.Rendering.Passes
         {
         }
 
-        public abstract Task Execute(VkCommandBuffer cmd, CameraManager cameraManager, Renderer renderer);
+        public abstract ValueTask Execute(RenderContext renderContext, WorldRenderer renderer);
 
-        public void InitializeSubPasses()
+        public virtual void InitializeSubPasses()
         {
             foreach (var item in SubPasses)
             {
@@ -70,9 +82,9 @@ namespace RockEngine.Core.Rendering.Passes
             }
         }
 
-        public virtual Task Update()
+        public virtual ValueTask Update()
         {
-            return Task.CompletedTask;
+            return ValueTask.CompletedTask;
         }
     }
 }

@@ -1,38 +1,127 @@
-﻿using RockEngine.Core.Assets.AssetData;
-using RockEngine.Core.ECS.Components;
+﻿using MessagePack;
+
+using RockEngine.Core.DI;
+using RockEngine.Core.Rendering;
+using RockEngine.Core.Rendering.Buffers;
+using RockEngine.Core.ResourceProviders;
 
 namespace RockEngine.Core.Assets
 {
-    public class MeshAsset : Asset, ISerializableAsset<MeshData>
+    [MessagePackObject]
+    public sealed partial class MeshAsset : Asset<MeshData<Vertex>>, IGpuResource, IMesh, IDisposable, IResourceProvider<IMesh>
     {
-        private readonly AssetManager _assetManager;
-        private MeshData _data;
+        public override string Type => "Mesh";
 
-        public MeshAsset(AssetManager assetManager, string path, MeshData data)
-            :base(path)
+        [IgnoreMember]
+
+        private Vertex[]? Vertices => Data?.Vertices;
+        [IgnoreMember]
+
+        private uint[]? Indices => Data?.Indices;
+
+        [IgnoreMember]
+        public bool GpuReady => _allocation is not null;
+
+        [IgnoreMember]
+        public bool HasIndices => IndicesCount > 0;
+
+        [IgnoreMember]
+        private GlobalGeometryBuffer.MeshAllocation? _allocation;
+
+        [IgnoreMember]
+        public uint IndicesCount { get; private set; }
+
+        [IgnoreMember]
+        public uint VerticesCount { get; private set; }
+        [IgnoreMember]
+        private readonly SemaphoreSlim _gpuLock = new SemaphoreSlim(1, 1);
+        [IgnoreMember]
+        private bool _disposed;
+
+
+        public void SetGeometry(Vertex[] vertices, uint[]? indices)
         {
-            _assetManager = assetManager;
-            _data = data;
+            ArgumentNullException.ThrowIfNull(vertices, nameof(vertices));
+            Data ??= new MeshData<Vertex>();
+
+            Data.Vertices = vertices;
+            Data.Indices = indices;
+            VerticesCount = (uint)vertices!.Length;
+            IndicesCount = (uint)(indices is null ? 0 : indices.Length);
         }
-        public MeshData GetData() => _data;
-
-        public void UpdateData(MeshData data)
+        public override void SetData(object data)
         {
-            _data = data;
-            // Handle mesh reloading if needed
+            if (data is MeshData<Vertex> meshData)
+            {
+                Data = meshData;
+                SetGeometry(Data.Vertices, Data.Indices);
+            }
         }
 
-        public override async Task LoadAsync()
+        public async ValueTask LoadGpuResourcesAsync()
         {
-            if (IsLoaded) return;
+            if (GpuReady)
+            {
+                return;
+            }
 
-            IsLoaded = true;
+            if (!IsDataLoaded)
+            {
+                await LoadDataAsync().ConfigureAwait(true);
+            }
+
+            await _gpuLock.WaitAsync().ConfigureAwait(true);
+            try
+            {
+                if (GpuReady)
+                {
+                    return;
+                }
+
+                // Get the global geometry buffer from the context or a service
+                var globalGeometryBuffer = IoC.Container.GetInstance<GlobalGeometryBuffer>();
+
+                // Add mesh to global buffer
+                _allocation = await globalGeometryBuffer.AddMeshAsync(ID, Vertices!, Indices!);
+                IndicesCount = (uint)(Indices is null ? 0: Indices.Length);
+                VerticesCount = (uint)Vertices!.Length;
+            }
+            finally
+            {
+                _gpuLock.Release();
+            }
+            UnloadData();
         }
 
-        public override void Unload()
+       
+
+        public void UnloadGpuResources()
         {
-           
-            IsLoaded = false;
+            lock (_gpuLock)
+            {
+                var globalGeometryBuffer = IoC.Container.GetInstance<GlobalGeometryBuffer>();
+                globalGeometryBuffer.RemoveMesh(ID);
+                _allocation = null;
+            }
+        }
+
+        public void Dispose()
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            UnloadData();
+            UnloadGpuResources();
+            _fileSemaphore.Dispose();
+            _disposed = true;
+        }
+
+        public async ValueTask<IMesh> GetAsync()
+        {
+            await LoadGpuResourcesAsync();
+            return this;
         }
     }
 }

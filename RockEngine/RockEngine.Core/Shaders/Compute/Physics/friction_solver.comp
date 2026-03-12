@@ -1,0 +1,204 @@
+#version 450
+#extension GL_EXT_scalar_block_layout : require
+
+#include "../../Include/physics_common.glsl"
+
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+layout(set = 0, binding = 0, scalar) buffer RigidbodyBuffer {
+    Rigidbody rigidbodies[];
+};
+
+layout(set = 0, binding = 1, scalar) buffer ColliderBuffer {
+    Collider colliders[];
+};
+
+layout(set = 0, binding = 2, scalar) buffer ManifoldBuffer {
+    Manifold manifolds[];
+};
+
+layout(set = 0, binding = 3, scalar) buffer ContactPointBuffer {
+    ContactPoint contactPoints[];
+};
+
+layout(set = 1, binding = 0) uniform ParamsUniform {
+    PhysicsParams params;
+};
+
+layout(push_constant) uniform FrictionConstants {
+    float deltaTime;
+    uint iteration;
+    uint frictionIterations;
+    float staticFrictionThreshold;
+    float dynamicFrictionScale;
+    float frictionStiffness;
+} friction;
+
+// Solve friction constraint
+void solveFrictionConstraint(uint bodyA, uint bodyB,
+                           vec3 contactPoint, vec3 normal,
+                           inout Rigidbody rbA, inout Rigidbody rbB,
+                           inout ContactPoint contact, float normalImpulse) {
+    
+    float invMassA = (rbA.bodyType != 0u) ? rbA.inverseMass : 0.0;
+    float invMassB = (rbB.bodyType != 0u) ? rbB.inverseMass : 0.0;
+    
+    if (invMassA == 0.0 && invMassB == 0.0) return;
+    
+    // Get world space inertia tensors
+    mat3 rotA = quatToMat3(rbA.rotation);
+    mat3 rotB = quatToMat3(rbB.rotation);
+    
+    mat3 invInertiaA = rotateInertia(rotA, mat3(rbA.inverseInertiaTensor));
+    mat3 invInertiaB = rotateInertia(rotB, mat3(rbB.inverseInertiaTensor));
+    
+    // Contact vectors
+    vec3 rA = contactPoint - (rbA.position + rbA.centerOfMass);
+    vec3 rB = contactPoint - (rbB.position + rbB.centerOfMass);
+    
+    // Relative velocity at contact point
+    vec3 velA = rbA.velocity + cross(rbA.angularVelocity, rA);
+    vec3 velB = rbB.velocity + cross(rbB.angularVelocity, rB);
+    vec3 relVel = velB - velA;
+    
+    // Create orthonormal tangent basis
+    vec3 tangent1, tangent2;
+    if (abs(normal.x) > 0.1) {
+        tangent1 = normalize(cross(normal, vec3(0.0, 1.0, 0.0)));
+    } else {
+        tangent1 = normalize(cross(normal, vec3(1.0, 0.0, 0.0)));
+    }
+    tangent2 = cross(normal, tangent1);
+    
+    // Friction coefficients
+    float frictionCoeff = sqrt(rbA.friction * rbB.friction);
+    float maxFriction = frictionCoeff * abs(normalImpulse);
+    
+    // Solve for tangent1
+    vec3 rAxT1 = cross(rA, tangent1);
+    vec3 rBxT1 = cross(rB, tangent1);
+    
+    float kTangent1 = invMassA + invMassB;
+    
+    if (invMassA > 0.0) {
+        vec3 temp = invInertiaA * rAxT1;
+        kTangent1 += dot(rAxT1, temp);
+    }
+    if (invMassB > 0.0) {
+        vec3 temp = invInertiaB * rBxT1;
+        kTangent1 += dot(rBxT1, temp);
+    }
+    
+    if (kTangent1 > 1e-8) {
+        float velTangent1 = dot(relVel, tangent1);
+        float lambdaT1 = -velTangent1 / kTangent1;
+        
+        // Apply static/dynamic friction threshold
+        if (abs(lambdaT1) > friction.staticFrictionThreshold * maxFriction) {
+            lambdaT1 *= friction.dynamicFrictionScale;
+        }
+        
+        // Clamp to friction cone
+        float oldFriction1 = contact.frictionImpulse1;
+        float newFriction1 = clamp(oldFriction1 + lambdaT1, -maxFriction, maxFriction);
+        lambdaT1 = newFriction1 - oldFriction1;
+        
+        // Apply relaxation
+        lambdaT1 *= friction.frictionStiffness;
+        
+        vec3 frictionImpulse1 = lambdaT1 * tangent1;
+        
+        if (invMassA > 0.0) {
+            rbA.velocity -= frictionImpulse1 * invMassA;
+            rbA.angularVelocity -= invInertiaA * cross(rA, frictionImpulse1);
+        }
+        if (invMassB > 0.0) {
+            rbB.velocity += frictionImpulse1 * invMassB;
+            rbB.angularVelocity += invInertiaB * cross(rB, frictionImpulse1);
+        }
+        
+        contact.frictionImpulse1 = newFriction1;
+    }
+    
+    // Solve for tangent2
+    vec3 rAxT2 = cross(rA, tangent2);
+    vec3 rBxT2 = cross(rB, tangent2);
+    
+    float kTangent2 = invMassA + invMassB;
+    
+    if (invMassA > 0.0) {
+        vec3 temp = invInertiaA * rAxT2;
+        kTangent2 += dot(rAxT2, temp);
+    }
+    if (invMassB > 0.0) {
+        vec3 temp = invInertiaB * rBxT2;
+        kTangent2 += dot(rBxT2, temp);
+    }
+    
+    if (kTangent2 > 1e-8) {
+        float velTangent2 = dot(relVel, tangent2);
+        float lambdaT2 = -velTangent2 / kTangent2;
+        
+        // Apply static/dynamic friction threshold
+        if (abs(lambdaT2) > friction.staticFrictionThreshold * maxFriction) {
+            lambdaT2 *= friction.dynamicFrictionScale;
+        }
+        
+        // Clamp to friction cone
+        float oldFriction2 = contact.frictionImpulse2;
+        float newFriction2 = clamp(oldFriction2 + lambdaT2, -maxFriction, maxFriction);
+        lambdaT2 = newFriction2 - oldFriction2;
+        
+        // Apply relaxation
+        lambdaT2 *= friction.frictionStiffness;
+        
+        vec3 frictionImpulse2 = lambdaT2 * tangent2;
+        
+        if (invMassA > 0.0) {
+            rbA.velocity -= frictionImpulse2 * invMassA;
+            rbA.angularVelocity -= invInertiaA * cross(rA, frictionImpulse2);
+        }
+        if (invMassB > 0.0) {
+            rbB.velocity += frictionImpulse2 * invMassB;
+            rbB.angularVelocity += invInertiaB * cross(rB, frictionImpulse2);
+        }
+        
+        contact.frictionImpulse2 = newFriction2;
+    }
+}
+
+void main() {
+    uint idx = gl_GlobalInvocationID.x;
+    if (idx >= params.colliderCount) return;
+    
+    // Get manifold for this collision
+    Manifold manifold = manifolds[idx];
+    if (manifold.bodyA == 0xFFFFFFFFu || manifold.bodyB == 0xFFFFFFFFu) return;
+    
+    // Get rigidbodies
+    Rigidbody rbA = rigidbodies[manifold.bodyA];
+    Rigidbody rbB = rigidbodies[manifold.bodyB];
+    
+    // Skip inactive bodies
+    if (rbA.isActive == 0u || rbB.isActive == 0u) return;
+    
+    // Process each contact point
+    for (uint i = 0; i < manifold.contactCount; i++) {
+        uint contactIndex = idx * 4 + i;
+        ContactPoint contact = contactPoints[contactIndex];
+        
+        // Solve friction constraint
+        solveFrictionConstraint(
+            manifold.bodyA, manifold.bodyB,
+            contact.position, manifold.normal,
+            rbA, rbB, contact, contact.warmStartImpulse
+        );
+        
+        // Store updated contact
+        contactPoints[contactIndex] = contact;
+    }
+    
+    // Write back rigidbodies
+    rigidbodies[manifold.bodyA] = rbA;
+    rigidbodies[manifold.bodyB] = rbB;
+}

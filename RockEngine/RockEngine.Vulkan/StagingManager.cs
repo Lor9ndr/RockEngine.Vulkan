@@ -6,7 +6,7 @@ namespace RockEngine.Vulkan
 {
     public sealed class StagingManager : IDisposable
     {
-        private  VkBuffer _stagingBuffer;
+        private VkBuffer _stagingBuffer;
         private ulong _bufferOffset;
         private ulong _bufferSize;
 
@@ -14,20 +14,28 @@ namespace RockEngine.Vulkan
         private readonly Lock _bufferLock = new();
         private readonly SubmitContext _submitContext;
         private readonly ulong _alignment;
+        private readonly ulong _initialSize;
+        private readonly TimeSpan _idleTimeThreshold = TimeSpan.FromSeconds(5);
+
+        private ulong _maxUsedOffset;
+        private bool _shouldDownsize;
+        private ulong _downsizeTarget;
+        private DateTime _lastResetTime;
 
         public VkBuffer StagingBuffer => _stagingBuffer;
 
-        public StagingManager(VulkanContext context, SubmitContext submitContext, ulong initialSize = 1 * 1024 * 1024)
+        public StagingManager(VulkanContext context,  ulong initialSize = 1 * 1024) 
         {
             _context = context;
-            _submitContext = submitContext;
             _bufferSize = initialSize;
+            _initialSize = initialSize;
             _stagingBuffer = VkBuffer.Create(context, _bufferSize,
                 BufferUsageFlags.TransferSrcBit,
                 MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit);
             _stagingBuffer.LabelObject("StagingBuffer");
 
             _alignment = context.Device.PhysicalDevice.Properties.Limits.MinMemoryMapAlignment;
+            _lastResetTime = DateTime.UtcNow;
         }
 
         public unsafe bool TryStage<T>(UploadBatch batch, T[] data, out ulong offset, out ulong size) where T : unmanaged
@@ -35,81 +43,118 @@ namespace RockEngine.Vulkan
             return TryStageInternal(batch, data.AsSpan(), out offset, out size);
         }
 
-        public unsafe bool TryStage<T>(UploadBatch batch, Span<T> data, out ulong offset, out ulong size) where T : unmanaged
+        public unsafe bool TryStage<T>(UploadBatch batch, ReadOnlySpan<T> data, out ulong offset, out ulong size) where T : unmanaged
         {
-            return TryStageInternal(batch,data, out offset, out size);
+            return TryStageInternal(batch, data, out offset, out size);
         }
-        private unsafe bool TryStageInternal<T>(UploadBatch batch, Span<T> data, out ulong offset, out ulong size) where T : unmanaged
+
+        private bool TryStageInternal<T>(UploadBatch batch, ReadOnlySpan<T> data, out ulong offset, out ulong size) where T : unmanaged
         {
             size = (ulong)(Unsafe.SizeOf<T>() * data.Length);
-            offset = 0;
-
             lock (_bufferLock)
             {
-                // Align offset
-                var alignedOffset = _bufferOffset + _alignment - 1 & ~(_alignment - 1);
+                // Check if we need to downsize before processing this allocation
+                if (_shouldDownsize)
+                {
+                    // Calculate required space including alignment
+                    ulong alignedOffsetForCheck = _bufferOffset + _alignment - 1 & ~(_alignment - 1);
+                    ulong requiredForCurrent = alignedOffsetForCheck + size;
 
-                // Check if we need to resize
+                    if (requiredForCurrent <= _downsizeTarget)
+                    {
+                        // Downsize to target and reset state
+                        ResizeBuffer(batch, _downsizeTarget);
+                        _shouldDownsize = false;
+                    }
+                    else
+                    {
+                        // Can't downsize - allocation too large for target
+                        _shouldDownsize = false;
+                    }
+                }
+
+                // Calculate aligned offset for current allocation
+                ulong alignedOffset = _bufferOffset + _alignment - 1 & ~(_alignment - 1);
+
+                // Check if we need to grow buffer
                 if (alignedOffset + size > _bufferSize)
                 {
-                    ResizeBuffer(batch, alignedOffset + size);
-                    // After resize, aligned offset should be at start of new buffer
+                    // Grow buffer to at least double current size or required size
+                    ulong newSize = Math.Max(_bufferSize * 2, alignedOffset + size);
+                    ResizeBuffer(batch, newSize);
                     alignedOffset = 0;
                 }
 
-                // Verify we have space after potential resize
-                if (alignedOffset + size > _bufferSize)
+                // Map buffer and copy data
+                using (var mem = _stagingBuffer.MapMemory(size, alignedOffset))
                 {
-                    return false;
+                    data.CopyTo(mem.GetSpan<T>());
                 }
 
-                _stagingBuffer.Map(out var pdata, size, alignedOffset);
 
-                fixed (T* dataPtr = data)
+                // Create memory barrier
+             /*   var bufferBarrier = new BufferMemoryBarrier2
                 {
-                    System.Buffer.MemoryCopy(
-                        dataPtr,
-                        (byte*)pdata + alignedOffset,
-                        _bufferSize - alignedOffset,
-                        size);
-                }
+                    SType = StructureType.BufferMemoryBarrier2,
+                    SrcAccessMask = AccessFlags2.HostWriteBit,
+                    DstAccessMask = AccessFlags2.TransferReadBit,
+                    Buffer = _stagingBuffer,
+                    Offset = alignedOffset,
+                    Size = size,
+                    SrcStageMask = PipelineStageFlags2.HostBit,
+                    DstStageMask = PipelineStageFlags2.TransferBit
+                };
 
+                // Add to command batch
+                batch.PipelineBarrier([],[ bufferBarrier], []);*/
+
+                // Update state
                 offset = alignedOffset;
                 _bufferOffset = alignedOffset + size;
+                _maxUsedOffset = Math.Max(_maxUsedOffset, _bufferOffset);
+
                 return true;
             }
         }
-        private void ResizeBuffer(UploadBatch batch, ulong requiredSize)
+
+        private void ResizeBuffer(UploadBatch batch, ulong newSize)
         {
-            lock (_bufferLock)
-            {
-                // Calculate new size (at least double current size)
-                ulong newSize = Math.Max(_bufferSize * 2, requiredSize);
+            // Create new buffer
+            var newBuffer = VkBuffer.Create(_context, newSize,
+                BufferUsageFlags.TransferSrcBit,
+                MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit);
 
-                // Create new buffer
-                var newBuffer = VkBuffer.Create(_context, newSize,
-                    BufferUsageFlags.TransferSrcBit,
-                    MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit);
+            // Retire old buffer
+            batch.AddDependency(_stagingBuffer);
 
-
-                // Retire current buffer
-                batch.AddDependency(StagingBuffer);
-
-                // Switch to new buffer
-                _stagingBuffer = newBuffer;
-                _stagingBuffer.LabelObject("StagingBuffer");
-
-                _bufferSize = newSize;
-                _bufferOffset = 0;
-            }
+            // Update references
+            _stagingBuffer = newBuffer;
+            _stagingBuffer.LabelObject("StagingBuffer");
+            _bufferSize = newSize;
+            _bufferOffset = 0;
         }
-
 
         public void Reset()
         {
             lock (_bufferLock)
             {
+                ulong currentMax = _maxUsedOffset;
+                _maxUsedOffset = 0;
                 _bufferOffset = 0;
+
+                // Check if we should schedule downsize
+                DateTime now = DateTime.UtcNow;
+                TimeSpan timeSinceLastReset = now - _lastResetTime;
+                _lastResetTime = now;
+
+                if (timeSinceLastReset > _idleTimeThreshold &&
+                    currentMax < _bufferSize / 2 &&
+                    _bufferSize > _initialSize)
+                {
+                    // Calculate target size (at least initial size)
+                    _downsizeTarget = Math.Max(_initialSize, currentMax * 2);
+                    _shouldDownsize = true;
+                }
             }
         }
 

@@ -1,0 +1,231 @@
+#version 450
+#extension GL_EXT_scalar_block_layout : require
+#extension GL_EXT_debug_printf : enable
+
+#include "../../Include/physics_common.glsl"
+
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+layout(set = 0, binding = 0, scalar) buffer RigidbodyBuffer {
+    Rigidbody rigidbodies[];
+};
+
+layout(set = 0, binding = 1, scalar) buffer ColliderBuffer {
+    Collider colliders[];
+};
+
+layout(set = 0, binding = 2, scalar) buffer CollisionPairBuffer {
+    CollisionPair collisionPairs[];
+};
+
+layout(set = 0, binding = 3, scalar) buffer GJKSimplexBuffer {
+    GJKSimplex simplexes[];
+};
+
+layout(set = 0, binding = 4, scalar) buffer AtomicCounter {
+    uint collisionCount;
+} counter;
+
+layout(push_constant) uniform GJKConstants {
+    uint maxIterations;
+    float epsilon;
+    uint maxSimplexSize;
+    uint enableMinkowski;
+} gjk;
+
+// Support function for different shapes
+vec3 support(in Collider col, vec3 dir) {
+    vec3 localDir = rotateVector(dir, col.rotation);
+    
+    if (col.shape == 0u) { // Box
+        vec3 halfSize = col.size;
+        return col.position + rotateVector(vec3(
+            (localDir.x > 0.0) ? halfSize.x : -halfSize.x,
+            (localDir.y > 0.0) ? halfSize.y : -halfSize.y,
+            (localDir.z > 0.0) ? halfSize.z : -halfSize.z
+        ), col.rotation);
+    }
+    else if (col.shape == 1u) { // Sphere
+        return col.position + normalize(dir) * col.radius;
+    }
+    else if (col.shape == 2u) { // Cylinder
+        vec3 localPos = vec3(0.0);
+        float radius = col.radius;
+        float halfHeight = col.height * 0.5;
+        
+        // Cap support
+        if (abs(localDir.y) > 0.001) {
+            localPos.y = (localDir.y > 0.0) ? halfHeight : -halfHeight;
+            float rScale = radius / sqrt(localDir.x * localDir.x + localDir.z * localDir.z);
+            localPos.x = localDir.x * rScale;
+            localPos.z = localDir.z * rScale;
+        } else {
+            // Side support
+            localPos.x = localDir.x * radius;
+            localPos.z = localDir.z * radius;
+            localPos.y = clamp(localDir.y * halfHeight, -halfHeight, halfHeight);
+        }
+        
+        return col.position + rotateVector(localPos, col.rotation);
+    }
+    else if (col.shape == 3u) { // Capsule
+        vec3 axis = vec3(0.0, 1.0, 0.0);
+        float radius = col.radius;
+        float halfHeight = max(0.0, col.height * 0.5 - radius);
+        
+        // Hemisphere + cylinder
+        vec3 localDirNorm = normalize(localDir);
+        float dotAxis = dot(localDirNorm, axis);
+        
+        if (dotAxis > 0.999) {
+            // Top cap
+            return col.position + rotateVector(axis * (halfHeight + radius), col.rotation);
+        } else if (dotAxis < -0.999) {
+            // Bottom cap
+            return col.position + rotateVector(-axis * (halfHeight + radius), col.rotation);
+        } else {
+            // Side
+            vec3 sideDir = normalize(localDirNorm - axis * dotAxis);
+            vec3 localPos = sideDir * radius;
+            localPos += axis * (halfHeight * sign(dotAxis));
+            return col.position + rotateVector(localPos, col.rotation);
+        }
+    }
+    
+    return col.position;
+}
+
+// Minkowski difference support
+vec3 minkowskiSupport(uint idxA, uint idxB, vec3 dir) {
+    Collider colA = colliders[idxA];
+    Collider colB = colliders[idxB];
+    
+    vec3 supportA = support(colA, dir);
+    vec3 supportB = support(colB, -dir);
+    
+    return supportA - supportB;
+}
+
+// GJK algorithm
+bool gjkIntersection(uint idxA, uint idxB, out GJKSimplex simplex) {
+    // Initial direction
+    vec3 dir = vec3(1.0, 0.0, 0.0);
+    
+    // First point
+    vec3 a = minkowskiSupport(idxA, idxB, dir);
+    if (dot(a, dir) < 0.0) return false;
+    
+    // Second point
+    dir = -a;
+    vec3 b = minkowskiSupport(idxA, idxB, dir);
+    if (dot(b, dir) < 0.0) return false;
+    
+    // Third point
+    vec3 ab = b - a;
+    vec3 ao = -a;
+    dir = cross(cross(ab, ao), ab);
+    if (length(dir) < gjk.epsilon) {
+        dir = cross(vec3(0.0, 1.0, 0.0), ab);
+        if (length(dir) < gjk.epsilon) {
+            dir = cross(vec3(0.0, 0.0, 1.0), ab);
+        }
+    }
+    
+    vec3 c = minkowskiSupport(idxA, idxB, dir);
+    if (dot(c, dir) < 0.0) return false;
+    
+    // Initialize simplex
+    simplex.points0 = a;
+    simplex.points1 = b;
+    simplex.points2 = c;
+    simplex.count = 3;
+    simplex.direction = dir;
+    
+    // Iterative refinement
+    for (uint i = 0; i < gjk.maxIterations; i++) {
+        // Find closest point on simplex to origin
+        if (simplex.count == 3) {
+            // Triangle case
+            vec3 ab = simplex.points1 - simplex.points0;
+            vec3 ac = simplex.points2 - simplex.points0;
+            vec3 ao = -simplex.points0;
+            
+            vec3 abc = cross(ab, ac);
+            
+            vec3 edgeAB = cross(ab, abc);
+            if (dot(edgeAB, ao) > 0.0) {
+                // Origin outside edge AB
+                simplex.points2 = simplex.points1;
+                simplex.points1 = simplex.points0;
+                simplex.count = 2;
+                simplex.direction = cross(cross(ab, ao), ab);
+                continue;
+            }
+            
+            vec3 edgeAC = cross(abc, ac);
+            if (dot(edgeAC, ao) > 0.0) {
+                // Origin outside edge AC
+                simplex.points1 = simplex.points0;
+                simplex.count = 2;
+                simplex.direction = cross(cross(ac, ao), ac);
+                continue;
+            }
+            
+            // Origin inside triangle
+            if (dot(abc, ao) > 0.0) {
+                // Above triangle
+                simplex.direction = abc;
+            } else {
+                // Below triangle
+                simplex.points0 = simplex.points1;
+                simplex.points1 = simplex.points2;
+                simplex.direction = -abc;
+            }
+            
+            // Get new support point
+            vec3 d = minkowskiSupport(idxA, idxB, simplex.direction);
+            if (dot(d, simplex.direction) < gjk.epsilon) {
+                simplex.closestDistance = 0.0;
+                return true; // Intersection found
+            }
+            
+            simplex.points3 = d;
+            simplex.count = 4;
+        }
+        
+        if (simplex.count == 4) {
+            // Tetrahedron case
+            // Check which face is closest
+            simplex.closestDistance = length(simplex.points0);
+            return true;
+        }
+    }
+    
+    return false;
+}
+
+void main() {
+    uint idx = gl_GlobalInvocationID.x;
+    if (idx >= counter.collisionCount) return;
+    
+    CollisionPair pair = collisionPairs[idx];
+    if (pair.bodyA == 0xFFFFFFFFu || pair.bodyB == 0xFFFFFFFFu) return;
+    
+    // Get collider indices
+    uint colIdxA = rigidbodies[pair.bodyA].colliderIndex;
+    uint colIdxB = rigidbodies[pair.bodyB].colliderIndex;
+    
+    if (colIdxA == 0xFFFFFFFFu || colIdxB == 0xFFFFFFFFu) return;
+    
+    // Run GJK
+    GJKSimplex simplex;
+    bool intersecting = gjkIntersection(colIdxA, colIdxB, simplex);
+    
+    if (intersecting) {
+        simplexes[idx] = simplex;
+        // Mark for EPA processing
+        collisionPairs[idx].depth = simplex.closestDistance;
+    } else {
+        collisionPairs[idx].bodyA = 0xFFFFFFFFu; // Mark as no collision
+    }
+}

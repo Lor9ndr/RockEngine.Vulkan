@@ -1,23 +1,23 @@
-﻿using RockEngine.Vulkan;
+﻿using RockEngine.Core.Builders;
+using RockEngine.Core.Rendering.Objects;
+using RockEngine.Vulkan;
+
 using Silk.NET.Vulkan;
-using RockEngine.Core.Builders;
 
 namespace RockEngine.Core.Rendering.Managers
 {
     public class ComputeShaderManager
     {
         private readonly VulkanContext _context;
-        private readonly BindingManager _bindingManager;
         private readonly PipelineManager _pipelineManager;
 
-        public ComputeShaderManager(VulkanContext context, BindingManager bindingManager, PipelineManager pipelineManager)
+        public ComputeShaderManager(VulkanContext context,  PipelineManager pipelineManager)
         {
             _context = context;
-            _bindingManager = bindingManager;
             _pipelineManager = pipelineManager;
         }
 
-        public async Task<VkPipeline> CreateComputePipelineAsync(string shaderPath,string pipelineName)
+        public async Task<RckPipeline> CreateComputePipelineAsync(string shaderPath,string pipelineName)
         {
             var shader = await VkShaderModule.CreateAsync(
                 _context,
@@ -29,9 +29,9 @@ namespace RockEngine.Core.Rendering.Managers
                 .WithShaderModule(shader));
         }
 
-        public void Dispatch(VkCommandBuffer cmd, uint groupX, uint groupY, uint groupZ)
+        public void Dispatch(UploadBatch cmd, uint groupX, uint groupY, uint groupZ)
         {
-            VulkanContext.Vk.CmdDispatch(cmd, groupX, groupY, groupZ);
+            cmd.Dispatch(groupX, groupY, groupZ);
         }
     }
 }

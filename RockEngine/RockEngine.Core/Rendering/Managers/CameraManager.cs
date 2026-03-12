@@ -1,58 +1,53 @@
 ﻿using RockEngine.Core.ECS.Components;
-using RockEngine.Core.Rendering.Passes;
-using RockEngine.Core.Rendering.RenderTargets;
-using RockEngine.Core.Rendering.ResourceBindings;
-using RockEngine.Vulkan;
+using RockEngine.Core.Helpers;
 
 namespace RockEngine.Core.Rendering.Managers
 {
     public class CameraManager
     {
-        private readonly VulkanContext _context;
-        private readonly GraphicsEngine _engine;
-        private readonly RenderPassManager _renderPassManager;
-        private readonly PipelineManager _pipelineManager;
         private readonly List<Camera> _activeCameras = new List<Camera>();
+        
+        public IReadOnlyList<Camera> RegisteredCameras => _activeCameras;
 
-        public IReadOnlyList<Camera> ActiveCameras => _activeCameras;
-
-        public CameraManager(VulkanContext context, GraphicsEngine engine, RenderPassManager renderPassManager, PipelineManager pipelineManager)
+        public CameraManager()
         {
-            _context = context;
-            _engine = engine;
-            _renderPassManager = renderPassManager;
-            _pipelineManager = pipelineManager;
+           
         }
 
-        public void Register(Camera camera, Renderer renderer)
+        public int Register(Camera camera, WorldRenderer renderer)
         {
-            if (camera.RenderTarget == null)
-            {
-                camera.RenderTarget = new CameraRenderTarget(
-                    _context,
-                    _engine,
-                    _engine.Swapchain.Extent);
-
-                camera.RenderTarget.Initialize(_renderPassManager.GetRenderPass<DeferredPassStrategy>() ?? throw new Exception($"Unable to get renderPass of {nameof(DeferredPassStrategy)}"));
-                InitializeGBuffer(camera.RenderTarget.GBuffer, renderer);
-            }
-
             _activeCameras.Add(camera);
+            return _activeCameras.Count - 1;
         }
 
-        private void InitializeGBuffer(GBuffer gbuffer, Renderer renderer)
-        {
-            
-            gbuffer.CreateLightingDescriptorSets(_pipelineManager.GetPipelineByName("DeferredLighting"));
-            gbuffer.Material.Bindings.Add(renderer.GlobalUbo.GetBinding((uint)_activeCameras.Count));
-
-            gbuffer.Material.Bindings.Add(new UniformBufferBinding(renderer.LightManager.CountLightUbo, 1, 1));
-        }
 
         public void Unregister(Camera camera)
         {
             _activeCameras.Remove(camera);
             camera.RenderTarget?.Dispose();
+        }
+
+        [GLSLStruct(GLSLMemoryLayout.Std140)]
+
+        public struct IBLParams
+        {
+            public float Exposure;      // [0.1 - 4.0] Typical HDR exposure range
+            public float EnvIntensity;  // [0.0 - 2.0] Environment map multiplier  
+            public float AoStrength;    // [0.0 - 2.0] Ambient occlusion effect strength
+            public float Gamma;         // [1.8 - 2.4] Gamma correction
+            public float EnvRotation;   // [0.0 - 2*PI] Environment map rotation
+            private float _padding1;
+            private float _padding2;
+            private float _padding3;
+
+            public IBLParams()
+            {
+                Exposure = 1.0f;
+                EnvIntensity = 1.0f;
+                AoStrength = 1.0f;
+                Gamma = 2.2f;
+                EnvRotation = 0.0f;
+            }
         }
     }
 

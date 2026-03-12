@@ -8,8 +8,8 @@ namespace RockEngine.Core.Rendering
 
         void PopLayer(ILayer layer);
         Task PushLayer(ILayer layer);
-        void Render(VkCommandBuffer vkCommandBuffer);
-        void RenderImGui(VkCommandBuffer commandBuffer);
+        void Render(UploadBatch batch);
+        void RenderImGui(UploadBatch batch);
         void Update();
     }
 }

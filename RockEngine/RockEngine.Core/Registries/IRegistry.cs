@@ -1,8 +1,10 @@
-﻿namespace RockEngine.Core.Registries
+﻿
+namespace RockEngine.Core.Registries
 {
     public interface IRegistry<TValue, TKey> : IDisposable
     {
         public TValue? Get(TKey key);
+        IEnumerable<TValue> GetAll();
         public void Register(TKey key, TValue value);
         public void Unregister(TKey key);
     }

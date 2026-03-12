@@ -27,6 +27,11 @@ namespace RockEngine.Vulkan
             _stage = stage;
             ReflectShader(in reflectShaderModule);
         }
+
+        public ShaderReflectionData()
+        {
+        }
+
         private unsafe void ReflectShader(in ReflectShaderModule reflectShaderModule)
         {
             var reflectorApi = Reflect.GetApi();

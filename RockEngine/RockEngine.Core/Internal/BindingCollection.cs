@@ -20,8 +20,13 @@ namespace RockEngine.Core.Internal
         {
             if (!_setBindings.TryGetValue(binding.SetLocation, out var setBindings))
             {
+                // Only create PerSetBindings when we actually have a binding to add
                 setBindings = new PerSetBindings(binding.SetLocation);
                 _setBindings[binding.SetLocation] = setBindings;
+            }
+            else
+            {
+
             }
 
             setBindings.Add(binding);
@@ -32,39 +37,40 @@ namespace RockEngine.Core.Internal
             }
         }
 
+
         public bool Remove(ResourceBinding binding)
         {
-            if (binding is null)
-            {
-                return false;
-            }
+            if (binding is null) return false;
+
             if (!_setBindings.TryGetValue(binding.SetLocation, out var setBindings))
                 return false;
 
             var removed = setBindings.Remove(binding);
 
-            if (removed && binding is UniformBufferBinding ubo && ubo.Buffer.IsDynamic)
+            if (removed)
             {
-                _dynamicOffsets.Remove((uint)ubo.Offset);
-            }
+                if (binding is UniformBufferBinding ubo && ubo.Buffer.IsDynamic)
+                {
+                    _dynamicOffsets.Remove((uint)ubo.Offset);
+                }
 
-            if (setBindings.Count == 0)
-            {
-                _setBindings.Remove(binding.SetLocation);
+                // Remove the entire PerSetBindings if it's now empty
+                if (setBindings.Count == 0)
+                {
+                    _setBindings.Remove(binding.SetLocation);
+                }
             }
 
             return removed;
         }
 
-        public IEnumerator<(uint Set, PerSetBindings)> GetEnumerator()
-        {
-            foreach (var kvp in _setBindings)
-            {
-                yield return (kvp.Key, kvp.Value);
-            }
-        }
+        public Enumerator GetEnumerator() => new Enumerator(_setBindings);
 
-        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+        IEnumerator<(uint Set, PerSetBindings)> IEnumerable<(uint Set, PerSetBindings)>.GetEnumerator()
+             => GetEnumerator();
+
+        IEnumerator IEnumerable.GetEnumerator()
+            => GetEnumerator();
 
         public bool TryGetBindings(uint set, out PerSetBindings bindings)
         {
@@ -77,6 +83,34 @@ namespace RockEngine.Core.Internal
             {
                 set.Value.RemoveAll(value);
             }
+        }
+
+        internal void Clear()
+        {
+            foreach (var item in _setBindings)
+            {
+                item.Value.Clear();
+            }
+        }
+        public struct Enumerator : IEnumerator<(uint Set, PerSetBindings)>
+        {
+            private SortedDictionary<uint, PerSetBindings>.Enumerator _inner;
+
+            internal Enumerator(SortedDictionary<uint, PerSetBindings> bindings)
+            {
+                _inner = bindings.GetEnumerator();
+            }
+
+            public (uint Set, PerSetBindings) Current
+                => (_inner.Current.Key, _inner.Current.Value);
+
+            object IEnumerator.Current => Current;
+
+            public bool MoveNext() => _inner.MoveNext();
+
+            public void Reset() => throw new NotSupportedException();
+
+            public void Dispose() => _inner.Dispose();
         }
     }
 }

@@ -1,22 +1,23 @@
-﻿using Silk.NET.Core;
+﻿using System.Runtime.InteropServices;
+using Silk.NET.Core;
 using Silk.NET.Core.Native;
 using Silk.NET.Vulkan;
 
 namespace RockEngine.Vulkan
 {
-    public struct SwapChainSupportDetails
+    public ref struct SwapChainSupportDetails
     {
         public SurfaceCapabilitiesKHR Capabilities;
         public SurfaceFormatKHR[] Formats;
         public PresentModeKHR[] PresentModes;
     }
-
     public unsafe class VkLogicalDevice : VkObject<Device>
     {
         private readonly Vk _api;
         private readonly VkQueue _presentQueue;
         private readonly VkQueue _graphicsQueue;
         private readonly VkQueue _computeQueue;
+        private readonly VkQueue _transferQueue; 
         private readonly VkPhysicalDevice _physicalDevice;
         private readonly QueueFamilyIndices _queueFamilyIndices;
 
@@ -24,19 +25,23 @@ namespace RockEngine.Vulkan
 
         public VkQueue GraphicsQueue => _graphicsQueue;
 
-        public VkPhysicalDevice PhysicalDevice => _physicalDevice;
         public VkQueue ComputeQueue => _computeQueue;
+
+        public VkQueue TransferQueue => _transferQueue; 
+
+        public VkPhysicalDevice PhysicalDevice => _physicalDevice;
 
         public QueueFamilyIndices QueueFamilyIndices => _queueFamilyIndices;
 
 
-        private VkLogicalDevice(Vk api, Device device, VkQueue graphicsQueue, VkQueue presentQueue, VkQueue computeQueue, QueueFamilyIndices indices, VkPhysicalDevice physicalDevice)
+        private VkLogicalDevice(Vk api, Device device, VkQueue graphicsQueue, VkQueue presentQueue, VkQueue computeQueue, VkQueue transferQueue, QueueFamilyIndices indices, VkPhysicalDevice physicalDevice)
             : base(device)
         {
             _api = api;
             _graphicsQueue = graphicsQueue;
             _presentQueue = presentQueue;
             _computeQueue = computeQueue;
+            _transferQueue = transferQueue;
             _queueFamilyIndices = indices;
             _physicalDevice = physicalDevice;
            
@@ -75,6 +80,17 @@ namespace RockEngine.Vulkan
             var api = VulkanContext.Vk;
             // Find queue families
             QueueFamilyIndices indices = FindQueueFamilies(api, physicalDevice, surface);
+            var registry = context.FeatureRegistry;
+            if (!registry.CheckSupport(physicalDevice, out var unsupported))
+            {
+                // Handle unsupported required features – throw or disable them.
+            }
+
+            // Build the extension list: base extensions + registry extensions
+            var allExtensions = new HashSet<string>(extensions);
+            foreach (var ext in registry.GetAllRequiredExtensions())
+                allExtensions.Add(ext);
+
 
             // Check if the device is suitable
             if (!IsDeviceSuitable(api, physicalDevice, surface, extensions, indices))
@@ -83,7 +99,13 @@ namespace RockEngine.Vulkan
             }
 
             // Create queue create info
-            HashSet<uint> uniqueQueueFamilies = new HashSet<uint> { indices.GraphicsFamily!.Value, indices.PresentFamily!.Value, indices.ComputeFamily!.Value };
+            HashSet<uint> uniqueQueueFamilies = new HashSet<uint>
+            {
+                indices.GraphicsFamily!.Value,
+                indices.PresentFamily!.Value,
+                indices.ComputeFamily!.Value,
+                indices.TransferFamily!.Value
+            };
             var queueCreateInfos = stackalloc DeviceQueueCreateInfo[uniqueQueueFamilies.Count];
             float queuePriority = 1.0f;
 
@@ -100,29 +122,27 @@ namespace RockEngine.Vulkan
             }
 
             var features2 = new PhysicalDeviceFeatures2();
-            var vulkan11Features = new PhysicalDeviceVulkan11Features();
-            var vulkan12Features = new PhysicalDeviceVulkan12Features();
+            var vk11 = new PhysicalDeviceVulkan11Features { SType = StructureType.PhysicalDeviceVulkan11Features };
+            var vk12 = new PhysicalDeviceVulkan12Features { SType = StructureType.PhysicalDeviceVulkan12Features };
+            var vk13 = new PhysicalDeviceVulkan13Features { SType = StructureType.PhysicalDeviceVulkan13Features };
+            var pageableDeviceLocalMemoryFeatures = new PhysicalDevicePageableDeviceLocalMemoryFeaturesEXT{ SType = StructureType.PhysicalDevicePageableDeviceLocalMemoryFeaturesExt };
 
-            // Configure features
-            features2.Features = new PhysicalDeviceFeatures
+            // 6. Build feature chain
+            uint extensionCount = 0;
+
+            // 7. Let each enabled feature modify the structs / add to chain
+            foreach (var feature in registry.Features.Where(f => registry.EnabledFeatures.Contains(f.Name)))
             {
-                SamplerAnisotropy = true,
-                DepthClamp = true,
-                MultiDrawIndirect = true
-            };
+                ///TODO: REWORK CHAIN PASSING
+                using var chain2 = Chain.Create(features2, vk11, vk12, vk13, pageableDeviceLocalMemoryFeatures);
+                if (feature.IsSupported(physicalDevice))
+                {
+                    feature.Enable(ref features2, ref vk11, ref vk12, ref vk13, ref pageableDeviceLocalMemoryFeatures, chain2);
+                    extensionCount++;
+                }
+            }
+            using var chain = Chain.Create(features2, vk11, vk12, vk13, pageableDeviceLocalMemoryFeatures);
 
-            vulkan11Features.SType = StructureType.PhysicalDeviceVulkan11Features;
-            vulkan11Features.ShaderDrawParameters = true;
-
-            vulkan12Features.SType = StructureType.PhysicalDeviceVulkan12Features;
-            vulkan12Features.HostQueryReset = true;
-
-            // Build feature chain using managed chaining
-            using var chain = Chain.Create(
-                features2,
-                vulkan11Features,
-                vulkan12Features
-            );
 
             // Create device info with proper feature chain
             var deviceCreateInfo = new DeviceCreateInfo
@@ -131,12 +151,12 @@ namespace RockEngine.Vulkan
                 QueueCreateInfoCount = (uint)uniqueQueueFamilies.Count,
                 PQueueCreateInfos = queueCreateInfos,
                 PNext = chain.HeadPtr,
-                EnabledExtensionCount = (uint)extensions.Length,
+                EnabledExtensionCount = extensionCount,
                 PpEnabledExtensionNames = (byte**)SilkMarshal.StringArrayToPtr(extensions)
             };
 
             // Set extensions
-            if (extensions != null && extensions.Length > 0)
+            if (extensions != null && extensionCount > 0)
             {
                 deviceCreateInfo.PpEnabledExtensionNames = (byte**)SilkMarshal.StringArrayToPtr(extensions);
                 deviceCreateInfo.EnabledExtensionCount = (uint)extensions.Length;
@@ -152,7 +172,9 @@ namespace RockEngine.Vulkan
             api.GetDeviceQueue(logicalDevice, indices.GraphicsFamily.Value, 0, out Queue graphicsQueue);
             api.GetDeviceQueue(logicalDevice, indices.PresentFamily.Value, 0, out Queue presentQueue);
             api.GetDeviceQueue(logicalDevice, indices.ComputeFamily.Value, 0, out Queue computeQueue);
+            api.GetDeviceQueue(logicalDevice, indices.TransferFamily.Value, 0, out Queue transferQueue);
 
+            var x = api.IsDeviceExtensionPresent(context.Instance, "VK_EXT_pageable_device_local_memory");
 
             // Free unmanaged memory
             if (deviceCreateInfo.EnabledExtensionCount != 0)
@@ -161,7 +183,15 @@ namespace RockEngine.Vulkan
             }
             SilkMarshal.Free((nint)deviceCreateInfo.PQueueCreateInfos);
 
-            return new VkLogicalDevice(api, logicalDevice, new VkQueue(context, in graphicsQueue,indices.GraphicsFamily.Value), new VkQueue(context, in presentQueue, indices.PresentFamily.Value), new VkQueue(context, in computeQueue, indices.ComputeFamily.Value), indices, physicalDevice);
+            return new VkLogicalDevice(
+                api, 
+                logicalDevice, 
+                new VkQueue(context, in graphicsQueue,indices.GraphicsFamily.Value),
+                new VkQueue(context, in presentQueue, indices.PresentFamily.Value),
+                new VkQueue(context, in computeQueue, indices.ComputeFamily.Value),
+                new VkQueue(context, in transferQueue, indices.TransferFamily.Value),
+                indices,
+                physicalDevice);
         }
 
         private static unsafe QueueFamilyIndices FindQueueFamilies(Vk api, PhysicalDevice device, ISurfaceHandler surface)
@@ -191,12 +221,10 @@ namespace RockEngine.Vulkan
 
                 if (queueFamilies[i].QueueFlags.HasFlag(QueueFlags.ComputeBit))
                 {
-                    /*if (indices.ComputeFamily == null && i != indices.GraphicsFamily)
-                    {*/
-                        indices.ComputeFamily = i;
-                    //}
+                    indices.ComputeFamily = i;
                 }
 
+                // Look for dedicated transfer queue (non-graphics/compute)
                 if (queueFamilies[i].QueueFlags.HasFlag(QueueFlags.TransferBit) &&
                     !queueFamilies[i].QueueFlags.HasFlag(QueueFlags.GraphicsBit) &&
                     !queueFamilies[i].QueueFlags.HasFlag(QueueFlags.ComputeBit))
@@ -204,12 +232,15 @@ namespace RockEngine.Vulkan
                     indices.TransferFamily = i;
                 }
 
-                if (indices.IsComplete())
+                if (indices.IsComplete() && indices.TransferFamily.HasValue)
                 {
                     break;
                 }
             }
+
+            // Fallbacks if dedicated transfer queue not found
             indices.ComputeFamily ??= indices.GraphicsFamily;
+            indices.TransferFamily ??= indices.GraphicsFamily; // Fallback to graphics queue
 
             return indices;
         }
@@ -247,5 +278,9 @@ namespace RockEngine.Vulkan
         }
         public override void LabelObject(string name) => VulkanContext.GetCurrent().DebugUtils.SetDebugUtilsObjectName(_vkObject, ObjectType.Buffer, name);
 
+        public void WaitIdle()
+        {
+            Vk.DeviceWaitIdle(this);
+        }
     }
 }

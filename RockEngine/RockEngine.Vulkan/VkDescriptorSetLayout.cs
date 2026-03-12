@@ -7,12 +7,14 @@ namespace RockEngine.Vulkan
         public DescriptorSetLayout DescriptorSetLayout;
         public uint SetLocation;
         public readonly DescriptorSetLayoutBindingReflected[] Bindings;
+        public readonly int StageFlagsSum;
 
         public VkDescriptorSetLayout(DescriptorSetLayout descriptorSetLayout, uint setLocation, DescriptorSetLayoutBindingReflected[] bindingsArr)
         {
             DescriptorSetLayout = descriptorSetLayout;
             SetLocation = setLocation;
             Bindings = bindingsArr;
+            StageFlagsSum = bindingsArr.Sum(s=>(int)s.StageFlags);
         }
 
 
@@ -37,12 +39,16 @@ namespace RockEngine.Vulkan
 
 
             if (SetLocation != other.SetLocation || Bindings.Length != other.Bindings.Length)
+            {
                 return false;
+            }
 
             for (int i = 0; i < Bindings.Length; i++)
             {
                 if (!BindingsEqual(Bindings[i], other.Bindings[i]))
+                {
                     return false;
+                }
             }
 
             return true;
@@ -74,7 +80,7 @@ namespace RockEngine.Vulkan
                     hash = hash * 23 + binding.DescriptorType.GetHashCode();
                     hash = hash * 23 + binding.DescriptorCount.GetHashCode();
                     hash = hash * 23 + binding.StageFlags.GetHashCode();
-                    hash = hash * 23 + (binding.PImmutableSamplers != null ? binding.PImmutableSamplers->GetHashCode() : 0);
+                    hash = hash * 23 + (binding.PImmutableSamplers != null ? binding.PImmutableSamplers.GetHashCode() : 0);
                 }
                 return hash;
             }

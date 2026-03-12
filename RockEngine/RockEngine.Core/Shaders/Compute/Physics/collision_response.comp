@@ -1,0 +1,202 @@
+#version 450
+#extension GL_EXT_scalar_block_layout : require
+#include "../../Include/physics_common.glsl"
+
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+layout(set = 0, binding = 0, scalar) buffer RigidbodyBuffer {
+    Rigidbody rigidbodies[];
+};
+
+layout(set = 0, binding = 1, scalar) buffer ColliderBuffer {
+    Collider colliders[];
+};
+
+layout(set = 0, binding = 2, scalar) buffer ManifoldBuffer {
+    Manifold manifolds[];
+};
+
+layout(set = 0, binding = 3, scalar) buffer ContactPointBuffer {
+    ContactPoint contactPoints[];
+};
+
+layout(set = 1, binding = 0, scalar) uniform SolverParams {
+    float deltaTime;
+    uint iteration;
+    uint totalIterations;
+    float baumgarteFactor;
+    float baumgarteSlop;
+    float maxCorrection;
+    float warmStartFactor;
+    float relaxationFactor;
+} params;
+
+
+// Calculate effective mass for contact point and return inverse inertia tensors
+float calculateEffectiveMass(in Rigidbody rbA, in Rigidbody rbB, vec3 rA, vec3 rB, vec3 normal,
+                            out mat3 invInertiaA_ws, out mat3 invInertiaB_ws) {
+    float invMassA = rbA.inverseMass;
+    float invMassB = rbB.inverseMass;
+    
+    vec3 rAxN = cross(rA, normal);
+    vec3 rBxN = cross(rB, normal);
+    
+    float kNormal = invMassA + invMassB;
+    
+    // Get world space inertia tensors
+    mat3 rotA = quatToMat3(rbA.rotation);
+    mat3 rotB = quatToMat3(rbB.rotation);
+    
+    invInertiaA_ws = rotateInertia(rotA, mat3(rbA.inverseInertiaTensor));
+    invInertiaB_ws = rotateInertia(rotB, mat3(rbB.inverseInertiaTensor));
+    
+    if (invMassA > 0.0) {
+        vec3 temp = invInertiaA_ws * rAxN;
+        kNormal += dot(rAxN, temp);
+    }
+    
+    if (invMassB > 0.0) {
+        vec3 temp = invInertiaB_ws * rBxN;
+        kNormal += dot(rBxN, temp);
+    }
+    
+    return kNormal;
+}
+
+// Solve contact constraint
+void solveContact(uint bodyA, uint bodyB, vec3 contactPoint, vec3 normal, float depth,
+                  inout Rigidbody rbA, inout Rigidbody rbB, inout ContactPoint contact) {
+    
+    // Skip if both static
+    if (rbA.bodyType == 0u && rbB.bodyType == 0u) {
+        return;
+    }
+    
+    float invMassA = (rbA.bodyType != 0u) ? rbA.inverseMass : 0.0;
+    float invMassB = (rbB.bodyType != 0u) ? rbB.inverseMass : 0.0;
+    
+    if (invMassA == 0.0 && invMassB == 0.0) return;
+    
+    // Contact vectors from center of mass
+    vec3 rA = contactPoint - (rbA.position + rbA.centerOfMass);
+    vec3 rB = contactPoint - (rbB.position + rbB.centerOfMass);
+    
+    // Relative velocity at contact point
+    vec3 velA = rbA.velocity + cross(rbA.angularVelocity, rA);
+    vec3 velB = rbB.velocity + cross(rbB.angularVelocity, rB);
+    vec3 relVel = velB - velA;
+    
+    float normalVel = dot(relVel, normal);
+    
+    // Baumgarte stabilization
+    float penetration = max(depth - params.baumgarteSlop, 0.0);
+    float baumgarte = params.baumgarteFactor * (penetration / params.deltaTime);
+    
+    // Calculate effective mass and get world space inertia tensors
+    mat3 invInertiaA, invInertiaB;
+    float kNormal = calculateEffectiveMass(rbA, rbB, rA, rB, normal, invInertiaA, invInertiaB);
+    
+    if (kNormal < 1e-8) return;
+    
+    // Restitution
+    float restitution = min(rbA.restitution, rbB.restitution);
+    float velocityBias = baumgarte;
+    
+    // Add restitution for dynamic-dynamic collisions
+    if (rbA.bodyType != 0u && rbB.bodyType != 0u && normalVel < -0.1) {
+        velocityBias += -restitution * normalVel;
+    }
+    
+    // Desired velocity change
+    float desiredDeltaVel = -normalVel + velocityBias;
+    
+    // Impulse magnitude
+    float lambda = desiredDeltaVel / kNormal;
+    
+    // Apply warm starting
+    if (params.iteration == 0 && params.warmStartFactor > 0.0) {
+        lambda += contact.warmStartImpulse * params.warmStartFactor;
+    }
+    
+    // Clamp impulse
+    float oldImpulse = contact.warmStartImpulse;
+    float newImpulse = max(oldImpulse + lambda, 0.0);
+    lambda = newImpulse - oldImpulse;
+    
+    // Apply relaxation
+    lambda *= params.relaxationFactor;
+    
+    // Clamp to prevent large impulses
+    float maxImpulse = 100.0;
+    if (abs(lambda) > maxImpulse) {
+        lambda = sign(lambda) * maxImpulse;
+        newImpulse = oldImpulse + lambda;
+    }
+    
+    // Normal impulse
+    vec3 impulse = lambda * normal;
+    
+    // For static-dynamic collisions, only apply impulse to the dynamic body
+    if (rbA.bodyType != 0u) { // Body A is dynamic
+        rbA.velocity -= impulse * invMassA;
+        rbA.angularVelocity -= invInertiaA * cross(rA, impulse);
+    }
+    
+    if (rbB.bodyType != 0u) { // Body B is dynamic
+        rbB.velocity += impulse * invMassB;
+        rbB.angularVelocity += invInertiaB * cross(rB, impulse);
+    }
+    
+    // Store for warm starting
+    contact.warmStartImpulse = newImpulse;
+}
+
+void main() {
+    uint idx = gl_GlobalInvocationID.x;
+    
+    // Read collision count from push constant or buffer
+    // For now, assume we have a maximum number of manifolds
+    if (idx >= 1000) return; // Max collisions
+    
+    // Get manifold for this collision
+    Manifold manifold = manifolds[idx];
+    if (manifold.bodyA == 0xFFFFFFFFu || manifold.bodyB == 0xFFFFFFFFu) return;
+    
+    // Get rigidbodies
+    Rigidbody rbA = rigidbodies[manifold.bodyA];
+    Rigidbody rbB = rigidbodies[manifold.bodyB];
+    
+    // Skip inactive bodies
+    if (rbA.isActive == 0u || rbB.isActive == 0u) return;
+    
+    // Skip if both are triggers
+    Collider colA = colliders[rbA.colliderIndex];
+    Collider colB = colliders[rbB.colliderIndex];
+    if (colA.isTrigger == 1u || colB.isTrigger == 1u) return;
+    
+    // Process each contact point
+    for (uint i = 0; i < manifold.contactCount; i++) {
+        uint contactIndex = idx * 4 + i;
+        ContactPoint contact = contactPoints[contactIndex];
+        
+        // Validate contact data
+        if (contact.depth < 0.001) continue;
+        
+        // Use manifold normal (averaged over frames for stability)
+        vec3 normal = manifold.normal;
+        
+        // Solve contact
+        solveContact(
+            manifold.bodyA, manifold.bodyB,
+            contact.position, normal, contact.depth,
+            rbA, rbB, contact
+        );
+        
+        // Store updated contact
+        contactPoints[contactIndex] = contact;
+    }
+    
+    // Write back rigidbodies
+    rigidbodies[manifold.bodyA] = rbA;
+    rigidbodies[manifold.bodyB] = rbB;
+}

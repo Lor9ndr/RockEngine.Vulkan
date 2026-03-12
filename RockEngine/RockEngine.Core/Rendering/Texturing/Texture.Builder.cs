@@ -106,24 +106,38 @@ namespace RockEngine.Core.Rendering.Texturing
                 if (_waitCompute)
                 {
                     var semaphore = VkSemaphore.Create(_context);
-                    _context.SubmitComputeContext.AddWaitSemaphore(semaphore, PipelineStageFlags.ComputeShaderBit);
-                    _context.SubmitContext.AddSignalSemaphore(semaphore);
+                    _context.ComputeSubmitContext.AddWaitSemaphore(semaphore, PipelineStageFlags.ComputeShaderBit);
+                    _context.GraphicsSubmitContext.AddSignalSemaphore(semaphore);
                 }
                 if (_generateMipmaps)
                 {
-                    var batch = _context.SubmitContext.CreateBatch();
-                    image.GenerateMipmaps(batch.CommandBuffer);
-                    batch.CommandBuffer.LabelObject("GenerateMipmap cmd");
-                    batch.Submit();
-                    _context.SubmitContext.Flush();
+                    try
+                    {
+                        var batch = _context.GraphicsSubmitContext.CreateBatch();
+                        image.GenerateMipmaps(batch);
+                        batch.LabelObject("GenerateMipmap cmd");
+                        _context.GraphicsSubmitContext.SubmitSingle(batch, VkFence.CreateNotSignaled(_context)).Wait();
+                    }
+                    catch (NotSupportedException)
+                    {
+                    }
+                }
+                if (_isCubeMap)
+                {
+                    return new Texture3D(_context, image,sampler);
+                }
+                else
+                {
+                    return new Texture2D(_context, image, sampler);
                 }
 
-                return new Texture(_context, image, imageView, sampler);
             }
             private void ValidateParameters()
             {
                 if (_size.Width == 0 || _size.Height == 0)
+                {
                     throw new InvalidOperationException("Texture size must be specified");
+                }
 
                 if (_format.IsBlockCompressed())
                 {
@@ -181,8 +195,8 @@ namespace RockEngine.Core.Rendering.Texturing
                     AddressModeU = SamplerAddressMode.Repeat,
                     AddressModeV = SamplerAddressMode.Repeat,
                     AddressModeW = SamplerAddressMode.Repeat,
-                    AnisotropyEnable = Vk.True,
-                    MaxAnisotropy = 16,
+                    AnisotropyEnable = Vk.False,
+                    MaxAnisotropy = 1,
                     BorderColor = BorderColor.IntOpaqueBlack,
                     UnnormalizedCoordinates = Vk.False,
                     CompareEnable = Vk.False,
@@ -190,7 +204,7 @@ namespace RockEngine.Core.Rendering.Texturing
                     MipmapMode = SamplerMipmapMode.Linear,
                     MipLodBias = 0.0f,
                     MinLod = 0.0f,
-                    MaxLod = (float)_mipLevels
+                    MaxLod = _mipLevels
                 };
 
                 return _context.SamplerCache.GetSampler(samplerInfo);

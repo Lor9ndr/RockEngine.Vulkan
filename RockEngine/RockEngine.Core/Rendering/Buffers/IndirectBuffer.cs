@@ -2,6 +2,7 @@
 
 using Silk.NET.Vulkan;
 
+using System;
 using System.Runtime.CompilerServices;
 
 namespace RockEngine.Core.Rendering.Buffers
@@ -41,15 +42,23 @@ namespace RockEngine.Core.Rendering.Buffers
 
         public void StageCommands(UploadBatch batch, Span<DrawIndexedIndirectCommand> commands, ulong offset = 0)
         {
-            if (offset + (ulong)commands.Length > _capacity)
-                throw new ArgumentOutOfRangeException(nameof(commands), "Exceeds buffer capacity");
+            ulong size = (ulong)(Unsafe.SizeOf<DrawIndexedIndirectCommand>() * commands.Length);
 
-            batch.StageToBuffer(
-                commands,
-                _deviceBuffer,
-                offset * Stride,
-                (ulong)(Unsafe.SizeOf<DrawIndexedIndirectCommand>() * commands.Length)
-            );
+            // Убедимся, что буфер достаточно большой
+            if (size > _deviceBuffer.Size)
+            {
+                Resize(size * 2);
+            }
+
+            // Запись данных в стаджинг буфер
+            if (!batch.StagingManager.TryStage<DrawIndexedIndirectCommand>(batch, commands, out var stageOffset, out var stagedSize))
+            {
+                throw new InvalidOperationException("Failed to stage indirect commands");
+            }
+
+            // Копирование из стаджинг буфера в GPU буфер
+            batch.CopyBuffer(batch.StagingManager.StagingBuffer,_deviceBuffer, stageOffset, 0, size);
+
         }
 
         public void Resize(ulong newCapacity)

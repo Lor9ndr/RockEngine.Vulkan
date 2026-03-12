@@ -1,0 +1,28 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <IsRoslynComponent>true</IsRoslynComponent>
+    <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
+    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+    <PackageId>RockEngine.Analyzer</PackageId>
+    <Version>1.0.0</Version>
+    <Authors>RockEngine</Authors>
+    <PackageTags>roslyn, analyzer, gpu</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <LangVersion>9.0</LangVersion>
+
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.Analyzers" Version="3.11.0" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="5.0.0" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="5.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="$(OutputPath)\$(AssemblyName).dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
+  </ItemGroup>
+
+</Project>

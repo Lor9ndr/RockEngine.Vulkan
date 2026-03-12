@@ -1,5 +1,4 @@
-﻿using RockEngine.Core.Assets.AssetData;
-using RockEngine.Core.ECS.Components;
+﻿using RockEngine.Core.ECS.Components;
 using RockEngine.Core.Rendering;
 
 using System.Collections.Concurrent;
@@ -15,9 +14,9 @@ namespace RockEngine.Core.ECS
         private enum WorldState { NotStarted, Starting, Started }
         private WorldState _state = WorldState.NotStarted;
         private readonly ConcurrentQueue<IComponent> _pendingStartComponents = new();
-        private readonly object _stateLock = new();
+        private readonly Lock _stateLock = new();
 
-        internal static World GetCurrent()
+        public static World GetCurrent()
         {
             return _singleton;
         }
@@ -34,10 +33,15 @@ namespace RockEngine.Core.ECS
             }
         }
 
-        public Entity CreateEntity()
+        public Entity CreateEntity(string? name = null)
         {
             var entity = new Entity();
             _entities.Add(entity);
+            if (!string.IsNullOrEmpty(name))
+            {
+                entity.Name = name;
+            }
+            
             return entity;
         }
      
@@ -49,18 +53,22 @@ namespace RockEngine.Core.ECS
 
         public ValueEnumerable<ZLinq.Linq.FromList<Entity>, Entity> GetEntities()
         {
-            return  _entities.AsValueEnumerable();
+            return _entities.AsValueEnumerable();
         }
         public ValueEnumerable<ZLinq.Linq.ListWhere<Entity>, Entity> GetEntitiesWithComponent<T>() where T : IComponent
         {
             return _entities.AsValueEnumerable().Where(s=>s.GetComponent<T>() is not null);
         }
 
-        public async Task Start(Renderer renderer)
+        public async Task Start(WorldRenderer renderer)
         {
             lock (_stateLock)
             {
-                if (_state != WorldState.NotStarted) return;
+                if (_state != WorldState.NotStarted)
+                {
+                    return;
+                }
+
                 _state = WorldState.Starting;
             }
 
@@ -70,11 +78,19 @@ namespace RockEngine.Core.ECS
                 await ProcessEntityComponents(entity, renderer);
             }
 
-            lock (_stateLock) _state = WorldState.Started;
+            lock (_stateLock)
+            {
+                _state = WorldState.Started;
+            }
+
             await ProcessPendingStarts(renderer);
         }
+        internal void AddEntity(Entity entity)
+        {
+            _entities.Add(entity);
+        }
 
-        private async ValueTask ProcessEntityComponents(Entity entity, Renderer renderer)
+        private async ValueTask ProcessEntityComponents(Entity entity, WorldRenderer renderer)
         {
             foreach (var component in entity.Components)
             {
@@ -82,10 +98,14 @@ namespace RockEngine.Core.ECS
             }
         }
 
-        private async ValueTask ProcessPendingStarts(Renderer renderer)
+        private async ValueTask ProcessPendingStarts(WorldRenderer renderer)
         {
             while (_pendingStartComponents.TryDequeue(out var component))
             {
+                if(component.Entity is null)
+                {
+                    continue;
+                }
                 await component.OnStart(renderer);
             }
         }
@@ -94,31 +114,20 @@ namespace RockEngine.Core.ECS
         {
             lock (_stateLock)
             {
-                if (_state == WorldState.Started)
+                if (_state == WorldState.Started && !_pendingStartComponents.Contains(component))
                 {
                     _pendingStartComponents.Enqueue(component);
                 }
             }
         }
 
-        public async ValueTask Update(Renderer renderer)
+        public async ValueTask Update(WorldRenderer renderer)
         {
             await ProcessPendingStarts(renderer);
             foreach (var entity in _entities.ToArray())
             {
                 await entity.Update(renderer);
             }
-        }
-
-        internal Entity AddEntity(EntityData entityData)
-        {
-
-            var entity = new Entity();
-            _entities.Add(entity);
-
-            // instatiate components by their data and so on
-
-            return entity;
         }
 
 
@@ -129,6 +138,5 @@ namespace RockEngine.Core.ECS
                 item.Destroy();
             }
         }
-
     }
 }

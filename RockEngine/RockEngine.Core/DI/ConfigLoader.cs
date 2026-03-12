@@ -1,15 +1,19 @@
-﻿using Newtonsoft.Json;
+﻿using System.Text.Json;
 
+using Microsoft.Extensions.DependencyInjection;
+
+using RockEngine.Assets;
 using RockEngine.Vulkan;
 
 namespace RockEngine.Core.DI
 {
-    internal class ConfigLoader
+    internal static class ConfigLoader
     {
-        internal static AppSettings LoadConfig()
+        internal static async Task<AppSettings> LoadConfigAsync(IServiceProvider serviceProvider)
         {
-            var file = File.ReadAllText(Directory.GetCurrentDirectory() + "\\appsettings.json");
-            return JsonConvert.DeserializeObject<AppSettings>(file);
+            using var file = File.OpenRead(Directory.GetCurrentDirectory() + "\\appsettings.yaml");
+            var serializer = serviceProvider.GetRequiredService<IYamlSerializer>();
+            return  (AppSettings) await serializer.DeserializeAsync(file, typeof(AppSettings));
         }
     }
 }

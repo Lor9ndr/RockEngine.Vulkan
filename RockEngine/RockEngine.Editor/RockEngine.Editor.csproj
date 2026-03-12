@@ -3,13 +3,10 @@
   <PropertyGroup>
     
     <OutputType>Exe</OutputType>
-    <TargetFramework>net9.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <PublishAot>true</PublishAot>
-    <IsAotCompatible>true</IsAotCompatible>
     <InvariantGlobalization>true</InvariantGlobalization>
-    <TrimMode>full</TrimMode>
     <IlcGenerateStackTraceData>false</IlcGenerateStackTraceData>
     <InvariantGlobalization>true</InvariantGlobalization>
     <GenerateDocumentationFile>True</GenerateDocumentationFile>
@@ -19,6 +16,11 @@
     <Configurations>Debug;Release</Configurations>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
+  
+  <PropertyGroup>
+    <DefineConstants Condition="'$(OS)' == 'Windows_NT'">$(DefineConstants);WINDOWS</DefineConstants>
+  </PropertyGroup>
+
 
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
     <DefineConstants>$(DefineConstants);EDITOR</DefineConstants>
@@ -33,9 +35,6 @@
     <ProjectReference Include="..\RockEngine.Core\RockEngine.Core.csproj" />
   </ItemGroup>
 
-  <ItemGroup>
-    <CompiledShader Include="..\RockEngine.Core\**\*.spv" />
-  </ItemGroup>
 
   <ItemGroup>
     <Content Include="Resources\**\*">
@@ -45,16 +44,11 @@
   
   
   <ItemGroup>
-    <EmbeddedResource Include="..\RockEngine.Core\**\*.vert" />
-    <EmbeddedResource Include="..\RockEngine.Core\**\*.frag" />
-    <EmbeddedResource Include="..\RockEngine.Core\**\*.glsl" />
-  </ItemGroup>
-  
-  
-  <ItemGroup>
     <Content Remove="Resources\Fonts\fa-regular-400.ttf" />
     <Content Remove="Resources\Fonts\Font Awesome 6 Free-Regular-400.otf" />
     <Content Remove="Resources\Fonts\forkawesome-webfont.ttf" />
+    <Content Remove="Resources\Fonts\OpenSans-VariableFont_wdth,wght.ttf" />
+    <Content Remove="Resources\Fonts\Roboto-VariableFont_wdth,wght.ttf" />
   </ItemGroup>
   
   
@@ -65,21 +59,35 @@
   
   <ItemGroup>
     <EmbeddedResource Include="Resources\Fonts\forkawesome-webfont.ttf" />
+    <EmbeddedResource Include="Resources\Fonts\OpenSans-VariableFont_wdth,wght.ttf" />
+    <EmbeddedResource Include="Resources\Fonts\Roboto-VariableFont_wdth,wght.ttf" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="FontAwesome" Version="4.7.0" />
-    <PackageReference Include="System.Net.Http" Version="4.3.4" />
-    <PackageReference Include="System.Text.RegularExpressions" Version="4.3.1" />
+    <PackageReference Include="ImGui.NET" Version="1.91.6.1" />
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\RockEngine.Analyzer\RockEngine.Analyzer\RockEngine.Analyzer.csproj" ReferenceOutputAssembly="false" OutputItemType="Analyzer" />
+  </ItemGroup>
+  
+
+  <ItemGroup>
     <Folder Include="Resources\Models\Revoulier\" />
+    <Folder Include="TestProject\" />
+  </ItemGroup>
+  
+
+  <ItemGroup>
+    <None Update="imgui.ini">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
  
+ 
 
-  <Target Name="CopyCompiledShaders" AfterTargets="Build">
-    <Copy SourceFiles="@(CompiledShader)" DestinationFolder="$(ShadersOutputPath)" SkipUnchangedFiles="true" />
-  </Target>
+
+
 </Project>

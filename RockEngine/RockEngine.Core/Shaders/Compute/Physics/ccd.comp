@@ -1,0 +1,154 @@
+#version 450
+#extension GL_EXT_scalar_block_layout : require
+
+#include "../../Include/physics_common.glsl"
+
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+layout(set = 0, binding = 0, scalar) buffer RigidbodyBuffer {
+    Rigidbody rigidbodies[];
+};
+
+layout(set = 0, binding = 1, scalar) buffer ColliderBuffer {
+    Collider colliders[];
+};
+
+layout(set = 0, binding = 2, scalar) buffer CollisionPairBuffer {
+    CollisionPair collisionPairs[];
+};
+
+layout(set = 0, binding = 3, scalar) buffer CCDResultBuffer {
+    CCDResult ccdResults[];
+};
+
+layout(set = 0, binding = 4, scalar) buffer AtomicCounter {
+    uint collisionCount;
+} counter;
+
+layout(push_constant) uniform CCDConstants {
+    float deltaTime;
+    uint maxSteps;
+    float tolerance;
+    float velocityThreshold;
+    uint enableLinearCCD;
+    uint enableAngularCCD;
+} ccd;
+
+// Sphere-sphere CCD test
+bool sphereSphereCCD(vec3 posA, vec3 velA, float radiusA,
+                     vec3 posB, vec3 velB, float radiusB,
+                     float dt, out float toi, out vec3 normal, out vec3 point) {
+    
+    vec3 relativePos = posB - posA;
+    vec3 relativeVel = velB - velA;
+    
+    float a = dot(relativeVel, relativeVel);
+    float b = 2.0 * dot(relativeVel, relativePos);
+    float c = dot(relativePos, relativePos) - (radiusA + radiusB) * (radiusA + radiusB);
+    
+    if (a < 1e-6) {
+        // No relative motion
+        return false;
+    }
+    
+    float discriminant = b * b - 4.0 * a * c;
+    if (discriminant < 0.0) {
+        return false;
+    }
+    
+    float sqrtDisc = sqrt(discriminant);
+    float t1 = (-b - sqrtDisc) / (2.0 * a);
+    float t2 = (-b + sqrtDisc) / (2.0 * a);
+    
+    // Find the earliest valid TOI
+    if (t1 >= 0.0 && t1 <= dt) {
+        toi = t1;
+    } else if (t2 >= 0.0 && t2 <= dt) {
+        toi = t2;
+    } else {
+        return false;
+    }
+    
+    // Compute collision point and normal
+    vec3 posAAtImpact = posA + velA * toi;
+    vec3 posBAtImpact = posB + velB * toi;
+    vec3 delta = posBAtImpact - posAAtImpact;
+    normal = normalize(delta);
+    point = posAAtImpact + normal * radiusA;
+    
+    return true;
+}
+
+// Box-box CCD (simplified - uses sphere approximation)
+bool boxBoxCCD(Collider colA, Collider colB, 
+               vec3 velA, vec3 velB, vec3 angVelA, vec3 angVelB,
+               float dt, out float toi, out vec3 normal, out vec3 point) {
+    
+    // Use sphere approximation for CCD
+    float radiusA = length(colA.size);
+    float radiusB = length(colB.size);
+    
+    return sphereSphereCCD(colA.position, velA, radiusA,
+                          colB.position, velB, radiusB,
+                          dt, toi, normal, point);
+}
+
+void main() {
+    uint idx = gl_GlobalInvocationID.x;
+    if (idx >= counter.collisionCount) return;
+    
+    CollisionPair pair = collisionPairs[idx];
+    if (pair.bodyA == 0xFFFFFFFFu || pair.bodyB == 0xFFFFFFFFu) return;
+    
+    // Get rigidbodies
+    Rigidbody rbA = rigidbodies[pair.bodyA];
+    Rigidbody rbB = rigidbodies[pair.bodyB];
+    
+    // Skip if bodies are slow-moving
+    if (length(rbA.velocity) < ccd.velocityThreshold && 
+        length(rbB.velocity) < ccd.velocityThreshold) {
+        return;
+    }
+    
+    // Get colliders
+    uint colIdxA = rbA.colliderIndex;
+    uint colIdxB = rbB.colliderIndex;
+    
+    if (colIdxA == 0xFFFFFFFFu || colIdxB == 0xFFFFFFFFu) return;
+    
+    Collider colA = colliders[colIdxA];
+    Collider colB = colliders[colIdxB];
+    
+    // Run CCD test
+    float toi;
+    vec3 normal, point;
+    bool collision = false;
+    
+    if (colA.shape == 1u && colB.shape == 1u) {
+        // Sphere-sphere CCD
+        collision = sphereSphereCCD(colA.position, rbA.velocity, colA.radius,
+                                   colB.position, rbB.velocity, colB.radius,
+                                   ccd.deltaTime, toi, normal, point);
+    } else {
+        // Box-box or mixed shapes (simplified)
+        collision = boxBoxCCD(colA, colB, rbA.velocity, rbB.velocity,
+                             rbA.angularVelocity, rbB.angularVelocity,
+                             ccd.deltaTime, toi, normal, point);
+    }
+    
+    if (collision && toi < ccd.deltaTime) {
+        CCDResult result;
+        result.bodyA = pair.bodyA;
+        result.bodyB = pair.bodyB;
+        result.timeOfImpact = toi;
+        result.point = point;
+        result.normal = normal;
+        result.hasCollision = 1u;
+        
+        ccdResults[idx] = result;
+        
+        // Update collision pair with CCD result
+        collisionPairs[idx].normal = normal;
+        collisionPairs[idx].contactPoint = point;
+    }
+}

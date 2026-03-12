@@ -5,23 +5,26 @@ namespace RockEngine.Vulkan
     public class VkDescriptorSet : VkObject<DescriptorSet>
     {
         private readonly VulkanContext _context;
-        private readonly VkDescriptorPool _pool;
         public bool IsDirty { get;set; } = true;
 
-        public VkDescriptorSet(VulkanContext context, VkDescriptorPool pool,in DescriptorSet vkObject)
+        public VkDescriptorPool Pool { get; }
+
+        public VkDescriptorSetLayout SetLayout { get; }
+
+        public VkDescriptorSet(VulkanContext context, VkDescriptorPool pool,in DescriptorSet vkObject, VkDescriptorSetLayout setLayout)
             :base(vkObject)
         {
             _context = context;
-            _pool = pool;
-        }
+            Pool = pool;
+            SetLayout = setLayout;
 
-      
+        }
 
         public override void LabelObject(string name) => _context.DebugUtils.SetDebugUtilsObjectName(_vkObject, ObjectType.DescriptorSet, name);
 
         protected override void Dispose(bool disposing)
         {
-            VulkanContext.Vk.FreeDescriptorSets(_context.Device, _pool,  1, in _vkObject);
+            Pool.FreeDescriptorSet(this);
         }
     }
 }

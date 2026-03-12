@@ -1,65 +1,73 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net9.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <PublishAot>true</PublishAot>
-    <IsAotCompatible>true</IsAotCompatible>
     <InvariantGlobalization>true</InvariantGlobalization>
-    <TrimMode>full</TrimMode>
     <IlcGenerateStackTraceData>false</IlcGenerateStackTraceData>
     <Configurations>Debug;Release</Configurations>
+    <EnableNETAnalyzers>true</EnableNETAnalyzers>
+  </PropertyGroup>
+  
+  <PropertyGroup>
+    <DefineConstants Condition="'$(OS)' == 'Windows_NT'">$(DefineConstants);WINDOWS</DefineConstants>
+    <LangVersion>preview</LangVersion>
   </PropertyGroup>
 
   <ItemGroup>
-    <ShaderFiles Include="**\*.vert" />
-    <ShaderFiles Include="**\*.frag" />
-    <ShaderFiles Include="**\*.comp" />
-    <ShaderFilesInclude Include="**\*.glsl" />
+    <AdditionalFiles Include="Shaders\**\*.comp" CopyToOutputDirectory="Always" LinkBase="Shaders" />
+    <AdditionalFiles Include="Shaders\**\*.glsl" CopyToOutputDirectory="Always" LinkBase="Shaders" />
+    <AdditionalFiles Include="Shaders\**\*.vert" CopyToOutputDirectory="Always" LinkBase="Shaders" />
+    <AdditionalFiles Include="Shaders\**\*.frag" CopyToOutputDirectory="Always" LinkBase="Shaders" />
+    <AdditionalFiles Include="Shaders\**\*.geom" CopyToOutputDirectory="Always" LinkBase="Shaders" />
   </ItemGroup>
+
 
   <ItemGroup>
     <PackageReference Include="AssimpNet" Version="4.1.0" />
-    <PackageReference Include="ImGui.NET" Version="1.91.0.1" />
-    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
-    <PackageReference Include="NLog" Version="6.0.1" />
-    <PackageReference Include="Silk.NET.Input" Version="2.22.0" />
-    <PackageReference Include="Silk.NET.SDL" Version="2.22.0" />
+    <PackageReference Include="JoltPhysicsSharp" Version="2.20.1" />
+    <PackageReference Include="MessagePackAnalyzer" Version="3.1.4">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.Extensions.Caching.Memory" Version="10.0.3" />
+    <PackageReference Include="Microsoft.Extensions.ObjectPool" Version="10.0.3" />
+    <PackageReference Include="NLog" Version="6.1.0" />
+    <PackageReference Include="Silk.NET.Input" Version="2.23.0" />
+    <PackageReference Include="Silk.NET.Input.Extensions" Version="2.23.0" />
+    <PackageReference Include="Silk.NET.Input.Sdl" Version="2.23.0" />
+    <PackageReference Include="Silk.NET.Windowing" Version="2.23.0" />
     <PackageReference Include="SimpleInjector" Version="5.5.0" />
-    <PackageReference Include="SixLabors.ImageSharp" Version="3.1.10" />
-    <PackageReference Include="SkiaSharp" Version="3.119.0" />
-    <PackageReference Include="System.Net.Http" Version="4.3.4" />
-    <PackageReference Include="System.Text.Json" Version="9.0.7" />
-    <PackageReference Include="System.Text.RegularExpressions" Version="4.3.1" />
-    <PackageReference Include="ZLinq" Version="1.5.0" />
+    <PackageReference Include="SixLabors.ImageSharp" Version="3.1.12" />
+    <PackageReference Include="SkiaSharp" Version="3.119.2" />
+    <PackageReference Include="ZLinq" Version="1.5.4" />
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\RockEngine.Assets\RockEngine.Assets.csproj" />
+    <ProjectReference Include="..\RockEngine.CodeGenerator\RockEngine.CodeGenerator.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\RockEngine.Math\RockEngine.Mathematics.csproj" />
+    <ProjectReference Include="..\RockEngine.Shading\RockEngine.Shading.csproj" />
     <ProjectReference Include="..\RockEngine.Vulkan\RockEngine.Vulkan.csproj" />
+    <ProjectReference Include="..\RockEngine.Analyzer\RockEngine.Analyzer\RockEngine.Analyzer.csproj" ReferenceOutputAssembly="false" OutputItemType="Analyzer" />
+    <ProjectReference Include="..\RockEngine.Analyzer\RockEngine.Analyzer\RockEngine.CodeFixes.csproj" ReferenceOutputAssembly="false" OutputItemType="Analyzer" />
   </ItemGroup>
 
   <ItemGroup>
-    <None Update="appsettings.json">
+    <AdditionalFiles Update="Shaders\Compute\ComputeCopyImage.comp">
+      <LinkBase>$([MSBuild]::EnsureTrailingSlash(%(LinkBase)))</LinkBase>
+    </AdditionalFiles>
+  </ItemGroup>
+  
+
+
+  <ItemGroup>
+    <None Update="appsettings.yaml">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
   </ItemGroup>
 
-  <Target Name="CopyShaderIncludes" BeforeTargets="PostBuild">
-    <Copy SourceFiles="@(ShaderInclude)" DestinationFolder="$(ShadersOutputPath)" />
-  </Target>
-
-  <Target Name="PostBuild" AfterTargets="PostBuildEvent">
-    <!-- Echo each shader file found -->
-    <Message Importance="high" Text="Compiling shader file: %(ShaderFiles.FullPath)" />
-
-    <!-- Compile each shader file individually -->
-    <Exec Command="glslc.exe -I&quot;$(ProjectDir)Shaders\Include&quot; &quot;%(ShaderFiles.FullPath)&quot; -o &quot;%(ShaderFiles.FullPath).spv&quot;" />
-  </Target>
-
-  <Target Name="CopyCompiledShaders" AfterTargets="PostBuild">
-    <Copy SourceFiles="@(CompiledShader)" DestinationFolder="$(ShadersOutputPath)" />
-  </Target>
 
 </Project>

@@ -13,25 +13,13 @@ namespace RockEngine.Vulkan
         private uint _width;
         private uint _height;
 
-        public VkImageView[] ColorAttachmentViews => _attachments; 
-        public VkSampler Sampler { get; }
+        public VkImageView[] AttachmentViews => _attachments; 
         private VkFrameBuffer(VulkanContext context, in Framebuffer framebuffer, VkImageView[] attachments, in FramebufferCreateInfo framebufferCreateInfo)
             : base(framebuffer)
         {
             _context = context;
             _attachments = attachments;
             _framebufferCreateInfo = framebufferCreateInfo;
-
-            var samplerInfo = new SamplerCreateInfo()
-            {
-                SType = StructureType.SamplerCreateInfo,
-                MagFilter = Filter.Linear,
-                MinFilter = Filter.Linear,
-                AddressModeU = SamplerAddressMode.ClampToEdge,
-                AddressModeV = SamplerAddressMode.ClampToEdge,
-                AddressModeW = SamplerAddressMode.ClampToEdge,
-            };
-            Sampler = context.SamplerCache.GetSampler(samplerInfo);
         }
 
         public static unsafe VkFrameBuffer Create(VulkanContext context, in FramebufferCreateInfo framebufferCreateInfo, VkImageView[] attachments)
@@ -40,6 +28,15 @@ namespace RockEngine.Vulkan
                     .VkAssertResult("Failed to create framebuffer.");
 
             return new VkFrameBuffer(context, framebuffer, attachments, in framebufferCreateInfo);
+        }
+        public static unsafe VkFrameBuffer Create(VulkanContext context, VkRenderPass renderPass, VkImageView[] attachments)
+        {
+            if(attachments.Length == 0)
+            {
+                throw new ArgumentException("attachments can not be empty");
+            }
+            var size = attachments[0].Image.Extent;
+            return Create(context, renderPass, attachments, size.Width,size.Height, 1);
         }
 
         private unsafe Framebuffer CreateFramebufferInternal()
@@ -57,7 +54,7 @@ namespace RockEngine.Vulkan
             }
         }
 
-        public unsafe static VkFrameBuffer Create(VulkanContext context, VkRenderPass renderPass, VkImageView[] attachments, uint width, uint height)
+        public unsafe static VkFrameBuffer Create(VulkanContext context, VkRenderPass renderPass, VkImageView[] attachments, uint width, uint height, uint layers = 1)
         {
             fixed(ImageView* pAttachments = attachments.Select(s => s.VkObjectNative).ToArray())
             {
@@ -67,7 +64,7 @@ namespace RockEngine.Vulkan
                     Height = height,
                     Width = width,
                     AttachmentCount = (uint)attachments.Length,
-                    Layers = 1,
+                    Layers = layers,
                     PAttachments = pAttachments,
                     RenderPass = renderPass,
                     Flags = FramebufferCreateFlags.None,

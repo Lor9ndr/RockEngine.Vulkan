@@ -16,16 +16,11 @@ namespace RockEngine.Core.Rendering.Buffers
         public bool IsDynamic => _isDynamic;
         public ulong Size => _buffer.Size;
 
-        public string Name => _name;
-        public uint BindingLocation { get; }
-        public ulong DynamicOffset { get; set; }
         public Dictionary<VkPipelineLayout, VkDescriptorSet> DescriptorSets { get; } = new Dictionary<VkPipelineLayout, VkDescriptorSet>();
 
-        public UniformBuffer(VulkanContext context, string name, uint bindingLocation, ulong size,  bool isDynamic = false)
+        public UniformBuffer(VulkanContext context, ulong size, bool isDynamic = false)
         {
             _context = context;
-            _name = name;
-            BindingLocation = bindingLocation;
             _isDynamic = isDynamic;
 
             var bufferUsage = BufferUsageFlags.UniformBufferBit;
@@ -34,11 +29,10 @@ namespace RockEngine.Core.Rendering.Buffers
             bufferUsage |= BufferUsageFlags.TransferDstBit;
 
             _buffer = VkBuffer.Create(context, size, bufferUsage, memoryProperties);
-            _buffer.LabelObject(name);
         }
 
-        public UniformBuffer(string name, uint bindingLocation, ulong size, bool isDynamic = false)
-            : this(VulkanContext.GetCurrent(), name, bindingLocation, size, isDynamic)
+        public UniformBuffer(ulong size, bool isDynamic = false)
+            : this(VulkanContext.GetCurrent(),  size, isDynamic)
         {
         }
 

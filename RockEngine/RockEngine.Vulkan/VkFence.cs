@@ -17,7 +17,6 @@ namespace RockEngine.Vulkan
         {
             VulkanContext.Vk.CreateFence(context.Device, in fenceCreateInfo, in VulkanContext.CustomAllocator<VkFence>(), out Fence fence)
                 .VkAssertResult("Failed to create fence.");
-
             return new VkFence(context, in fence);
         }
 
@@ -26,6 +25,7 @@ namespace RockEngine.Vulkan
             FenceCreateInfo fci = new FenceCreateInfo(StructureType.FenceCreateInfo, flags: FenceCreateFlags.SignaledBit);
             return Create(context, fci);
         }
+
         public static unsafe VkFence CreateNotSignaled(VulkanContext context)
         {
             FenceCreateInfo fci = new FenceCreateInfo(StructureType.FenceCreateInfo, flags: FenceCreateFlags.None);
@@ -37,29 +37,34 @@ namespace RockEngine.Vulkan
             Vk.ResetFences(_context.Device, 1, in _vkObject);
         }
 
-        public void Wait()
+        public void Wait(ulong timeoutMs = 10_000_000_000)
         {
-            Vk.WaitForFences(_context.Device, 1, in _vkObject, true, ulong.MaxValue)
+/*            var status = GetFenceStatus();
+            if (status == Result.Success) return; // Уже сигнален*/
+
+            Vk.WaitForFences(_context.Device, 1, in _vkObject, true, timeoutMs) // 10 сек
                 .VkAssertResult("Failed to wait fence");
         }
         public async Task WaitAsync(CancellationToken cancellationToken = default)
         {
-            while (true)
+            Wait();
+            return;
+           /* while (true)
             {
-                cancellationToken.ThrowIfCancellationRequested();
-
-                var status = GetFenceStatus();
-                switch (status)
+                var result = GetFenceStatus();
+                Console.WriteLine(result);
+                switch (result)
                 {
                     case Result.Success:
                         return;
                     case Result.NotReady:
                         await Task.Delay(1, cancellationToken).ConfigureAwait(false);
-                        break;
-                    default:
-                        throw new VulkanException(status, "Fence wait failed");
+                        continue;
+                    case Result.Timeout:
+                        throw new VulkanException(result, "Failed to wait fence, timeout");
+
                 }
-            }
+            }*/
         }
 
         public Result GetFenceStatus()
@@ -79,13 +84,6 @@ namespace RockEngine.Vulkan
 
                 unsafe
                 {
-                    //_ = Vk.GetFenceStatus(_context.Device, this);
-                    // Awesome feature, by requesting fence status we avoid that error :)
-                    //System.Exception: "Vulkan Error: Validation Error: [ VUID-vkDestroyFence-fence-01120 ]
-                    //Object 0: handle = 0x9389c50000000061, type = VK_OBJECT_TYPE_FENCE; | MessageID = 0x5d296248 |
-                    //vkDestroyFence(): fence (VkFence 0x9389c50000000061[]) is in use.
-                    //The Vulkan spec states: All queue submission commands that refer to fence must have completed execution 
-
                     Vk.DestroyFence(_context.Device, _vkObject, in VulkanContext.CustomAllocator<VkFence>());
                 }
 

@@ -2,21 +2,21 @@
 {
     public static class MathHelper
     {
-        public const float Pi = (float)Math.PI;
+        public const float Pi = (float)MathF.PI;
 
-        public const float PiOver2 = (float)Math.PI / 2f;
+        public const float PiOver2 = (float)MathF.PI / 2f;
 
-        public const float PiOver3 = (float)Math.PI / 3f;
+        public const float PiOver3 = (float)MathF.PI / 3f;
 
-        public const float PiOver4 = (float)Math.PI / 4f;
+        public const float PiOver4 = (float)MathF.PI / 4f;
 
-        public const float PiOver6 = (float)Math.PI / 6f;
+        public const float PiOver6 = (float)MathF.PI / 6f;
 
-        public const float TwoPi = (float)Math.PI * 2f;
+        public const float TwoPi = (float)MathF.PI * 2f;
 
         public const float ThreePiOver2 = 4.712389f;
 
-        public const float E = (float)Math.E;
+        public const float E = (float)MathF.E;
 
         public const float Log10E = 0.4342945f;
 

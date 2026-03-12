@@ -1,15 +1,16 @@
-﻿using RockEngine.Core.Rendering.Texturing;
+﻿using RockEngine.Core.Rendering.Objects;
+using RockEngine.Core.Rendering.Texturing;
 using RockEngine.Vulkan;
 
 using Silk.NET.Vulkan;
 
 namespace RockEngine.Core.Rendering.RenderTargets
 {
-    public class CameraRenderTarget : RenderTarget
+    public partial class CameraRenderTarget : RenderTarget
     {
         private readonly GBuffer _gBuffer;
         private readonly VulkanContext _context;
-        private readonly GraphicsEngine _engine;
+        private readonly GraphicsContext _engine;
 
         public GBuffer GBuffer => _gBuffer;
         public override Viewport Viewport => new Viewport()
@@ -27,31 +28,31 @@ namespace RockEngine.Core.Rendering.RenderTargets
             Extent = Size
         };
 
-        public CameraRenderTarget(VulkanContext context, GraphicsEngine engine, Extent2D size)
-            : base(context, size, engine.Swapchain.Format, ImageUsageFlags.ColorAttachmentBit | ImageUsageFlags.TransientAttachmentBit | ImageUsageFlags.SampledBit)
+        public CameraRenderTarget(VulkanContext context, GraphicsContext engine, Extent2D size)
+            : base(context, size, engine.MainSwapchain.Format, ImageUsageFlags.ColorAttachmentBit | ImageUsageFlags.TransientAttachmentBit | ImageUsageFlags.SampledBit)
         {
             _context = context;
             _engine = engine;
-            _gBuffer = new GBuffer(context, size, engine.Swapchain.DepthFormat);
+            _gBuffer = new GBuffer(context, size, engine.MainSwapchain.DepthFormat);
             CreateTexture();
-            ClearValues =
+            ClearValues = new Memory<ClearValue>(
            [
                 // Color attachments (Albedo, Normal, Position)
-                new ClearValue { Color = new ClearColorValue(0.0f, 0.0f, 0.0f, 1.0f) },
-                new ClearValue { Color = new ClearColorValue(0.0f, 0.0f, 0.0f, 1.0f) },
-                new ClearValue { Color = new ClearColorValue(0.0f, 0.0f, 0.0f, 1.0f) },
-                new ClearValue { Color = new ClearColorValue(0.0f, 0.0f, 0.0f, 1.0f) },
+                new ClearValue { Color = new ClearColorValue(0.0f, 0.0f, 0.0f, 0) },
+                new ClearValue { Color = new ClearColorValue(0.0f, 0.0f, 0.0f, 0) },
+                new ClearValue { Color = new ClearColorValue(0.0f, 0.0f, 0.0f, 0) },
+                new ClearValue { Color = new ClearColorValue(0.0f, 0.0f, 0.0f, 0) },
                 //new ClearValue { Color = new ClearColorValue(0.0f, 0.0f, 0.0f, 1.0f) },
         
                 // Depth attachment
                 new ClearValue { DepthStencil = new ClearDepthStencilValue(1.0f, 0) },
         
                 // Output texture
-                new ClearValue { Color = new ClearColorValue(0.1f, 0.1f, 0.1f, 1.0f) }
-           ];
+                new ClearValue { Color = new ClearColorValue(0) }
+           ]);
         }
 
-        public override void Initialize(VkRenderPass renderPass)
+        public override void Initialize(RckRenderPass renderPass)
         {
             RenderPass = renderPass;
             CreateFramebuffers();
@@ -59,7 +60,7 @@ namespace RockEngine.Core.Rendering.RenderTargets
 
         private void CreateTexture()
         {
-            OutputTexture = new Texture.Builder(_context)
+            OutputTexture = (Texture2D)new Texture.Builder(_context)
                                     .SetSize(Size)
                                     .SetFormat(Format)
                                     .SetUsage(ImageUsageFlags.ColorAttachmentBit | ImageUsageFlags.SampledBit)
@@ -71,18 +72,21 @@ namespace RockEngine.Core.Rendering.RenderTargets
         {
             foreach (var fb in Framebuffers)
             {
-                fb?.Dispose();
+                if(fb is not null)
+                {
+                    _context.GraphicsSubmitContext.AddDependency(fb);
+                }
             }
 
             Framebuffers = new VkFrameBuffer[_context.MaxFramesPerFlight];
 
             for (int i = 0; i < Framebuffers.Length; i++)
             {
-                var attachments = _gBuffer.ColorAttachments.Concat([_gBuffer.DepthAttachment, OutputTexture.ImageView]).ToArray();
+                var attachments = _gBuffer.ColorAttachments.Concat([_gBuffer.DepthAttachment, OutputTexture.Image.GetMipView(0)]).ToArray();
 
                 Framebuffers[i] = VkFrameBuffer.Create(
                     _context,
-                    RenderPass,
+                    RenderPass.RenderPass,
                     attachments,
                     Size.Width,
                     Size.Height
@@ -91,19 +95,19 @@ namespace RockEngine.Core.Rendering.RenderTargets
             }
         }
 
-        public override void PrepareForRender(VkCommandBuffer cmd)
+        public override void PrepareForRender(UploadBatch batch)
         {
-            using (cmd.NameAction("Transition camera output to ColorAttachmentOptimal", [1, 1, 1, 1]))
+            using (batch.NameAction(nameof(PrepareForRender), [1, 1, 1, 1]))
             {
-                OutputTexture.Image.TransitionImageLayout(cmd, ImageLayout.ColorAttachmentOptimal);
+                OutputTexture.Image.TransitionImageLayout(batch, ImageLayout.Undefined, ImageLayout.ColorAttachmentOptimal);
             }
         }
 
-        public override void TransitionToRead(VkCommandBuffer cmd)
+        public override void TransitionToRead(UploadBatch batch)
         {
-            using (cmd.NameAction("Transition camera output to ShaderReadOnlyOptimal", [1, 1, 1, 1]))
+            using (batch.NameAction(nameof(TransitionToRead), [1, 1, 1, 1]))
             {
-                OutputTexture.Image.TransitionImageLayout(cmd, ImageLayout.ShaderReadOnlyOptimal);
+                OutputTexture.Image.TransitionImageLayout(batch, ImageLayout.ColorAttachmentOptimal, ImageLayout.ShaderReadOnlyOptimal);
             }
         }
 
@@ -113,15 +117,21 @@ namespace RockEngine.Core.Rendering.RenderTargets
             {
                 return;
             }
-            base.Resize(newSize);
-            _gBuffer.Recreate(Size);
-            CreateTexture();
-            CreateFramebuffers();
+           //_context.GraphicsSubmitContext.AddDependency(new DeferredOperation(() =>
+            {
+                _context.Device.GraphicsQueue.WaitIdle();
+
+                base.Resize(newSize);
+                _gBuffer.Recreate(Size);
+                CreateTexture();
+                CreateFramebuffers();
+            }//));
+           
 
         }
         protected override void DisposeResources()
         {
-            _context.SubmitContext.AddDependency(OutputTexture);
+            _context.GraphicsSubmitContext.AddDependency(OutputTexture);
         }
 
         

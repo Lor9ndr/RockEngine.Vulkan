@@ -1,4 +1,6 @@
-﻿using RockEngine.Core.ECS.Components;
+﻿using RockEngine.Core.Rendering.Materials;
+using RockEngine.Core.Rendering.Objects;
+using RockEngine.Core.Rendering.Passes.SubPasses;
 using RockEngine.Core.Rendering.ResourceBindings;
 using RockEngine.Core.Rendering.Texturing;
 using RockEngine.Vulkan;
@@ -7,12 +9,10 @@ using Silk.NET.Vulkan;
 
 namespace RockEngine.Core.Rendering
 {
-    public class GBuffer
+    public class GBuffer : IDisposable
     {
         private readonly VulkanContext _context;
-        private InputAttachmentBinding _attachmentBinding;
         private readonly Format _depthFormat;
-        private VkPipeline? _pipeline;
         private Extent2D _size;
 
         public VkImageView[] ColorAttachments { get; private set; }
@@ -24,10 +24,9 @@ namespace RockEngine.Core.Rendering
             Format.R16G16B16A16Sfloat,   // Position (View Space)
             Format.A2R10G10B10UnormPack32,     // Normal (Octahedral encoded) + Depth
             Format.R8G8B8A8Srgb,         // Albedo + Specular
-            Format.R8G8Unorm             // Metallic (R), Roughness (G)
+            Format.R16G16B16A16Unorm             // Metallic (R), Roughness (G), 
         ];
 
-        public Material Material { get; private set; }
         public VkSampler[] Samplers { get; private set; }
 
         public GBuffer(VulkanContext context, Extent2D size, Format depthFormat)
@@ -47,31 +46,17 @@ namespace RockEngine.Core.Rendering
            
         }
 
-        public void CreateLightingDescriptorSets(VkPipeline pipeline)
-        {
-            if (_pipeline != pipeline)
-            {
-                _pipeline = pipeline;
-                Material = new Material(_pipeline, ColorTextures.ToList());
-            }
-
-            _attachmentBinding = new InputAttachmentBinding(
-                setLocation: 2,
-                bindingLocation: 0,
-                ColorAttachments  // Position + Normal + Albedo
-            );
-            Material.Bind(_attachmentBinding);
-        }
+       
 
         private void CreateAttachments()
         {
             ColorAttachments = new VkImageView[ColorAttachmentFormats.Length];
-            string[] debugNames = ["GPosition", "GNormal", "GAlbedo", "GMRA", "GEmissive"];
+            ReadOnlySpan<string> debugNames =  ["GPosition", "GNormal", "GAlbedo", "GMRA", "GEmissive"];
             for (int i = 0; i < ColorAttachments.Length; i++)
             {
                 ColorAttachments[i] = CreateColorAttachment(ColorAttachmentFormats[i]);
-                _context.DebugUtils.SetDebugUtilsObjectName(ColorAttachments[i].VkObjectNative, ObjectType.ImageView, debugNames[i] + "View");
-                _context.DebugUtils.SetDebugUtilsObjectName(ColorAttachments[i].Image.VkObjectNative, ObjectType.Image, debugNames[i]);
+                ColorAttachments[i].LabelObject(debugNames[i] + "View");
+                ColorAttachments[i].Image.LabelObject(debugNames[i]);
             }
             DepthAttachment = CreateDepthAttachment();
 
@@ -86,7 +71,6 @@ namespace RockEngine.Core.Rendering
                 format,
                 ImageTiling.Optimal,
                 ImageUsageFlags.ColorAttachmentBit |
-                    ImageUsageFlags.TransientAttachmentBit |
                     ImageUsageFlags.InputAttachmentBit ,
                 MemoryPropertyFlags.DeviceLocalBit, aspectFlags: ImageAspectFlags.ColorBit);
 
@@ -139,10 +123,9 @@ namespace RockEngine.Core.Rendering
             ColorTextures = new Texture[ColorAttachments.Length];
             for (int i = 0; i < ColorAttachments.Length; i++)
             {
-                ColorTextures[i] = new Texture(
+                ColorTextures[i] = new Texture2D(
                     _context,
                     ColorAttachments[i].Image,
-                    ColorAttachments[i],
                     Samplers[i],
                 null);
             }
@@ -151,20 +134,37 @@ namespace RockEngine.Core.Rendering
 
         public void Recreate(Extent2D size)
         {
+            //_context.Device.GraphicsQueue.WaitIdle();
+
+            // Cleanup old resources
+            
+                foreach (var attachment in ColorAttachments)
+                {
+                    attachment.Image.Resize(new Extent3D(size.Width, size.Height, 1));
+                }
+
+                DepthAttachment.Image.Resize(new Extent3D(size.Width, size.Height, 1));
+
+                _size = size;
+          
+            
+
+            /*CreateAttachments();
+            CreateTextures();*/
+        }
+
+        public void Dispose()
+        {
             _context.Device.GraphicsQueue.WaitIdle();
 
             // Cleanup old resources
             foreach (var attachment in ColorAttachments)
             {
-                attachment.Image.Resize(new Extent3D(size.Width, size.Height, 1));
+                attachment.Dispose();
             }
 
-            DepthAttachment.Image.Resize(new Extent3D(size.Width, size.Height, 1));
+            DepthAttachment.Image.Dispose();
 
-            _size = size;
-
-            /* CreateAttachments();
-             CreateTextures();*/
         }
     }
 }

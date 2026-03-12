@@ -1,16 +1,22 @@
 ﻿using RockEngine.Core.Rendering.Managers;
-using RockEngine.Core.Rendering.SubPasses;
+using RockEngine.Core.Rendering.Objects;
+using RockEngine.Core.Rendering.Passes.SubPasses;
 using RockEngine.Vulkan;
+
+using Silk.NET.Vulkan;
 
 namespace RockEngine.Core.Rendering.Passes
 {
     public interface IRenderPassStrategy : IDisposable
     {
         IReadOnlyCollection<IRenderSubPass> SubPasses { get; }
+        List<AttachmentDescription> Attachments { get; }
         int Order { get; }
-        EngineRenderPass BuildRenderPass(GraphicsEngine graphicsEngine);
+
+        RckRenderPass? RenderPass { get; }
+        RckRenderPass BuildRenderPass();
         void InitializeSubPasses();
-        Task Execute(VkCommandBuffer cmd, CameraManager cameraManager, Renderer renderer);
-        Task Update();
+        ValueTask Execute(RenderContext renderContext, WorldRenderer renderer);
+        ValueTask Update();
     }
 }

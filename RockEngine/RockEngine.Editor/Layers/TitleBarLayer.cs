@@ -31,11 +31,10 @@ namespace RockEngine.Editor.Layers
         private Vector2D<int> _restoreSize;
         private bool _wasMaximized;
 
-        public TitleBarLayer(IWindow window, IInputContext inputContext, Texture iconTexture = null)
+        public TitleBarLayer(IWindow window, IInputContext inputContext)
         {
             _window = window;
             _inputContext = inputContext;
-            _iconTexture = iconTexture;
             var mouse = _inputContext.Mice[0];
             mouse.MouseDown += (s, e) =>
             {
@@ -51,7 +50,10 @@ namespace RockEngine.Editor.Layers
                     }
                 }
 
-            if (_isDragging) return;
+            if (_isDragging)
+                {
+                    return;
+                }
 
                 if (e == MouseButton.Left )
                 {
@@ -90,7 +92,10 @@ namespace RockEngine.Editor.Layers
         }
         private void HandleDragging(Vector2D<float> screenMousePos)
         {
-            if (_isResizing) return; // Prevent dragging while resizing
+            if (_isResizing)
+            {
+                return; // Prevent dragging while resizing
+            }
 
             if (_isDragging)
             {
@@ -131,7 +136,11 @@ namespace RockEngine.Editor.Layers
         private void HandleResizing(IMouse mouse, Vector2D<float> screenMousePos)
         {
 
-            if (_isDragging) return;
+            if (_isDragging)
+            {
+                return;
+            }
+
             if (_isResizing)
             {
                 var delta = screenMousePos - _resizeStartMouse;
@@ -182,18 +191,24 @@ namespace RockEngine.Editor.Layers
                 bool bottomEdge = screenMousePos.Y >= windowPos.Y + windowSize.Y - RESIZE_BORDER;
 
                 if (rightEdge && bottomEdge)
+                {
                     mouse.Cursor.StandardCursor = StandardCursor.ResizeAll;
+                }
                 else if (rightEdge)
+                {
                     mouse.Cursor.StandardCursor = StandardCursor.HResize;
+                }
                 else if (bottomEdge)
+                {
                     mouse.Cursor.StandardCursor = StandardCursor.VResize;
+                }
             }
             else
             {
                 mouse.Cursor.StandardCursor = StandardCursor.Arrow;
             }
         }
-        public void OnImGuiRender(VkCommandBuffer vkCommandBuffer)
+        public void OnImGuiRender(UploadBatch vkCommandBuffer)
         {
             _isHoveringButton = false;
 
@@ -362,7 +377,7 @@ namespace RockEngine.Editor.Layers
             return _window.Position;
         }*/
 
-        public void OnRender(VkCommandBuffer vkCommandBuffer)
+        public void OnRender(UploadBatch vkCommandBuffer)
         {
         }
         public Task OnAttach()

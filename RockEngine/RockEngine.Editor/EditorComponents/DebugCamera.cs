@@ -1,70 +1,84 @@
 ﻿using RockEngine.Core;
+using RockEngine.Core.ECS;
 using RockEngine.Core.ECS.Components;
 using RockEngine.Core.Rendering;
 
 using Silk.NET.Input;
+using Silk.NET.Input.Extensions;
 
 using System.Numerics;
 
 namespace RockEngine.Editor.EditorComponents
 {
-    internal class DebugCamera : Camera
+    internal partial class DebugCamera : Camera
     {
-        private IInputContext _inputContext;
+        private readonly InputManager _inputManager;
         private float _movementSpeed = 5.0f; // Speed of movement
         private readonly float _mouseSensitivity = 0.1f; // Sensitivity for mouse movement
         private Vector2 _lastMousePosition;
         private bool _firstMouse = true;
         public bool CanMove = false;
+        public override RenderLayerMask VisibleLayers { get;set; } = RenderLayerMask.All;
 
-        public DebugCamera()
+        public DebugCamera(InputManager inputManager)
         {
-        }
-
-        public void SetInputContext(IInputContext inputContext)
-        {
-            _inputContext = inputContext;
+            _inputManager = inputManager;
 
             // Ensure the mouse is captured and events are handled
-            foreach (var mouse in _inputContext.Mice)
+
+            foreach (var mouse in _inputManager.Context.Mice)
             {
                 mouse.MouseMove += OnMouseMove;
             }
+            _inputManager.OnInputActionChanged += (oldContext, newContext)=>
+            {
+                foreach (var mouse in oldContext.Mice)
+                {
+                    mouse.MouseMove -= OnMouseMove;
+                }
+                foreach (var mouse in newContext.Mice)
+                {
+                    mouse.MouseMove += OnMouseMove;
+                }
+
+            };
         }
 
-        public override ValueTask Update(Renderer renderer)
+    
+        public override ValueTask Update(WorldRenderer renderer)
         {
-            _movementSpeed += _inputContext.Mice[0].ScrollWheels[0].Y;
             HandleKeyboardInput();
             return base.Update(renderer);
         }
 
         private void HandleKeyboardInput()
         {
-            if (_inputContext == null || !CanMove)
+            if (_inputManager == null || !CanMove)
             {
                 return;
             }
+            _movementSpeed += _inputManager.PrimaryMouse.CaptureState().GetScrollWheels()[0].Y;
 
-            foreach (var keyboard in _inputContext.Keyboards)
+            var keyboard = _inputManager.PrimaryKeyboard;
             {
                 var position = Entity.Transform.WorldPosition;
 
                 // Move forward
                 if (keyboard.IsKeyPressed(Key.W))
                 {
-                    position += Front * _movementSpeed * Time.DeltaTime;
+                    position += Forward * _movementSpeed * Time.DeltaTime;
                 }
 
                 // Move backward
                 if (keyboard.IsKeyPressed(Key.S))
                 {
-                    position -= Front * _movementSpeed * Time.DeltaTime;
+                    position -= Forward * _movementSpeed * Time.DeltaTime;
                 }
 
                 // Move right
                 if (keyboard.IsKeyPressed(Key.D))
                 {
+
                     position += Right * _movementSpeed * Time.DeltaTime;
                 }
 
@@ -112,6 +126,13 @@ namespace RockEngine.Editor.EditorComponents
             Pitch -= yOffset; // Invert Y-axis for natural camera movement
 
             UpdateVectors();
+        }
+
+        public override ValueTask OnStart(WorldRenderer renderer)
+        {
+            Entity.AddComponent<InfinityGrid>();
+            World.GetCurrent().CreateEntity("GIZMO").AddComponent<TransformGizmo>();
+            return base.OnStart(renderer);
         }
     }
 }

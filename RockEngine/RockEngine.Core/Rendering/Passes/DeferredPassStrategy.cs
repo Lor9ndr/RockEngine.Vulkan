@@ -1,97 +1,180 @@
-﻿using RockEngine.Core.Builders;
+﻿using RockEngine.Core.DI;
+using RockEngine.Core.Diagnostics;
 using RockEngine.Core.ECS.Components;
+using RockEngine.Core.Extensions;
 using RockEngine.Core.Rendering.Managers;
-using RockEngine.Core.Rendering.SubPasses;
+using RockEngine.Core.Rendering.Passes.SubPasses;
 using RockEngine.Vulkan;
 
 using Silk.NET.Vulkan;
 
+using System.Buffers;
+using System.Collections.Concurrent;
+
+using ZLinq;
+
 namespace RockEngine.Core.Rendering.Passes
 {
-    public class DeferredPassStrategy : PassStrategyBase
+    public class DeferredPassStrategy(
+         VulkanContext context,
+         IEnumerable<IRenderSubPass> subpasses,
+         CameraManager cameraManager) : PipelineStatisticsPassStrategyBase(context, subpasses)
     {
-        private readonly GlobalUbo _globalUbo;
+        private readonly ConcurrentDictionary<uint, int> _framesInProgress = new();
 
-        public LightingPass LightingPass => (LightingPass)SubPasses.FirstOrDefault(s=>s.GetType() == typeof(LightingPass));
+        public LightingPass LightingPass => SubPasses.OfType<LightingPass>().First();
+        public override int Order => 0;
 
-        public override int Order => int.MinValue;
-
-        public DeferredPassStrategy(
-            VulkanContext context,
-            IEnumerable<IRenderSubPass> subpasses,
-            GlobalUbo globalUbo)
-            :base(context, subpasses)
+        public override async ValueTask Execute(RenderContext renderContext, WorldRenderer renderer)
         {
-            _globalUbo = globalUbo;
-        }
+            uint frameIndex = renderer.FrameIndex;
+            var cams = cameraManager.RegisteredCameras;
 
-        public override async Task Execute(VkCommandBuffer cmd, CameraManager cameraManager, Renderer renderer)
-        {
-            for (int i = 0; i < cameraManager.ActiveCameras.Count; i++)
+            // Increment frame in-progress counter
+            _framesInProgress.AddOrUpdate(frameIndex, 1, (_, count) => count + 1);
+
+
+            await Parallel.ForAsync(0, cams.Count, new ParallelOptions
             {
-                Camera? camera = cameraManager.ActiveCameras[i];
-                await ExecuteCameraPass(cmd, camera, renderer, i);
-            }
-
-        }
-
-        private async Task ExecuteCameraPass(VkCommandBuffer cmd, Camera camera, Renderer renderer, int camIndex)
-        {
-            camera.RenderTarget.PrepareForRender(cmd);
-            unsafe
+                MaxDegreeOfParallelism = Environment.ProcessorCount
+            }, async (i, ct) =>
             {
-                fixed (ClearValue* pClearValue = camera.RenderTarget.ClearValues)
+                Camera camera = cams[i];
+                if (camera.RenderTarget.RenderPass != RenderPass)
                 {
-                    var renderPassBeginInfo = new RenderPassBeginInfo
-                    {
-                        SType = StructureType.RenderPassBeginInfo,
-                        RenderPass = camera.RenderTarget.RenderPass,
-                        Framebuffer = camera.RenderTarget.Framebuffers[renderer.FrameIndex],
-                        RenderArea = camera.RenderTarget.Scissor,
-                        ClearValueCount = (uint)camera.RenderTarget.ClearValues.Length,
-                        PClearValues = pClearValue
-                    };
-
-                    cmd.BeginRenderPass(in renderPassBeginInfo, SubpassContents.SecondaryCommandBuffers);
+                    return;
                 }
-            }
+                if (camera.IsActive)
+                {
+                    await ExecuteCameraPass(renderContext.GraphicsContext, camera, renderer, (uint)i, frameIndex);
+                }
+            });
 
-            var buffers = cmd.CommandPool.AllocateCommandBuffers((uint)_subPasses.Length, CommandBufferLevel.Secondary);
-            var subpassIndices = new[] { 0u, 1u, 2u };
-            for (int i = 0; i < _subPasses.Length; i++)
+            // Decrement frame in-progress counter
+            _framesInProgress.AddOrUpdate(frameIndex, 0, (_, count) => count - 1);
+
+            // Clean up old frames
+            var framesToRemove = _framesInProgress.AsValueEnumerable()
+                .Select(s => s.Key)
+                .Where(f => f < frameIndex - 3)
+                .ToList();
+            foreach (var frame in framesToRemove)
             {
-                var inheritanceInfo = new CommandBufferInheritanceInfo
-                {
-                    SType = StructureType.CommandBufferInheritanceInfo,
-                    RenderPass = camera.RenderTarget.RenderPass,
-                    Subpass = subpassIndices[i],
-                    Framebuffer = camera.RenderTarget.Framebuffers[renderer.FrameIndex]
-                };
+                _framesInProgress.TryRemove(frame, out _);
+            }
+        }
 
-                VkCommandBuffer childCmd = buffers[i];
-                childCmd.Begin(CommandBufferUsageFlags.RenderPassContinueBit, in inheritanceInfo);
+        private async ValueTask ExecuteCameraPass(SubmitContext submitContext, Camera camera, WorldRenderer renderer, uint cameraIndex, uint frameIndex)
+        {
+            var name = $"Camera - {camera.Entity.Name}";
 
-                childCmd.LabelObject($"ExecuteCameraPass [{i}] cmd");
-                IRenderSubPass? subpass = _subPasses[i];
-                using (cmd.NameAction(subpass.GetType().Name, [0.8f, 0.2f, 0.2f, 1.0f]))
+            var primaryBatch = submitContext.CreateBatch();
+            var batch = primaryBatch;
+            using (PerformanceTracer.BeginSection(name) | batch.NameAction(name, [0.5f, 0.8f, 0.9f, 1.0f]) | batch.BeginSection(name, frameIndex))
+            {
+                camera.RenderTarget.PrepareForRender(primaryBatch);
+
+                BeginRenderPass(camera, renderer, batch);
+
+                // Precompute inheritance info
+                var inheritanceInfos = new CommandBufferInheritanceInfo[_subPasses.Length];
+                for (int i = 0; i < _subPasses.Length; i++)
                 {
-                    await subpass.Execute(childCmd, renderer.FrameIndex, camera, camIndex);
-                    childCmd.End();
-                    cmd.ExecuteSecondary(childCmd);
-                    if (_subPasses.Length - 1 != i)
+                    inheritanceInfos[i] = new CommandBufferInheritanceInfo
                     {
-                        cmd.NextSubpass(SubpassContents.SecondaryCommandBuffers);
+                        SType = StructureType.CommandBufferInheritanceInfo,
+                        RenderPass = camera.RenderTarget.RenderPass,
+                        Subpass = (uint)i,
+                        Framebuffer = camera.RenderTarget.Framebuffers[frameIndex],
+                        OcclusionQueryEnable = false,
+                        QueryFlags = QueryControlFlags.None,
+                        PipelineStatistics = PipelineStatisticsEnabled && _pipelineStatsEnabled ?
+                            _pipelineStatisticsFlags : QueryPipelineStatisticFlags.None
+                    };
+                }
+
+                UploadBatch[] secondaryBatches = ArrayPool<UploadBatch>.Shared.Rent(_subPasses.Length);
+                try
+                {
+                    Parallel.For(0, _subPasses.Length,
+                   (subpassIndex) =>
+                   {
+                       var secondaryBatch = submitContext.CreateBatch(new BatchCreationParams
+                       {
+                           Level = CommandBufferLevel.Secondary,
+                           InheritanceInfo = inheritanceInfos[subpassIndex],
+                       });
+                       secondaryBatches[subpassIndex] = secondaryBatch;
+
+                       using (BeginQueryScope(secondaryBatch, frameIndex, cameraIndex, (uint)subpassIndex))
+                       {
+                           RecordSubpassCommand(secondaryBatch, subpassIndex, camera, (int)cameraIndex, frameIndex);
+                       }
+
+                       secondaryBatch.End();
+                   });
+
+                    for (int i = 0; i < _subPasses.Length; i++)
+                    {
+                        primaryBatch.ExecuteCommands(secondaryBatches[i]);
+                        if (i < _subPasses.Length - 1)
+                        {
+                            batch.NextSubpass(SubpassContents.SecondaryCommandBuffers);
+                        }
                     }
                 }
+                finally
+                {
+                    ArrayPool<UploadBatch>.Shared.Return(secondaryBatches);
+                    batch.EndRenderPass();
+                    camera.RenderTarget.TransitionToRead(primaryBatch);
+                }
             }
-          
 
-            cmd.EndRenderPass();
-            camera.RenderTarget.TransitionToRead(cmd);
-            foreach (var item in buffers)
+            primaryBatch.Submit();
+        }
+
+        private void RecordSubpassCommand(
+            UploadBatch batch,
+            int subpassIndex,
+            Camera camera,
+            int camIndex,
+            uint frameIndex)
+        {
+            var subpass = _subPasses[subpassIndex];
+            subpass.Execute(batch, frameIndex, camera, camIndex);
+        }
+
+        private unsafe static void BeginRenderPass(Camera camera, WorldRenderer renderer, UploadBatch batch)
+        {
+            fixed (ClearValue* pClearValue = camera.RenderTarget.ClearValues.Span)
             {
-                _context.SubmitContext.AddDependency(item);
+                var renderPassBeginInfo = new RenderPassBeginInfo
+                {
+                    SType = StructureType.RenderPassBeginInfo,
+                    RenderPass = camera.RenderTarget.RenderPass,
+                    Framebuffer = camera.RenderTarget.Framebuffers[renderer.FrameIndex],
+                    RenderArea = camera.RenderTarget.Scissor,
+                    ClearValueCount = (uint)camera.RenderTarget.ClearValues.Length,
+                    PClearValues = pClearValue
+                };
+
+                batch.BeginRenderPass(in renderPassBeginInfo, SubpassContents.SecondaryCommandBuffers);
             }
+        }
+
+        public override ValueTask Update()
+        {
+            var graphicsContext = IoC.Container.GetInstance<GraphicsContext>();
+            uint frameIndex = graphicsContext.FrameIndex;
+
+            RetrievePipelineStatistics(frameIndex);
+
+            var batch = _context.GraphicsSubmitContext.CreateBatch();
+            BeginFrameQueries(batch, frameIndex);
+            batch.Submit();
+
+            return ValueTask.CompletedTask;
         }
     }
 }

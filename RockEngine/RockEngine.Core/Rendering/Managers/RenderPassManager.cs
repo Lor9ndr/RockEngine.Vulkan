@@ -1,5 +1,7 @@
 ﻿using RockEngine.Core.Registries;
+using RockEngine.Core.Rendering.Objects;
 using RockEngine.Core.Rendering.Passes;
+using RockEngine.Core.Rendering.Passes.SubPasses;
 using RockEngine.Vulkan;
 
 namespace RockEngine.Core.Rendering.Managers
@@ -7,31 +9,35 @@ namespace RockEngine.Core.Rendering.Managers
     public class RenderPassManager : IDisposable
     {
         private readonly VulkanContext _context;
-        private readonly IRegistry<EngineRenderPass, Type> _registry;
+        private readonly IRegistry<RckRenderPass, Type> _registry;
 
-        public RenderPassManager(VulkanContext context, IRegistry<EngineRenderPass, Type> registry)
+        public RenderPassManager(VulkanContext context, IRegistry<RckRenderPass, Type> registry)
         {
             _context = context;
             _registry = registry;
         }
 
-        public EngineRenderPass? GetRenderPass<T>() where T:IRenderPassStrategy
+        public RckRenderPass? GetRenderPass<T>() where T:IRenderPassStrategy
         { 
             return _registry.Get(typeof(T));
         }
 
 
-        public EngineRenderPass CreateRenderPass<T>(VkRenderPass renderPass) where T : IRenderPassStrategy
+        public RckRenderPass CreateRenderPass<T>(VkRenderPass renderPass, params IRenderSubPass[] subPasses) where T : IRenderPassStrategy
         {
-            var engineRenderPass =  new EngineRenderPass(renderPass);
+            var engineRenderPass =  new RckRenderPass(renderPass, subPasses);
             _registry.Register(typeof(T),engineRenderPass);
             return engineRenderPass;
         }
-        public EngineRenderPass CreateRenderPass(VkRenderPass renderPass, Type type) 
+        public RckRenderPass CreateRenderPass(VkRenderPass renderPass, Type passProvider, params IRenderSubPass[] subPasses) 
         {
-            var engineRenderPass = new EngineRenderPass(renderPass);
-            _registry.Register(type, engineRenderPass);
+            var engineRenderPass = new RckRenderPass(renderPass,  subPasses);
+            _registry.Register(passProvider, engineRenderPass);
             return engineRenderPass;
+        }
+        public void Register(RckRenderPass renderPass, Type passProvider)
+        {
+            _registry.Register(passProvider, renderPass);
         }
 
         public void Dispose()

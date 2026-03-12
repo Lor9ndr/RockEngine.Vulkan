@@ -1,0 +1,88 @@
+#version 450
+#extension GL_EXT_scalar_block_layout : require
+
+#include "../../Include/physics_common.glsl"
+
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+layout(set = 0, binding = 0, std430) buffer RigidbodyBuffer {
+    Rigidbody rigidbodies[];
+};
+
+layout(set = 0, binding = 1, std430) buffer ColliderBuffer {
+    Collider colliders[];
+};
+
+layout(set = 0, binding = 2, std430) buffer BroadphaseObjectBuffer {
+    BroadphaseObject broadphaseObjects[];
+};
+
+layout(set = 0, binding = 3, std430) buffer BroadphaseCellBuffer {
+    BroadphaseCell broadphaseCells[];
+};
+
+layout(set = 0, binding = 4, std430) buffer AtomicCounter {
+    uint objectCount;
+} counter;
+
+layout(push_constant) uniform BroadphaseConstants {
+    float cellSize;
+    uint gridSize;
+    uint maxObjectsPerCell;
+    uint bodyCount;
+    uint colliderCount;
+} bpc;
+
+// Simple hash function for 3D grid
+uint computeHash(ivec3 gridPos) {
+    const uint p1 = 73856093;
+    const uint p2 = 19349663;
+    const uint p3 = 83492791;
+    
+    uint hash = gridPos.x * p1 ^ gridPos.y * p2 ^ gridPos.z * p3;
+    return hash % bpc.gridSize;
+}
+
+void main() {
+    uint idx = gl_GlobalInvocationID.x;
+    if (idx >= bpc.bodyCount) return;
+    
+    Rigidbody rb = rigidbodies[idx];
+    if (rb.isActive == 0u) return;
+    
+    uint colIdx = rb.colliderIndex;
+    if (colIdx >= bpc.colliderCount) return;
+    
+    Collider col = colliders[colIdx];
+    
+    // Calculate AABB with margin
+    vec3 halfSize = col.size + vec3(0.1); // Add margin
+    vec3 minBounds = col.position - halfSize;
+    vec3 maxBounds = col.position + halfSize;
+    
+    // Calculate grid bounds
+    ivec3 minGrid = ivec3(floor(minBounds / bpc.cellSize));
+    ivec3 maxGrid = ivec3(floor(maxBounds / bpc.cellSize));
+    
+    // Store object in all overlapping cells
+    for (int x = minGrid.x; x <= maxGrid.x; x++) {
+        for (int y = minGrid.y; y <= maxGrid.y; y++) {
+            for (int z = minGrid.z; z <= maxGrid.z; z++) {
+                ivec3 gridPos = ivec3(x, y, z);
+                uint hash = computeHash(gridPos);
+                
+                // Atomically increment cell count
+                uint objectIndex = atomicAdd(broadphaseCells[hash].count, 1);
+                
+                if (objectIndex < bpc.maxObjectsPerCell) {
+                    uint globalIndex = atomicAdd(counter.objectCount, 1);
+                    
+                    broadphaseObjects[globalIndex].bodyId = idx;
+                    broadphaseObjects[globalIndex].cellHash = hash;
+                    broadphaseObjects[globalIndex].minBounds = minBounds;
+                    broadphaseObjects[globalIndex].maxBounds = maxBounds;
+                }
+            }
+        }
+    }
+}

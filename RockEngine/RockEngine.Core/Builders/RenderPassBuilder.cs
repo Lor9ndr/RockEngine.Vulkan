@@ -14,6 +14,8 @@ public class RenderPassBuilder : DisposableBuilder
     private readonly List<VkSubpassDescription> _subpasses = new();
     private readonly List<SubpassDependency> _dependencies = new();
 
+    public List<AttachmentDescription> Attachments => _attachments;
+
     public RenderPassBuilder(VulkanContext context) => _context = context;
 
     public AttachmentConfigurer ConfigureAttachment(Format format, SampleCountFlags samples = SampleCountFlags.Count1Bit)
@@ -190,7 +192,7 @@ public class RenderPassBuilder : DisposableBuilder
             _dependency.DstSubpass = subpass;
             return this;
         }
-        public DependencyConfigurer ToExtenral()
+        public DependencyConfigurer ToExternal()
         {
             _dependency.DstSubpass = Vk.SubpassExternal;
             return this;
@@ -207,6 +209,11 @@ public class RenderPassBuilder : DisposableBuilder
         {
             _dependency.SrcAccessMask = src;
             _dependency.DstAccessMask = dst;
+            return this;
+        }
+        public DependencyConfigurer ByRegion()
+        {
+            _dependency.DependencyFlags |= DependencyFlags.ByRegionBit;
             return this;
         }
 

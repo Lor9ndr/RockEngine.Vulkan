@@ -25,9 +25,8 @@ namespace RockEngine.Core.Rendering.Managers
                 var list = new List<VkDescriptorPool>();
                 CreateNewPool(list); // Create initial pool for each thread
                 return list;
-            });
+            }, trackAllValues:true);
 
-            //_exhaustedPools = new ThreadLocal<List<VkDescriptorPool>>(() => new List<VkDescriptorPool>());
         }
 
         private unsafe VkDescriptorPool CreateNewPool(List<VkDescriptorPool> targetList)
@@ -49,23 +48,19 @@ namespace RockEngine.Core.Rendering.Managers
             }
         }
 
-        public unsafe VkDescriptorSet AllocateDescriptorSet(VkDescriptorSetLayout layout)
+        public VkDescriptorSet AllocateDescriptorSet(VkDescriptorSetLayout layout)
         {
             var currentPools = _pools.Value!;
-            //var currentExhausted = _exhaustedPools.Value!;
 
             foreach (var pool in currentPools)
             {
-                /*if (currentExhausted.Contains(pool))
-                    continue;*/
-
                 var result = pool.AllocateDescriptorSet(layout, out var descriptorSet)
                     .VkAssertResult("Failed to allocate descriptor set", Result.ErrorOutOfPoolMemory);
 
                 if (result == Result.Success)
+                {
                     return descriptorSet;
-
-                //currentExhausted.Add(pool);
+                }
             }
 
             // All pools exhausted, create new one
@@ -81,14 +76,13 @@ namespace RockEngine.Core.Rendering.Managers
             foreach (var pools in _pools.Values)
             {
                 foreach (var pool in pools)
+                {
                     pool.Dispose();
+                }
+
                 pools.Clear();
             }
             _pools.Dispose();
-/*
-            foreach (var exhausted in _exhaustedPools.Values)
-                exhausted.Clear();
-            _exhaustedPools.Dispose();*/
         }
     }
 }

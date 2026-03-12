@@ -1,0 +1,91 @@
+#version 450
+#extension GL_EXT_scalar_block_layout : require
+
+#include "../../Include/physics_common.glsl"
+
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+layout(set = 0, binding = 0, scalar) buffer ParticleBuffer {
+    Particle particles[];
+};
+
+layout(set = 0, binding = 1, scalar) buffer EmissionBuffer {
+    uint emitCount;
+    vec4 emitPosition;
+    vec4 baseVelocity;
+    uint systemId;
+    uint padding[3];
+} emission;
+
+layout(push_constant) uniform EmissionConstants {
+    uint maxParticles;
+    uint startIndex;
+    uint countToEmit;
+    float spawnRate;
+    float lifetime;
+    float size;
+    vec4 color;
+} ec;
+
+uint wang_hash(inout uint seed) {
+    seed = (seed ^ 61u) ^ (seed >> 16u);
+    seed *= 9u;
+    seed = seed ^ (seed >> 4u);
+    seed *= 0x27d4eb2du;
+    seed = seed ^ (seed >> 15u);
+    return seed;
+}
+
+float rand(inout uint seed) {
+    return float(wang_hash(seed)) / 4294967296.0;
+}
+
+vec3 randomDirection(inout uint seed) {
+    float theta = 2.0 * 3.14159265359 * rand(seed);
+    float phi = acos(1.0 - 2.0 * rand(seed));
+    return vec3(sin(phi) * cos(theta), sin(phi) * sin(theta), cos(phi));
+}
+
+void main() {
+    uint idx = gl_GlobalInvocationID.x;
+    if (idx >= ec.countToEmit) return;
+    
+    // Find available particle slot
+    uint slot = atomicAdd(emission.emitCount, 1);
+    if (slot >= ec.maxParticles) return;
+    
+    // Seed for random numbers
+    uint seed = idx + ec.startIndex * 1000u;
+    
+    // Create new particle
+    Particle p;
+    
+    // Position with random offset
+    float spread = 0.1;
+    p.position = emission.emitPosition.xyz + 
+                 randomDirection(seed) * spread * rand(seed);
+    
+    // Velocity with random variation
+    vec3 baseVel = emission.baseVelocity.xyz;
+    float speedVariation = 0.2;
+    p.velocity = baseVel + randomDirection(seed) * speedVariation * rand(seed);
+    
+    // Lifetime with random variation
+    float lifeVariation = 0.2;
+    p.lifetime = ec.lifetime * (1.0 + (rand(seed) - 0.5) * lifeVariation);
+    
+    // Size with random variation
+    float sizeVariation = 0.1;
+    p.size = ec.size * (1.0 + (rand(seed) - 0.5) * sizeVariation);
+    
+    // Color with random variation
+    float colorVariation = 0.1;
+    p.color = ec.color * (1.0 + (rand(seed) - 0.5) * colorVariation);
+    p.color.a = 1.0;
+    
+    // Mark as active
+    p.isActive = 1u;
+    
+    // Store particle
+    particles[slot] = p;
+}

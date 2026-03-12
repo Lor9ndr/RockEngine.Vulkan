@@ -1,70 +1,31 @@
-﻿using RockEngine.Core.Rendering.Managers;
+﻿using RockEngine.Core.Diagnostics;
+using RockEngine.Core.Rendering.Managers;
+using RockEngine.Core.Rendering.Passes.SubPasses;
 using RockEngine.Vulkan;
 
-using Silk.NET.Vulkan;
+using ZLinq;
 
 namespace RockEngine.Core.Rendering.Passes
 {
-    public class SwapchainPassStrategy : PassStrategyBase
+    public class SwapchainPassStrategy(VulkanContext vulkanContext, CameraManager cameraManager, IEnumerable<IRenderSubPass> subPasses) 
+        : PassStrategyBase(vulkanContext, subPasses)
     {
         public override int Order => int.MaxValue;
 
-        public SwapchainPassStrategy(VulkanContext context, IEnumerable<IRenderSubPass> subPasses)
-            : base(context, subPasses)
+        public override ValueTask Execute(RenderContext context, WorldRenderer renderer)
         {
-        }
-
-      
-        public override async Task Execute(VkCommandBuffer cmd, CameraManager cameraManager, Renderer renderer)
-        {
-            renderer.SwapchainTarget.PrepareForRender(cmd);
-            using (cmd.NameAction("Screen composition", [0.7f, 0.7f, 0.7f, 1.0f]))
+            using (PerformanceTracer.BeginSection(nameof(SwapchainPassStrategy)))
             {
-                unsafe
-                {
-                    fixed (ClearValue* pClearValue = renderer.SwapchainTarget.ClearValues)
-                    {
-                        var swapchainBeginInfo = new RenderPassBeginInfo
-                        {
-                            SType = StructureType.RenderPassBeginInfo,
-                            RenderPass = _renderPass.RenderPass,
-                            Framebuffer = renderer.SwapchainTarget.Framebuffers[renderer.FrameIndex],
-                            RenderArea = new Rect2D { Extent = renderer.SwapchainTarget.Size },
-                            ClearValueCount = (uint)renderer.SwapchainTarget.ClearValues.Length,
-                            PClearValues = pClearValue
-                        };
+                var primaryBatch = context.GraphicsContext.CreateBatch();
 
-                        cmd.BeginRenderPass(in swapchainBeginInfo, SubpassContents.SecondaryCommandBuffers);
-                    }
-                }
-
-
-                // Subpass 0: Screen composition
-                var childCmd = cmd.CommandPool.AllocateCommandBuffer(CommandBufferLevel.Secondary);
-                var inheritanceInfo = new CommandBufferInheritanceInfo()
-                {
-                    SType = StructureType.CommandBufferInheritanceInfo,
-                    RenderPass = _renderPass.RenderPass,
-                    Subpass = 0,
-                    Framebuffer = renderer.SwapchainTarget.Framebuffers[renderer.FrameIndex]
-                };
-
-                childCmd.Begin(CommandBufferUsageFlags.RenderPassContinueBit, in inheritanceInfo);
                 foreach (var item in _subPasses)
                 {
-                    using (childCmd.NameAction(item.GetType().Name, [0.7f, 0.7f, 0.7f, 1.0f]))
-                    {
-                        await item.Execute(childCmd, renderer, cameraManager.ActiveCameras[0]);
-                    }
-
+                    item.Execute(primaryBatch, renderer, cameraManager.RegisteredCameras.ToList());
                 }
 
-                childCmd.End();
-                cmd.ExecuteSecondary(childCmd);
-
-                cmd.EndRenderPass();
-                _context.SubmitContext.AddDependency(childCmd);
+                primaryBatch.Submit();
             }
+            return ValueTask.CompletedTask;
         }
     }
 }

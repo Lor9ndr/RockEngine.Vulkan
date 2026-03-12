@@ -1,15 +1,16 @@
-﻿using RockEngine.Core.Rendering.Buffers;
+﻿using NLog;
+
+using RockEngine.Core.Rendering.Buffers;
+using RockEngine.Core.Rendering.Materials;
 using RockEngine.Core.Rendering.ResourceBindings;
 using RockEngine.Vulkan;
+
+using Silk.NET.Vulkan;
 
 using System.Numerics;
 
 namespace RockEngine.Core.Rendering.Managers
 {
-    /// <summary>
-    /// Manages transformation matrices storage and updates for Vulkan rendering
-    /// Optimized to only update GPU buffers when changes occur
-    /// </summary>
     public sealed class TransformManager : IDisposable
     {
         public const int INITIAL_CAPACITY = 10_000;
@@ -24,6 +25,16 @@ namespace RockEngine.Core.Rendering.Managers
         private int _globalVersion;
         private readonly int[] _frameVersions;
 
+        private readonly Queue<int> _freeIndices = new Queue<int>();
+        private readonly HashSet<int> _activeIndices = new HashSet<int>();
+        private readonly Dictionary<int, int> _versionTracker = new Dictionary<int, int>();
+
+        // rack mesh groups for consecutive allocation
+        private readonly Dictionary<MaterialMeshGroup, List<int>> _meshGroupIndices = new Dictionary<MaterialMeshGroup, List<int>>();
+        private readonly Dictionary<int, MaterialMeshGroup> _indexToMeshGroup = new Dictionary<int, MaterialMeshGroup>();
+
+        private static readonly Logger _logger = LogManager.GetCurrentClassLogger();
+
         public TransformManager(VulkanContext context, uint maxFramesInFlight)
         {
             _context = context;
@@ -31,7 +42,6 @@ namespace RockEngine.Core.Rendering.Managers
             _transformBindings = new StorageBufferBinding<Matrix4x4>[maxFramesInFlight];
             _frameVersions = new int[maxFramesInFlight];
 
-            // Initialize buffers for each frame context
             for (int i = 0; i < maxFramesInFlight; i++)
             {
                 _transformBuffers[i] = new StorageBuffer<Matrix4x4>(context, INITIAL_CAPACITY);
@@ -44,27 +54,112 @@ namespace RockEngine.Core.Rendering.Managers
         }
 
         /// <summary>
-        /// Adds multiple transforms and marks data as dirty
+        /// Allocate transform indices that are consecutive for the same mesh group
         /// </summary>
-        public void AddTransforms(IEnumerable<Matrix4x4> transforms)
+        public int AllocateTransformForMesh(Matrix4x4 transform, Material material, IMesh mesh)
         {
-            _transforms.AddRange(transforms);
+            var groupKey = (material, mesh);
+
+            if (!_meshGroupIndices.TryGetValue(groupKey, out var indices))
+            {
+                indices = new List<int>();
+                _meshGroupIndices[groupKey] = indices;
+            }
+
+            int index;
+
+            // Try to reuse free indices first
+            if (_freeIndices.Count > 0)
+            {
+                index = _freeIndices.Dequeue();
+                _transforms[index] = transform;
+            }
+            else
+            {
+                if (_transforms.Count >= INITIAL_CAPACITY)
+                {
+                    throw new InvalidOperationException("Transform capacity exceeded");
+                }
+
+                index = _transforms.Count;
+                _transforms.Add(transform);
+            }
+
+            _activeIndices.Add(index);
+            _versionTracker[index] = _globalVersion;
+            indices.Add(index);
+            _indexToMeshGroup[index] = groupKey;
+
+            _globalVersion++;
+
+            // Sort indices to maintain consecutive ordering where possible
+            indices.Sort();
+
+            _logger.Debug($"Allocated transform index {index} for mesh {mesh.ID} with material {material.Name}");
+
+            return index;
+        }
+
+        /// <summary>
+        /// Removes a transform and makes its index available for reuse
+        /// </summary>
+        public void RemoveTransform(int index)
+        {
+            if (index < 0 || index >= _transforms.Count || !_activeIndices.Contains(index))
+            {
+                return;
+            }
+
+            _activeIndices.Remove(index);
+            _freeIndices.Enqueue(index);
+            _versionTracker.Remove(index);
+
+            // Remove from mesh group tracking
+            if (_indexToMeshGroup.TryGetValue(index, out var groupKey))
+            {
+                if (_meshGroupIndices.TryGetValue(groupKey, out var indices))
+                {
+                    indices.Remove(index);
+                    if (indices.Count == 0)
+                    {
+                        _meshGroupIndices.Remove(groupKey);
+                    }
+                }
+                _indexToMeshGroup.Remove(index);
+            }
+
+            _transforms[index] = Matrix4x4.Identity;
             _globalVersion++;
         }
 
         /// <summary>
-        /// Adds single transform and returns its index
+        /// Gets consecutive transform indices for a mesh group
         /// </summary>
-        public int AddTransform(Matrix4x4 transform)
+        public List<int> GetConsecutiveIndicesForMeshGroup(Material material, IMesh mesh)
         {
-            if (_transforms.Count >= INITIAL_CAPACITY)
+            var groupKey = (material, mesh);
+            if (_meshGroupIndices.TryGetValue(groupKey, out var indices))
             {
-                throw new InvalidOperationException("Transform capacity exceeded");
+                // Return sorted indices (they should already be sorted, but ensure it)
+                return [.. indices.OrderBy(x => x)];
             }
+            return [];
+        }
 
-            _transforms.Add(transform);
-            _globalVersion++;
-            return _transforms.Count - 1;
+        /// <summary>
+        /// Checks if transform indices for a mesh group are consecutive
+        /// </summary>
+        public bool AreMeshGroupIndicesConsecutive(Material material, IMesh mesh)
+        {
+            var indices = GetConsecutiveIndicesForMeshGroup(material, mesh);
+            if (indices.Count <= 1) return true;
+
+            for (int i = 1; i < indices.Count; i++)
+            {
+                if (indices[i] != indices[i - 1] + 1)
+                    return false;
+            }
+            return true;
         }
 
         /// <summary>
@@ -72,39 +167,96 @@ namespace RockEngine.Core.Rendering.Managers
         /// </summary>
         public void UpdateTransform(int index, Matrix4x4 newTransform)
         {
-            if (index < 0 || index >= _transforms.Count)
+            if (index < 0 || index >= _transforms.Count || !_activeIndices.Contains(index))
             {
-                throw new ArgumentOutOfRangeException(nameof(index));
+                return;
             }
 
             _transforms[index] = newTransform;
+            _versionTracker[index] = _globalVersion;
             _globalVersion++;
+        }
+
+        /// <summary>
+        /// Gets only the active transforms for buffer updates
+        /// </summary>
+        private List<Matrix4x4> GetActiveTransforms()
+        {
+            var activeTransforms = new List<Matrix4x4>(_activeIndices.Count);
+            foreach (var index in _activeIndices)
+            {
+                activeTransforms.Add(_transforms[index]);
+            }
+            return activeTransforms;
         }
 
         /// <summary>
         /// Updates GPU buffers only if changes exist for current frame
         /// </summary>
-        public Task UpdateAsync(uint currentFrameIndex)
+        public async ValueTask UpdateAsync(uint currentFrameIndex)
         {
             int frameVersion = _frameVersions[currentFrameIndex];
-
-            // Skip update if no changes since last frame update
             if (_globalVersion == frameVersion)
             {
-                return Task.CompletedTask;
+                return;
             }
 
             var buffer = _transformBuffers[currentFrameIndex];
-            var batch = _context.SubmitContext.CreateBatch();
+            var activeTransforms = GetActiveTransforms();
 
-            // Update entire buffer (could optimize to update only changed ranges)
-            buffer.StageData(batch, _transforms.ToArray());
+            var batch = _context.GraphicsSubmitContext.CreateBatch();
+
+            if (buffer.Capacity < (ulong)activeTransforms.Count)
+            {
+                buffer.Resize((ulong)Math.Max(activeTransforms.Count * 2, INITIAL_CAPACITY), batch);
+            }
+
+            // Barrier before update
+            var preBarrier = new BufferMemoryBarrier2
+            {
+                SType = StructureType.BufferMemoryBarrier2,
+                SrcAccessMask = AccessFlags2.VertexAttributeReadBit | AccessFlags2.IndexReadBit,
+                DstAccessMask = AccessFlags2.TransferWriteBit,
+                Buffer = buffer.Buffer,
+                Offset = 0,
+                Size = Vk.WholeSize,
+                SrcStageMask = PipelineStageFlags2.VertexInputBit | PipelineStageFlags2.IndexInputBit,
+                DstStageMask = PipelineStageFlags2.TransferBit
+            };
+
+            batch.PipelineBarrier(
+                bufferMemoryBarriers: new[] { preBarrier }
+            );
+
+            buffer.StageData(batch, activeTransforms.ToArray());
+
+            // Barrier after update
+            var postBarrier = new BufferMemoryBarrier2
+            {
+                SType = StructureType.BufferMemoryBarrier2,
+                SrcAccessMask = AccessFlags2.TransferWriteBit,
+                DstAccessMask = AccessFlags2.VertexAttributeReadBit | AccessFlags2.IndexReadBit,
+                Buffer = buffer.Buffer,
+                Offset = 0,
+                Size = Vk.WholeSize,
+                SrcStageMask = PipelineStageFlags2.TransferBit,
+                DstStageMask = PipelineStageFlags2.VertexInputBit | PipelineStageFlags2.IndexInputBit
+            };
+
+            batch.PipelineBarrier(
+                bufferMemoryBarriers: new[] { postBarrier }
+            );
+
             batch.Submit();
-
-            // Update frame version tracking
             _frameVersions[currentFrameIndex] = _globalVersion;
-            return Task.CompletedTask;
+        }
 
+        /// <summary>
+        /// Checks if a transform index is still active/valid
+        /// </summary>
+        public bool IsTransformActive(int index)
+        {
+            return index >= 0 && index < _transforms.Count && _activeIndices.Contains(index);
         }
 
         /// <summary>
@@ -112,11 +264,6 @@ namespace RockEngine.Core.Rendering.Managers
         /// </summary>
         public StorageBufferBinding<Matrix4x4> GetCurrentBinding(uint currentFrameIndex)
             => _transformBindings[currentFrameIndex];
-
-        /// <summary>
-        /// Gets direct access to transform matrices (use with caution)
-        /// </summary>
-        public Matrix4x4[] Transforms => _transforms.ToArray();
 
         /// <summary>
         /// Current number of stored transforms
@@ -129,6 +276,19 @@ namespace RockEngine.Core.Rendering.Managers
             {
                 buffer.Dispose();
             }
+        }
+    }
+
+    internal record struct MaterialMeshGroup(Material Material, IMesh Mesh)
+    {
+        public static implicit operator (Material Material, IMesh Mesh)(MaterialMeshGroup value)
+        {
+            return (value.Material, value.Mesh);
+        }
+
+        public static implicit operator MaterialMeshGroup((Material Material, IMesh Mesh) value)
+        {
+            return new MaterialMeshGroup(value.Material, value.Mesh);
         }
     }
 }

@@ -24,11 +24,13 @@ void main() {
     gPosition = vWorldPos;
    
     vec3 tangentNormal = texture(uNormalMap, vTexCoord).xyz * 2.0 - 1.0;
-    
+    gAlbedo = texture(uAlbedo, vTexCoord);
+    if (gAlbedo.a < 0.01) {
+        discard;
+    }
     // Transform to world space
     vec3 worldNormal = normalize(vTBN * tangentNormal);
     gNormal.xy = octEncode(worldNormal); // Store compressed normal
-    gAlbedo = texture(uAlbedo, vTexCoord);
     gMRA = texture(uMRA, vTexCoord);
     //gEmissive = texture(uEmissive, vTexCoord);
 }

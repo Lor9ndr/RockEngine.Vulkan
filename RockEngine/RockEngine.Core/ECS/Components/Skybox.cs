@@ -1,59 +1,70 @@
-﻿using RockEngine.Core.Rendering;
-using RockEngine.Core.Rendering.Texturing;
+﻿using MessagePack;
+
+using RockEngine.Assets;
+using RockEngine.Core.Assets;
+using RockEngine.Core.DI;
+using RockEngine.Core.Rendering;
+using RockEngine.Core.Rendering.Passes.SubPasses;
 
 namespace RockEngine.Core.ECS.Components
 {
-    public class Skybox : Component
+    [MessagePackObject]
+    public partial class Skybox : Component
     {
-        public Texture Cubemap { get; set; }
-        public Material Material { get; private set;}
-        private Mesh _mesh;
-
-        public override async ValueTask OnStart(Renderer renderer)
+        public Skybox()
         {
-            _mesh = new Mesh();
-            Material = new Material(renderer.PipelineManager.GetPipelineByName("Skybox"), Cubemap);
-
-            Entity.Layer = RenderLayerType.Solid;
-            _mesh.SetEntity(this.Entity);
-            Vertex[] vertices =
-            [
-                 // Front face (Z+)
-               new Vertex(-1.0f, -1.0f,  1.0f,0,0,0,0,0), // 0
-               new Vertex(  1.0f, -1.0f,  1.0f, 0, 0, 0, 0, 0), // 1
-               new Vertex(  1.0f,  1.0f,  1.0f, 0, 0, 0, 0, 0), // 2
-               new Vertex( -1.0f,  1.0f,  1.0f, 0, 0, 0, 0, 0), // 3
-    
-                // Back face (Z-)
-               new Vertex( -1.0f, -1.0f, -1.0f,0,0,0,0,0), // 4
-               new Vertex(  1.0f, -1.0f, -1.0f,0,0,0,0,0), // 5
-               new Vertex(  1.0f,  1.0f, -1.0f,0,0,0,0,0), // 6
-               new Vertex( -1.0f,  1.0f, -1.0f,0,0,0,0,0), // 7
-            ];
-            _mesh.SetMeshData(vertices,
-            [
-                // Front face
-                0, 1, 2, 2, 3, 0,
-    
-                // Back face
-                5, 4, 7, 7, 6, 5,
-    
-                // Left face
-                4, 0, 3, 3, 7, 4,
-    
-                // Right face
-                1, 5, 6, 6, 2, 1,
-    
-                // Top face
-                3, 2, 6, 6, 7, 3,
-    
-                // Bottom face
-                4, 5, 1, 1, 0, 4
-            ]);
-            _mesh.Material = Material;
-            await _mesh.OnStart(renderer);
         }
-        public override ValueTask Update(Renderer renderer)
+
+        [Key(7)]
+        public AssetReference<TextureAsset> Cubemap { get; set; }
+
+        public override async ValueTask OnStart(WorldRenderer renderer)
+        {
+            if (Cubemap is null)
+            {
+                return;
+            }
+            var assetFactory = IoC.Container.GetInstance<AssetFactory>();
+            var assetManager = IoC.Container.GetInstance<IAssetManager>();
+            
+
+            var tmpAsset = assetFactory.Create<MeshAsset>(new AssetPath("tmp", "tmpMesh"));
+            var tmpMatAsset = assetFactory.Create<MaterialAsset>(new AssetPath("tmp", "tmpMeshMat"));
+            
+            var texAsset = await Cubemap.GetAssetAsync();
+            await texAsset.LoadDataAsync();
+            await assetManager.SaveAsync(texAsset);
+            tmpMatAsset.SetData(new MaterialData()
+            {
+                PipelineName = "Skybox",
+                Textures = [Cubemap]
+            });
+            tmpAsset.SetGeometry(DefaultMeshes.Cube.Vertices, DefaultMeshes.Cube.Indices);
+           // await assetManager.SaveAsync(tmpAsset);
+           // await assetManager.SaveAsync(tmpMatAsset);
+            var mesh = Entity.AddComponent<MeshRenderer>();
+            mesh.SetProviders(tmpAsset, tmpMatAsset);
+
+            var lightingPass = renderer.RenderPass.SubPasses.OfType<LightingPass>().FirstOrDefault();
+            if (lightingPass == null)
+            {
+                return;
+            }
+            await Cubemap.Asset.LoadGpuResourcesAsync().ConfigureAwait(false);
+            // Ожидаем генерацию всех IBL текстур
+            var irradiance = await renderer.IBLManager.GenerateIrradianceMap(Cubemap.Asset.Texture, 128);
+            var prefilter = await renderer.IBLManager.GeneratePrefilterMap(Cubemap.Asset.Texture, 512);
+            var brdfLUT = await renderer.IBLManager.GenerateBRDFLUT(512);
+
+            irradiance.Image.LabelObject("Irradiance");
+            prefilter.Image.LabelObject("Prefilter");
+            brdfLUT.Image.LabelObject("BRDFLut");
+
+            // Store references in lighting pass
+            lightingPass.SetIBLTextures(irradiance, prefilter, brdfLUT);
+        }
+
+        public override ValueTask Update(WorldRenderer renderer)
         {
             Entity.Transform.Scale = new System.Numerics.Vector3(10000, 10000, 10000);
 

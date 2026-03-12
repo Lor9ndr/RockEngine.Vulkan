@@ -1,13 +1,21 @@
-﻿using RockEngine.Core.Assets.AssetData;
-
-using SkiaSharp;
+﻿using RockEngine.Assets;
+using RockEngine.Core.Assets;
 
 namespace RockEngine.Core
 {
     public static class DefaultMeshes
     {
-        public static readonly MeshData Cube = new MeshData("Cube",
+        public static readonly Guid CubeAssetID = new Guid("3A709CF6-C6D8-4602-BF12-52B25879BC17");
+        public static void Initalize(IAssetRepository assetRepository)
+        {
+            MeshAsset meshAsset = new MeshAsset();
+            meshAsset.ID = CubeAssetID;
+            meshAsset.SetGeometry(Cube.Vertices, Cube.Indices);
+            assetRepository.Add(meshAsset);
+        }
+        public static readonly MeshData<Vertex> Cube = new MeshData<Vertex>() { 
 
+            Vertices = 
             [
                  // Front face (Z+)
                new Vertex(-1.0f, -1.0f,  1.0f,0,0,0,0,0), // 0
@@ -21,6 +29,7 @@ namespace RockEngine.Core
                new Vertex(  1.0f,  1.0f, -1.0f,0,0,0,0,0), // 6
                new Vertex( -1.0f,  1.0f, -1.0f,0,0,0,0,0), // 7
             ],
+            Indices =
             [
                 // Front face
                 0, 1, 2, 2, 3, 0,
@@ -40,6 +49,6 @@ namespace RockEngine.Core
                 // Bottom face
                 4, 5, 1, 1, 0, 4
             ]
-            );
+            };
     }
 }

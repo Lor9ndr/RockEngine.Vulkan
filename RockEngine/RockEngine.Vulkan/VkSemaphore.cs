@@ -1,20 +1,13 @@
 ﻿
 using Silk.NET.Vulkan;
 
-using System.Threading;
-
 using Semaphore = Silk.NET.Vulkan.Semaphore;
 
 namespace RockEngine.Vulkan
 {
-    public class VkSemaphore : VkObject<Semaphore>
+    public class VkSemaphore(VulkanContext context, Semaphore semaphore) : VkObject<Semaphore>(semaphore)
     {
-        private readonly VulkanContext _context;
-        public VkSemaphore(VulkanContext context, Semaphore semaphore)
-            : base(semaphore)
-        {
-            _context = context;
-        }
+        private readonly VulkanContext _context = context;
 
         public static VkSemaphore Create(VulkanContext context)
         {
@@ -40,7 +33,7 @@ namespace RockEngine.Vulkan
 
                 unsafe
                 {
-                    VulkanContext.Vk.DestroySemaphore(_context.Device, _vkObject, in VulkanContext.CustomAllocator<VkSemaphore>());
+                    Vk.DestroySemaphore(_context.Device, _vkObject, in VulkanContext.CustomAllocator<VkSemaphore>());
                 }
 
                 _disposed = true;

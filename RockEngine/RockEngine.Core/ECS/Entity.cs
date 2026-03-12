@@ -1,41 +1,97 @@
-﻿using RockEngine.Core.ECS.Components;
+﻿using MessagePack;
+
+using RockEngine.Core.DI;
+using RockEngine.Core.ECS.Components;
 using RockEngine.Core.Rendering;
+
+using System.Diagnostics;
+
+using ZLinq;
 
 namespace RockEngine.Core.ECS
 {
-    public class Entity
+    [MessagePackObject(AllowPrivate = true)]
+    [DebuggerDisplay("Entity - {Name} ({ID})")]
+    public partial class Entity
     {
-        private static ulong _id = 0;
+        private static ulong _nextId = 0;
+        [IgnoreMember]
+        private readonly Lock _componentsLock = new();
 
-        public string Name { get;set;}
+        [Key(0)]
+        public string Name { get; set; }
 
-        public readonly ulong ID;
+        [Key(1)]
+        public bool IsActive { get; private set; } = true;
 
-        private readonly List<IComponent> _components = [];
-        public Transform Transform { get; private set; }
-        public Entity Parent { get; private set; }
-        private readonly List<Entity> _children = new List<Entity>();
+        [Key(2)]
+        public ulong ID { get;  init; }
+
+        [Key(3)]
+        private List<IComponent> _components = [];
+
+        [IgnoreMember]
+        public IReadOnlyList<IComponent> Components => _components;
+
+        [IgnoreMember]
+        public Transform Transform => _components.OfType<Transform>().FirstOrDefault();
+
+        // Parent relationship – serialized ONLY as ParentID
+        [Key(4)]
+        public ulong? ParentID { get; set; }
+
+        [IgnoreMember]
+        public Entity? Parent { get; private set; }
+
+        [IgnoreMember]
+        private readonly List<Entity> _children = [];
+
+        [IgnoreMember]
         public IReadOnlyList<Entity> Children => _children.AsReadOnly();
 
-        public RenderLayerType Layer { get; set; } = RenderLayerType.Opaque;
+        [Key(5)]
+        public RenderLayer Layer { get; set; }
 
         public event Action OnDestroy;
 
         public Entity()
         {
-            ID = _id++;
-            Transform = AddComponent<Transform>();
+            ID = _nextId++;
+            AddComponent<Transform>(); // will be overwritten by deserialization – fine
             Name = $"Entity_{ID}";
+            Layer = IoC.Container.GetInstance<RenderLayerSystem>().DefaultLayer;
         }
 
-        public T AddComponent<T>() where T : Component, new()
+        public T AddComponent<T>() where T : Component
         {
-            var component = new T();
+            if (typeof(T) == typeof(Transform) && Transform is not null)
+            {
+                return (Transform as T)!;
+            }
+
+            var component = IoC.Container.GetInstance<T>();
+            AddComponent(component);
+
+            return component;
+        }
+        public IComponent AddComponent(Type componentType) 
+        {
+            var component = (IComponent)IoC.Container.GetInstance(componentType);
+            AddComponent(component);
+
+            return component;
+        }
+
+        public void AddComponent(IComponent component)
+        {
+            if (component is Transform && Transform is not null)
+            {
+                return;
+            }
+
             component.SetEntity(this);
             _components.Add(component);
-
             World.GetCurrent()?.EnqueueForStart(component);
-            return component;
         }
 
         public bool RemoveComponent<T>(T component) where T : IComponent
@@ -49,18 +105,16 @@ namespace RockEngine.Core.ECS
 
         public T? GetComponent<T>() where T : IComponent
         {
-            return _components.OfType<T>().FirstOrDefault();
+            return _components.AsValueEnumerable().OfType<T>().FirstOrDefault();
         }
-        public IEnumerable<IComponent> Components => _components;
 
         public void AddChild(Entity child)
         {
             if (child.Parent == this) return;
-            if (child.Parent != null)
-            {
-                child.Parent.RemoveChild(child);
-            }
+
+            child.Parent?.RemoveChild(child);
             child.Parent = this;
+            child.ParentID = this.ID;          //  sync ParentID
             _children.Add(child);
             child.Transform.SetParent(this.Transform);
         }
@@ -68,23 +122,40 @@ namespace RockEngine.Core.ECS
         public bool RemoveChild(Entity child)
         {
             if (!_children.Remove(child)) return false;
+
             child.Parent = null;
+            child.ParentID = null;            // sync ParentID
             child.Transform.SetParent(null);
             return true;
         }
 
-        public async ValueTask Update(Renderer renderer)
+        public async ValueTask Update(WorldRenderer renderer)
         {
-            foreach (var item in _components)
+            IComponent[] array;
+            lock (_componentsLock)
             {
-                await item.Update(renderer).ConfigureAwait(false);
+                array = _components.ToArray();
+            }
+            for (int i = 0; i < array.Length; i++)
+            {
+                IComponent? item = array[i];
+                if(item is not null)
+                {
+                    await item.Update(renderer).ConfigureAwait(false);
+                }
             }
         }
 
-        public async Task OnStart(Renderer renderer)
+        public async Task OnStart(WorldRenderer renderer)
         {
-            foreach (var item in _components)
+            IComponent[] array;
+            lock (_componentsLock)
             {
+                array = _components.ToArray();
+            }
+            for (int i = 0; i < array.Length; i++)
+            {
+                IComponent? item = array[i];
                 await item.OnStart(renderer).ConfigureAwait(false);
             }
         }
@@ -95,6 +166,26 @@ namespace RockEngine.Core.ECS
             {
                 item.Destroy();
             }
+        }
+
+        public void SetActive(bool isActive = true)
+        {
+            IsActive = isActive;
+            foreach (var item in Components)
+            {
+                item.SetActive(IsActive);
+            }
+        }
+
+        public bool HasComponent<T>()
+        {
+            return _components.OfType<T>().Any();
+        }
+
+        public bool TryGetComponent<T>(out T? component)
+        {
+            component = _components.OfType<T>().FirstOrDefault();
+            return component != null;
         }
     }
 }

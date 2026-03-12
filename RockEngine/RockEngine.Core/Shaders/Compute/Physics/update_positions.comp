@@ -1,0 +1,74 @@
+#version 450
+#extension GL_EXT_scalar_block_layout : require
+
+#include "../../Include/physics_common.glsl"
+
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+layout(set = 0, binding = 0, std430) buffer RigidbodyBuffer {
+    Rigidbody rigidbodies[];
+};
+
+layout(set = 1, binding = 0) uniform ParamsUniform {
+    vec4 gravity;
+    float deltaTime;
+    uint particleCount;
+    uint bodyCount;
+    uint colliderCount;
+    uint constraintCount;
+    uint maxCollisionPairs;
+    vec4 padding;
+} params;
+
+void main() {
+    uint idx = gl_GlobalInvocationID.x;
+    if (idx >= params.bodyCount) return;
+    
+    Rigidbody rb = rigidbodies[idx];
+    if (rb.isActive == 0u) return;
+    
+    // Skip static bodies
+    if (rb.bodyType == 0u) {
+        return;
+    }
+    
+    float dt = params.deltaTime;
+    if (dt <= 0.0 || dt > 0.1) {
+        dt = 1.0 / 60.0;
+    }
+    
+    // Integrate position using final velocity
+    rb.position += rb.velocity * dt;
+    
+    // Integrate rotation using angular velocity
+    vec3 angularVel = rb.angularVelocity;
+    float angle = length(angularVel) * dt;
+    
+    if (angle > 1e-6) {
+        vec3 axis = normalize(angularVel);
+        float halfAngle = angle * 0.5;
+        
+        // Create delta quaternion
+        float sinHalf = sin(halfAngle);
+        vec4 dq = vec4(axis.x * sinHalf, axis.y * sinHalf, axis.z * sinHalf, cos(halfAngle));
+        
+        // Multiply: q' = dq * q
+        vec4 q = rb.rotation;
+        rb.rotation = vec4(
+            dq.w * q.x + dq.x * q.w + dq.y * q.z - dq.z * q.y,
+            dq.w * q.y - dq.x * q.z + dq.y * q.w + dq.z * q.x,
+            dq.w * q.z + dq.x * q.y - dq.y * q.x + dq.z * q.w,
+            dq.w * q.w - dq.x * q.x - dq.y * q.y - dq.z * q.z
+        );
+    }
+    
+    // Normalize rotation
+    float len = sqrt(dot(rb.rotation, rb.rotation));
+    if (len > 1e-8) {
+        rb.rotation = rb.rotation / len;
+    } else {
+        rb.rotation = vec4(0.0, 0.0, 0.0, 1.0);
+    }
+    
+    rigidbodies[idx] = rb;
+}

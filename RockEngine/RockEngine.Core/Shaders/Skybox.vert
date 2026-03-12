@@ -1,4 +1,5 @@
 #version 450
+#include "Include/common.glsl"
 
 // Input with explicit location
 layout(location = 0) in vec3 inPosition;
@@ -9,10 +10,8 @@ layout(location = 4) in vec3 aBitangent;
 
 // Uniform block
 layout(set = 0, binding = 0) uniform GlobalUbo_Dynamic {
-    mat4 viewProjection;
-    vec3 position;
-} globalData;
-
+   GlobalUBO ubo;
+};
 layout(set = 1, binding = 0) readonly buffer ModelData {
     mat4 models[];
 };
@@ -25,6 +24,6 @@ out gl_PerVertex { vec4 gl_Position; };
 
 void main() {
     fragPos = inPosition;                // Pass position to fragment shader
-    gl_Position = globalData.viewProjection * vec4(inPosition * 1000000, 1.0);
+    gl_Position = ubo.viewProj * vec4(inPosition * 1000000, 1.0);
     gl_Position = gl_Position.xyww; // Ensure depth is 1.0 after perspective divide
 }

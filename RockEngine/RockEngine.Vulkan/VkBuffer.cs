@@ -1,6 +1,6 @@
-﻿
-using Silk.NET.Vulkan;
+﻿using Silk.NET.Vulkan;
 
+using System;
 using System.Runtime.InteropServices;
 
 using Buffer = Silk.NET.Vulkan.Buffer;
@@ -15,6 +15,7 @@ namespace RockEngine.Vulkan
 
         public ulong Size => _deviceMemory.Size;
         public nint MappedData => _deviceMemory.MappedData ?? throw new InvalidOperationException("Buffer is not mapped");
+
         public VkBuffer(VulkanContext context, in Buffer bufferNative, VkDeviceMemory deviceMemory, BufferUsageFlags usage)
             : base(in bufferNative)
         {
@@ -24,19 +25,18 @@ namespace RockEngine.Vulkan
             // Persistently map if memory is host-visible
             if ((_deviceMemory.Properties & MemoryPropertyFlags.HostVisibleBit) != 0)
             {
-                _deviceMemory.Map();
+                MapPrivate();
             }
         }
 
-
-        public static unsafe VkBuffer Create(VulkanContext context, ulong size, BufferUsageFlags usage, MemoryPropertyFlags properties)
+        public static VkBuffer Create(VulkanContext context, ulong size, BufferUsageFlags usage, MemoryPropertyFlags properties)
         {
             var allignmentSize = usage switch
             {
                 BufferUsageFlags.UniformBufferBit | BufferUsageFlags.BufferUsageUniformBufferBit => GetAlignment(size, context.Device.PhysicalDevice.Properties.Limits.MinUniformBufferOffsetAlignment),
-
                 _ => GetAlignment(size, 256),
             };
+
             var bufferInfo = new BufferCreateInfo
             {
                 SType = StructureType.BufferCreateInfo,
@@ -53,38 +53,44 @@ namespace RockEngine.Vulkan
             var deviceMemory = VkDeviceMemory.Allocate(context, memRequirements, properties);
 
             VulkanContext.Vk.BindBufferMemory(context.Device, bufferHandle, deviceMemory, 0);
+            VulkanAllocator.DeviceMemoryTracker.AssociateObject(
+               deviceMemory,
+               bufferHandle.Handle,
+               "Buffer",
+               memRequirements.Size,
+               0,
+               bufferHandle);
 
             return new VkBuffer(context, bufferHandle, deviceMemory, usage);
         }
 
         public static unsafe VkBuffer CreateAndCopyToStagingBuffer(VulkanContext context, void* data, ulong size)
         {
-            // Create a staging buffer with TransferSrcBit and HostVisibleBit
-            var stagingBuffer = Create(context, size, BufferUsageFlags.TransferSrcBit, MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit);
+            var stagingBuffer = Create(context, size, BufferUsageFlags.TransferSrcBit,
+                MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit);
 
-            // Map the staging buffer memory
-            stagingBuffer.Map();
-
-            // Write data to the staging buffer
-            stagingBuffer.WriteToBuffer(data, stagingBuffer._deviceMemory.MappedData!.Value.ToPointer());
-
-            // Flush the staging buffer to ensure data visibility
-            stagingBuffer.Flush();
-
-            // Unmap the memory
-            stagingBuffer.Unmap();
+            using var memory = stagingBuffer.MapMemory();
+            var destSpan = memory.GetSpan();
+            var sourceSpan = new ReadOnlySpan<byte>(data, (int)size);
+            sourceSpan.CopyTo(destSpan);
+            memory.Flush();
 
             return stagingBuffer;
         }
-
 
         public static async ValueTask<VkBuffer> CreateAndCopyToStagingBuffer<T>(VulkanContext context, T[] data, ulong size) where T : unmanaged
         {
-            var stagingBuffer = Create(context, size, BufferUsageFlags.TransferSrcBit, MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit);
-            await stagingBuffer.WriteToBufferAsync(data);
+            var stagingBuffer = Create(context, size, BufferUsageFlags.TransferSrcBit,
+                MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit);
+
+            using var memory = stagingBuffer.MapMemory();
+            var destSpan = memory.GetSpan();
+            var sourceSpan = MemoryMarshal.AsBytes(data.AsSpan());
+            sourceSpan.CopyTo(destSpan);
+            memory.Flush();
+
             return stagingBuffer;
         }
-
 
         public unsafe void Flush(ulong size = Vk.WholeSize, ulong offset = 0)
         {
@@ -96,11 +102,9 @@ namespace RockEngine.Vulkan
             ulong nonCoherentAtomSize = _context.Device.PhysicalDevice.Properties.Limits.NonCoherentAtomSize;
             ulong bufferSize = _deviceMemory.Size;
 
-            // Calculate actual flush size
             ulong actualSize = (size == Vk.WholeSize) ? (bufferSize - offset) : size;
             actualSize = Math.Min(actualSize, bufferSize - offset);
 
-            // Align flush size to nonCoherentAtomSize
             ulong alignedSize = (actualSize + nonCoherentAtomSize - 1) & ~(nonCoherentAtomSize - 1);
             alignedSize = Math.Min(alignedSize, bufferSize - offset);
 
@@ -116,7 +120,6 @@ namespace RockEngine.Vulkan
                 .VkAssertResult("Failed to flush mapped memory ranges");
         }
 
-
         public unsafe void CopyTo(VkBuffer dstBuffer, UploadBatch batch, ulong srcOffset = 0, ulong dstOffset = 0)
         {
             var copyRegion = new BufferCopy
@@ -126,72 +129,46 @@ namespace RockEngine.Vulkan
                 Size = Size,
             };
             VulkanContext.Vk.CmdCopyBuffer(batch.CommandBuffer, this, dstBuffer, 1, in copyRegion);
-          
         }
-        public unsafe void AddBufferMemoryBarrier(
-            VkCommandBuffer commandBuffer,
-            AccessFlags srcAccessMask,
-            AccessFlags dstAccessMask,
-            PipelineStageFlags srcStageMask,
-            PipelineStageFlags dstStageMask
-        )
-        {
-            var bufferMemoryBarrier = new BufferMemoryBarrier
-            {
-                SType = StructureType.BufferMemoryBarrier,
-                SrcAccessMask = srcAccessMask,
-                DstAccessMask = dstAccessMask,
-                SrcQueueFamilyIndex = 0,
-                DstQueueFamilyIndex = 0,
-                Buffer = _vkObject,
-                Offset = 0,
-                Size = Size,
-            };
-
-            VulkanContext.Vk.CmdPipelineBarrier(
-                commandBuffer,
-                srcStageMask,
-                dstStageMask,
-                0,
-                0,
-                null,
-                1,
-                &bufferMemoryBarrier,
-                0,
-                null
-            );
-        }
-
-
-
-        public unsafe void WriteToBuffer(void* data, void* destination, ulong size = Vk.WholeSize, ulong offset = 0)
-        {
-            switch (size)
-            {
-                case Vk.WholeSize:
-                    System.Buffer.MemoryCopy(data, destination, Size, Size);
-                    break;
-                default:
-                    {
-                        if (size > Size)
-                        {
-                            throw new Exception("Size more than buffer size");
-                        }
-
-                        var memoryOffset = (ulong*)((ulong)destination + offset);
-                        System.Buffer.MemoryCopy(data, memoryOffset, size, size);
-                        break;
-                    }
-            }
-        }
-     
 
         public ValueTask WriteToBufferAsync<T>(T[] data, ulong size = Vk.WholeSize, ulong offset = 0) where T : unmanaged
         {
-            if (data == null || data.Length == 0)
+            WriteToBufferPrivate(data.AsSpan(), size, offset);
+            return default;
+        }
+
+        public ValueTask WriteToBufferAsync<T>(in T data, ulong size = Vk.WholeSize, ulong offset = 0) where T : unmanaged
+        {
+            Span<T> singleItem = stackalloc T[] { data };
+            WriteToBufferPrivate(singleItem, size, offset);
+            return default;
+        }
+
+        public unsafe ValueTask WriteToBufferAsync<T>(void* data, ulong dataSize, ulong size = Vk.WholeSize, ulong offset = 0) where T : unmanaged
+        {
+            var span = new ReadOnlySpan<byte>(data, (int)dataSize);
+            WriteToBufferPrivate(span, size, offset);
+            return default;
+        }
+
+        public unsafe void WriteToBuffer<T>(void* data, ulong dataSize, ulong size = Vk.WholeSize, ulong offset = 0) where T : unmanaged
+        {
+            var span = new ReadOnlySpan<byte>(data, (int)dataSize);
+            WriteToBufferPrivate(span, size, offset);
+        }
+
+        public void WriteToBuffer<T>(Span<T> data, ulong size = Vk.WholeSize, ulong offset = 0) where T : unmanaged
+        {
+            WriteToBufferPrivate(data, size, offset);
+        }
+
+        private void WriteToBufferPrivate<T>(Span<T> data, ulong size = Vk.WholeSize, ulong offset = 0) where T : unmanaged
+        {
+            if (data.IsEmpty || data.Length == 0)
             {
-               throw new ArgumentException("Data array is null or empty", nameof(data));
+                throw new ArgumentException("Data array is null or empty", nameof(data));
             }
+
             ulong dataSize = (ulong)(data.Length * Marshal.SizeOf<T>());
             ulong actualSize = size;
             if (size == Vk.WholeSize)
@@ -208,46 +185,30 @@ namespace RockEngine.Vulkan
                 throw new ArgumentException("Data exceeds buffer size", nameof(size));
             }
 
-            unsafe
+            if (_deviceMemory.IsMapped)
             {
-                if (_deviceMemory.IsMapped)
-                {
-                    // Use persistent mapped pointer
-                    fixed (T* dataPtr = data)
-                    {
-                        WriteToBuffer(dataPtr, (byte*)_deviceMemory.MappedData!.Value + offset, actualSize, 0);
-                    }
-                    // Flush only if memory is not coherent
-                    if ((_deviceMemory.Properties & MemoryPropertyFlags.HostCoherentBit) == 0)
-                    {
-                        Flush(actualSize, offset);
-                    }
-                }
-                else
-                {
-                    // Fallback to temporary mapping for non-host-visible buffers
-                    Map(size, offset);
-                    try
-                    {
-                        fixed (T* dataPtr = data)
-                        {
-                            WriteToBuffer(dataPtr, _deviceMemory.MappedData!.Value.ToPointer(), actualSize, 0);
-                        }
-                        Flush(size, offset);
-                    }
-                    finally
-                    {
-                        Unmap();
-                    }
-                }
+                using var memory = MapMemory(actualSize, offset);
+                var destSpan = memory.GetSpan<T>();
+                data.CopyTo(destSpan);
+                Flush(actualSize, offset);
             }
-            return default;
-
+            else
+            {
+                using var memory = MapMemory(actualSize, offset);
+                var destSpan = memory.GetSpan<T>();
+                data.CopyTo(destSpan);
+                Flush(actualSize, offset);
+            }
         }
 
-        public ValueTask WriteToBufferAsync<T>(in T data, ulong size = Vk.WholeSize, ulong offset = 0) where T : unmanaged
+        private unsafe void WriteToBufferPrivate(ReadOnlySpan<byte> data, ulong size = Vk.WholeSize, ulong offset = 0)
         {
-            ulong dataSize = (ulong)(Marshal.SizeOf<T>());
+            if (data.IsEmpty)
+            {
+                throw new ArgumentException("Data span is empty", nameof(data));
+            }
+
+            ulong dataSize = (ulong)data.Length;
             ulong actualSize = size;
             if (size == Vk.WholeSize)
             {
@@ -255,7 +216,7 @@ namespace RockEngine.Vulkan
             }
             else if (actualSize > dataSize)
             {
-                throw new ArgumentException("Specified size is larger than the data array size", nameof(size));
+                throw new ArgumentException("Specified size is larger than the data span size", nameof(size));
             }
 
             if (offset + actualSize > Size)
@@ -263,77 +224,32 @@ namespace RockEngine.Vulkan
                 throw new ArgumentException("Data exceeds buffer size", nameof(size));
             }
 
-            unsafe
+            if (_deviceMemory.IsMapped)
             {
-                if (!_deviceMemory.IsMapped)
-                {
-                    Map(size, offset);
-                    fixed(T* pData = &data)
-                    {
-                        WriteToBuffer(pData, _deviceMemory.MappedData!.Value.ToPointer(), actualSize, 0);
-                    }
-                    Flush(size, offset);
-                    Unmap();
-                }
-                else
-                {
-                    fixed(T* pData = &data)
-                    {
-                        WriteToBuffer(pData, _deviceMemory.MappedData!.Value.ToPointer(), actualSize, 0);
-                    }
-                    Flush(size, offset);
-                    Unmap();
-                }
+                var mappedPtr = _deviceMemory.MappedData!.Value;
+                var destSpan = new Span<byte>((byte*)mappedPtr + offset, (int)actualSize);
+                data.Slice(0, (int)actualSize).CopyTo(destSpan);
 
+                if ((_deviceMemory.Properties & MemoryPropertyFlags.HostCoherentBit) == 0)
+                {
+                    Flush(actualSize, offset);
+                }
             }
-            return default;
+            else
+            {
+                using var memory = MapMemory(actualSize, offset);
+                var destSpan = memory.GetSpan();
+                data[..(int)actualSize].CopyTo(destSpan);
+                memory.Flush();
+            }
         }
-        public unsafe ValueTask WriteToBufferAsync<T>(void* data, ulong dataSize, ulong size = Vk.WholeSize, ulong offset = 0) where T : unmanaged
-        {
-            ulong actualSize = size;
-            if (size == Vk.WholeSize)
-            {
-                actualSize = dataSize;
-            }
-            else if (actualSize > dataSize)
-            {
-                throw new ArgumentException("Specified size is larger than the data array size", nameof(size));
-            }
-
-            if (offset + actualSize > Size)
-            {
-                throw new ArgumentException("Data exceeds buffer size", nameof(size));
-            }
-
-            unsafe
-            {
-                if (!_deviceMemory.IsMapped)
-                {
-                    Map(size, offset);
-                    WriteToBuffer(&data, _deviceMemory.MappedData!.Value.ToPointer(), actualSize, 0);
-                    Flush(size, offset);
-                    Unmap();
-                }
-                else
-                {
-                    WriteToBuffer(&data, _deviceMemory.MappedData!.Value.ToPointer(), actualSize, 0);
-                    Flush(size, offset);
-                    Unmap();
-                }
-
-            }
-            return default;
-        }
-
-
 
         public static ulong GetAlignment(ulong bufferSize, ulong minOffsetAlignment)
         {
             return (bufferSize + minOffsetAlignment - 1) / minOffsetAlignment * minOffsetAlignment;
         }
 
-
-        public unsafe void Map(ulong size = Vk.WholeSize, ulong offset = 0)
+        private void MapPrivate(ulong size = Vk.WholeSize, ulong offset = 0)
         {
             if (_deviceMemory.IsMapped)
             {
@@ -342,28 +258,30 @@ namespace RockEngine.Vulkan
             _deviceMemory.Map(size, offset);
         }
 
-        public unsafe void Map(out nint pdata, ulong size = Vk.WholeSize, ulong offset = 0)
+        private void MapPrivate(out nint pdata, ulong size = Vk.WholeSize, ulong offset = 0)
         {
-            Map(size, offset);
+            MapPrivate(size, offset);
             pdata = new nint(_deviceMemory.MappedData!.Value);
         }
 
-        public void Unmap()
+        private void UnmapPrivate()
         {
             _deviceMemory.Unmap();
         }
-        public void BindVertexBuffer(VkCommandBuffer commandBuffer, ulong vertexOffset = 0)
+
+        public void BindVertexBuffer(UploadBatch batch, ulong vertexOffset = 0)
         {
-            VulkanContext.Vk.CmdBindVertexBuffers(commandBuffer, 0, 1, in _vkObject, ref vertexOffset);
+            batch.BindVertexBuffer(this, vertexOffset);
         }
 
-        public void BindIndexBuffer(VkCommandBuffer commandBuffer, ulong indexOffset, IndexType type)
+        public void BindIndexBuffer(UploadBatch batch, ulong indexOffset, IndexType type)
         {
-            VulkanContext.Vk.CmdBindIndexBuffer(commandBuffer, _vkObject, indexOffset, type);
+            batch.BindIndexBuffer(this, indexOffset, type);
         }
+
         public override void LabelObject(string name) => _context.DebugUtils.SetDebugUtilsObjectName(_vkObject, ObjectType.Buffer, name);
 
-        protected override unsafe void Dispose(bool disposing)
+        protected override void Dispose(bool disposing)
         {
             if (!_disposed)
             {
@@ -373,15 +291,35 @@ namespace RockEngine.Vulkan
                 }
                 if (_deviceMemory.IsMapped)
                 {
-                    _deviceMemory.Unmap();
+                    //_deviceMemory.Unmap();
                 }
                 VulkanContext.Vk.DestroyBuffer(_context.Device, _vkObject, in VulkanContext.CustomAllocator<VkBuffer>());
                 _deviceMemory.Dispose();
+                VulkanAllocator.DeviceMemoryTracker.DisassociateObject(_vkObject.Handle);
 
                 _disposed = true;
             }
         }
 
+        /// <summary>
+        /// Maps the buffer memory and returns a disposable mapped memory object
+        /// </summary>
+        /// <param name="size">Size to map</param>
+        /// <param name="offset">Offset to map from</param>
+        /// <returns>Disposable mapped memory object</returns>
+        public MappedMemory MapMemory(ulong size = Vk.WholeSize, ulong offset = 0)
+        {
+            if(size == Vk.WholeSize)
+            {
+                size = Size;
+            }
+            MapPrivate(out nint mappedPtr, size, offset);
+            return new MappedMemory(this, mappedPtr, size, offset);
+        }
 
+        internal void Unmap()
+        {
+            UnmapPrivate();
+        }
     }
 }

@@ -1,61 +1,89 @@
-﻿using RockEngine.Core.Assets.Registres;
-using RockEngine.Core.Builders;
+﻿using RockEngine.Core.Builders;
 using RockEngine.Core.Registries;
+using RockEngine.Core.Rendering.Objects;
 using RockEngine.Vulkan;
-
-using Silk.NET.Vulkan;
 
 namespace RockEngine.Core.Rendering.Managers
 {
     public class PipelineManager : IDisposable
     {
         private readonly VulkanContext _context;
-        private readonly IRegistry<VkPipeline, string> _pipelineRegistry;
+        private readonly IRegistry<RckPipeline, string> _pipelineRegistry;
+        private bool _disposed = false;
 
-        public PipelineManager(VulkanContext context, IRegistry<VkPipeline, string> pipelineRegistry)
+        public PipelineManager(VulkanContext context, IRegistry<RckPipeline, string> pipelineRegistry)
         {
             _context = context;
             _pipelineRegistry = pipelineRegistry;
         }
 
-        public VkPipeline Create(GraphicsPipelineBuilder builder)
+        public RckPipeline Create(GraphicsPipelineBuilder builder)
         {
-            var pipeline = builder.Build();
-            CheckPipeline(pipeline);
-            _pipelineRegistry.Register(pipeline.Name, pipeline);
-            return pipeline;
-        }
-        public VkPipeline Create(ComputePipelineBuilder builder)
-        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+
             var pipeline = builder.Build();
             CheckPipeline(pipeline);
             _pipelineRegistry.Register(pipeline.Name, pipeline);
             return pipeline;
         }
 
-        public VkPipeline Create(string name, ref GraphicsPipelineCreateInfo info, VkRenderPass renderPass, VkPipelineLayout layout)
+        public RckPipeline Create(ComputePipelineBuilder builder)
         {
-            var pipeline = VkPipeline.Create(_context, name, ref info, renderPass, layout);
+            ObjectDisposedException.ThrowIf(_disposed, this);
+
+            var pipeline = builder.Build();
             CheckPipeline(pipeline);
             _pipelineRegistry.Register(pipeline.Name, pipeline);
             return pipeline;
         }
 
-        private void CheckPipeline(VkPipeline pipeline)
+        private void CheckPipeline(RckPipeline pipeline)
         {
             if (_pipelineRegistry.Get(pipeline.Name) is not null)
             {
-                throw new Exception("Pipeline with that name already exists");
+                throw new Exception($"Pipeline with name '{pipeline.Name}' already exists");
             }
         }
-        public VkPipeline? GetPipelineByName(string name)
+
+        public RckPipeline? GetPipelineByName(string name)
         {
+            ObjectDisposedException.ThrowIf(_disposed, this);
             return _pipelineRegistry.Get(name);
+        }
+
+        public RckPipeline? GetPipelineForSubpass(string subpassName)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            return _pipelineRegistry.GetAll().FirstOrDefault(p => p.Type == PipelineType.Graphics && p.SubpassName == subpassName);
+        }
+
+        public IEnumerable<RckPipeline> GetPipelinesForRenderPass(RckRenderPass renderPass)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            return _pipelineRegistry.GetAll().Where(p => p.Type == PipelineType.Graphics && p.RenderPass == renderPass);
+        }
+
+        public IEnumerable<RckPipeline> GetComputePipelines()
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            return _pipelineRegistry.GetAll().Where(p => p.Type == PipelineType.Compute);
+        }
+
+        public void RemovePipeline(string name)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            _pipelineRegistry.Unregister(name);
         }
 
         public void Dispose()
         {
+            if (_disposed)
+            {
+                return;
+            }
+            // The registry will handle disposal of all pipelines
             _pipelineRegistry.Dispose();
+            _disposed = true;
         }
     }
 }
