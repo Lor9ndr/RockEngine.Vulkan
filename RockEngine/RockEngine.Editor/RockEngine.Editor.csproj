@@ -77,6 +77,13 @@
     <Folder Include="Resources\Models\Revoulier\" />
     <Folder Include="TestProject\" />
   </ItemGroup>
+  
+
+  <ItemGroup>
+    <None Update="imgui.ini">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
 
  
  
