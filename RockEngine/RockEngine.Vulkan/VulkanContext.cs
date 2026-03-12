@@ -27,6 +27,7 @@ namespace RockEngine.Vulkan
         public SubmitContext ComputeSubmitContext { get; }
         public SubmitContext TransferSubmitContext { get; }
         public SubmitContext PresentSubmitContext { get; }
+        public FeatureRegistry FeatureRegistry { get; }
 
         public DebugUtilsFunctions DebugUtils => _debugUtilsFunctions;
 
@@ -43,9 +44,10 @@ namespace RockEngine.Vulkan
         private readonly AppSettings _settings;
         public readonly Vk Api = Vk;
 
-        public VulkanContext(IWindow window, AppSettings settings)
+        public VulkanContext(IWindow window, AppSettings settings, FeatureRegistry featureRegistry)
         {
             _settings = settings;
+            FeatureRegistry = featureRegistry;
             if (_singleton is not null)
             {
                 // Have to think about supporting multiple windows with different contexts
@@ -204,11 +206,9 @@ namespace RockEngine.Vulkan
             // Log the detailed message
             _logger.Log(logLevel, sb.ToString());
 
-            // Optionally, for errors you might want to capture a stack trace or break into debugger
             if (messageSeverity == DebugUtilsMessageSeverityFlagsEXT.ErrorBitExt)
             {
                 Debugger.Break();
-                // If you still want to throw an exception (though this may crash the app)
                 throw new VulkanException(messageSeverity, sb.ToString());
             }
 

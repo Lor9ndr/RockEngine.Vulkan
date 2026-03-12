@@ -218,44 +218,13 @@ namespace RockEngine.Core.ECS.Components
                 return;
             }
 
-            // If we're already attached to a parent, we need to adjust our local
-            // position/rotation/scale to maintain the same world transform
-            if (parent != null && _parent != null)
-            {
-                // Convert current world transform to local space relative to new parent
-                if (Matrix4x4.Invert(parent.WorldMatrix, out var invParentWorld))
-                {
-                    var localMat = _worldMatrix * invParentWorld;
-
-                    // Extract new local values
-                    Matrix4x4.Decompose(localMat, out var newScale, out var newRotation, out var newPosition);
-                    _position = newPosition;
-                    _rotation = newRotation;
-                    _scale = newScale;
-                }
-            }
-            // If we're detaching from parent (setting parent to null)
-            else if (parent == null && _parent != null)
-            {
-                // Convert current world transform to local (which becomes world now)
-                _position = WorldPosition;
-                _rotation = WorldRotation;
-                _scale = WorldScale;
-            }
-
             // Remove from old parent
-            if (_parent != null)
-            {
-                _parent.TransformChanged -= OnParentTransformChanged;
-            }
+            _parent?.TransformChanged -= OnParentTransformChanged;
 
             _parent = parent;
 
             // Add to new parent
-            if (_parent != null)
-            {
-                _parent.TransformChanged += OnParentTransformChanged;
-            }
+            _parent?.TransformChanged += OnParentTransformChanged;
 
             SetDirty();
         }

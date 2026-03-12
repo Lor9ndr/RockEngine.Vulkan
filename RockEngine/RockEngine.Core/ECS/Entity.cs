@@ -25,7 +25,7 @@ namespace RockEngine.Core.ECS
         public bool IsActive { get; private set; } = true;
 
         [Key(2)]
-        public ulong ID { get; set; }   // ← now settable, assigned in ctor or deserialization
+        public ulong ID { get;  init; }
 
         [Key(3)]
         private List<IComponent> _components = [];

@@ -125,23 +125,30 @@ namespace RockEngine.Editor.Rendering.RenderTargets
                 return;
             }
 
-            base.Resize(newSize);
 
             // Recreate output texture with new size
-            OutputTexture?.Dispose();
-            OutputTexture = (Texture2D?)new Texture.Builder(Context)
-                .SetSize(newSize)
-                .SetFormat(Format.R8G8B8A8Unorm)
-                .SetUsage(ImageUsageFlags.ColorAttachmentBit | ImageUsageFlags.TransferSrcBit | ImageUsageFlags.SampledBit)
-                .Build();
-            _depthTexture = (Texture2D)new Texture.Builder(Context)
-              .SetSize(newSize)
-              .SetFormat(_depthTexture.Image.Format)
-              .SetAspectMask(ImageAspectFlags.DepthBit)
-              .SetUsage(ImageUsageFlags.DepthStencilAttachmentBit)
-              .Build();
+            //_context.GraphicsSubmitContext.AddDependency(new DeferredOperation(() =>
+            {
+               // _context.Device.GraphicsQueue.WaitIdle();
 
-            CreateFramebuffers();
+                base.Resize(newSize);
+
+                OutputTexture?.Dispose();
+                OutputTexture = (Texture2D?)new Texture.Builder(Context)
+                    .SetSize(newSize)
+                    .SetFormat(Format.R8G8B8A8Unorm)
+                    .SetUsage(ImageUsageFlags.ColorAttachmentBit | ImageUsageFlags.TransferSrcBit | ImageUsageFlags.SampledBit)
+                    .Build();
+                _depthTexture = (Texture2D)new Texture.Builder(Context)
+                  .SetSize(newSize)
+                  .SetFormat(_depthTexture.Image.Format)
+                  .SetAspectMask(ImageAspectFlags.DepthBit)
+                  .SetUsage(ImageUsageFlags.DepthStencilAttachmentBit)
+                  .Build();
+
+                CreateFramebuffers();
+            }//));
+            
         }
     }
 }

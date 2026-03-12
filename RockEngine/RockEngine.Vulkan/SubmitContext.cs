@@ -164,7 +164,7 @@ namespace RockEngine.Vulkan
             _lastSubmitOperation?.Wait();
 
             // Only lock during submission preparation
-            _submissionLock.Wait();
+            //_submissionLock.Wait();
             try
             {
                 // Store disposables and batches
@@ -222,7 +222,7 @@ namespace RockEngine.Vulkan
             }
             finally
             {
-                _submissionLock.Release();
+                //_submissionLock.Release();
             }
            
         }
@@ -230,7 +230,7 @@ namespace RockEngine.Vulkan
         private SubmitOperation SubmitInternal(VkFence? fence = null)
         {
             // Only lock during submission preparation
-            _submissionLock.Wait();
+            //_submissionLock.Wait();
             try
             {
                 _lastSubmitOperation?.Wait();
@@ -271,7 +271,7 @@ namespace RockEngine.Vulkan
             }
             finally
             {
-                _submissionLock.Release();
+                //_submissionLock.Release();
             }
         }
 

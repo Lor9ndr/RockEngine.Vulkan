@@ -626,9 +626,15 @@ namespace RockEngine.Editor.Layers
                 _hoverStartTime = ImGui.GetTime();
 
                 if (ImGui.IsMouseClicked(ImGuiMouseButton.Left))
+                {
                     HandleItemClick(item);
+                }
+
                 if (ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left))
+                {
                     HandleItemDoubleClick(item);
+                }
+
                 if (ImGui.IsMouseClicked(ImGuiMouseButton.Right))
                 {
                     if (!isSelected) _selectedItems.Clear();
@@ -636,7 +642,9 @@ namespace RockEngine.Editor.Layers
                     ImGui.OpenPopup("##ItemContextMenu");
                 }
                 if (ImGui.IsMouseDragging(ImGuiMouseButton.Left) && isSelected)
+                {
                     HandleItemDragDrop(item);
+                }
             }
 
             // Context menu
@@ -647,8 +655,10 @@ namespace RockEngine.Editor.Layers
             }
 
             // Tooltip
-            if (_currentHoveredItem == item.Path && ImGui.GetTime() - _hoverStartTime > 0.5)
+            if (ImGui.IsItemHovered() && ImGui.GetTime() - _hoverStartTime > 0.5)
+            {
                 DrawItemTooltip(item);
+            }
         }
         private void StartThumbnailLoadingCoroutine(FileSystemItem item)
         {
@@ -681,46 +691,48 @@ namespace RockEngine.Editor.Layers
 
         private void DrawItemTooltip(FileSystemItem item)
         {
-            ImGui.BeginTooltip();
-            ImGui.PushTextWrapPos(400f);
-
-            if (item.IsDirectory)
+            if (ImGui.BeginTooltip())
             {
-                ImGui.Text(item.Name);
-                ImGui.Separator();
-                ImGui.Text("\uf07b Folder");
-                try
-                {
-                    var dirInfo = new DirectoryInfo(item.Path);
-                    var files = dirInfo.GetFiles();
-                    var dirs = dirInfo.GetDirectories();
-                    ImGui.Text($"Items: {files.Length + dirs.Length}");
-                }
-                catch
-                {
-                    ImGui.Text("Items: Unknown");
-                }
-            }
-            else
-            {
-                ImGui.Text(item.Name);
-                ImGui.Separator();
+                ImGui.PushTextWrapPos(400f);
 
-                if (item.IsAssetFile && item.AssetHeader != null)
+                if (item.IsDirectory)
                 {
-                    ImGui.Text($"Type: {GetSimpleTypeName(item.AssetHeader.AssetTypeName)}");
-                    ImGui.Text($"ID: {item.AssetHeader.AssetId}");
+                    ImGui.Text(item.Name);
+                    ImGui.Separator();
+                    ImGui.Text("\uf07b Folder");
+                    try
+                    {
+                        var dirInfo = new DirectoryInfo(item.Path);
+                        var files = dirInfo.GetFiles();
+                        var dirs = dirInfo.GetDirectories();
+                        ImGui.Text($"Items: {files.Length + dirs.Length}");
+                    }
+                    catch
+                    {
+                        ImGui.Text("Items: Unknown");
+                    }
                 }
                 else
                 {
-                    ImGui.Text($"Type: {item.FileExtension.ToUpper().TrimStart('.')} File");
+                    ImGui.Text(item.Name);
+                    ImGui.Separator();
+
+                    if (item.IsAssetFile && item.AssetHeader != null)
+                    {
+                        ImGui.Text($"Type: {GetSimpleTypeName(item.AssetHeader.AssetTypeName)}");
+                        ImGui.Text($"ID: {item.AssetHeader.AssetId}");
+                    }
+                    else
+                    {
+                        ImGui.Text($"Type: {item.FileExtension.ToUpper().TrimStart('.')} File");
+                    }
+
+                    ImGui.Text($"Size: {FormatHelper.FormatFileSize(item.FileSize)}");
+                    ImGui.Text($"Modified: {item.LastModified:yyyy-MM-dd HH:mm:ss}");
                 }
 
-                ImGui.Text($"Size: {FormatHelper.FormatFileSize(item.FileSize)}");
-                ImGui.Text($"Modified: {item.LastModified:yyyy-MM-dd HH:mm:ss}");
+                ImGui.PopTextWrapPos();
             }
-
-            ImGui.PopTextWrapPos();
             ImGui.EndTooltip();
         }
 
@@ -762,7 +774,7 @@ namespace RockEngine.Editor.Layers
             _sortColumn = spec.ColumnIndex;
             _sortDirection = spec.SortDirection;
 
-            Comparison<FileSystemItem> comparison = (a, b) =>
+            int comparison(FileSystemItem a, FileSystemItem b)
             {
                 // Directories always come first
                 if (a.IsDirectory && !b.IsDirectory) return -1;
@@ -791,7 +803,7 @@ namespace RockEngine.Editor.Layers
                 }
 
                 return _sortDirection == ImGuiSortDirection.Ascending ? result : -result;
-            };
+            }
 
             _currentDirectoryItems.Sort(comparison);
         }
@@ -838,24 +850,34 @@ namespace RockEngine.Editor.Layers
             if (ImGui.BeginPopup("##ItemContextMenu"))
             {
                 DrawItemContextMenu(item);
-                ImGui.EndPopup();
             }
+            ImGui.EndPopup();
 
             ImGui.PopID();
 
             ImGui.TableNextColumn();
             if (item.IsDirectory)
+            {
                 ImGui.Text("Folder");
+            }
             else if (item.IsAssetFile)
+            {
                 ImGui.Text("Asset");
+            }
             else
+            {
                 ImGui.Text(item.FileExtension.ToUpper().TrimStart('.'));
+            }
 
             ImGui.TableNextColumn();
             if (item.IsDirectory)
+            {
                 ImGui.Text("-");
+            }
             else
+            {
                 ImGui.Text(FormatHelper.FormatFileSize(item.FileSize));
+            }
 
             ImGui.TableNextColumn();
             ImGui.Text(item.LastModified.ToString("yyyy-MM-dd HH:mm"));

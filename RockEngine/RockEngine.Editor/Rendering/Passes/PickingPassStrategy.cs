@@ -12,25 +12,19 @@ using Silk.NET.Vulkan;
 
 namespace RockEngine.Editor.Rendering.Passes
 {
-    public class PickingPassStrategy : PassStrategyBase
+    public class PickingPassStrategy(
+         VulkanContext context,
+         IEnumerable<IRenderSubPass> subpasses,
+         CameraManager cameraManager,
+         GlobalUbo globalUbo) : PassStrategyBase(context, subpasses)
     {
-        private readonly GlobalUbo _globalUbo;
-        private readonly PickingRenderTarget _pickingRenderTarget;
+        private readonly PickingRenderTarget _pickingRenderTarget = new PickingRenderTarget(context, new Extent2D(1280, 720));
+
         public override int Order => int.MinValue + 1;
 
         public PickingRenderTarget PickingRenderTarget => _pickingRenderTarget;
 
-        public PickingPassStrategy(
-             VulkanContext context,
-             IEnumerable<IRenderSubPass> subpasses,
-             GlobalUbo globalUbo)
-             : base(context, subpasses)
-        {
-            _globalUbo = globalUbo;
-            _pickingRenderTarget = new PickingRenderTarget(context, new Extent2D(1280, 720));
-        }
-
-        public override async ValueTask Execute(SubmitContext submitContext, CameraManager cameraManager, WorldRenderer renderer)
+        public override async ValueTask Execute(RenderContext renderContext, WorldRenderer renderer)
         {
             uint frameIndex = renderer.FrameIndex;
             var cams = cameraManager.RegisteredCameras;
@@ -43,7 +37,7 @@ namespace RockEngine.Editor.Rendering.Passes
                 {
                     continue;
                 }
-                tasks.Add(ExecuteCameraPass(submitContext, debugCamera, renderer, i, frameIndex));
+                tasks.Add(ExecuteCameraPass(renderContext.GraphicsContext, debugCamera, renderer, i, frameIndex));
             }
             await Task.WhenAll(tasks);
         }

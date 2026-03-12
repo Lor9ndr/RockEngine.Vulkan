@@ -69,7 +69,6 @@ namespace RockEngine.Core.Rendering.Managers
 
                 if (setIndex > 0)
                 {
-                    materialPass.PrepareToRender(batch);
                     BindDescriptorSetsToCommandBuffer(
                         batch,
                         materialPass.Pipeline.Layout,
@@ -98,7 +97,6 @@ namespace RockEngine.Core.Rendering.Managers
                 {
                     return;
                 }
-                materialPass.PrepareToRender(batch);
 
                 BindDescriptorSetsToCommandBuffer(
                     batch,

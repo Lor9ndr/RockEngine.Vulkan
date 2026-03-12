@@ -1,9 +1,6 @@
 ﻿using RockEngine.Core.ECS.Components;
 using RockEngine.Core.Helpers;
 
-using System.Runtime.InteropServices;
-using System.Numerics;
-
 namespace RockEngine.Core.Rendering.Managers
 {
     public class CameraManager

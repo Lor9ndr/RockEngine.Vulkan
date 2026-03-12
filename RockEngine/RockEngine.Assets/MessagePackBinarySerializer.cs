@@ -12,9 +12,7 @@ namespace RockEngine.Assets
         public MessagePackBinarySerializer()
         {
             StaticCompositeResolver.Instance.Register(
-   MessagePack.Unity.UnityResolver.Instance,
-   MessagePack.Unity.Extension.UnityBlitWithPrimitiveArrayResolver.Instance,
-   MessagePack.Resolvers.StandardResolver.Instance,
+   StandardResolver.Instance,
    NativeGuidResolver.Instance,
    PrimitiveObjectResolver.Instance,
    DynamicObjectResolverAllowPrivate.Instance,

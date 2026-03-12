@@ -76,8 +76,6 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
             }
             ImGui.PushID($"{component.GetType().Name}_{accessor.Name}");
 
-            
-
             try
             {
                 var value = accessor.GetValue(component);

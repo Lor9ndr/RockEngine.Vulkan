@@ -11,7 +11,7 @@ using RockEngine.Core.Rendering.Objects;
 using RockEngine.Core.Rendering.Passes;
 using RockEngine.Core.Rendering.Passes.SubPasses;
 using RockEngine.Vulkan;
-
+using RockEngine.Vulkan.DeviceFeatures;
 using Silk.NET.Input;
 using Silk.NET.Vulkan;
 using Silk.NET.Windowing;
@@ -138,6 +138,23 @@ namespace RockEngine.Core.DI
                 var context = container.GetInstance<VulkanContext>();
                 return new GlobalGeometryBuffer(context);
             }, Lifestyle.Singleton);
+            var registry = new FeatureRegistry();
+            container.RegisterInstance<FeatureRegistry>(registry);
+            // Core features (required)
+            registry.RequestFeature(new SamplerAnisotropyFeature() { IsRequired = true });
+            registry.RequestFeature(new DepthClampFeature() { IsRequired = true });
+            registry.RequestFeature(new MultiDrawIndirectFeature() { IsRequired = true });
+            registry.RequestFeature(new ImageCubeArrayFeature() { IsRequired = true });
+            registry.RequestFeature(new GeometryShaderFeature() { IsRequired = true });
+            registry.RequestFeature(new DrawIndirectFirstInstanceFeature() { IsRequired = true });
+            registry.RequestFeature(new PipelineStatisticsQueryFeature() { IsRequired = true });
+
+            // Vulkan 1.1/1.2/1.3 features (required)
+            registry.RequestFeature(new ShaderDrawParametersFeature() { IsRequired = true });
+            registry.RequestFeature(new HostQueryResetFeature() { IsRequired = true });
+            registry.RequestFeature(new ScalarBlockLayoutFeature() { IsRequired = true });
+            registry.RequestFeature(new Synchronization2Feature() { IsRequired = true });
+
 
 
         }

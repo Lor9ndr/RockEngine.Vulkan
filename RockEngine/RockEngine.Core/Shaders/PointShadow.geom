@@ -22,10 +22,10 @@ layout(location = 2) out vec3 worldPos;
 void main() {
     for(int face = 0; face < 6; ++face) {
         gl_Layer = face; // specifies which face we render to
-        
+        mat4 shadowMat = shadowMatrices.matrices[face];
         for(int i = 0; i < 3; ++i) { // for each triangle vertex
             worldPos = fragPos[i];
-            fragPosLightSpace = shadowMatrices.matrices[face] * vec4(fragPos[i], 1.0);
+            fragPosLightSpace = shadowMat * vec4(fragPos[i], 1.0);
             gl_Position = fragPosLightSpace;
             EmitVertex();
         }

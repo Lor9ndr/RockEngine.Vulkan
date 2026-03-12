@@ -1,15 +1,10 @@
 ﻿
-using NLog;
-
-using RockEngine.Vulkan;
-
-using Silk.NET.Vulkan;
-
-using SkiaSharp;
-
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Text;
+using NLog;
+using RockEngine.Vulkan;
+using Silk.NET.Vulkan;
 
 namespace RockEngine.Core.Diagnostics
 {
@@ -115,7 +110,7 @@ namespace RockEngine.Core.Diagnostics
         {
             // Check if GPU timestamps are supported
             var properties = context.Device.PhysicalDevice.Properties;
-            _gpuTimestampsSupported = false;//properties.Limits.TimestampComputeAndGraphics;
+            _gpuTimestampsSupported = properties.Limits.TimestampComputeAndGraphics;
 
             if (!_gpuTimestampsSupported)
             {

@@ -64,7 +64,7 @@ namespace RockEngine.Core.Rendering
 
         private sealed class FrameState : IDisposable
         {
-            public VkFence InFlightFence;
+            public required VkFence InFlightFence;
             public UploadBatch CurrentBatch;
             public ulong FrameNumber;
             public int AcquiredSwapchainCount;
@@ -74,7 +74,7 @@ namespace RockEngine.Core.Rendering
 
             public readonly List<VkSemaphore> SemaphoresToReturn = new List<VkSemaphore>(8);
             public readonly List<IDisposable> Resources = new List<IDisposable>(32);
-            public SubmitOperation FlushOperation;
+            public SubmitOperation? FlushOperation;
 
             public void Reset()
             {

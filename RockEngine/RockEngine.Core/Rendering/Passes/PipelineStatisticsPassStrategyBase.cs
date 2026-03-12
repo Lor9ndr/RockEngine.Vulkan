@@ -55,7 +55,7 @@ namespace RockEngine.Core.Rendering.Passes
         public VkQueryPool QueryPool { get; }
         public ConcurrentDictionary<uint, CameraQueryInfo> CameraQueries { get; } = new();
         public int TotalQueries => CameraQueries.AsValueEnumerable().Sum(c => c.Value.SubpassCount);
-        private readonly object _lock = new();
+        private readonly Lock _lock = new();
 
         public FrameQueryData(uint frameIndex, VkQueryPool queryPool)
         {
@@ -158,7 +158,7 @@ namespace RockEngine.Core.Rendering.Passes
         protected virtual void InitializePipelineStatistics()
         {
             var physicalDeviceFeatures = _context.Device.PhysicalDevice.Features;
-            _pipelineStatsEnabled = false;//physicalDeviceFeatures.PipelineStatisticsQuery;
+            _pipelineStatsEnabled = physicalDeviceFeatures.PipelineStatisticsQuery;
 
             if (!_pipelineStatsEnabled)
             {

@@ -122,13 +122,13 @@ namespace RockEngine.Core.Rendering
         }
 
 
-        public async Task Render()
+        public async Task Render(RenderContext renderContext)
         {
             using (PerformanceTracer.BeginSection("Frame Render"))
             {
                 foreach (IRenderPassStrategy? item in _renderPassStrategies)
                 {
-                    await item.Execute(SubmitContext, _cameraManager, this)
+                    await item.Execute(renderContext, this)
                         .ConfigureAwait(false);
                 }
             }
@@ -138,7 +138,7 @@ namespace RockEngine.Core.Rendering
         {
             if (_prevFrameIndex == FrameIndex)
             {
-                return;
+                //return;
             }
 
             // Get shadow-casting lights before updates

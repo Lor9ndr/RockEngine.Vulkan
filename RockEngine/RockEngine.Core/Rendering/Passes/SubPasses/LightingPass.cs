@@ -118,8 +118,8 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
                     var materialPass = cameraRenderTarget.Material.GetPass(Name);
                     materialPass.BindResource(_lightManager.GetCurrentLightBufferBinding(frameIndex));
                     materialPass.BindResource(_lightManager.GetCountLightBufferBinding());
-                    materialPass.BindResource(_shadowManager.GetShadowMapsBinding());
                     materialPass.BindResource(_shadowManager.GetPointShadowMapsBinding());
+                    materialPass.BindResource(_shadowManager.GetShadowMapsBinding());
                     materialPass.BindResource(_globalUbo.GetBinding((uint)cameraIndex));
                     if (materialPass.Bindings.MaxSetLocation != 5)
                     {

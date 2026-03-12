@@ -145,18 +145,25 @@ namespace RockEngine.Core
             PerformanceTracer.BeginFrame(_graphicsEngine.FrameIndex);
 
             // Begin frame
-            var batch = _graphicsEngine.BeginFrame();
+            _graphicsEngine.BeginFrame();
             
             try
             {
+                RenderContext renderContext = new RenderContext(
+                    _graphicsEngine.FrameIndex,
+                    _context.GraphicsSubmitContext,
+                    _context.TransferSubmitContext,
+                    _context.ComputeSubmitContext,
+                    _renderer);
+
                 // Render ImGui
-                RenderImGui(batch);
+                RenderImGui(renderContext);
 
                 // Render layers
-                RenderLayers(batch);
+                RenderLayers(renderContext);
 
                 // Render world
-                await RenderWorld();
+                await RenderWorld(renderContext);
 
                 // Submit and present
 
@@ -169,19 +176,15 @@ namespace RockEngine.Core
             catch (Exception ex)
             {
                 _logger.Error(ex, "Render failed");
-                HandleRenderFailure(ex);
             }
 
            
         }
-        private void HandleRenderFailure(Exception ex)
-        {
-            // Wait a bit before retrying
-            Thread.Sleep(16);
-        }
+       
 
-        private void RenderImGui(UploadBatch batch)
+        private void RenderImGui(RenderContext renderContext)
         {
+            var batch = _context.GraphicsSubmitContext.CreateBatch();
             using (PerformanceTracer.BeginSection("ImGui Render"))
             {
                 using (batch.BeginSection("ImGui", _graphicsEngine.FrameIndex))
@@ -189,28 +192,28 @@ namespace RockEngine.Core
                     _layerStack.RenderImGui(batch);
                 }
             }
-            
+            batch.Submit();
+
         }
 
-        private void RenderLayers(UploadBatch batch)
+        private void RenderLayers(RenderContext renderContext)
         {
+            var batch = _context.GraphicsSubmitContext.CreateBatch();
             using (PerformanceTracer.BeginSection("Layer Render"))
             {
                 using (batch.BeginSection("Layers", _graphicsEngine.FrameIndex))
                 {
-                    var renderBatch = _context.GraphicsSubmitContext.CreateBatch();
-                    _layerStack.Render(renderBatch);
-                    renderBatch.Submit();
+                    _layerStack.Render(batch);
                 }
             }
-           
+            batch.Submit();
         }
 
-        private async Task RenderWorld()
+        private async Task RenderWorld(RenderContext renderContext)
         {
             using (PerformanceTracer.BeginSection("World Render"))
             {
-               await _renderer.Render();
+               await _renderer.Render(renderContext);
             }
         }
 

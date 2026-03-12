@@ -149,8 +149,8 @@ namespace RockEngine.Core.Rendering.Texturing
             var sampler = CreateSampler(context, vkImage.MipLevels);
             var texture = new Texture2D(context, vkImage, sampler);
             graphicsBatch.AddSignalSemaphore(texture.CompletionSemaphore);
-
-            context.GraphicsSubmitContext.SubmitSingle(graphicsBatch).Wait();
+            graphicsBatch.Submit();
+            //context.GraphicsSubmitContext.SubmitSingle(graphicsBatch).Wait();
 
             return texture;
         }
@@ -204,7 +204,8 @@ namespace RockEngine.Core.Rendering.Texturing
             graphicsBatch.AddSignalSemaphore(texture.CompletionSemaphore);
 
             await transferOp;
-            await context.GraphicsSubmitContext.SubmitSingle(graphicsBatch);
+            graphicsBatch.Submit();
+            //await context.GraphicsSubmitContext.SubmitSingle(graphicsBatch);
 
             if (!string.IsNullOrEmpty(textureData.Name))
             {
@@ -237,7 +238,8 @@ namespace RockEngine.Core.Rendering.Texturing
             var sampler = CreateSampler(context, textureData.Sampler, textureData.MipLevels);
             var texture = new Texture2D(context, image, sampler);
             batch.AddSignalSemaphore(texture.CompletionSemaphore);
-            context.GraphicsSubmitContext.SubmitSingle(batch).Wait();
+            batch.Submit();
+            //context.GraphicsSubmitContext.SubmitSingle(batch).Wait();
 
             if (!string.IsNullOrEmpty(textureData.Name))
             {
@@ -399,7 +401,8 @@ namespace RockEngine.Core.Rendering.Texturing
 
             var texture = new Texture2D(context, image, sampler);
             graphicsBatch.AddSignalSemaphore(texture.CompletionSemaphore);
-            await context.GraphicsSubmitContext.SubmitSingle(graphicsBatch);
+            graphicsBatch.Submit();
+            //await context.GraphicsSubmitContext.SubmitSingle(graphicsBatch);
             // Cleanup
             foreach (var bitmap in faceBitmaps)
             {
@@ -625,7 +628,7 @@ namespace RockEngine.Core.Rendering.Texturing
                 ImageLayout.TransferDstOptimal,
                 ImageLayout.ShaderReadOnlyOptimal);
             graphicsBatch.AddSignalSemaphore(texture.CompletionSemaphore);
-            context.GraphicsSubmitContext.SubmitSingle(graphicsBatch).Wait();
+            graphicsBatch.Submit();
 
             if (!string.IsNullOrEmpty(name))
             {
@@ -698,7 +701,7 @@ namespace RockEngine.Core.Rendering.Texturing
             var texture = new Texture2D(context, image, sampler);
             batch.AddSignalSemaphore(texture.CompletionSemaphore);
 
-            context.GraphicsSubmitContext.SubmitSingle(batch).Wait();
+            batch.Submit();
 
             if (!string.IsNullOrEmpty(name))
             {
@@ -769,7 +772,7 @@ namespace RockEngine.Core.Rendering.Texturing
             );
             var texture = new Texture2D(context, image, sampler);
             batch.AddSignalSemaphore(texture.CompletionSemaphore);
-            context.GraphicsSubmitContext.SubmitSingle(batch).Wait();
+            batch.Submit();
 
             if (!string.IsNullOrEmpty(name))
             {
@@ -853,7 +856,8 @@ namespace RockEngine.Core.Rendering.Texturing
             dst.Image.TransitionImageLayout(batch, ImageLayout.General, ImageLayout.ShaderReadOnlyOptimal);
             batch.AddSignalSemaphore(src.CompletionSemaphore);
             batch.AddSignalSemaphore(dst.CompletionSemaphore);
-            _context.ComputeSubmitContext.SubmitSingle(batch, VkFence.CreateNotSignaled(_context)).Wait();
+            batch.Submit();
+            //_context.ComputeSubmitContext.SubmitSingle(batch, VkFence.CreateNotSignaled(_context)).Wait();
         }
     }
 }

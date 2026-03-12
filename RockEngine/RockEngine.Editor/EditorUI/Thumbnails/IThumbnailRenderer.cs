@@ -194,7 +194,8 @@ namespace RockEngine.Editor.EditorUI.Thumbnails
 
             var texture = new Texture2D(_context, thumbnailImage, sampler);
             batch.AddSignalSemaphore(texture.CompletionSemaphore);
-            await _context.GraphicsSubmitContext.SubmitSingle(batch);
+            batch.Submit();
+            //await _context.GraphicsSubmitContext.SubmitSingle(batch);
             return texture;
         }
     }

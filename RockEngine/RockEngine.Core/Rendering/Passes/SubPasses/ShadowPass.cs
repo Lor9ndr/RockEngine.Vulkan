@@ -191,6 +191,7 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
 
             RckPipeline pipeline;
             ref var lightData = ref light.GetLightData();
+            batch.LabelObject(Name);
 
             switch (light.Type)
             {

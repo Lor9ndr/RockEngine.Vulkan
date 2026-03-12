@@ -13,7 +13,7 @@ using ZLinq;
 namespace RockEngine.Core.Assets
 {
     [MessagePackObject]
-    public sealed class SceneAsset : Asset<SceneData>, IGpuResource
+    public sealed partial class SceneAsset : Asset<SceneData>, IGpuResource
     {
         private static readonly Logger _logger = LogManager.GetCurrentClassLogger();
 

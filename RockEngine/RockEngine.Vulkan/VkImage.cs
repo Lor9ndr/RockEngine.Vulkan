@@ -673,6 +673,11 @@ namespace RockEngine.Vulkan
                     (PipelineStageFlags2.TopOfPipeBit, PipelineStageFlags2.FragmentShaderBit),
                 (ImageLayout.ShaderReadOnlyOptimal, ImageLayout.ShaderReadOnlyOptimal) =>
                 (PipelineStageFlags2.FragmentShaderBit, PipelineStageFlags2.FragmentShaderBit),
+                (ImageLayout.DepthStencilAttachmentOptimal, ImageLayout.TransferDstOptimal) =>
+    (PipelineStageFlags2.EarlyFragmentTestsBit, PipelineStageFlags2.TransferBit),
+
+                (ImageLayout.TransferDstOptimal, ImageLayout.DepthStencilAttachmentOptimal) =>
+                    (PipelineStageFlags2.TransferBit, PipelineStageFlags2.EarlyFragmentTestsBit),
 
 
                 _ => throw new NotSupportedException($"Unsupported layout transition: {oldLayout} -> {newLayout}")
@@ -789,6 +794,11 @@ namespace RockEngine.Vulkan
                     (AccessFlags2.ShaderReadBit, AccessFlags2.TransferReadBit),
                 (ImageLayout.ShaderReadOnlyOptimal, ImageLayout.ShaderReadOnlyOptimal) =>
                (AccessFlags2.ShaderReadBit, AccessFlags2.ShaderReadBit),
+                (ImageLayout.DepthStencilAttachmentOptimal, ImageLayout.TransferDstOptimal) =>
+     (AccessFlags2.DepthStencilAttachmentWriteBit, AccessFlags2.TransferWriteBit),
+
+                (ImageLayout.TransferDstOptimal, ImageLayout.DepthStencilAttachmentOptimal) =>
+                    (AccessFlags2.TransferWriteBit, AccessFlags2.DepthStencilAttachmentReadBit | AccessFlags2.DepthStencilAttachmentWriteBit),
 
                 _ => throw new NotSupportedException($"Unsupported layout transition: {oldLayout} -> {newLayout}")
             };

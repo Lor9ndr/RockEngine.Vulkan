@@ -57,10 +57,11 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
         {
             using (PerformanceTracer.BeginSection(nameof(PostLightPass)))
             {
+
                 uint frameIndex = (uint)args[0];
                 var camera = args[1] as Camera ?? throw new ArgumentNullException(nameof(Camera));
                 var camIndex = (int)args[2];
-
+                batch.LabelObject(Name);
                 batch.SetViewport(camera.RenderTarget.Viewport);
                 batch.SetScissor(camera.RenderTarget.Scissor);
 

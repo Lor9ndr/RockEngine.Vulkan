@@ -1,8 +1,7 @@
-﻿using Silk.NET.Core;
+﻿using System.Runtime.InteropServices;
+using Silk.NET.Core;
 using Silk.NET.Core.Native;
 using Silk.NET.Vulkan;
-
-using System.Runtime.InteropServices;
 
 namespace RockEngine.Vulkan
 {
@@ -12,7 +11,6 @@ namespace RockEngine.Vulkan
         public SurfaceFormatKHR[] Formats;
         public PresentModeKHR[] PresentModes;
     }
-
     public unsafe class VkLogicalDevice : VkObject<Device>
     {
         private readonly Vk _api;
@@ -82,6 +80,17 @@ namespace RockEngine.Vulkan
             var api = VulkanContext.Vk;
             // Find queue families
             QueueFamilyIndices indices = FindQueueFamilies(api, physicalDevice, surface);
+            var registry = context.FeatureRegistry;
+            if (!registry.CheckSupport(physicalDevice, out var unsupported))
+            {
+                // Handle unsupported required features – throw or disable them.
+            }
+
+            // Build the extension list: base extensions + registry extensions
+            var allExtensions = new HashSet<string>(extensions);
+            foreach (var ext in registry.GetAllRequiredExtensions())
+                allExtensions.Add(ext);
+
 
             // Check if the device is suitable
             if (!IsDeviceSuitable(api, physicalDevice, surface, extensions, indices))
@@ -113,71 +122,26 @@ namespace RockEngine.Vulkan
             }
 
             var features2 = new PhysicalDeviceFeatures2();
-            var vulkan11Features = new PhysicalDeviceVulkan11Features();
-            var vulkan12Features = new PhysicalDeviceVulkan12Features();
-            var vulkan13Features = new PhysicalDeviceVulkan13Features();
+            var vk11 = new PhysicalDeviceVulkan11Features { SType = StructureType.PhysicalDeviceVulkan11Features };
+            var vk12 = new PhysicalDeviceVulkan12Features { SType = StructureType.PhysicalDeviceVulkan12Features };
+            var vk13 = new PhysicalDeviceVulkan13Features { SType = StructureType.PhysicalDeviceVulkan13Features };
+            var pageableDeviceLocalMemoryFeatures = new PhysicalDevicePageableDeviceLocalMemoryFeaturesEXT{ SType = StructureType.PhysicalDevicePageableDeviceLocalMemoryFeaturesExt };
 
-            // Configure features
-            features2.Features = new PhysicalDeviceFeatures
-            {
-                SamplerAnisotropy = true,
-                DepthClamp = true,
-                MultiDrawIndirect = true,
-                ImageCubeArray = true,
-                GeometryShader = true,
-                DrawIndirectFirstInstance = true,
-                PipelineStatisticsQuery = physicalDevice.Features.PipelineStatisticsQuery
-            };
-            
-
-            vulkan11Features.SType = StructureType.PhysicalDeviceVulkan11Features;
-            vulkan11Features.ShaderDrawParameters = true;
-
-
-            vulkan12Features.SType = StructureType.PhysicalDeviceVulkan12Features;
-            vulkan12Features.HostQueryReset = true;
-            vulkan12Features.ScalarBlockLayout = true;
-
-            vulkan13Features.SType = StructureType.PhysicalDeviceVulkan13Features;
-            vulkan13Features.Synchronization2 = true;
-
-            bool pageableDeviceLocalMemoryAvailable = false;
+            // 6. Build feature chain
             uint extensionCount = 0;
 
+            // 7. Let each enabled feature modify the structs / add to chain
+            foreach (var feature in registry.Features.Where(f => registry.EnabledFeatures.Contains(f.Name)))
             {
-                api.EnumerateDeviceExtensionProperties(physicalDevice, (byte*)null, &extensionCount, null);
-                var availableExtensions = new ExtensionProperties[extensionCount];
-                fixed (ExtensionProperties* availableExtensionsPtr = availableExtensions)
+                ///TODO: REWORK CHAIN PASSING
+                using var chain2 = Chain.Create(features2, vk11, vk12, vk13, pageableDeviceLocalMemoryFeatures);
+                if (feature.IsSupported(physicalDevice))
                 {
-                    api.EnumerateDeviceExtensionProperties(physicalDevice, (byte*)null, &extensionCount, availableExtensionsPtr);
-                }
-
-                foreach (var extension in availableExtensions)
-                {
-                    if (Marshal.PtrToStringAnsi((IntPtr)extension.ExtensionName) == "VK_EXT_pageable_device_local_memory")
-                    {
-                        pageableDeviceLocalMemoryAvailable = true;
-                        break;
-                    }
+                    feature.Enable(ref features2, ref vk11, ref vk12, ref vk13, ref pageableDeviceLocalMemoryFeatures, chain2);
+                    extensionCount++;
                 }
             }
-            // Add pageable device local memory features if available
-            var pageableDeviceLocalMemoryFeatures = new PhysicalDevicePageableDeviceLocalMemoryFeaturesEXT
-            {
-                SType = StructureType.PhysicalDevicePageableDeviceLocalMemoryFeaturesExt,
-                PageableDeviceLocalMemory = pageableDeviceLocalMemoryAvailable
-            };
-
-            // Build feature chain using managed chaining
-            using var chain = Chain.Create(
-              features2,
-              vulkan11Features,
-              vulkan12Features,
-              vulkan13Features
-          );
-            chain.Add(pageableDeviceLocalMemoryFeatures);
-
-
+            using var chain = Chain.Create(features2, vk11, vk12, vk13, pageableDeviceLocalMemoryFeatures);
 
 
             // Create device info with proper feature chain
@@ -187,7 +151,7 @@ namespace RockEngine.Vulkan
                 QueueCreateInfoCount = (uint)uniqueQueueFamilies.Count,
                 PQueueCreateInfos = queueCreateInfos,
                 PNext = chain.HeadPtr,
-                EnabledExtensionCount = (uint)extensionCount,
+                EnabledExtensionCount = extensionCount,
                 PpEnabledExtensionNames = (byte**)SilkMarshal.StringArrayToPtr(extensions)
             };
 

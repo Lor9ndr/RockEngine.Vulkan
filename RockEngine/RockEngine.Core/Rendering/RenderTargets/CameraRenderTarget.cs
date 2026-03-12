@@ -117,10 +117,16 @@ namespace RockEngine.Core.Rendering.RenderTargets
             {
                 return;
             }
-            base.Resize(newSize);
-            _gBuffer.Recreate(Size);
-            CreateTexture();
-            CreateFramebuffers();
+           //_context.GraphicsSubmitContext.AddDependency(new DeferredOperation(() =>
+            {
+                _context.Device.GraphicsQueue.WaitIdle();
+
+                base.Resize(newSize);
+                _gBuffer.Recreate(Size);
+                CreateTexture();
+                CreateFramebuffers();
+            }//));
+           
 
         }
         protected override void DisposeResources()

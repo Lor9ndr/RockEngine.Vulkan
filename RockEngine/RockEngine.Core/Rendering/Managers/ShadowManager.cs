@@ -215,7 +215,7 @@ namespace RockEngine.Core.Rendering.Managers
                 var shadowIndex = AssignShadowMapIndex(light);
                 if (shadowIndex == uint.MaxValue) continue;
 
-                light.SetShadowMapIndex(shadowIndex);
+                light.SetShadowIndices(shadowIndex);
 
                 if (light.Type == LightType.Directional && light.CascadeCount > 1)
                 {

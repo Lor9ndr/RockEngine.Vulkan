@@ -166,7 +166,9 @@ namespace RockEngine.Core.ECS.Components
 
         private LightData _lightData;
         [IgnoreMember]
-        private int _shadowMapIndex = -1;
+        private uint _uboIndex;
+        [IgnoreMember]
+        private uint _layerStart;
 
         public override ValueTask OnStart(WorldRenderer renderer)
         {
@@ -189,7 +191,7 @@ namespace RockEngine.Core.ECS.Components
                 DirectionAndRadius = new Vector4(Entity.Transform.Forward, Radius),
                 ColorAndIntensity = new Vector4(Color, Intensity),
                 Cutoffs = new Vector2(InnerCutoff, OuterCutoff),
-                ShadowParams = new Vector4(ShadowBias, ShadowStrength, CastShadows ? 1.0f : 0.0f, _shadowMapIndex),
+                ShadowParams = new Vector4(ShadowBias, ShadowStrength, CastShadows ? 1.0f : 0.0f, _layerStart),
                 ShadowMatrix = GetShadowMatrix()[0],
             };
 
@@ -203,12 +205,15 @@ namespace RockEngine.Core.ECS.Components
             return ref _lightData;
         }
 
-   
 
-        internal void SetShadowMapIndex(uint index)
+
+        public void SetShadowIndices(uint layerStart)
         {
-            _shadowMapIndex = (int)index;
-            _lightData.ShadowParams = new Vector4(ShadowBias, ShadowStrength, CastShadows ? 1.0f : 0.0f, index);
+            //_uboIndex = uboIndex;
+            _layerStart = layerStart;
+            // Also update the GPU-side LightData struct if you have one
+            ref var data = ref GetLightData(); // assuming you have a method to get the struct
+            data.ShadowParams = new Vector4(ShadowBias, ShadowStrength, CastShadows ? 1f : 0f, layerStart);
         }
 
         private Matrix4x4[] UpdateSpotShadowMatrices()
@@ -487,6 +492,8 @@ namespace RockEngine.Core.ECS.Components
             }
             return matrices;
         }
+
+        
     }
 
     [GLSLStruct(GLSLMemoryLayout.Scalar)]

@@ -15,6 +15,7 @@ namespace RockEngine.Core.Rendering.RenderTargets
         public VkImageView ImageView { get; private set; }
         public VkSampler Sampler { get; private set; }
         public Light Light => _light;
+        public readonly LightType LightType;
         //  Proper layer count calculation for CSM
         public uint LayerCount
         {
@@ -34,6 +35,7 @@ namespace RockEngine.Core.Rendering.RenderTargets
         {
             _context = context;
             _light = light;
+            LightType = light.Type;
         }
 
         public override void Initialize(RckRenderPass renderPass)
@@ -136,19 +138,14 @@ namespace RockEngine.Core.Rendering.RenderTargets
         {
 
             // Create framebuffer with correct layer count
-            var attachments = new[] { ImageView };
-
-            // Create single framebuffer with multiple layers for layered rendering
-            Framebuffers = new VkFrameBuffer[1]; // Only need one framebuffer for layered rendering
-
-            Framebuffers[0] = VkFrameBuffer.Create(
+            Framebuffers = [VkFrameBuffer.Create(
                 _context,
                 RenderPass.RenderPass,
-                attachments,
+                [ImageView],
                 _light.ShadowMapSize,
                 _light.ShadowMapSize,
                 LayerCount
-            );
+            )];
         }
         protected override void DisposeResources()
         {

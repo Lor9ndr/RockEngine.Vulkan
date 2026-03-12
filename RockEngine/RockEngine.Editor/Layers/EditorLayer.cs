@@ -217,7 +217,7 @@ namespace RockEngine.Editor.Layers
             camera.Name = "Camera";
 
             // Create lights with solid materials
-            for (int i = 0; i < 1; i++)
+            for (int i = 0; i < 10; i++)
             {
                 var lightColor = new Vector3(Random.Shared.NextSingle(), Random.Shared.NextSingle(), Random.Shared.NextSingle());
 
@@ -235,9 +235,9 @@ namespace RockEngine.Editor.Layers
                 var lightComponent = light.AddComponent<Light>();
                 lightComponent.Type = LightType.Point;
                 light.Transform.Position = new Vector3(
-                    Random.Shared.NextSingle() * 100,
-                    20 + Random.Shared.NextSingle() * 100,
-                    Random.Shared.NextSingle() * 100
+                    Random.Shared.NextSingle() * 50,
+                    15 + Random.Shared.NextSingle() * 50,
+                    Random.Shared.NextSingle() * 50
                 );
 
                 var lightMeshRenderer = light.AddComponent<MeshRenderer>();

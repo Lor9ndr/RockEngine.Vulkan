@@ -33,7 +33,7 @@ namespace RockEngine.Vulkan
         private static int _hostFreeCount;
         private static int _deviceFreeCount;
 
-        private static readonly bool _enableStackTrace =  Debugger.IsAttached;
+        private static readonly bool _enableStackTrace =  false;//Debugger.IsAttached;
 
         // Store actual device memory handles with detailed info
         private static readonly ConcurrentDictionary<DeviceMemory, DeviceMemoryInfo> _deviceMemoryObjects = new();

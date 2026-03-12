@@ -60,6 +60,8 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
         {
             using (PerformanceTracer.BeginSection(nameof(GeometryPass)))
             {
+                batch.LabelObject(Name);
+
                 uint frameIndex = (uint)args[0];
                 var camera = args[1] as Camera ?? throw new ArgumentNullException(nameof(args), nameof(Camera));
                 var camIndex = (int)args[2];

@@ -134,17 +134,20 @@ namespace RockEngine.Core.Rendering
 
         public void Recreate(Extent2D size)
         {
-            _context.Device.GraphicsQueue.WaitIdle();
+            //_context.Device.GraphicsQueue.WaitIdle();
 
             // Cleanup old resources
-            foreach (var attachment in ColorAttachments)
-            {
-                attachment.Image.Resize(new Extent3D(size.Width, size.Height, 1));
-            }
+            
+                foreach (var attachment in ColorAttachments)
+                {
+                    attachment.Image.Resize(new Extent3D(size.Width, size.Height, 1));
+                }
 
-            DepthAttachment.Image.Resize(new Extent3D(size.Width, size.Height, 1));
+                DepthAttachment.Image.Resize(new Extent3D(size.Width, size.Height, 1));
 
-            _size = size;
+                _size = size;
+          
+            
 
             /*CreateAttachments();
             CreateTextures();*/
