@@ -1,6 +1,3 @@
-# Notice
-currently working on branch [AssetSystem](https://github.com/Lor9ndr/RockEngine.Vulkan/tree/%239-AssetSystem) branch
-so actual code is on that branch
 # RockEngine
 
 RockEngine is going to be a high perfomance 3D game engine built on Vulkan. It aims to provide developers with a powerful and flexible platform for creating stunning 3D games.
