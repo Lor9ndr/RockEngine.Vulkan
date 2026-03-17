@@ -22,7 +22,7 @@ namespace RockEngine.Vulkan
         }
 
         /// <summary>
-        /// Gets a span over the mapped memory for type T
+        /// Gets a span over the mapped memory for type <typeparamref name="T"/>
         /// </summary>
         /// <typeparam name="T">Unmanaged type</typeparam>
         /// <returns>Span of the mapped memory</returns>

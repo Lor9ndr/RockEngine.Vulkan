@@ -99,7 +99,7 @@ namespace RockEngine.Editor.Rendering.Buffers
                 ImageExtent = new Extent3D(1, 1, 1)
             };
 
-               batch.CopyImageToBuffer(
+            batch.CopyImageToBuffer(
                 sourceTexture.Image,
                 ImageLayout.TransferSrcOptimal,
                 _stagingBuffer,
@@ -125,7 +125,7 @@ namespace RockEngine.Editor.Rendering.Buffers
             return ReadPixelData();
         }
 
-        private unsafe Vector4 ReadPixelData()
+        private Vector4 ReadPixelData()
         {
             using var mappedMemory = _stagingBuffer.MapMemory(4, 0);
             var data = mappedMemory.GetSpan<byte>();

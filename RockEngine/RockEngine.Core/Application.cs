@@ -55,12 +55,17 @@ namespace RockEngine.Core
             {
                  OnWindowLoad().GetAwaiter().GetResult();
             };
+            _window.UpdatesPerSecond = 0;
             _window.Update +=  (delta) =>  OnWindowUpdate(delta).GetAwaiter().GetResult();
             _window.Render += (delta) => OnWindowRender(delta).GetAwaiter().GetResult();
             _window.Initialize();
+            _window.StateChanged += _window_StateChanged;
         }
 
-        
+        private void _window_StateChanged(WindowState obj)
+        {
+
+        }
 
         private async Task OnWindowLoad()
         {
@@ -74,13 +79,13 @@ namespace RockEngine.Core
                 _coroutineSheduler = IoC.Container.GetInstance<CoroutineScheduler>();
                 PerformanceTracer.Initialize(_context);
                 var surface = SurfaceHandler.CreateSurface(_window, _context);
+                var swapchain = VkSwapchain.Create(_context, surface);
                 
-                _graphicsEngine.AddSwapchain(VkSwapchain.Create(_context, surface));
+                _graphicsEngine.AddSwapchain(swapchain);
                 _renderer = IoC.Container.GetInstance<WorldRenderer>();
                 _layerStack = IoC.Container.GetInstance<LayerStack>();
                 _world = IoC.Container.GetInstance<World>();
                 _physicsManager = IoC.Container.GetInstance<PhysicsManager>();
-
                 // Initialize shaders
                 var shaderManager = IoC.Container.GetInstance<IShaderManager>();
                 await shaderManager.CompileAllShadersAsync();
@@ -141,7 +146,6 @@ namespace RockEngine.Core
                 return;
 
             PerformanceTracer.ProcessQueries(_context, _graphicsEngine.FrameIndex);
-
             PerformanceTracer.BeginFrame(_graphicsEngine.FrameIndex);
 
             // Begin frame
@@ -170,15 +174,17 @@ namespace RockEngine.Core
                 _graphicsEngine.SubmitAndPresent();
 
             }
-            catch (VulkanException ex) 
-            {
-            }
+            //catch (VulkanException ex) 
+            //{
+            //    _logger.Error(ex, "Render failed");
+            //
+            //}
             catch (Exception ex)
             {
                 _logger.Error(ex, "Render failed");
             }
 
-           
+
         }
        
 
@@ -227,11 +233,6 @@ namespace RockEngine.Core
             {
                 _logger.Fatal(ex, "Application crashed");
                 throw;
-            }
-            finally
-            {
-                // GC will correctly collect the vk objects and dispose them since they are disposable
-                //Dispose();
             }
         }
         public void Stop()

@@ -24,7 +24,7 @@ namespace RockEngine.Vulkan.Builders
         }
         public unsafe VkInstanceBuilder UseDebugUtilsMessenger(DebugUtilsMessageSeverityFlagsEXT severity,
             DebugUtilsMessageTypeFlagsEXT type,
-            PfnDebugUtilsMessengerCallbackEXT userCallback,
+            ref PfnDebugUtilsMessengerCallbackEXT userCallback,
             void* userData)
         {
             _debugUtilsMessengerCreateInfoEXT = new DebugUtilsMessengerCreateInfoEXT()

@@ -97,6 +97,7 @@ namespace RockEngine.Vulkan
             {
                 SType = StructureType.InstanceCreateInfo,
                 PApplicationInfo = &appInfo,
+                 
             };
 
             _debugCallback = DebugUtilsMessengerCallbackFunctionEXT;
@@ -117,8 +118,8 @@ namespace RockEngine.Vulkan
             {
                 instanceBuilder.UseValidationLayers(_validationLayers)
                     .UseDebugUtilsMessenger(DebugUtilsMessageSeverityFlagsEXT.WarningBitExt | DebugUtilsMessageSeverityFlagsEXT.ErrorBitExt | DebugUtilsMessageSeverityFlagsEXT.InfoBitExt,
-                                        DebugUtilsMessageTypeFlagsEXT.GeneralBitExt | DebugUtilsMessageTypeFlagsEXT.PerformanceBitExt | DebugUtilsMessageTypeFlagsEXT.ValidationBitExt,
-                                        dbcallback, (void*)nint.Zero);
+                                            DebugUtilsMessageTypeFlagsEXT.GeneralBitExt | DebugUtilsMessageTypeFlagsEXT.PerformanceBitExt | DebugUtilsMessageTypeFlagsEXT.ValidationBitExt,
+                                            ref dbcallback, (void*)nint.Zero);
             }
 
             var instance = instanceBuilder.Build(ref ci);
@@ -126,11 +127,10 @@ namespace RockEngine.Vulkan
             Marshal.FreeHGlobal((nint)appname);
             return instance;
         }
-        private static unsafe uint DebugUtilsMessengerCallbackFunctionEXT(
-     DebugUtilsMessageSeverityFlagsEXT messageSeverity,
-     DebugUtilsMessageTypeFlagsEXT messageTypes,
-     DebugUtilsMessengerCallbackDataEXT* pCallbackData,
-     void* pUserData)
+        private static unsafe uint DebugUtilsMessengerCallbackFunctionEXT(DebugUtilsMessageSeverityFlagsEXT messageSeverity,
+            DebugUtilsMessageTypeFlagsEXT messageTypes,
+            DebugUtilsMessengerCallbackDataEXT* pCallbackData,
+            void* pUserData)
         {
             // Extract main message
             string message = Marshal.PtrToStringUTF8((nint)pCallbackData->PMessage) ?? string.Empty;

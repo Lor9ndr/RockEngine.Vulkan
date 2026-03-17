@@ -63,29 +63,6 @@ namespace RockEngine.Vulkan
                    a.PImmutableSamplers == b.PImmutableSamplers;
         }
 
-        public override bool Equals(object obj)
-        {
-            return obj is VkDescriptorSetLayout layout && Equals(layout);
-        }
-
-        public override unsafe int GetHashCode()
-        {
-            unchecked
-            {
-                int hash = 17;
-                hash = hash * 23 + SetLocation.GetHashCode();
-                foreach (var binding in Bindings)
-                {
-                    hash = hash * 23 + binding.Binding.GetHashCode();
-                    hash = hash * 23 + binding.DescriptorType.GetHashCode();
-                    hash = hash * 23 + binding.DescriptorCount.GetHashCode();
-                    hash = hash * 23 + binding.StageFlags.GetHashCode();
-                    hash = hash * 23 + (binding.PImmutableSamplers != null ? binding.PImmutableSamplers.GetHashCode() : 0);
-                }
-                return hash;
-            }
-        }
-
         public static bool operator ==(VkDescriptorSetLayout left, VkDescriptorSetLayout right)
         {
             return left.Equals(right);

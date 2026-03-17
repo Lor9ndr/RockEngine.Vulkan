@@ -1,7 +1,4 @@
 ﻿using RockEngine.Core.Rendering.ResourceBindings;
-using RockEngine.Core.Rendering.Texturing;
-
-using Silk.NET.Vulkan;
 
 
 namespace RockEngine.Core.Rendering.Materials
@@ -69,27 +66,16 @@ namespace RockEngine.Core.Rendering.Materials
                 }
             }
         }
-
-        // Texture binding methods
-        public void BindTexture(uint set, uint binding, Texture texture)
+        /*public void Bind(Texture texture, string name)
         {
-            BindResource(new TextureBinding(set, binding, 0, 1, ImageLayout.ShaderReadOnlyOptimal, texture));
-        }
-
-        public void BindTexture(string subpassName, uint set, uint binding, Texture texture)
-        {
-            BindResource(subpassName, new TextureBinding(set, binding, 0, 1, ImageLayout.ShaderReadOnlyOptimal, texture));
-        }
-
-        public void BindTextureArray(uint set, uint binding, params Texture[] textures)
-        {
-            BindResource(new TextureBinding(set, binding, 0, (uint)textures.Length, ImageLayout.ShaderReadOnlyOptimal, textures));
-        }
-
-        public void BindTextureArray(string subpassName, uint set, uint binding, params Texture[] textures)
-        {
-            BindResource(subpassName, new TextureBinding(set, binding, 0, (uint)textures.Length, ImageLayout.ShaderReadOnlyOptimal, textures));
-        }
+            foreach(var pass in _passes.Values)
+            {
+                foreach (var item in pass.Pipeline.Layout.DescriptorSetLayouts)
+                {
+                    if(item.Value.)
+                }
+            }
+        }*/
 
 
         // Push constant methods

@@ -1,0 +1,3832 @@
+[
+  {
+    "ReturnType": "genFType",
+    "Name": "radians",
+    "Parameters": [
+      {
+        "Type": "genFType",
+        "Name": "degrees"
+      }
+    ],
+    "Description": "Converts degrees to radians, i.e., (\u03C0 / 180) \u22C5 degrees.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_radians"
+  },
+  {
+    "ReturnType": "genFType",
+    "Name": "degrees",
+    "Parameters": [
+      {
+        "Type": "genFType",
+        "Name": "radians"
+      }
+    ],
+    "Description": "Converts radians to degrees, i.e., (180 / \u03C0) \u22C5 radians.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_degrees"
+  },
+  {
+    "ReturnType": "genFType",
+    "Name": "sin",
+    "Parameters": [
+      {
+        "Type": "genFType",
+        "Name": "angle"
+      }
+    ],
+    "Description": "The standard trigonometric sine function.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_sin"
+  },
+  {
+    "ReturnType": "genFType",
+    "Name": "cos",
+    "Parameters": [
+      {
+        "Type": "genFType",
+        "Name": "angle"
+      }
+    ],
+    "Description": "The standard trigonometric cosine function.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_cos"
+  },
+  {
+    "ReturnType": "genFType",
+    "Name": "tan",
+    "Parameters": [
+      {
+        "Type": "genFType",
+        "Name": "angle"
+      }
+    ],
+    "Description": "The standard trigonometric tangent.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_tan"
+  },
+  {
+    "ReturnType": "genFType",
+    "Name": "asin",
+    "Parameters": [
+      {
+        "Type": "genFType",
+        "Name": "x"
+      }
+    ],
+    "Description": "Arc sine. Returns an angle whose sine is x.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_asin"
+  },
+  {
+    "ReturnType": "genFType",
+    "Name": "acos",
+    "Parameters": [
+      {
+        "Type": "genFType",
+        "Name": "x"
+      }
+    ],
+    "Description": "Arc cosine. Returns an angle whose cosine is x.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_acos"
+  },
+  {
+    "ReturnType": "genFType",
+    "Name": "atan",
+    "Parameters": [
+      {
+        "Type": "genFType",
+        "Name": "y"
+      },
+      {
+        "Type": "genFType",
+        "Name": "x"
+      }
+    ],
+    "Description": "Arc tangent. Returns an angle whose tangent is y / x.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_atan"
+  },
+  {
+    "ReturnType": "genFType",
+    "Name": "sinh",
+    "Parameters": [
+      {
+        "Type": "genFType",
+        "Name": "x"
+      }
+    ],
+    "Description": "Returns the hyperbolic sine function (ex - e-x) / 2.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_sinh"
+  },
+  {
+    "ReturnType": "genFType",
+    "Name": "cosh",
+    "Parameters": [
+      {
+        "Type": "genFType",
+        "Name": "x"
+      }
+    ],
+    "Description": "Returns the hyperbolic cosine function (ex \u002B e-x) / 2.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_cosh"
+  },
+  {
+    "ReturnType": "genFType",
+    "Name": "tanh",
+    "Parameters": [
+      {
+        "Type": "genFType",
+        "Name": "x"
+      }
+    ],
+    "Description": "Returns the hyperbolic tangent function sinh(x) / cosh(x).",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_tanh"
+  },
+  {
+    "ReturnType": "genFType",
+    "Name": "asinh",
+    "Parameters": [
+      {
+        "Type": "genFType",
+        "Name": "x"
+      }
+    ],
+    "Description": "Arc hyperbolic sine; returns the inverse of sinh.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_asinh"
+  },
+  {
+    "ReturnType": "genFType",
+    "Name": "acosh",
+    "Parameters": [
+      {
+        "Type": "genFType",
+        "Name": "x"
+      }
+    ],
+    "Description": "Arc hyperbolic cosine. Returns the non-negative inverse of cosh.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_acosh"
+  },
+  {
+    "ReturnType": "genFType",
+    "Name": "atanh",
+    "Parameters": [
+      {
+        "Type": "genFType",
+        "Name": "x"
+      }
+    ],
+    "Description": "Arc hyperbolic tangent. Returns the inverse of tanh.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_atanh"
+  },
+  {
+    "ReturnType": "genFType",
+    "Name": "pow",
+    "Parameters": [
+      {
+        "Type": "genFType",
+        "Name": "x"
+      },
+      {
+        "Type": "genFType",
+        "Name": "y"
+      }
+    ],
+    "Description": "Returns x raised to the y power, i.e., xy.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_pow"
+  },
+  {
+    "ReturnType": "genFType",
+    "Name": "exp",
+    "Parameters": [
+      {
+        "Type": "genFType",
+        "Name": "x"
+      }
+    ],
+    "Description": "Returns the natural exponentiation of x, i.e., ex.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_exp"
+  },
+  {
+    "ReturnType": "genFType",
+    "Name": "log",
+    "Parameters": [
+      {
+        "Type": "genFType",
+        "Name": "x"
+      }
+    ],
+    "Description": "Returns the natural logarithm of x, i.e., returns the value y\nwhich satisfies the equation x = ey.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_log"
+  },
+  {
+    "ReturnType": "genFType",
+    "Name": "exp2",
+    "Parameters": [
+      {
+        "Type": "genFType",
+        "Name": "x"
+      }
+    ],
+    "Description": "Returns 2 raised to the x power, i.e., 2x.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_exp2"
+  },
+  {
+    "ReturnType": "genFType",
+    "Name": "log2",
+    "Parameters": [
+      {
+        "Type": "genFType",
+        "Name": "x"
+      }
+    ],
+    "Description": "Returns the base 2 logarithm of x, i.e., returns the value y which\nsatisfies the equation x = 2y.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_log2"
+  },
+  {
+    "ReturnType": "genFType",
+    "Name": "sqrt",
+    "Parameters": [
+      {
+        "Type": "genFType",
+        "Name": "x"
+      }
+    ],
+    "Description": "Returns sqrt(x).",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_sqrt"
+  },
+  {
+    "ReturnType": "genDType",
+    "Name": "sqrt",
+    "Parameters": [
+      {
+        "Type": "genDType",
+        "Name": "x"
+      }
+    ],
+    "Description": "Returns sqrt(x).",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_sqrt"
+  },
+  {
+    "ReturnType": "genFType",
+    "Name": "abs",
+    "Parameters": [
+      {
+        "Type": "genFType",
+        "Name": "x"
+      }
+    ],
+    "Description": "Returns x if x \u2265 0; otherwise it returns -x.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_abs"
+  },
+  {
+    "ReturnType": "genIType",
+    "Name": "abs",
+    "Parameters": [
+      {
+        "Type": "genIType",
+        "Name": "x"
+      }
+    ],
+    "Description": "Returns x if x \u2265 0; otherwise it returns -x.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_abs"
+  },
+  {
+    "ReturnType": "genDType",
+    "Name": "abs",
+    "Parameters": [
+      {
+        "Type": "genDType",
+        "Name": "x"
+      }
+    ],
+    "Description": "Returns x if x \u2265 0; otherwise it returns -x.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_abs"
+  },
+  {
+    "ReturnType": "genFType",
+    "Name": "sign",
+    "Parameters": [
+      {
+        "Type": "genFType",
+        "Name": "x"
+      }
+    ],
+    "Description": "Returns 1.0 if x \u003E 0, 0.0 if x = 0, or -1.0 if x \u003C 0.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_sign"
+  },
+  {
+    "ReturnType": "genIType",
+    "Name": "sign",
+    "Parameters": [
+      {
+        "Type": "genIType",
+        "Name": "x"
+      }
+    ],
+    "Description": "Returns 1.0 if x \u003E 0, 0.0 if x = 0, or -1.0 if x \u003C 0.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_sign"
+  },
+  {
+    "ReturnType": "genDType",
+    "Name": "sign",
+    "Parameters": [
+      {
+        "Type": "genDType",
+        "Name": "x"
+      }
+    ],
+    "Description": "Returns 1.0 if x \u003E 0, 0.0 if x = 0, or -1.0 if x \u003C 0.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_sign"
+  },
+  {
+    "ReturnType": "genFType",
+    "Name": "floor",
+    "Parameters": [
+      {
+        "Type": "genFType",
+        "Name": "x"
+      }
+    ],
+    "Description": "Returns a value equal to the nearest integer that is less than or equal to x.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_floor"
+  },
+  {
+    "ReturnType": "genDType",
+    "Name": "floor",
+    "Parameters": [
+      {
+        "Type": "genDType",
+        "Name": "x"
+      }
+    ],
+    "Description": "Returns a value equal to the nearest integer that is less than or equal to x.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_floor"
+  },
+  {
+    "ReturnType": "genFType",
+    "Name": "trunc",
+    "Parameters": [
+      {
+        "Type": "genFType",
+        "Name": "x"
+      }
+    ],
+    "Description": "Returns a value equal to the nearest integer to x whose absolute\nvalue is not larger than the absolute value of x.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_trunc"
+  },
+  {
+    "ReturnType": "genDType",
+    "Name": "trunc",
+    "Parameters": [
+      {
+        "Type": "genDType",
+        "Name": "x"
+      }
+    ],
+    "Description": "Returns a value equal to the nearest integer to x whose absolute\nvalue is not larger than the absolute value of x.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_trunc"
+  },
+  {
+    "ReturnType": "genFType",
+    "Name": "round",
+    "Parameters": [
+      {
+        "Type": "genFType",
+        "Name": "x"
+      }
+    ],
+    "Description": "Returns a value equal to the nearest integer to x.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_round"
+  },
+  {
+    "ReturnType": "genDType",
+    "Name": "round",
+    "Parameters": [
+      {
+        "Type": "genDType",
+        "Name": "x"
+      }
+    ],
+    "Description": "Returns a value equal to the nearest integer to x.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_round"
+  },
+  {
+    "ReturnType": "genFType",
+    "Name": "ceil",
+    "Parameters": [
+      {
+        "Type": "genFType",
+        "Name": "x"
+      }
+    ],
+    "Description": "Returns a value equal to the nearest integer that is greater than or equal to x.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_ceil"
+  },
+  {
+    "ReturnType": "genDType",
+    "Name": "ceil",
+    "Parameters": [
+      {
+        "Type": "genDType",
+        "Name": "x"
+      }
+    ],
+    "Description": "Returns a value equal to the nearest integer that is greater than or equal to x.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_ceil"
+  },
+  {
+    "ReturnType": "genFType",
+    "Name": "fract",
+    "Parameters": [
+      {
+        "Type": "genFType",
+        "Name": "x"
+      }
+    ],
+    "Description": "Returns x - floor(x).",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_fract"
+  },
+  {
+    "ReturnType": "genDType",
+    "Name": "fract",
+    "Parameters": [
+      {
+        "Type": "genDType",
+        "Name": "x"
+      }
+    ],
+    "Description": "Returns x - floor(x).",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_fract"
+  },
+  {
+    "ReturnType": "genFType",
+    "Name": "mod",
+    "Parameters": [
+      {
+        "Type": "genFType",
+        "Name": "x"
+      },
+      {
+        "Type": "float",
+        "Name": "y"
+      }
+    ],
+    "Description": "Modulus. Returns x - y \u22C5 floor(x / y).",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_mod"
+  },
+  {
+    "ReturnType": "genFType",
+    "Name": "mod",
+    "Parameters": [
+      {
+        "Type": "genFType",
+        "Name": "x"
+      },
+      {
+        "Type": "genFType",
+        "Name": "y"
+      }
+    ],
+    "Description": "Modulus. Returns x - y \u22C5 floor(x / y).",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_mod"
+  },
+  {
+    "ReturnType": "genDType",
+    "Name": "mod",
+    "Parameters": [
+      {
+        "Type": "genDType",
+        "Name": "x"
+      },
+      {
+        "Type": "double",
+        "Name": "y"
+      }
+    ],
+    "Description": "Modulus. Returns x - y \u22C5 floor(x / y).",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_mod"
+  },
+  {
+    "ReturnType": "genDType",
+    "Name": "mod",
+    "Parameters": [
+      {
+        "Type": "genDType",
+        "Name": "x"
+      },
+      {
+        "Type": "genDType",
+        "Name": "y"
+      }
+    ],
+    "Description": "Modulus. Returns x - y \u22C5 floor(x / y).",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_mod"
+  },
+  {
+    "ReturnType": "genFType",
+    "Name": "modf",
+    "Parameters": [
+      {
+        "Type": "genFType",
+        "Name": "x"
+      },
+      {
+        "Type": "genFType",
+        "Name": "i"
+      }
+    ],
+    "Description": "Returns the fractional part of x and sets i to the integer part (as\na whole number floating-point value).",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_modf"
+  },
+  {
+    "ReturnType": "genDType",
+    "Name": "modf",
+    "Parameters": [
+      {
+        "Type": "genDType",
+        "Name": "x"
+      },
+      {
+        "Type": "genDType",
+        "Name": "i"
+      }
+    ],
+    "Description": "Returns the fractional part of x and sets i to the integer part (as\na whole number floating-point value).",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_modf"
+  },
+  {
+    "ReturnType": "genFType",
+    "Name": "min",
+    "Parameters": [
+      {
+        "Type": "genFType",
+        "Name": "x"
+      },
+      {
+        "Type": "genFType",
+        "Name": "y"
+      }
+    ],
+    "Description": "Returns y if y \u003C x; otherwise it returns x.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_min"
+  },
+  {
+    "ReturnType": "genFType",
+    "Name": "min",
+    "Parameters": [
+      {
+        "Type": "genFType",
+        "Name": "x"
+      },
+      {
+        "Type": "float",
+        "Name": "y"
+      }
+    ],
+    "Description": "Returns y if y \u003C x; otherwise it returns x.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_min"
+  },
+  {
+    "ReturnType": "genDType",
+    "Name": "min",
+    "Parameters": [
+      {
+        "Type": "genDType",
+        "Name": "x"
+      },
+      {
+        "Type": "genDType",
+        "Name": "y"
+      }
+    ],
+    "Description": "Returns y if y \u003C x; otherwise it returns x.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_min"
+  },
+  {
+    "ReturnType": "genDType",
+    "Name": "min",
+    "Parameters": [
+      {
+        "Type": "genDType",
+        "Name": "x"
+      },
+      {
+        "Type": "double",
+        "Name": "y"
+      }
+    ],
+    "Description": "Returns y if y \u003C x; otherwise it returns x.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_min"
+  },
+  {
+    "ReturnType": "genIType",
+    "Name": "min",
+    "Parameters": [
+      {
+        "Type": "genIType",
+        "Name": "x"
+      },
+      {
+        "Type": "genIType",
+        "Name": "y"
+      }
+    ],
+    "Description": "Returns y if y \u003C x; otherwise it returns x.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_min"
+  },
+  {
+    "ReturnType": "genIType",
+    "Name": "min",
+    "Parameters": [
+      {
+        "Type": "genIType",
+        "Name": "x"
+      },
+      {
+        "Type": "int",
+        "Name": "y"
+      }
+    ],
+    "Description": "Returns y if y \u003C x; otherwise it returns x.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_min"
+  },
+  {
+    "ReturnType": "genUType",
+    "Name": "min",
+    "Parameters": [
+      {
+        "Type": "genUType",
+        "Name": "x"
+      },
+      {
+        "Type": "genUType",
+        "Name": "y"
+      }
+    ],
+    "Description": "Returns y if y \u003C x; otherwise it returns x.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_min"
+  },
+  {
+    "ReturnType": "genUType",
+    "Name": "min",
+    "Parameters": [
+      {
+        "Type": "genUType",
+        "Name": "x"
+      },
+      {
+        "Type": "uint",
+        "Name": "y"
+      }
+    ],
+    "Description": "Returns y if y \u003C x; otherwise it returns x.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_min"
+  },
+  {
+    "ReturnType": "genFType",
+    "Name": "max",
+    "Parameters": [
+      {
+        "Type": "genFType",
+        "Name": "x"
+      },
+      {
+        "Type": "genFType",
+        "Name": "y"
+      }
+    ],
+    "Description": "Returns y if x \u003C y; otherwise it returns x.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_max"
+  },
+  {
+    "ReturnType": "genFType",
+    "Name": "max",
+    "Parameters": [
+      {
+        "Type": "genFType",
+        "Name": "x"
+      },
+      {
+        "Type": "float",
+        "Name": "y"
+      }
+    ],
+    "Description": "Returns y if x \u003C y; otherwise it returns x.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_max"
+  },
+  {
+    "ReturnType": "genDType",
+    "Name": "max",
+    "Parameters": [
+      {
+        "Type": "genDType",
+        "Name": "x"
+      },
+      {
+        "Type": "genDType",
+        "Name": "y"
+      }
+    ],
+    "Description": "Returns y if x \u003C y; otherwise it returns x.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_max"
+  },
+  {
+    "ReturnType": "genDType",
+    "Name": "max",
+    "Parameters": [
+      {
+        "Type": "genDType",
+        "Name": "x"
+      },
+      {
+        "Type": "double",
+        "Name": "y"
+      }
+    ],
+    "Description": "Returns y if x \u003C y; otherwise it returns x.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_max"
+  },
+  {
+    "ReturnType": "genIType",
+    "Name": "max",
+    "Parameters": [
+      {
+        "Type": "genIType",
+        "Name": "x"
+      },
+      {
+        "Type": "genIType",
+        "Name": "y"
+      }
+    ],
+    "Description": "Returns y if x \u003C y; otherwise it returns x.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_max"
+  },
+  {
+    "ReturnType": "genIType",
+    "Name": "max",
+    "Parameters": [
+      {
+        "Type": "genIType",
+        "Name": "x"
+      },
+      {
+        "Type": "int",
+        "Name": "y"
+      }
+    ],
+    "Description": "Returns y if x \u003C y; otherwise it returns x.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_max"
+  },
+  {
+    "ReturnType": "genUType",
+    "Name": "max",
+    "Parameters": [
+      {
+        "Type": "genUType",
+        "Name": "x"
+      },
+      {
+        "Type": "genUType",
+        "Name": "y"
+      }
+    ],
+    "Description": "Returns y if x \u003C y; otherwise it returns x.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_max"
+  },
+  {
+    "ReturnType": "genUType",
+    "Name": "max",
+    "Parameters": [
+      {
+        "Type": "genUType",
+        "Name": "x"
+      },
+      {
+        "Type": "uint",
+        "Name": "y"
+      }
+    ],
+    "Description": "Returns y if x \u003C y; otherwise it returns x.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_max"
+  },
+  {
+    "ReturnType": "genFType",
+    "Name": "clamp",
+    "Parameters": [
+      {
+        "Type": "genFType",
+        "Name": "x"
+      },
+      {
+        "Type": "genFType",
+        "Name": "minVal"
+      },
+      {
+        "Type": "genFType",
+        "Name": "maxVal"
+      }
+    ],
+    "Description": "Returns min(max(x, minVal), maxVal).",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_clamp"
+  },
+  {
+    "ReturnType": "genFType",
+    "Name": "clamp",
+    "Parameters": [
+      {
+        "Type": "genFType",
+        "Name": "x"
+      },
+      {
+        "Type": "float",
+        "Name": "minVal"
+      },
+      {
+        "Type": "float",
+        "Name": "maxVal"
+      }
+    ],
+    "Description": "Returns min(max(x, minVal), maxVal).",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_clamp"
+  },
+  {
+    "ReturnType": "genDType",
+    "Name": "clamp",
+    "Parameters": [
+      {
+        "Type": "genDType",
+        "Name": "x"
+      },
+      {
+        "Type": "genDType",
+        "Name": "minVal"
+      },
+      {
+        "Type": "genDType",
+        "Name": "maxVal"
+      }
+    ],
+    "Description": "Returns min(max(x, minVal), maxVal).",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_clamp"
+  },
+  {
+    "ReturnType": "genDType",
+    "Name": "clamp",
+    "Parameters": [
+      {
+        "Type": "genDType",
+        "Name": "x"
+      },
+      {
+        "Type": "double",
+        "Name": "minVal"
+      },
+      {
+        "Type": "double",
+        "Name": "maxVal"
+      }
+    ],
+    "Description": "Returns min(max(x, minVal), maxVal).",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_clamp"
+  },
+  {
+    "ReturnType": "genIType",
+    "Name": "clamp",
+    "Parameters": [
+      {
+        "Type": "genIType",
+        "Name": "x"
+      },
+      {
+        "Type": "genIType",
+        "Name": "minVal"
+      },
+      {
+        "Type": "genIType",
+        "Name": "maxVal"
+      }
+    ],
+    "Description": "Returns min(max(x, minVal), maxVal).",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_clamp"
+  },
+  {
+    "ReturnType": "genIType",
+    "Name": "clamp",
+    "Parameters": [
+      {
+        "Type": "genIType",
+        "Name": "x"
+      },
+      {
+        "Type": "int",
+        "Name": "minVal"
+      },
+      {
+        "Type": "int",
+        "Name": "maxVal"
+      }
+    ],
+    "Description": "Returns min(max(x, minVal), maxVal).",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_clamp"
+  },
+  {
+    "ReturnType": "genUType",
+    "Name": "clamp",
+    "Parameters": [
+      {
+        "Type": "genUType",
+        "Name": "x"
+      },
+      {
+        "Type": "genUType",
+        "Name": "minVal"
+      },
+      {
+        "Type": "genUType",
+        "Name": "maxVal"
+      }
+    ],
+    "Description": "Returns min(max(x, minVal), maxVal).",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_clamp"
+  },
+  {
+    "ReturnType": "genUType",
+    "Name": "clamp",
+    "Parameters": [
+      {
+        "Type": "genUType",
+        "Name": "x"
+      },
+      {
+        "Type": "uint",
+        "Name": "minVal"
+      },
+      {
+        "Type": "uint",
+        "Name": "maxVal"
+      }
+    ],
+    "Description": "Returns min(max(x, minVal), maxVal).",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_clamp"
+  },
+  {
+    "ReturnType": "genFType",
+    "Name": "mix",
+    "Parameters": [
+      {
+        "Type": "genFType",
+        "Name": "x"
+      },
+      {
+        "Type": "genFType",
+        "Name": "y"
+      },
+      {
+        "Type": "genFType",
+        "Name": "a"
+      }
+    ],
+    "Description": "Returns the linear blend of x and y, i.e., x \u22C5 (1 - a) \u002B y \u22C5 a.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_mix"
+  },
+  {
+    "ReturnType": "genFType",
+    "Name": "mix",
+    "Parameters": [
+      {
+        "Type": "genFType",
+        "Name": "x"
+      },
+      {
+        "Type": "genFType",
+        "Name": "y"
+      },
+      {
+        "Type": "float",
+        "Name": "a"
+      }
+    ],
+    "Description": "Returns the linear blend of x and y, i.e., x \u22C5 (1 - a) \u002B y \u22C5 a.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_mix"
+  },
+  {
+    "ReturnType": "genDType",
+    "Name": "mix",
+    "Parameters": [
+      {
+        "Type": "genDType",
+        "Name": "x"
+      },
+      {
+        "Type": "genDType",
+        "Name": "y"
+      },
+      {
+        "Type": "genDType",
+        "Name": "a"
+      }
+    ],
+    "Description": "Returns the linear blend of x and y, i.e., x \u22C5 (1 - a) \u002B y \u22C5 a.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_mix"
+  },
+  {
+    "ReturnType": "genDType",
+    "Name": "mix",
+    "Parameters": [
+      {
+        "Type": "genDType",
+        "Name": "x"
+      },
+      {
+        "Type": "genDType",
+        "Name": "y"
+      },
+      {
+        "Type": "double",
+        "Name": "a"
+      }
+    ],
+    "Description": "Returns the linear blend of x and y, i.e., x \u22C5 (1 - a) \u002B y \u22C5 a.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_mix"
+  },
+  {
+    "ReturnType": "genFType",
+    "Name": "step",
+    "Parameters": [
+      {
+        "Type": "genFType",
+        "Name": "edge"
+      },
+      {
+        "Type": "genFType",
+        "Name": "x"
+      }
+    ],
+    "Description": "Returns 0.0 if x \u003C edge; otherwise it returns 1.0.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_step"
+  },
+  {
+    "ReturnType": "genFType",
+    "Name": "step",
+    "Parameters": [
+      {
+        "Type": "float",
+        "Name": "edge"
+      },
+      {
+        "Type": "genFType",
+        "Name": "x"
+      }
+    ],
+    "Description": "Returns 0.0 if x \u003C edge; otherwise it returns 1.0.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_step"
+  },
+  {
+    "ReturnType": "genDType",
+    "Name": "step",
+    "Parameters": [
+      {
+        "Type": "genDType",
+        "Name": "edge"
+      },
+      {
+        "Type": "genDType",
+        "Name": "x"
+      }
+    ],
+    "Description": "Returns 0.0 if x \u003C edge; otherwise it returns 1.0.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_step"
+  },
+  {
+    "ReturnType": "genDType",
+    "Name": "step",
+    "Parameters": [
+      {
+        "Type": "double",
+        "Name": "edge"
+      },
+      {
+        "Type": "genDType",
+        "Name": "x"
+      }
+    ],
+    "Description": "Returns 0.0 if x \u003C edge; otherwise it returns 1.0.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_step"
+  },
+  {
+    "ReturnType": "genFType",
+    "Name": "smoothstep",
+    "Parameters": [
+      {
+        "Type": "genFType",
+        "Name": "edge0"
+      },
+      {
+        "Type": "genFType",
+        "Name": "edge1"
+      },
+      {
+        "Type": "genFType",
+        "Name": "x"
+      }
+    ],
+    "Description": "Returns 0.0 if x \u2264 edge0 and 1.0 if x \u2265 edge1, and\nperforms smooth Hermite interpolation between 0 and 1 when edge0 \u003C x \u003C edge1.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_smoothstep"
+  },
+  {
+    "ReturnType": "genFType",
+    "Name": "smoothstep",
+    "Parameters": [
+      {
+        "Type": "float",
+        "Name": "edge0"
+      },
+      {
+        "Type": "float",
+        "Name": "edge1"
+      },
+      {
+        "Type": "genFType",
+        "Name": "x"
+      }
+    ],
+    "Description": "Returns 0.0 if x \u2264 edge0 and 1.0 if x \u2265 edge1, and\nperforms smooth Hermite interpolation between 0 and 1 when edge0 \u003C x \u003C edge1.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_smoothstep"
+  },
+  {
+    "ReturnType": "genDType",
+    "Name": "smoothstep",
+    "Parameters": [
+      {
+        "Type": "genDType",
+        "Name": "edge0"
+      },
+      {
+        "Type": "genDType",
+        "Name": "edge1"
+      },
+      {
+        "Type": "genDType",
+        "Name": "x"
+      }
+    ],
+    "Description": "Returns 0.0 if x \u2264 edge0 and 1.0 if x \u2265 edge1, and\nperforms smooth Hermite interpolation between 0 and 1 when edge0 \u003C x \u003C edge1.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_smoothstep"
+  },
+  {
+    "ReturnType": "genDType",
+    "Name": "smoothstep",
+    "Parameters": [
+      {
+        "Type": "double",
+        "Name": "edge0"
+      },
+      {
+        "Type": "double",
+        "Name": "edge1"
+      },
+      {
+        "Type": "genDType",
+        "Name": "x"
+      }
+    ],
+    "Description": "Returns 0.0 if x \u2264 edge0 and 1.0 if x \u2265 edge1, and\nperforms smooth Hermite interpolation between 0 and 1 when edge0 \u003C x \u003C edge1.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_smoothstep"
+  },
+  {
+    "ReturnType": "genFType",
+    "Name": "fma",
+    "Parameters": [
+      {
+        "Type": "genFType",
+        "Name": "a"
+      },
+      {
+        "Type": "genFType",
+        "Name": "b"
+      },
+      {
+        "Type": "genFType",
+        "Name": "c"
+      }
+    ],
+    "Description": "Computes and returns a * b \u002B c.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_fma"
+  },
+  {
+    "ReturnType": "genDType",
+    "Name": "fma",
+    "Parameters": [
+      {
+        "Type": "genDType",
+        "Name": "a"
+      },
+      {
+        "Type": "genDType",
+        "Name": "b"
+      },
+      {
+        "Type": "genDType",
+        "Name": "c"
+      }
+    ],
+    "Description": "Computes and returns a * b \u002B c.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_fma"
+  },
+  {
+    "ReturnType": "genFType",
+    "Name": "frexp",
+    "Parameters": [
+      {
+        "Type": "genFType",
+        "Name": "x"
+      },
+      {
+        "Type": "genIType",
+        "Name": "exp"
+      }
+    ],
+    "Description": "Splits x into a floating-point significand in the range\n[0.5,1.0], and an integral exponent of two, such that",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_frexp"
+  },
+  {
+    "ReturnType": "genDType",
+    "Name": "frexp",
+    "Parameters": [
+      {
+        "Type": "genDType",
+        "Name": "x"
+      },
+      {
+        "Type": "genIType",
+        "Name": "exp"
+      }
+    ],
+    "Description": "Splits x into a floating-point significand in the range\n[0.5,1.0], and an integral exponent of two, such that",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_frexp"
+  },
+  {
+    "ReturnType": "genFType",
+    "Name": "ldexp",
+    "Parameters": [
+      {
+        "Type": "genFType",
+        "Name": "x"
+      },
+      {
+        "Type": "genIType",
+        "Name": "exp"
+      }
+    ],
+    "Description": "Builds a floating-point number from x and the corresponding integral\nexponent of two in exp, returning:",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_ldexp"
+  },
+  {
+    "ReturnType": "genDType",
+    "Name": "ldexp",
+    "Parameters": [
+      {
+        "Type": "genDType",
+        "Name": "x"
+      },
+      {
+        "Type": "genIType",
+        "Name": "exp"
+      }
+    ],
+    "Description": "Builds a floating-point number from x and the corresponding integral\nexponent of two in exp, returning:",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_ldexp"
+  },
+  {
+    "ReturnType": "float",
+    "Name": "length",
+    "Parameters": [
+      {
+        "Type": "genFType",
+        "Name": "x"
+      }
+    ],
+    "Description": "Returns the length of vector x, i.e., sqrt( x02 \u002B x12 \u002B \u2026\u200B ).",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_length"
+  },
+  {
+    "ReturnType": "double",
+    "Name": "length",
+    "Parameters": [
+      {
+        "Type": "genDType",
+        "Name": "x"
+      }
+    ],
+    "Description": "Returns the length of vector x, i.e., sqrt( x02 \u002B x12 \u002B \u2026\u200B ).",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_length"
+  },
+  {
+    "ReturnType": "float",
+    "Name": "distance",
+    "Parameters": [
+      {
+        "Type": "genFType",
+        "Name": "p0"
+      },
+      {
+        "Type": "genFType",
+        "Name": "p1"
+      }
+    ],
+    "Description": "Returns the distance between p0 and p1, i.e., length(p0 - p1)",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_distance"
+  },
+  {
+    "ReturnType": "double",
+    "Name": "distance",
+    "Parameters": [
+      {
+        "Type": "genDType",
+        "Name": "p0"
+      },
+      {
+        "Type": "genDType",
+        "Name": "p1"
+      }
+    ],
+    "Description": "Returns the distance between p0 and p1, i.e., length(p0 - p1)",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_distance"
+  },
+  {
+    "ReturnType": "float",
+    "Name": "dot",
+    "Parameters": [
+      {
+        "Type": "genFType",
+        "Name": "x"
+      },
+      {
+        "Type": "genFType",
+        "Name": "y"
+      }
+    ],
+    "Description": "Returns the dot product of x and y, i.e., x0 \u22C5 y0 \u002B x1 \u22C5 y1 \u002B \u2026\u200B",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_dot"
+  },
+  {
+    "ReturnType": "double",
+    "Name": "dot",
+    "Parameters": [
+      {
+        "Type": "genDType",
+        "Name": "x"
+      },
+      {
+        "Type": "genDType",
+        "Name": "y"
+      }
+    ],
+    "Description": "Returns the dot product of x and y, i.e., x0 \u22C5 y0 \u002B x1 \u22C5 y1 \u002B \u2026\u200B",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_dot"
+  },
+  {
+    "ReturnType": "vec3",
+    "Name": "cross",
+    "Parameters": [
+      {
+        "Type": "vec3",
+        "Name": "x"
+      },
+      {
+        "Type": "vec3",
+        "Name": "y"
+      }
+    ],
+    "Description": "Returns the cross product of x and y, i.e.,\n      (x1 \u22C5 y2 - y1 \u22C5 x2,\n            x2 \u22C5 y0 - y2 \u22C5 x0,\n            x0 \u22C5 y1 - y0 \u22C5 x1).",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_cross"
+  },
+  {
+    "ReturnType": "dvec3",
+    "Name": "cross",
+    "Parameters": [
+      {
+        "Type": "dvec3",
+        "Name": "x"
+      },
+      {
+        "Type": "dvec3",
+        "Name": "y"
+      }
+    ],
+    "Description": "Returns the cross product of x and y, i.e.,\n      (x1 \u22C5 y2 - y1 \u22C5 x2,\n            x2 \u22C5 y0 - y2 \u22C5 x0,\n            x0 \u22C5 y1 - y0 \u22C5 x1).",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_cross"
+  },
+  {
+    "ReturnType": "genFType",
+    "Name": "normalize",
+    "Parameters": [
+      {
+        "Type": "genFType",
+        "Name": "x"
+      }
+    ],
+    "Description": "Returns a vector in the same direction as x but with a length of 1, i.e. x / length(x).",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_normalize"
+  },
+  {
+    "ReturnType": "genDType",
+    "Name": "normalize",
+    "Parameters": [
+      {
+        "Type": "genDType",
+        "Name": "x"
+      }
+    ],
+    "Description": "Returns a vector in the same direction as x but with a length of 1, i.e. x / length(x).",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_normalize"
+  },
+  {
+    "ReturnType": "vec4",
+    "Name": "ftransform",
+    "Parameters": [],
+    "Description": "Available only when using the compatibility profile. For core OpenGL, use invariant.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_ftransform"
+  },
+  {
+    "ReturnType": "genFType",
+    "Name": "reflect",
+    "Parameters": [
+      {
+        "Type": "genFType",
+        "Name": "I"
+      },
+      {
+        "Type": "genFType",
+        "Name": "N"
+      }
+    ],
+    "Description": "For the incident vector I and surface orientation N, returns the reflection direction:\nI - 2 \u22C5 dot(N, I) \u22C5 N. N must already be normalized in order to achieve\nthe desired result.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_reflect"
+  },
+  {
+    "ReturnType": "genDType",
+    "Name": "reflect",
+    "Parameters": [
+      {
+        "Type": "genDType",
+        "Name": "I"
+      },
+      {
+        "Type": "genDType",
+        "Name": "N"
+      }
+    ],
+    "Description": "For the incident vector I and surface orientation N, returns the reflection direction:\nI - 2 \u22C5 dot(N, I) \u22C5 N. N must already be normalized in order to achieve\nthe desired result.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_reflect"
+  },
+  {
+    "ReturnType": "genFType",
+    "Name": "refract",
+    "Parameters": [
+      {
+        "Type": "genFType",
+        "Name": "I"
+      },
+      {
+        "Type": "genFType",
+        "Name": "N"
+      },
+      {
+        "Type": "float",
+        "Name": "eta"
+      }
+    ],
+    "Description": "For the incident vector I and surface normal N, and the ratio of indices of refraction\neta, return the refraction vector. The result is computed by the refraction equation shown below.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_refract"
+  },
+  {
+    "ReturnType": "genDType",
+    "Name": "refract",
+    "Parameters": [
+      {
+        "Type": "genDType",
+        "Name": "I"
+      },
+      {
+        "Type": "genDType",
+        "Name": "N"
+      },
+      {
+        "Type": "double",
+        "Name": "eta"
+      }
+    ],
+    "Description": "For the incident vector I and surface normal N, and the ratio of indices of refraction\neta, return the refraction vector. The result is computed by the refraction equation shown below.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_refract"
+  },
+  {
+    "ReturnType": "mat",
+    "Name": "matrixCompMult",
+    "Parameters": [
+      {
+        "Type": "mat",
+        "Name": "x"
+      },
+      {
+        "Type": "mat",
+        "Name": "y"
+      }
+    ],
+    "Description": "Multiply matrix x by matrix y component-wise, i.e., result[i][j]\nis the scalar product of x[i][j] and y[i][j].",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_matrixcompmult"
+  },
+  {
+    "ReturnType": "mat2",
+    "Name": "outerProduct",
+    "Parameters": [
+      {
+        "Type": "vec2",
+        "Name": "c"
+      },
+      {
+        "Type": "vec2",
+        "Name": "r"
+      }
+    ],
+    "Description": "Treats the first parameter c as a column vector (matrix with one\ncolumn) and the second parameter r as a row vector (matrix with one\nrow) and does a linear algebraic matrix multiply c * r, yielding a\nmatrix whose number of rows is the number of components in c and\nwhose number of columns is the number of components in r.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_outerproduct"
+  },
+  {
+    "ReturnType": "mat3",
+    "Name": "outerProduct",
+    "Parameters": [
+      {
+        "Type": "vec3",
+        "Name": "c"
+      },
+      {
+        "Type": "vec3",
+        "Name": "r"
+      }
+    ],
+    "Description": "Treats the first parameter c as a column vector (matrix with one\ncolumn) and the second parameter r as a row vector (matrix with one\nrow) and does a linear algebraic matrix multiply c * r, yielding a\nmatrix whose number of rows is the number of components in c and\nwhose number of columns is the number of components in r.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_outerproduct"
+  },
+  {
+    "ReturnType": "mat4",
+    "Name": "outerProduct",
+    "Parameters": [
+      {
+        "Type": "vec4",
+        "Name": "c"
+      },
+      {
+        "Type": "vec4",
+        "Name": "r"
+      }
+    ],
+    "Description": "Treats the first parameter c as a column vector (matrix with one\ncolumn) and the second parameter r as a row vector (matrix with one\nrow) and does a linear algebraic matrix multiply c * r, yielding a\nmatrix whose number of rows is the number of components in c and\nwhose number of columns is the number of components in r.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_outerproduct"
+  },
+  {
+    "ReturnType": "mat2x3",
+    "Name": "outerProduct",
+    "Parameters": [
+      {
+        "Type": "vec3",
+        "Name": "c"
+      },
+      {
+        "Type": "vec2",
+        "Name": "r"
+      }
+    ],
+    "Description": "Treats the first parameter c as a column vector (matrix with one\ncolumn) and the second parameter r as a row vector (matrix with one\nrow) and does a linear algebraic matrix multiply c * r, yielding a\nmatrix whose number of rows is the number of components in c and\nwhose number of columns is the number of components in r.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_outerproduct"
+  },
+  {
+    "ReturnType": "mat3x2",
+    "Name": "outerProduct",
+    "Parameters": [
+      {
+        "Type": "vec2",
+        "Name": "c"
+      },
+      {
+        "Type": "vec3",
+        "Name": "r"
+      }
+    ],
+    "Description": "Treats the first parameter c as a column vector (matrix with one\ncolumn) and the second parameter r as a row vector (matrix with one\nrow) and does a linear algebraic matrix multiply c * r, yielding a\nmatrix whose number of rows is the number of components in c and\nwhose number of columns is the number of components in r.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_outerproduct"
+  },
+  {
+    "ReturnType": "mat2x4",
+    "Name": "outerProduct",
+    "Parameters": [
+      {
+        "Type": "vec4",
+        "Name": "c"
+      },
+      {
+        "Type": "vec2",
+        "Name": "r"
+      }
+    ],
+    "Description": "Treats the first parameter c as a column vector (matrix with one\ncolumn) and the second parameter r as a row vector (matrix with one\nrow) and does a linear algebraic matrix multiply c * r, yielding a\nmatrix whose number of rows is the number of components in c and\nwhose number of columns is the number of components in r.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_outerproduct"
+  },
+  {
+    "ReturnType": "mat4x2",
+    "Name": "outerProduct",
+    "Parameters": [
+      {
+        "Type": "vec2",
+        "Name": "c"
+      },
+      {
+        "Type": "vec4",
+        "Name": "r"
+      }
+    ],
+    "Description": "Treats the first parameter c as a column vector (matrix with one\ncolumn) and the second parameter r as a row vector (matrix with one\nrow) and does a linear algebraic matrix multiply c * r, yielding a\nmatrix whose number of rows is the number of components in c and\nwhose number of columns is the number of components in r.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_outerproduct"
+  },
+  {
+    "ReturnType": "mat3x4",
+    "Name": "outerProduct",
+    "Parameters": [
+      {
+        "Type": "vec4",
+        "Name": "c"
+      },
+      {
+        "Type": "vec3",
+        "Name": "r"
+      }
+    ],
+    "Description": "Treats the first parameter c as a column vector (matrix with one\ncolumn) and the second parameter r as a row vector (matrix with one\nrow) and does a linear algebraic matrix multiply c * r, yielding a\nmatrix whose number of rows is the number of components in c and\nwhose number of columns is the number of components in r.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_outerproduct"
+  },
+  {
+    "ReturnType": "mat4x3",
+    "Name": "outerProduct",
+    "Parameters": [
+      {
+        "Type": "vec3",
+        "Name": "c"
+      },
+      {
+        "Type": "vec4",
+        "Name": "r"
+      }
+    ],
+    "Description": "Treats the first parameter c as a column vector (matrix with one\ncolumn) and the second parameter r as a row vector (matrix with one\nrow) and does a linear algebraic matrix multiply c * r, yielding a\nmatrix whose number of rows is the number of components in c and\nwhose number of columns is the number of components in r.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_outerproduct"
+  },
+  {
+    "ReturnType": "mat2",
+    "Name": "transpose",
+    "Parameters": [
+      {
+        "Type": "mat2",
+        "Name": "m"
+      }
+    ],
+    "Description": "Returns a matrix that is the transpose of m.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_transpose"
+  },
+  {
+    "ReturnType": "mat3",
+    "Name": "transpose",
+    "Parameters": [
+      {
+        "Type": "mat3",
+        "Name": "m"
+      }
+    ],
+    "Description": "Returns a matrix that is the transpose of m.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_transpose"
+  },
+  {
+    "ReturnType": "mat4",
+    "Name": "transpose",
+    "Parameters": [
+      {
+        "Type": "mat4",
+        "Name": "m"
+      }
+    ],
+    "Description": "Returns a matrix that is the transpose of m.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_transpose"
+  },
+  {
+    "ReturnType": "mat2x3",
+    "Name": "transpose",
+    "Parameters": [
+      {
+        "Type": "mat3x2",
+        "Name": "m"
+      }
+    ],
+    "Description": "Returns a matrix that is the transpose of m.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_transpose"
+  },
+  {
+    "ReturnType": "mat3x2",
+    "Name": "transpose",
+    "Parameters": [
+      {
+        "Type": "mat2x3",
+        "Name": "m"
+      }
+    ],
+    "Description": "Returns a matrix that is the transpose of m.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_transpose"
+  },
+  {
+    "ReturnType": "mat2x4",
+    "Name": "transpose",
+    "Parameters": [
+      {
+        "Type": "mat4x2",
+        "Name": "m"
+      }
+    ],
+    "Description": "Returns a matrix that is the transpose of m.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_transpose"
+  },
+  {
+    "ReturnType": "mat4x2",
+    "Name": "transpose",
+    "Parameters": [
+      {
+        "Type": "mat2x4",
+        "Name": "m"
+      }
+    ],
+    "Description": "Returns a matrix that is the transpose of m.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_transpose"
+  },
+  {
+    "ReturnType": "mat3x4",
+    "Name": "transpose",
+    "Parameters": [
+      {
+        "Type": "mat4x3",
+        "Name": "m"
+      }
+    ],
+    "Description": "Returns a matrix that is the transpose of m.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_transpose"
+  },
+  {
+    "ReturnType": "mat4x3",
+    "Name": "transpose",
+    "Parameters": [
+      {
+        "Type": "mat3x4",
+        "Name": "m"
+      }
+    ],
+    "Description": "Returns a matrix that is the transpose of m.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_transpose"
+  },
+  {
+    "ReturnType": "float",
+    "Name": "determinant",
+    "Parameters": [
+      {
+        "Type": "mat2",
+        "Name": "m"
+      }
+    ],
+    "Description": "Returns the determinant of m.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_determinant"
+  },
+  {
+    "ReturnType": "float",
+    "Name": "determinant",
+    "Parameters": [
+      {
+        "Type": "mat3",
+        "Name": "m"
+      }
+    ],
+    "Description": "Returns the determinant of m.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_determinant"
+  },
+  {
+    "ReturnType": "float",
+    "Name": "determinant",
+    "Parameters": [
+      {
+        "Type": "mat4",
+        "Name": "m"
+      }
+    ],
+    "Description": "Returns the determinant of m.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_determinant"
+  },
+  {
+    "ReturnType": "mat2",
+    "Name": "inverse",
+    "Parameters": [
+      {
+        "Type": "mat2",
+        "Name": "m"
+      }
+    ],
+    "Description": "Returns a matrix that is the inverse of m.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_inverse"
+  },
+  {
+    "ReturnType": "mat3",
+    "Name": "inverse",
+    "Parameters": [
+      {
+        "Type": "mat3",
+        "Name": "m"
+      }
+    ],
+    "Description": "Returns a matrix that is the inverse of m.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_inverse"
+  },
+  {
+    "ReturnType": "mat4",
+    "Name": "inverse",
+    "Parameters": [
+      {
+        "Type": "mat4",
+        "Name": "m"
+      }
+    ],
+    "Description": "Returns a matrix that is the inverse of m.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_inverse"
+  },
+  {
+    "ReturnType": "bvec",
+    "Name": "lessThan",
+    "Parameters": [
+      {
+        "Type": "vec",
+        "Name": "x"
+      },
+      {
+        "Type": "vec",
+        "Name": "y"
+      }
+    ],
+    "Description": "Returns the component-wise compare of x \u003C y.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_lessthan"
+  },
+  {
+    "ReturnType": "bvec",
+    "Name": "lessThan",
+    "Parameters": [
+      {
+        "Type": "ivec",
+        "Name": "x"
+      },
+      {
+        "Type": "ivec",
+        "Name": "y"
+      }
+    ],
+    "Description": "Returns the component-wise compare of x \u003C y.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_lessthan"
+  },
+  {
+    "ReturnType": "bvec",
+    "Name": "lessThan",
+    "Parameters": [
+      {
+        "Type": "uvec",
+        "Name": "x"
+      },
+      {
+        "Type": "uvec",
+        "Name": "y"
+      }
+    ],
+    "Description": "Returns the component-wise compare of x \u003C y.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_lessthan"
+  },
+  {
+    "ReturnType": "bvec",
+    "Name": "lessThanEqual",
+    "Parameters": [
+      {
+        "Type": "vec",
+        "Name": "x"
+      },
+      {
+        "Type": "vec",
+        "Name": "y"
+      }
+    ],
+    "Description": "Returns the component-wise compare of x \u2264 y.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_lessthanequal"
+  },
+  {
+    "ReturnType": "bvec",
+    "Name": "lessThanEqual",
+    "Parameters": [
+      {
+        "Type": "ivec",
+        "Name": "x"
+      },
+      {
+        "Type": "ivec",
+        "Name": "y"
+      }
+    ],
+    "Description": "Returns the component-wise compare of x \u2264 y.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_lessthanequal"
+  },
+  {
+    "ReturnType": "bvec",
+    "Name": "lessThanEqual",
+    "Parameters": [
+      {
+        "Type": "uvec",
+        "Name": "x"
+      },
+      {
+        "Type": "uvec",
+        "Name": "y"
+      }
+    ],
+    "Description": "Returns the component-wise compare of x \u2264 y.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_lessthanequal"
+  },
+  {
+    "ReturnType": "bvec",
+    "Name": "greaterThan",
+    "Parameters": [
+      {
+        "Type": "vec",
+        "Name": "x"
+      },
+      {
+        "Type": "vec",
+        "Name": "y"
+      }
+    ],
+    "Description": "Returns the component-wise compare of x \u003E y.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_greaterthan"
+  },
+  {
+    "ReturnType": "bvec",
+    "Name": "greaterThan",
+    "Parameters": [
+      {
+        "Type": "ivec",
+        "Name": "x"
+      },
+      {
+        "Type": "ivec",
+        "Name": "y"
+      }
+    ],
+    "Description": "Returns the component-wise compare of x \u003E y.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_greaterthan"
+  },
+  {
+    "ReturnType": "bvec",
+    "Name": "greaterThan",
+    "Parameters": [
+      {
+        "Type": "uvec",
+        "Name": "x"
+      },
+      {
+        "Type": "uvec",
+        "Name": "y"
+      }
+    ],
+    "Description": "Returns the component-wise compare of x \u003E y.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_greaterthan"
+  },
+  {
+    "ReturnType": "bvec",
+    "Name": "greaterThanEqual",
+    "Parameters": [
+      {
+        "Type": "vec",
+        "Name": "x"
+      },
+      {
+        "Type": "vec",
+        "Name": "y"
+      }
+    ],
+    "Description": "Returns the component-wise compare of x \u2265 y.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_greaterthanequal"
+  },
+  {
+    "ReturnType": "bvec",
+    "Name": "greaterThanEqual",
+    "Parameters": [
+      {
+        "Type": "ivec",
+        "Name": "x"
+      },
+      {
+        "Type": "ivec",
+        "Name": "y"
+      }
+    ],
+    "Description": "Returns the component-wise compare of x \u2265 y.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_greaterthanequal"
+  },
+  {
+    "ReturnType": "bvec",
+    "Name": "greaterThanEqual",
+    "Parameters": [
+      {
+        "Type": "uvec",
+        "Name": "x"
+      },
+      {
+        "Type": "uvec",
+        "Name": "y"
+      }
+    ],
+    "Description": "Returns the component-wise compare of x \u2265 y.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_greaterthanequal"
+  },
+  {
+    "ReturnType": "bvec",
+    "Name": "equal",
+    "Parameters": [
+      {
+        "Type": "vec",
+        "Name": "x"
+      },
+      {
+        "Type": "vec",
+        "Name": "y"
+      }
+    ],
+    "Description": "Returns the component-wise compare of x == y.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_equal"
+  },
+  {
+    "ReturnType": "bvec",
+    "Name": "equal",
+    "Parameters": [
+      {
+        "Type": "ivec",
+        "Name": "x"
+      },
+      {
+        "Type": "ivec",
+        "Name": "y"
+      }
+    ],
+    "Description": "Returns the component-wise compare of x == y.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_equal"
+  },
+  {
+    "ReturnType": "bvec",
+    "Name": "equal",
+    "Parameters": [
+      {
+        "Type": "uvec",
+        "Name": "x"
+      },
+      {
+        "Type": "uvec",
+        "Name": "y"
+      }
+    ],
+    "Description": "Returns the component-wise compare of x == y.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_equal"
+  },
+  {
+    "ReturnType": "bvec",
+    "Name": "equal",
+    "Parameters": [
+      {
+        "Type": "bvec",
+        "Name": "x"
+      },
+      {
+        "Type": "bvec",
+        "Name": "y"
+      }
+    ],
+    "Description": "Returns the component-wise compare of x == y.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_equal"
+  },
+  {
+    "ReturnType": "bvec",
+    "Name": "notEqual",
+    "Parameters": [
+      {
+        "Type": "vec",
+        "Name": "x"
+      },
+      {
+        "Type": "vec",
+        "Name": "y"
+      }
+    ],
+    "Description": "Returns the component-wise compare of x \u2260 y.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_notequal"
+  },
+  {
+    "ReturnType": "bvec",
+    "Name": "notEqual",
+    "Parameters": [
+      {
+        "Type": "ivec",
+        "Name": "x"
+      },
+      {
+        "Type": "ivec",
+        "Name": "y"
+      }
+    ],
+    "Description": "Returns the component-wise compare of x \u2260 y.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_notequal"
+  },
+  {
+    "ReturnType": "bvec",
+    "Name": "notEqual",
+    "Parameters": [
+      {
+        "Type": "uvec",
+        "Name": "x"
+      },
+      {
+        "Type": "uvec",
+        "Name": "y"
+      }
+    ],
+    "Description": "Returns the component-wise compare of x \u2260 y.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_notequal"
+  },
+  {
+    "ReturnType": "bvec",
+    "Name": "notEqual",
+    "Parameters": [
+      {
+        "Type": "bvec",
+        "Name": "x"
+      },
+      {
+        "Type": "bvec",
+        "Name": "y"
+      }
+    ],
+    "Description": "Returns the component-wise compare of x \u2260 y.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_notequal"
+  },
+  {
+    "ReturnType": "bool",
+    "Name": "any",
+    "Parameters": [
+      {
+        "Type": "bvec",
+        "Name": "x"
+      }
+    ],
+    "Description": "Returns true if any component of x is true.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_any"
+  },
+  {
+    "ReturnType": "bool",
+    "Name": "all",
+    "Parameters": [
+      {
+        "Type": "bvec",
+        "Name": "x"
+      }
+    ],
+    "Description": "Returns true only if all components of x are true.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_all"
+  },
+  {
+    "ReturnType": "bvec",
+    "Name": "not",
+    "Parameters": [
+      {
+        "Type": "bvec",
+        "Name": "x"
+      }
+    ],
+    "Description": "Returns the component-wise logical complement of x.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_not"
+  },
+  {
+    "ReturnType": "genUType",
+    "Name": "uaddCarry",
+    "Parameters": [
+      {
+        "Type": "genUType",
+        "Name": "x"
+      },
+      {
+        "Type": "genUType",
+        "Name": "y"
+      },
+      {
+        "Type": "genUType",
+        "Name": "carry"
+      }
+    ],
+    "Description": "Adds 32-bit unsigned integers x and y, returning the sum modulo 232.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_uaddcarry"
+  },
+  {
+    "ReturnType": "genUType",
+    "Name": "usubBorrow",
+    "Parameters": [
+      {
+        "Type": "genUType",
+        "Name": "x"
+      },
+      {
+        "Type": "genUType",
+        "Name": "y"
+      },
+      {
+        "Type": "genUType",
+        "Name": "borrow"
+      }
+    ],
+    "Description": "Subtracts the 32-bit unsigned integer y from x, returning the difference if non-negative, or\n232 plus the difference otherwise.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_usubborrow"
+  },
+  {
+    "ReturnType": "genIType",
+    "Name": "bitfieldExtract",
+    "Parameters": [
+      {
+        "Type": "genIType",
+        "Name": "value"
+      },
+      {
+        "Type": "int",
+        "Name": "offset"
+      },
+      {
+        "Type": "int",
+        "Name": "bits"
+      }
+    ],
+    "Description": "Extracts bits [offset, offset \u002B bits - 1] from value, returning them in the least\nsignificant bits of the result.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_bitfieldextract"
+  },
+  {
+    "ReturnType": "genUType",
+    "Name": "bitfieldExtract",
+    "Parameters": [
+      {
+        "Type": "genUType",
+        "Name": "value"
+      },
+      {
+        "Type": "int",
+        "Name": "offset"
+      },
+      {
+        "Type": "int",
+        "Name": "bits"
+      }
+    ],
+    "Description": "Extracts bits [offset, offset \u002B bits - 1] from value, returning them in the least\nsignificant bits of the result.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_bitfieldextract"
+  },
+  {
+    "ReturnType": "genIType",
+    "Name": "bitfieldInsert",
+    "Parameters": [
+      {
+        "Type": "genIType",
+        "Name": "base"
+      },
+      {
+        "Type": "genIType",
+        "Name": "insert"
+      },
+      {
+        "Type": "int",
+        "Name": "offset"
+      },
+      {
+        "Type": "int",
+        "Name": "bits"
+      }
+    ],
+    "Description": "Inserts the bits least significant bits of insert into base.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_bitfieldinsert"
+  },
+  {
+    "ReturnType": "genUType",
+    "Name": "bitfieldInsert",
+    "Parameters": [
+      {
+        "Type": "genUType",
+        "Name": "base"
+      },
+      {
+        "Type": "genUType",
+        "Name": "insert"
+      },
+      {
+        "Type": "int",
+        "Name": "offset"
+      },
+      {
+        "Type": "int",
+        "Name": "bits"
+      }
+    ],
+    "Description": "Inserts the bits least significant bits of insert into base.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_bitfieldinsert"
+  },
+  {
+    "ReturnType": "genIType",
+    "Name": "bitfieldReverse",
+    "Parameters": [
+      {
+        "Type": "genIType",
+        "Name": "value"
+      }
+    ],
+    "Description": "Reverses the bits of value.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_bitfieldreverse"
+  },
+  {
+    "ReturnType": "genUType",
+    "Name": "bitfieldReverse",
+    "Parameters": [
+      {
+        "Type": "genUType",
+        "Name": "value"
+      }
+    ],
+    "Description": "Reverses the bits of value.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_bitfieldreverse"
+  },
+  {
+    "ReturnType": "genIType",
+    "Name": "bitCount",
+    "Parameters": [
+      {
+        "Type": "genIType",
+        "Name": "value"
+      }
+    ],
+    "Description": "Returns the number of one bits in the binary representation of value.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_bitcount"
+  },
+  {
+    "ReturnType": "genIType",
+    "Name": "bitCount",
+    "Parameters": [
+      {
+        "Type": "genUType",
+        "Name": "value"
+      }
+    ],
+    "Description": "Returns the number of one bits in the binary representation of value.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_bitcount"
+  },
+  {
+    "ReturnType": "genIType",
+    "Name": "findLSB",
+    "Parameters": [
+      {
+        "Type": "genIType",
+        "Name": "value"
+      }
+    ],
+    "Description": "Returns the bit number of the least significant one bit in the binary representation of value.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_findlsb"
+  },
+  {
+    "ReturnType": "genIType",
+    "Name": "findLSB",
+    "Parameters": [
+      {
+        "Type": "genUType",
+        "Name": "value"
+      }
+    ],
+    "Description": "Returns the bit number of the least significant one bit in the binary representation of value.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_findlsb"
+  },
+  {
+    "ReturnType": "genIType",
+    "Name": "findMSB",
+    "Parameters": [
+      {
+        "Type": "genIType",
+        "Name": "value"
+      }
+    ],
+    "Description": "Returns the bit number of the most significant bit in the binary representation of value.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_findmsb"
+  },
+  {
+    "ReturnType": "genIType",
+    "Name": "findMSB",
+    "Parameters": [
+      {
+        "Type": "genUType",
+        "Name": "value"
+      }
+    ],
+    "Description": "Returns the bit number of the most significant bit in the binary representation of value.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_findmsb"
+  },
+  {
+    "ReturnType": "uint",
+    "Name": "atomicCounterIncrement",
+    "Parameters": [
+      {
+        "Type": "atomic_uint",
+        "Name": "c"
+      }
+    ],
+    "Description": "Atomically",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_atomiccounterincrement"
+  },
+  {
+    "ReturnType": "uint",
+    "Name": "atomicCounterDecrement",
+    "Parameters": [
+      {
+        "Type": "atomic_uint",
+        "Name": "c"
+      }
+    ],
+    "Description": "Atomically",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_atomiccounterdecrement"
+  },
+  {
+    "ReturnType": "uint",
+    "Name": "atomicCounter",
+    "Parameters": [
+      {
+        "Type": "atomic_uint",
+        "Name": "c"
+      }
+    ],
+    "Description": "Returns the counter value for c.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_atomiccounter"
+  },
+  {
+    "ReturnType": "uint",
+    "Name": "atomicCounterAdd",
+    "Parameters": [
+      {
+        "Type": "atomic_uint",
+        "Name": "c"
+      },
+      {
+        "Type": "uint",
+        "Name": "data"
+      }
+    ],
+    "Description": "Atomically",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_atomiccounteradd"
+  },
+  {
+    "ReturnType": "uint",
+    "Name": "atomicCounterSubtract",
+    "Parameters": [
+      {
+        "Type": "atomic_uint",
+        "Name": "c"
+      },
+      {
+        "Type": "uint",
+        "Name": "data"
+      }
+    ],
+    "Description": "Atomically",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_atomiccountersubtract"
+  },
+  {
+    "ReturnType": "uint",
+    "Name": "atomicCounterMin",
+    "Parameters": [
+      {
+        "Type": "atomic_uint",
+        "Name": "c"
+      },
+      {
+        "Type": "uint",
+        "Name": "data"
+      }
+    ],
+    "Description": "Atomically",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_atomiccountermin"
+  },
+  {
+    "ReturnType": "uint",
+    "Name": "atomicCounterMax",
+    "Parameters": [
+      {
+        "Type": "atomic_uint",
+        "Name": "c"
+      },
+      {
+        "Type": "uint",
+        "Name": "data"
+      }
+    ],
+    "Description": "Atomically",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_atomiccountermax"
+  },
+  {
+    "ReturnType": "uint",
+    "Name": "atomicCounterAnd",
+    "Parameters": [
+      {
+        "Type": "atomic_uint",
+        "Name": "c"
+      },
+      {
+        "Type": "uint",
+        "Name": "data"
+      }
+    ],
+    "Description": "Atomically",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_atomiccounterand"
+  },
+  {
+    "ReturnType": "uint",
+    "Name": "atomicCounterOr",
+    "Parameters": [
+      {
+        "Type": "atomic_uint",
+        "Name": "c"
+      },
+      {
+        "Type": "uint",
+        "Name": "data"
+      }
+    ],
+    "Description": "Atomically",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_atomiccounteror"
+  },
+  {
+    "ReturnType": "uint",
+    "Name": "atomicCounterXor",
+    "Parameters": [
+      {
+        "Type": "atomic_uint",
+        "Name": "c"
+      },
+      {
+        "Type": "uint",
+        "Name": "data"
+      }
+    ],
+    "Description": "Atomically",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_atomiccounterxor"
+  },
+  {
+    "ReturnType": "uint",
+    "Name": "atomicCounterExchange",
+    "Parameters": [
+      {
+        "Type": "atomic_uint",
+        "Name": "c"
+      },
+      {
+        "Type": "uint",
+        "Name": "data"
+      }
+    ],
+    "Description": "Atomically",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_atomiccounterexchange"
+  },
+  {
+    "ReturnType": "uint",
+    "Name": "atomicCounterCompSwap",
+    "Parameters": [
+      {
+        "Type": "atomic_uint",
+        "Name": "c"
+      },
+      {
+        "Type": "uint",
+        "Name": "compare"
+      },
+      {
+        "Type": "uint",
+        "Name": "data"
+      }
+    ],
+    "Description": "Atomically",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_atomiccountercompswap"
+  },
+  {
+    "ReturnType": "uint",
+    "Name": "atomicAdd",
+    "Parameters": [
+      {
+        "Type": "uint",
+        "Name": "mem"
+      },
+      {
+        "Type": "uint",
+        "Name": "data"
+      }
+    ],
+    "Description": "Computes a new value by adding the value of data to the contents mem.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_atomicadd"
+  },
+  {
+    "ReturnType": "int",
+    "Name": "atomicAdd",
+    "Parameters": [
+      {
+        "Type": "int",
+        "Name": "mem"
+      },
+      {
+        "Type": "int",
+        "Name": "data"
+      }
+    ],
+    "Description": "Computes a new value by adding the value of data to the contents mem.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_atomicadd"
+  },
+  {
+    "ReturnType": "uint",
+    "Name": "atomicMin",
+    "Parameters": [
+      {
+        "Type": "uint",
+        "Name": "mem"
+      },
+      {
+        "Type": "uint",
+        "Name": "data"
+      }
+    ],
+    "Description": "Computes a new value by taking the minimum of the value of data and the contents of mem.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_atomicmin"
+  },
+  {
+    "ReturnType": "int",
+    "Name": "atomicMin",
+    "Parameters": [
+      {
+        "Type": "int",
+        "Name": "mem"
+      },
+      {
+        "Type": "int",
+        "Name": "data"
+      }
+    ],
+    "Description": "Computes a new value by taking the minimum of the value of data and the contents of mem.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_atomicmin"
+  },
+  {
+    "ReturnType": "uint",
+    "Name": "atomicMax",
+    "Parameters": [
+      {
+        "Type": "uint",
+        "Name": "mem"
+      },
+      {
+        "Type": "uint",
+        "Name": "data"
+      }
+    ],
+    "Description": "Computes a new value by taking the maximum of the value of data and the contents of mem.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_atomicmax"
+  },
+  {
+    "ReturnType": "int",
+    "Name": "atomicMax",
+    "Parameters": [
+      {
+        "Type": "int",
+        "Name": "mem"
+      },
+      {
+        "Type": "int",
+        "Name": "data"
+      }
+    ],
+    "Description": "Computes a new value by taking the maximum of the value of data and the contents of mem.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_atomicmax"
+  },
+  {
+    "ReturnType": "uint",
+    "Name": "atomicAnd",
+    "Parameters": [
+      {
+        "Type": "uint",
+        "Name": "mem"
+      },
+      {
+        "Type": "uint",
+        "Name": "data"
+      }
+    ],
+    "Description": "Computes a new value by performing a bit-wise AND of the value of data and the contents of mem.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_atomicand"
+  },
+  {
+    "ReturnType": "int",
+    "Name": "atomicAnd",
+    "Parameters": [
+      {
+        "Type": "int",
+        "Name": "mem"
+      },
+      {
+        "Type": "int",
+        "Name": "data"
+      }
+    ],
+    "Description": "Computes a new value by performing a bit-wise AND of the value of data and the contents of mem.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_atomicand"
+  },
+  {
+    "ReturnType": "uint",
+    "Name": "atomicOr",
+    "Parameters": [
+      {
+        "Type": "uint",
+        "Name": "mem"
+      },
+      {
+        "Type": "uint",
+        "Name": "data"
+      }
+    ],
+    "Description": "Computes a new value by performing a bit-wise OR of the value of data and the contents of mem.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_atomicor"
+  },
+  {
+    "ReturnType": "int",
+    "Name": "atomicOr",
+    "Parameters": [
+      {
+        "Type": "int",
+        "Name": "mem"
+      },
+      {
+        "Type": "int",
+        "Name": "data"
+      }
+    ],
+    "Description": "Computes a new value by performing a bit-wise OR of the value of data and the contents of mem.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_atomicor"
+  },
+  {
+    "ReturnType": "uint",
+    "Name": "atomicXor",
+    "Parameters": [
+      {
+        "Type": "uint",
+        "Name": "mem"
+      },
+      {
+        "Type": "uint",
+        "Name": "data"
+      }
+    ],
+    "Description": "Computes a new value by performing a bit-wise EXCLUSIVE OR of the value of data and the contents\nof mem.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_atomicxor"
+  },
+  {
+    "ReturnType": "int",
+    "Name": "atomicXor",
+    "Parameters": [
+      {
+        "Type": "int",
+        "Name": "mem"
+      },
+      {
+        "Type": "int",
+        "Name": "data"
+      }
+    ],
+    "Description": "Computes a new value by performing a bit-wise EXCLUSIVE OR of the value of data and the contents\nof mem.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_atomicxor"
+  },
+  {
+    "ReturnType": "uint",
+    "Name": "atomicExchange",
+    "Parameters": [
+      {
+        "Type": "uint",
+        "Name": "mem"
+      },
+      {
+        "Type": "uint",
+        "Name": "data"
+      }
+    ],
+    "Description": "Computes a new value by simply copying the value of data.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_atomicexchange"
+  },
+  {
+    "ReturnType": "int",
+    "Name": "atomicExchange",
+    "Parameters": [
+      {
+        "Type": "int",
+        "Name": "mem"
+      },
+      {
+        "Type": "int",
+        "Name": "data"
+      }
+    ],
+    "Description": "Computes a new value by simply copying the value of data.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_atomicexchange"
+  },
+  {
+    "ReturnType": "uint",
+    "Name": "atomicCompSwap",
+    "Parameters": [
+      {
+        "Type": "uint",
+        "Name": "mem"
+      },
+      {
+        "Type": "uint",
+        "Name": "compare"
+      },
+      {
+        "Type": "uint",
+        "Name": "data"
+      }
+    ],
+    "Description": "Compares the value of compare and the contents of mem. If the values are equal, the new value\nis given by data; otherwise, it is taken from the original contents of mem.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_atomiccompswap"
+  },
+  {
+    "ReturnType": "int",
+    "Name": "atomicCompSwap",
+    "Parameters": [
+      {
+        "Type": "int",
+        "Name": "mem"
+      },
+      {
+        "Type": "int",
+        "Name": "compare"
+      },
+      {
+        "Type": "int",
+        "Name": "data"
+      }
+    ],
+    "Description": "Compares the value of compare and the contents of mem. If the values are equal, the new value\nis given by data; otherwise, it is taken from the original contents of mem.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_atomiccompswap"
+  },
+  {
+    "ReturnType": "int",
+    "Name": "imageSize",
+    "Parameters": [
+      {
+        "Type": "readonly writeonly gimage1D image",
+        "Name": ""
+      }
+    ],
+    "Description": "Returns the dimensions of the image bound to image. For arrayed images, the last component of the\nreturn value will hold the size of the array. Cube images only return the dimensions of one face,\nand the number of cubes in the cube map array, if arrayed.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_imagesize"
+  },
+  {
+    "ReturnType": "ivec2",
+    "Name": "imageSize",
+    "Parameters": [
+      {
+        "Type": "readonly writeonly gimage2D image",
+        "Name": ""
+      }
+    ],
+    "Description": "Returns the dimensions of the image bound to image. For arrayed images, the last component of the\nreturn value will hold the size of the array. Cube images only return the dimensions of one face,\nand the number of cubes in the cube map array, if arrayed.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_imagesize"
+  },
+  {
+    "ReturnType": "ivec3",
+    "Name": "imageSize",
+    "Parameters": [
+      {
+        "Type": "readonly writeonly gimage3D image",
+        "Name": ""
+      }
+    ],
+    "Description": "Returns the dimensions of the image bound to image. For arrayed images, the last component of the\nreturn value will hold the size of the array. Cube images only return the dimensions of one face,\nand the number of cubes in the cube map array, if arrayed.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_imagesize"
+  },
+  {
+    "ReturnType": "ivec2",
+    "Name": "imageSize",
+    "Parameters": [
+      {
+        "Type": "readonly writeonly gimageCube image",
+        "Name": ""
+      }
+    ],
+    "Description": "Returns the dimensions of the image bound to image. For arrayed images, the last component of the\nreturn value will hold the size of the array. Cube images only return the dimensions of one face,\nand the number of cubes in the cube map array, if arrayed.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_imagesize"
+  },
+  {
+    "ReturnType": "ivec3",
+    "Name": "imageSize",
+    "Parameters": [
+      {
+        "Type": "readonly writeonly gimageCubeArray image",
+        "Name": ""
+      }
+    ],
+    "Description": "Returns the dimensions of the image bound to image. For arrayed images, the last component of the\nreturn value will hold the size of the array. Cube images only return the dimensions of one face,\nand the number of cubes in the cube map array, if arrayed.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_imagesize"
+  },
+  {
+    "ReturnType": "ivec3",
+    "Name": "imageSize",
+    "Parameters": [
+      {
+        "Type": "readonly writeonly gimage2DArray image",
+        "Name": ""
+      }
+    ],
+    "Description": "Returns the dimensions of the image bound to image. For arrayed images, the last component of the\nreturn value will hold the size of the array. Cube images only return the dimensions of one face,\nand the number of cubes in the cube map array, if arrayed.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_imagesize"
+  },
+  {
+    "ReturnType": "ivec2",
+    "Name": "imageSize",
+    "Parameters": [
+      {
+        "Type": "readonly writeonly gimage2DRect image",
+        "Name": ""
+      }
+    ],
+    "Description": "Returns the dimensions of the image bound to image. For arrayed images, the last component of the\nreturn value will hold the size of the array. Cube images only return the dimensions of one face,\nand the number of cubes in the cube map array, if arrayed.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_imagesize"
+  },
+  {
+    "ReturnType": "ivec2",
+    "Name": "imageSize",
+    "Parameters": [
+      {
+        "Type": "readonly writeonly gimage1DArray image",
+        "Name": ""
+      }
+    ],
+    "Description": "Returns the dimensions of the image bound to image. For arrayed images, the last component of the\nreturn value will hold the size of the array. Cube images only return the dimensions of one face,\nand the number of cubes in the cube map array, if arrayed.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_imagesize"
+  },
+  {
+    "ReturnType": "ivec2",
+    "Name": "imageSize",
+    "Parameters": [
+      {
+        "Type": "readonly writeonly gimage2DMS image",
+        "Name": ""
+      }
+    ],
+    "Description": "Returns the dimensions of the image bound to image. For arrayed images, the last component of the\nreturn value will hold the size of the array. Cube images only return the dimensions of one face,\nand the number of cubes in the cube map array, if arrayed.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_imagesize"
+  },
+  {
+    "ReturnType": "ivec3",
+    "Name": "imageSize",
+    "Parameters": [
+      {
+        "Type": "readonly writeonly gimage2DMSArray image",
+        "Name": ""
+      }
+    ],
+    "Description": "Returns the dimensions of the image bound to image. For arrayed images, the last component of the\nreturn value will hold the size of the array. Cube images only return the dimensions of one face,\nand the number of cubes in the cube map array, if arrayed.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_imagesize"
+  },
+  {
+    "ReturnType": "int",
+    "Name": "imageSize",
+    "Parameters": [
+      {
+        "Type": "readonly writeonly gimageBuffer image",
+        "Name": ""
+      }
+    ],
+    "Description": "Returns the dimensions of the image bound to image. For arrayed images, the last component of the\nreturn value will hold the size of the array. Cube images only return the dimensions of one face,\nand the number of cubes in the cube map array, if arrayed.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_imagesize"
+  },
+  {
+    "ReturnType": "int",
+    "Name": "imageSamples",
+    "Parameters": [
+      {
+        "Type": "readonly writeonly gimage2DMS image",
+        "Name": ""
+      }
+    ],
+    "Description": "Returns the number of samples of the image bound to image.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_imagesamples"
+  },
+  {
+    "ReturnType": "int",
+    "Name": "imageSamples",
+    "Parameters": [
+      {
+        "Type": "readonly writeonly gimage2DMSArray image",
+        "Name": ""
+      }
+    ],
+    "Description": "Returns the number of samples of the image bound to image.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_imagesamples"
+  },
+  {
+    "ReturnType": "gvec4",
+    "Name": "imageLoad",
+    "Parameters": [
+      {
+        "Type": "readonly",
+        "Name": "IMAGE_PARAMS"
+      }
+    ],
+    "Description": "Loads the texel at the coordinate P from the image unit image (in IMAGE_PARAMS).",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_imageload"
+  },
+  {
+    "ReturnType": "void",
+    "Name": "imageStore",
+    "Parameters": [
+      {
+        "Type": "writeonly",
+        "Name": "IMAGE_PARAMS"
+      },
+      {
+        "Type": "gvec4",
+        "Name": "data"
+      }
+    ],
+    "Description": "Stores data into the texel at the coordinate P from the image specified by image.\nFor multisample stores, the sample number is given by sample. When image, P, and sample\nidentify a valid texel, the bits used to represent data are converted to the format of the image\nunit in the manner described in section\n8.26\n\u201CTexture Image Loads and Stores\u201D of the OpenGL Specification and stored to the specified\ntexel.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_imagestore"
+  },
+  {
+    "ReturnType": "uint",
+    "Name": "imageAtomicAdd",
+    "Parameters": [
+      {
+        "Type": "IMAGE_PARAMS",
+        "Name": ""
+      },
+      {
+        "Type": "uint",
+        "Name": "data"
+      }
+    ],
+    "Description": "Computes a new value by adding the value of data to the contents of the selected texel.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_imageatomicadd"
+  },
+  {
+    "ReturnType": "int",
+    "Name": "imageAtomicAdd",
+    "Parameters": [
+      {
+        "Type": "IMAGE_PARAMS",
+        "Name": ""
+      },
+      {
+        "Type": "int",
+        "Name": "data"
+      }
+    ],
+    "Description": "Computes a new value by adding the value of data to the contents of the selected texel.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_imageatomicadd"
+  },
+  {
+    "ReturnType": "uint",
+    "Name": "imageAtomicMin",
+    "Parameters": [
+      {
+        "Type": "IMAGE_PARAMS",
+        "Name": ""
+      },
+      {
+        "Type": "uint",
+        "Name": "data"
+      }
+    ],
+    "Description": "Computes a new value by taking the minimum of the value of data and the contents of the selected\ntexel.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_imageatomicmin"
+  },
+  {
+    "ReturnType": "int",
+    "Name": "imageAtomicMin",
+    "Parameters": [
+      {
+        "Type": "IMAGE_PARAMS",
+        "Name": ""
+      },
+      {
+        "Type": "int",
+        "Name": "data"
+      }
+    ],
+    "Description": "Computes a new value by taking the minimum of the value of data and the contents of the selected\ntexel.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_imageatomicmin"
+  },
+  {
+    "ReturnType": "uint",
+    "Name": "imageAtomicMax",
+    "Parameters": [
+      {
+        "Type": "IMAGE_PARAMS",
+        "Name": ""
+      },
+      {
+        "Type": "uint",
+        "Name": "data"
+      }
+    ],
+    "Description": "Computes a new value by taking the maximum of the value data and the contents of the selected\ntexel.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_imageatomicmax"
+  },
+  {
+    "ReturnType": "int",
+    "Name": "imageAtomicMax",
+    "Parameters": [
+      {
+        "Type": "IMAGE_PARAMS",
+        "Name": ""
+      },
+      {
+        "Type": "int",
+        "Name": "data"
+      }
+    ],
+    "Description": "Computes a new value by taking the maximum of the value data and the contents of the selected\ntexel.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_imageatomicmax"
+  },
+  {
+    "ReturnType": "uint",
+    "Name": "imageAtomicAnd",
+    "Parameters": [
+      {
+        "Type": "IMAGE_PARAMS",
+        "Name": ""
+      },
+      {
+        "Type": "uint",
+        "Name": "data"
+      }
+    ],
+    "Description": "Computes a new value by performing a bit-wise AND of the value of data and the contents of the\nselected texel.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_imageatomicand"
+  },
+  {
+    "ReturnType": "int",
+    "Name": "imageAtomicAnd",
+    "Parameters": [
+      {
+        "Type": "IMAGE_PARAMS",
+        "Name": ""
+      },
+      {
+        "Type": "int",
+        "Name": "data"
+      }
+    ],
+    "Description": "Computes a new value by performing a bit-wise AND of the value of data and the contents of the\nselected texel.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_imageatomicand"
+  },
+  {
+    "ReturnType": "uint",
+    "Name": "imageAtomicOr",
+    "Parameters": [
+      {
+        "Type": "IMAGE_PARAMS",
+        "Name": ""
+      },
+      {
+        "Type": "uint",
+        "Name": "data"
+      }
+    ],
+    "Description": "Computes a new value by performing a bit-wise OR of the value of data and the contents of the\nselected texel.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_imageatomicor"
+  },
+  {
+    "ReturnType": "int",
+    "Name": "imageAtomicOr",
+    "Parameters": [
+      {
+        "Type": "IMAGE_PARAMS",
+        "Name": ""
+      },
+      {
+        "Type": "int",
+        "Name": "data"
+      }
+    ],
+    "Description": "Computes a new value by performing a bit-wise OR of the value of data and the contents of the\nselected texel.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_imageatomicor"
+  },
+  {
+    "ReturnType": "uint",
+    "Name": "imageAtomicXor",
+    "Parameters": [
+      {
+        "Type": "IMAGE_PARAMS",
+        "Name": ""
+      },
+      {
+        "Type": "uint",
+        "Name": "data"
+      }
+    ],
+    "Description": "Computes a new value by performing a bit-wise EXCLUSIVE OR of the value of data and the contents\nof the selected texel.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_imageatomicxor"
+  },
+  {
+    "ReturnType": "int",
+    "Name": "imageAtomicXor",
+    "Parameters": [
+      {
+        "Type": "IMAGE_PARAMS",
+        "Name": ""
+      },
+      {
+        "Type": "int",
+        "Name": "data"
+      }
+    ],
+    "Description": "Computes a new value by performing a bit-wise EXCLUSIVE OR of the value of data and the contents\nof the selected texel.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_imageatomicxor"
+  },
+  {
+    "ReturnType": "uint",
+    "Name": "imageAtomicExchange",
+    "Parameters": [
+      {
+        "Type": "IMAGE_PARAMS",
+        "Name": ""
+      },
+      {
+        "Type": "uint",
+        "Name": "data"
+      }
+    ],
+    "Description": "Computes a new value by simply copying the value of data.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_imageatomicexchange"
+  },
+  {
+    "ReturnType": "int",
+    "Name": "imageAtomicExchange",
+    "Parameters": [
+      {
+        "Type": "IMAGE_PARAMS",
+        "Name": ""
+      },
+      {
+        "Type": "int",
+        "Name": "data"
+      }
+    ],
+    "Description": "Computes a new value by simply copying the value of data.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_imageatomicexchange"
+  },
+  {
+    "ReturnType": "float",
+    "Name": "imageAtomicExchange",
+    "Parameters": [
+      {
+        "Type": "IMAGE_PARAMS",
+        "Name": ""
+      },
+      {
+        "Type": "float",
+        "Name": "data"
+      }
+    ],
+    "Description": "Computes a new value by simply copying the value of data.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_imageatomicexchange"
+  },
+  {
+    "ReturnType": "uint",
+    "Name": "imageAtomicCompSwap",
+    "Parameters": [
+      {
+        "Type": "IMAGE_PARAMS",
+        "Name": ""
+      },
+      {
+        "Type": "uint",
+        "Name": "compare"
+      },
+      {
+        "Type": "uint",
+        "Name": "data"
+      }
+    ],
+    "Description": "Compares the value of compare and the contents of the selected texel. If the values are equal,\nthe new value is given by data; otherwise, it is taken from the original value loaded from the\ntexel.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_imageatomiccompswap"
+  },
+  {
+    "ReturnType": "int",
+    "Name": "imageAtomicCompSwap",
+    "Parameters": [
+      {
+        "Type": "IMAGE_PARAMS",
+        "Name": ""
+      },
+      {
+        "Type": "int",
+        "Name": "compare"
+      },
+      {
+        "Type": "int",
+        "Name": "data"
+      }
+    ],
+    "Description": "Compares the value of compare and the contents of the selected texel. If the values are equal,\nthe new value is given by data; otherwise, it is taken from the original value loaded from the\ntexel.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_imageatomiccompswap"
+  },
+  {
+    "ReturnType": "void",
+    "Name": "EmitStreamVertex",
+    "Parameters": [
+      {
+        "Type": "int",
+        "Name": "stream"
+      }
+    ],
+    "Description": "Emits the current values of output variables to the current output primitive on stream stream.\nThe argument to stream must be a constant integral expression. On return from this call, the\nvalues of all output variables are undefined.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_emitstreamvertex"
+  },
+  {
+    "ReturnType": "void",
+    "Name": "EndStreamPrimitive",
+    "Parameters": [
+      {
+        "Type": "int",
+        "Name": "stream"
+      }
+    ],
+    "Description": "Completes the current output primitive on stream stream and starts a new one. The argument to\nstream must be a constant integral expression. No vertex is emitted.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_endstreamprimitive"
+  },
+  {
+    "ReturnType": "void",
+    "Name": "EmitVertex",
+    "Parameters": [],
+    "Description": "Emits the current values of output variables to the current output primitive.\nWhen multiple output streams are supported, this is equivalent to calling EmitStreamVertex(0).",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_emitvertex"
+  },
+  {
+    "ReturnType": "void",
+    "Name": "EndPrimitive",
+    "Parameters": [],
+    "Description": "Completes the current output primitive and starts a new one.\nWhen multiple output streams are supported, this is equivalent to calling EndStreamPrimitive(0).",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_endprimitive"
+  },
+  {
+    "ReturnType": "genFType",
+    "Name": "dFdx",
+    "Parameters": [
+      {
+        "Type": "genFType",
+        "Name": "p"
+      }
+    ],
+    "Description": "Returns either dFdxFine(p) or dFdxCoarse(p), based on implementation choice, presumably\nwhichever is the faster, or by whichever is selected in the API through quality-versus-speed hints.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_dfdx"
+  },
+  {
+    "ReturnType": "genFType",
+    "Name": "dFdy",
+    "Parameters": [
+      {
+        "Type": "genFType",
+        "Name": "p"
+      }
+    ],
+    "Description": "Returns either dFdyFine(p) or dFdyCoarse(p), based on implementation choice, presumably\nwhichever is the faster, or by whichever is selected in the API through quality-versus-speed hints.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_dfdy"
+  },
+  {
+    "ReturnType": "genFType",
+    "Name": "dFdxFine",
+    "Parameters": [
+      {
+        "Type": "genFType",
+        "Name": "p"
+      }
+    ],
+    "Description": "Returns the partial derivative of p with respect to the window x coordinate. Will use local\ndifferencing based on the value of p for the current fragment and its immediate neighbor(s).",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_dfdxfine"
+  },
+  {
+    "ReturnType": "genFType",
+    "Name": "dFdyFine",
+    "Parameters": [
+      {
+        "Type": "genFType",
+        "Name": "p"
+      }
+    ],
+    "Description": "Returns the partial derivative of p with respect to the window y coordinate. Will use local\ndifferencing based on the value of p for the current fragment and its immediate neighbor(s).",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_dfdyfine"
+  },
+  {
+    "ReturnType": "genFType",
+    "Name": "dFdxCoarse",
+    "Parameters": [
+      {
+        "Type": "genFType",
+        "Name": "p"
+      }
+    ],
+    "Description": "Returns the partial derivative of p with respect to the window x coordinate. Will use local\ndifferencing based on the value of p for the current fragment\u2019s neighbors, and will possibly, but\nnot necessarily, include the value of p for the current fragment.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_dfdxcoarse"
+  },
+  {
+    "ReturnType": "genFType",
+    "Name": "dFdyCoarse",
+    "Parameters": [
+      {
+        "Type": "genFType",
+        "Name": "p"
+      }
+    ],
+    "Description": "Returns the partial derivative of p with respect to the window y coordinate. Will use local\ndifferencing based on the value of p for the current fragment\u2019s neighbors, and will possibly, but\nnot necessarily, include the value of p for the current fragment.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_dfdycoarse"
+  },
+  {
+    "ReturnType": "genFType",
+    "Name": "fwidth",
+    "Parameters": [
+      {
+        "Type": "genFType",
+        "Name": "p"
+      }
+    ],
+    "Description": "Returns abs(dFdx(p)) \u002B abs(dFdy(p)).",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_fwidth"
+  },
+  {
+    "ReturnType": "genFType",
+    "Name": "fwidthFine",
+    "Parameters": [
+      {
+        "Type": "genFType",
+        "Name": "p"
+      }
+    ],
+    "Description": "Returns abs(dFdxFine(p)) \u002B abs(dFdyFine(p)).",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_fwidthfine"
+  },
+  {
+    "ReturnType": "genFType",
+    "Name": "fwidthCoarse",
+    "Parameters": [
+      {
+        "Type": "genFType",
+        "Name": "p"
+      }
+    ],
+    "Description": "Returns abs(dFdxCoarse(p)) \u002B abs(dFdyCoarse(p)).",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_fwidthcoarse"
+  },
+  {
+    "ReturnType": "float",
+    "Name": "interpolateAtCentroid",
+    "Parameters": [
+      {
+        "Type": "float",
+        "Name": "interpolant"
+      }
+    ],
+    "Description": "Returns the value of the input interpolant sampled at a location inside both the pixel and the\nprimitive being processed. The value obtained would be the same value assigned to the input\nvariable if declared with the centroid qualifier.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_interpolateatcentroid"
+  },
+  {
+    "ReturnType": "vec2",
+    "Name": "interpolateAtCentroid",
+    "Parameters": [
+      {
+        "Type": "vec2",
+        "Name": "interpolant"
+      }
+    ],
+    "Description": "Returns the value of the input interpolant sampled at a location inside both the pixel and the\nprimitive being processed. The value obtained would be the same value assigned to the input\nvariable if declared with the centroid qualifier.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_interpolateatcentroid"
+  },
+  {
+    "ReturnType": "vec3",
+    "Name": "interpolateAtCentroid",
+    "Parameters": [
+      {
+        "Type": "vec3",
+        "Name": "interpolant"
+      }
+    ],
+    "Description": "Returns the value of the input interpolant sampled at a location inside both the pixel and the\nprimitive being processed. The value obtained would be the same value assigned to the input\nvariable if declared with the centroid qualifier.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_interpolateatcentroid"
+  },
+  {
+    "ReturnType": "vec4",
+    "Name": "interpolateAtCentroid",
+    "Parameters": [
+      {
+        "Type": "vec4",
+        "Name": "interpolant"
+      }
+    ],
+    "Description": "Returns the value of the input interpolant sampled at a location inside both the pixel and the\nprimitive being processed. The value obtained would be the same value assigned to the input\nvariable if declared with the centroid qualifier.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_interpolateatcentroid"
+  },
+  {
+    "ReturnType": "float",
+    "Name": "interpolateAtSample",
+    "Parameters": [
+      {
+        "Type": "float",
+        "Name": "interpolant"
+      },
+      {
+        "Type": "int",
+        "Name": "sample"
+      }
+    ],
+    "Description": "Returns the value of the input interpolant variable at the location of sample number sample.\nIf multisample buffers are not available, the input variable will be evaluated at the center of the\npixel. If sample sample does not exist, the position used to interpolate the input variable is undefined.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_interpolateatsample"
+  },
+  {
+    "ReturnType": "vec2",
+    "Name": "interpolateAtSample",
+    "Parameters": [
+      {
+        "Type": "vec2",
+        "Name": "interpolant"
+      },
+      {
+        "Type": "int",
+        "Name": "sample"
+      }
+    ],
+    "Description": "Returns the value of the input interpolant variable at the location of sample number sample.\nIf multisample buffers are not available, the input variable will be evaluated at the center of the\npixel. If sample sample does not exist, the position used to interpolate the input variable is undefined.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_interpolateatsample"
+  },
+  {
+    "ReturnType": "vec3",
+    "Name": "interpolateAtSample",
+    "Parameters": [
+      {
+        "Type": "vec3",
+        "Name": "interpolant"
+      },
+      {
+        "Type": "int",
+        "Name": "sample"
+      }
+    ],
+    "Description": "Returns the value of the input interpolant variable at the location of sample number sample.\nIf multisample buffers are not available, the input variable will be evaluated at the center of the\npixel. If sample sample does not exist, the position used to interpolate the input variable is undefined.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_interpolateatsample"
+  },
+  {
+    "ReturnType": "vec4",
+    "Name": "interpolateAtSample",
+    "Parameters": [
+      {
+        "Type": "vec4",
+        "Name": "interpolant"
+      },
+      {
+        "Type": "int",
+        "Name": "sample"
+      }
+    ],
+    "Description": "Returns the value of the input interpolant variable at the location of sample number sample.\nIf multisample buffers are not available, the input variable will be evaluated at the center of the\npixel. If sample sample does not exist, the position used to interpolate the input variable is undefined.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_interpolateatsample"
+  },
+  {
+    "ReturnType": "float",
+    "Name": "interpolateAtOffset",
+    "Parameters": [
+      {
+        "Type": "float",
+        "Name": "interpolant"
+      },
+      {
+        "Type": "vec2",
+        "Name": "offset"
+      }
+    ],
+    "Description": "Returns the value of the input interpolant variable sampled at an offset from the center of the\npixel specified by offset. The two floating-point components of offset, give the offset in\npixels in the x and y directions, respectively.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_interpolateatoffset"
+  },
+  {
+    "ReturnType": "vec2",
+    "Name": "interpolateAtOffset",
+    "Parameters": [
+      {
+        "Type": "vec2",
+        "Name": "interpolant"
+      },
+      {
+        "Type": "vec2",
+        "Name": "offset"
+      }
+    ],
+    "Description": "Returns the value of the input interpolant variable sampled at an offset from the center of the\npixel specified by offset. The two floating-point components of offset, give the offset in\npixels in the x and y directions, respectively.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_interpolateatoffset"
+  },
+  {
+    "ReturnType": "vec3",
+    "Name": "interpolateAtOffset",
+    "Parameters": [
+      {
+        "Type": "vec3",
+        "Name": "interpolant"
+      },
+      {
+        "Type": "vec2",
+        "Name": "offset"
+      }
+    ],
+    "Description": "Returns the value of the input interpolant variable sampled at an offset from the center of the\npixel specified by offset. The two floating-point components of offset, give the offset in\npixels in the x and y directions, respectively.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_interpolateatoffset"
+  },
+  {
+    "ReturnType": "vec4",
+    "Name": "interpolateAtOffset",
+    "Parameters": [
+      {
+        "Type": "vec4",
+        "Name": "interpolant"
+      },
+      {
+        "Type": "vec2",
+        "Name": "offset"
+      }
+    ],
+    "Description": "Returns the value of the input interpolant variable sampled at an offset from the center of the\npixel specified by offset. The two floating-point components of offset, give the offset in\npixels in the x and y directions, respectively.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_interpolateatoffset"
+  },
+  {
+    "ReturnType": "float",
+    "Name": "noise1",
+    "Parameters": [
+      {
+        "Type": "genFType",
+        "Name": "x"
+      }
+    ],
+    "Description": "Returns a 1D noise value based on the input value x.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_noise1"
+  },
+  {
+    "ReturnType": "vec2",
+    "Name": "noise2",
+    "Parameters": [
+      {
+        "Type": "genFType",
+        "Name": "x"
+      }
+    ],
+    "Description": "Returns a 2D noise value based on the input value x.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_noise2"
+  },
+  {
+    "ReturnType": "vec3",
+    "Name": "noise3",
+    "Parameters": [
+      {
+        "Type": "genFType",
+        "Name": "x"
+      }
+    ],
+    "Description": "Returns a 3D noise value based on the input value x.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_noise3"
+  },
+  {
+    "ReturnType": "vec4",
+    "Name": "noise4",
+    "Parameters": [
+      {
+        "Type": "genFType",
+        "Name": "x"
+      }
+    ],
+    "Description": "Returns a 4D noise value based on the input value x.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_noise4"
+  },
+  {
+    "ReturnType": "void",
+    "Name": "barrier",
+    "Parameters": [],
+    "Description": "For any given static instance of barrier(), all tessellation control shader invocations for a\nsingle input patch must enter it before any will be allowed to continue beyond it, or all compute\nshader invocations for a single workgroup must enter it before any will continue beyond it.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_barrier"
+  },
+  {
+    "ReturnType": "void",
+    "Name": "memoryBarrier",
+    "Parameters": [],
+    "Description": "Control the ordering of memory transactions issued by a single shader invocation.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_memorybarrier"
+  },
+  {
+    "ReturnType": "void",
+    "Name": "memoryBarrierAtomicCounter",
+    "Parameters": [],
+    "Description": "Control the ordering of accesses to atomic-counter variables issued by a single shader invocation.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_memorybarrieratomiccounter"
+  },
+  {
+    "ReturnType": "void",
+    "Name": "memoryBarrierBuffer",
+    "Parameters": [],
+    "Description": "Control the ordering of memory transactions to buffer variables issued within a single shader invocation.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_memorybarrierbuffer"
+  },
+  {
+    "ReturnType": "void",
+    "Name": "memoryBarrierShared",
+    "Parameters": [],
+    "Description": "Control the ordering of memory transactions to shared variables issued within a single shader\ninvocation, as viewed by other invocations in the same workgroup.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_memorybarriershared"
+  },
+  {
+    "ReturnType": "void",
+    "Name": "memoryBarrierImage",
+    "Parameters": [],
+    "Description": "Control the ordering of memory transactions to images issued within a single shader invocation.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_memorybarrierimage"
+  },
+  {
+    "ReturnType": "void",
+    "Name": "groupMemoryBarrier",
+    "Parameters": [],
+    "Description": "Control the ordering of all memory transactions issued within a single shader invocation, as viewed\nby other invocations in the same workgroup.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_groupmemorybarrier"
+  },
+  {
+    "ReturnType": "gvec4",
+    "Name": "subpassLoad",
+    "Parameters": [
+      {
+        "Type": "gsubpassInput",
+        "Name": "subpass"
+      }
+    ],
+    "Description": "Read from a subpass input, from the implicit location (x, y, layer) of the current fragment\ncoordinate.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_subpassload"
+  },
+  {
+    "ReturnType": "gvec4",
+    "Name": "subpassLoad",
+    "Parameters": [
+      {
+        "Type": "gsubpassInputMS",
+        "Name": "subpass"
+      },
+      {
+        "Type": "int",
+        "Name": "sample"
+      }
+    ],
+    "Description": "Read from a subpass input, from the implicit location (x, y, layer) of the current fragment\ncoordinate.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_subpassload"
+  },
+  {
+    "ReturnType": "bool",
+    "Name": "anyInvocation",
+    "Parameters": [
+      {
+        "Type": "bool",
+        "Name": "value"
+      }
+    ],
+    "Description": "Returns true if and only if value is true for at least one active invocation in the group.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_anyinvocation"
+  },
+  {
+    "ReturnType": "bool",
+    "Name": "allInvocations",
+    "Parameters": [
+      {
+        "Type": "bool",
+        "Name": "value"
+      }
+    ],
+    "Description": "Returns true if and only if value is true for all active invocations in the group.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_allinvocations"
+  },
+  {
+    "ReturnType": "bool",
+    "Name": "allInvocationsEqual",
+    "Parameters": [
+      {
+        "Type": "bool",
+        "Name": "value"
+      }
+    ],
+    "Description": "Returns true if value is the same for all active invocations in the group.",
+    "DocumentationUrl": "https://docs.vulkan.org/glsl/latest/chapters/builtinfunctions.html#_allinvocationsequal"
+  }
+]

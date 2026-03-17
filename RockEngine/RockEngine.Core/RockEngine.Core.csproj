@@ -9,6 +9,7 @@
     <IlcGenerateStackTraceData>false</IlcGenerateStackTraceData>
     <Configurations>Debug;Release</Configurations>
     <EnableNETAnalyzers>true</EnableNETAnalyzers>
+    <PublishAot>true</PublishAot>
   </PropertyGroup>
   
   <PropertyGroup>
@@ -32,9 +33,9 @@
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
-    <PackageReference Include="Microsoft.Extensions.Caching.Memory" Version="10.0.3" />
-    <PackageReference Include="Microsoft.Extensions.ObjectPool" Version="10.0.3" />
-    <PackageReference Include="NLog" Version="6.1.0" />
+    <PackageReference Include="Microsoft.Extensions.Caching.Memory" Version="10.0.5" />
+    <PackageReference Include="Microsoft.Extensions.ObjectPool" Version="10.0.5" />
+    <PackageReference Include="NLog" Version="6.1.1" />
     <PackageReference Include="Silk.NET.Input" Version="2.23.0" />
     <PackageReference Include="Silk.NET.Input.Extensions" Version="2.23.0" />
     <PackageReference Include="Silk.NET.Input.Sdl" Version="2.23.0" />
@@ -42,13 +43,14 @@
     <PackageReference Include="SimpleInjector" Version="5.5.0" />
     <PackageReference Include="SixLabors.ImageSharp" Version="3.1.12" />
     <PackageReference Include="SkiaSharp" Version="3.119.2" />
-    <PackageReference Include="ZLinq" Version="1.5.4" />
+    <PackageReference Include="ZLinq" Version="1.5.5" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\RockEngine.Assets\RockEngine.Assets.csproj" />
     <ProjectReference Include="..\RockEngine.CodeGenerator\RockEngine.CodeGenerator.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
     <ProjectReference Include="..\RockEngine.Math\RockEngine.Mathematics.csproj" />
+    <ProjectReference Include="..\RockEngine.ShaderPreProcessor\RockEngine.ShaderPreProcessor.csproj" />
     <ProjectReference Include="..\RockEngine.Shading\RockEngine.Shading.csproj" />
     <ProjectReference Include="..\RockEngine.Vulkan\RockEngine.Vulkan.csproj" />
     <ProjectReference Include="..\RockEngine.Analyzer\RockEngine.Analyzer\RockEngine.Analyzer.csproj" ReferenceOutputAssembly="false" OutputItemType="Analyzer" />

@@ -1,5 +1,9 @@
 #version 450
+#include "Include/common.glsl"
+
 #extension GL_KHR_vulkan_glsl:enable
+
+
 layout(location = 0) in vec3 vWorldPos;
 layout(location = 1) in vec3 vNormal;
 layout(location = 2) in vec2 vTexCoord;
@@ -10,9 +14,12 @@ layout(location = 1) out vec3 gNormal;
 layout(location = 2) out vec4 gAlbedo;
 layout(location = 3) out vec4 gMRA;
 
-layout(set = 2, binding = 0) uniform sampler2D uAlbedo;
-layout(set = 2, binding = 1) uniform sampler2D uNormalMap;
-layout(set = 2, binding = 2) uniform sampler2D uMRA;
+[MATERIAL]
+{
+    Texture2D Albedo;
+    Texture2D Normal;
+    Texture2D MRA;
+}
 
 vec2 octEncode(vec3 n) {
     n /= (abs(n.x) + abs(n.y) + abs(n.z));
@@ -20,18 +27,19 @@ vec2 octEncode(vec3 n) {
     return n.xy * 0.5 + 0.5 + 0.5/32768.0; // Add small offset
 }
 
-void main() {
+void main() 
+{
     gPosition = vWorldPos;
-   
-    vec3 tangentNormal = texture(uNormalMap, vTexCoord).xyz * 2.0 - 1.0;
-    gAlbedo = texture(uAlbedo, vTexCoord);
+    gAlbedo = sampleAlbedo(vTexCoord);
     if (gAlbedo.a < 0.01) {
         discard;
     }
-    // Transform to world space
+    vec3 tangentNormal = sampleNormal(vTexCoord).xyz * 2.0 - 1.0;
+    vec4 mra = sampleMRA(vTexCoord);
     vec3 worldNormal = normalize(vTBN * tangentNormal);
     gNormal.xy = octEncode(worldNormal); // Store compressed normal
-    gMRA = texture(uMRA, vTexCoord);
+    gMRA = mra;
+
     //gEmissive = texture(uEmissive, vTexCoord);
 }
 

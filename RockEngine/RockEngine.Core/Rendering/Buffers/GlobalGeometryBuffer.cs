@@ -445,9 +445,9 @@ namespace RockEngine.Core.Rendering.Buffers
                 };
 
                 transferBatch.PipelineBarrier([], [vertexBarrier, indexBarrier], []);
-
+                transferBatch.Submit();
                 // Submit the transfer batch
-                await _context.TransferSubmitContext.SubmitSingle(transferBatch);
+                //_ =_context.TransferSubmitContext.SubmitSingle(transferBatch);
 
 
                 // Now update the internal state

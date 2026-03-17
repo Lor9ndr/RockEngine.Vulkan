@@ -2,7 +2,6 @@
 using Silk.NET.Vulkan.Extensions.KHR;
 
 using System.Numerics;
-using System.Threading;
 
 
 namespace RockEngine.Vulkan
@@ -23,6 +22,7 @@ namespace RockEngine.Vulkan
         private VkImageView _depthImageView;
         private readonly Format _depthFormat;
         private uint _currentImageIndex = 0;
+        private SwapchainCreateInfoKHR _createInfo;
 
         public KhrSwapchain SwapchainApi => _khrSwapchain;
         public VkImage[] VkImages => _images;
@@ -34,12 +34,13 @@ namespace RockEngine.Vulkan
         public Format DepthFormat => _depthFormat;
         public ISurfaceHandler Surface => _surface;
         public uint CurrentImageIndex => _currentImageIndex;
+        public PresentModeKHR PresentMode => _createInfo.PresentMode;
 
         public VkImageView DepthImageView { get => _depthImageView; private set => _depthImageView = value; }
 
         public event Action<VkSwapchain>? OnSwapchainRecreate;
 
-        public VkSwapchain(VulkanContext context, SwapchainKHR swapchain, KhrSwapchain khrSwapchainApi, VkImage[] images, Format format, Extent2D extent, ISurfaceHandler surface)
+        public VkSwapchain(VulkanContext context, SwapchainKHR swapchain, KhrSwapchain khrSwapchainApi, VkImage[] images, Format format, Extent2D extent, ISurfaceHandler surface, in SwapchainCreateInfoKHR createInfo)
             : base(swapchain)
         {
             context.MaxFramesPerFlight = images.Length;
@@ -52,6 +53,7 @@ namespace RockEngine.Vulkan
             _format = format;
             _extent = extent;
             _surface = surface;
+            _createInfo = createInfo;
             _depthFormat = FindDepthFormat();
 
             InitializeSwapchainResources();
@@ -130,7 +132,7 @@ namespace RockEngine.Vulkan
                 vkImage.LabelObject($"Swapchain Image {i}, of swapchain :{swapChain.Handle}");
             }
 
-            var swapchain = new VkSwapchain(context, swapChain, swapchainApi, vkImages, surfaceFormat.Format, extent, surface);
+            var swapchain = new VkSwapchain(context, swapChain, swapchainApi, vkImages, surfaceFormat.Format, extent, surface, in createInfo);
 
             // Ensure initial layout transition
             swapchain.TransitionSwapchainImagesToPresentLayout();
@@ -182,11 +184,6 @@ namespace RockEngine.Vulkan
 
         private static PresentModeKHR ChoosePresentMode(PresentModeKHR[] modes)
         {
-            if (modes.Contains(PresentModeKHR.FifoKhr))
-            {
-                return PresentModeKHR.FifoKhr;
-            }
-
             if (modes.Contains(PresentModeKHR.MailboxKhr))
             {
                 return PresentModeKHR.MailboxKhr;
@@ -196,7 +193,15 @@ namespace RockEngine.Vulkan
             {
                 return PresentModeKHR.ImmediateKhr;
             }
-          
+            if (modes.Contains(PresentModeKHR.FifoRelaxedKhr))
+            {
+                return PresentModeKHR.FifoRelaxedKhr;
+            }
+
+            if (modes.Contains(PresentModeKHR.FifoKhr))
+            {
+                return PresentModeKHR.FifoKhr;
+            }
 
             return modes[0];
         }
@@ -447,6 +452,7 @@ namespace RockEngine.Vulkan
                 {
                     createInfo.ImageSharingMode = SharingMode.Exclusive;
                 }
+                _createInfo = createInfo;
 
                 // Create the new swapchain
                 var result = _khrSwapchain.CreateSwapchain(_context.Device, in createInfo,
@@ -541,10 +547,8 @@ namespace RockEngine.Vulkan
                 };
                 barriers[i] = barrier;
             }
-            batch.PipelineBarrier([], [], barriers);
-
-            using var fence = VkFence.CreateNotSignaled(_context);
-            _context.GraphicsSubmitContext.SubmitSingle(batch, fence).Wait();
+            batch.PipelineBarrier(barriers);
+            batch.Submit();
         }
 
         private void DisposeImagesAndViews()
@@ -561,8 +565,6 @@ namespace RockEngine.Vulkan
         {
             var batch = _context.GraphicsSubmitContext.CreateBatch();
             
-            using var fence = VkFence.CreateNotSignaled(_context);
-
             var imageCi = new ImageCreateInfo
             {
                 SType = StructureType.ImageCreateInfo,
@@ -585,24 +587,7 @@ namespace RockEngine.Vulkan
             _depthImage.LabelObject("SwapchainDepthImage");
 
             _depthImage.TransitionImageLayout(batch, ImageLayout.Undefined, ImageLayout.DepthStencilAttachmentOptimal);
-            _context.GraphicsSubmitContext.SubmitSingle(batch, fence).Wait();
-
-
-            var imageViewCi = new ImageViewCreateInfo
-            {
-                SType = StructureType.ImageViewCreateInfo,
-                Image = _depthImage,
-                Format = _depthFormat,
-                ViewType = ImageViewType.Type2D,
-                SubresourceRange = new ImageSubresourceRange
-                {
-                    AspectMask = aspectMask,
-                    BaseMipLevel = 0,
-                    LevelCount = 1,
-                    BaseArrayLayer = 0,
-                    LayerCount = 1
-                }
-            };
+            batch.Submit();
             _depthImageView = _depthImage.GetOrCreateView(aspectMask);
 
         }

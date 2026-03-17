@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>netcoreapp3.1</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <CopyToProject>..\RockEngine.ShaderSyntax\refs\</CopyToProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\RockEngine.ShaderPreProcessor\RockEngine.ShaderPreProcessor.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="glslangValidator.exe">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <!-- Target to copy all output files to the other project folder after build -->
+  <Target Name="CopyToOtherProject" AfterTargets="Build">
+    <!-- Create an item group with all files in the current output directory -->
+    <ItemGroup>
+      <FilesToCopy Include="$(OutputPath)\*.*" />
+    </ItemGroup>
+    <!-- Copy the files, skipping files that are already up-to-date -->
+    <Copy SourceFiles="@(FilesToCopy)" DestinationFolder="$(CopyToProject)" SkipUnchangedFiles="true" />
+  </Target>
+
+</Project>

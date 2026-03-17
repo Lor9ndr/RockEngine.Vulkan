@@ -2,6 +2,7 @@
 using System.Diagnostics;
 using System.Text;
 using System.Text.RegularExpressions;
+using RockEngine.ShaderPreprocessor;
 using RockEngine.Vulkan;
 
 namespace RockEngine.Core.Rendering.Managers
@@ -11,10 +12,10 @@ namespace RockEngine.Core.Rendering.Managers
         private readonly string _basePath;
         private readonly string _includePath;
         private readonly ConcurrentDictionary<string, byte[]> _compiledShaders = new();
-        private readonly ConcurrentDictionary<string, string> _includeCache = new();
         private readonly FeatureRegistry _featureRegistry;
+        private readonly IShaderPreprocessor _shaderPreProcessor;
 
-        public ShaderManager(FeatureRegistry featureRegistry)
+        public ShaderManager(FeatureRegistry featureRegistry, IShaderPreprocessor shaderPreProcessor)
         {
             _basePath = "Shaders";
             _includePath = Path.Combine(_basePath, "Include");
@@ -23,6 +24,7 @@ namespace RockEngine.Core.Rendering.Managers
                 Directory.CreateDirectory(_includePath);
 
             _featureRegistry = featureRegistry;
+            _shaderPreProcessor = shaderPreProcessor;
         }
 
         /// <summary>
@@ -60,7 +62,7 @@ namespace RockEngine.Core.Rendering.Managers
                     _compiledShaders[shaderNameWithoutExt] = shaderBytes;
             }
         }
-
+       
         /// <summary>
         /// Compiles a single shader file with include processing and preprocessor defines.
         /// </summary>
@@ -157,84 +159,20 @@ namespace RockEngine.Core.Rendering.Managers
             return args.ToString();
         }
 
-        // PreprocessShader and ProcessIncludes remain unchanged
         private async Task<string> PreprocessShader(string path)
         {
             if (!File.Exists(path))
                 throw new FileNotFoundException($"Shader file not found: {path}");
 
             var source = await File.ReadAllTextAsync(path);
-            var directory = Path.GetDirectoryName(path);
+            var defines = _featureRegistry?.GetAllPreprocessorDefines().ToList() ?? new List<string>();
 
-            var includePattern = @"#include\s+[""'](.+?)[""']";
-            var matches = Regex.Matches(source, includePattern);
+            // Let the preprocessor handle includes, material annotations, and defines
+            var result = await _shaderPreProcessor.PreprocessAsync(source, path, defines);
 
-            foreach (Match match in matches)
-            {
-                var includeFile = match.Groups[1].Value;
-                string includePath;
-
-                var relativePath = Path.Combine(directory, includeFile);
-                if (File.Exists(relativePath))
-                    includePath = relativePath;
-                else if (File.Exists(includeFile))
-                    includePath = includeFile;
-                else
-                {
-                    includePath = Path.Combine(_includePath, includeFile);
-                    if (!File.Exists(includePath))
-                        throw new FileNotFoundException($"Include file not found: {includeFile} (searched in {relativePath} and {includePath})");
-                }
-
-                if (!_includeCache.TryGetValue(includePath, out var includeSource))
-                {
-                    includeSource = await File.ReadAllTextAsync(includePath);
-                    _includeCache[includePath] = includeSource;
-                }
-
-                includeSource = await ProcessIncludes(includeSource, Path.GetDirectoryName(includePath));
-                source = source.Replace(match.Value, includeSource);
-            }
-
-            return source;
+            return result.ProcessedSource;
         }
 
-        private async Task<string> ProcessIncludes(string source, string baseDirectory)
-        {
-            var includePattern = @"#include\s+[""'](.+?)[""']";
-            var matches = Regex.Matches(source, includePattern);
-
-            foreach (Match match in matches)
-            {
-                var includeFile = match.Groups[1].Value;
-                string includePath;
-
-                var relativePath = Path.Combine(baseDirectory, includeFile);
-                if (File.Exists(relativePath))
-                    includePath = relativePath;
-                else if (File.Exists(includeFile))
-                    includePath = includeFile;
-                else
-                {
-                    includePath = Path.Combine(_includePath, includeFile);
-                    if (!File.Exists(includePath))
-                        throw new FileNotFoundException($"Include file not found: {includeFile}");
-                }
-
-                if (!_includeCache.TryGetValue(includePath, out var includeSource))
-                {
-                    includeSource = await File.ReadAllTextAsync(includePath);
-                    _includeCache[includePath] = includeSource;
-                }
-
-                includeSource = await ProcessIncludes(includeSource, Path.GetDirectoryName(includePath));
-                source = source.Replace(match.Value, includeSource);
-            }
-
-            return source;
-        }
-
-        // Backward compatibility
         public async Task<string> CompileShader(string path)
         {
             return await CompileShaderWithIncludes(path, null);
@@ -297,7 +235,6 @@ namespace RockEngine.Core.Rendering.Managers
         public void ClearShaderCache()
         {
             _compiledShaders.Clear();
-            _includeCache.Clear();
         }
 
         public IEnumerable<string> GetAvailableShaders()

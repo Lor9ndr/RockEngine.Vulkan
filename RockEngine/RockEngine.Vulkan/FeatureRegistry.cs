@@ -1,4 +1,5 @@
 ﻿using RockEngine.Vulkan.DeviceFeatures;
+using ZLinq;
 
 namespace RockEngine.Vulkan
 {
@@ -36,9 +37,16 @@ namespace RockEngine.Vulkan
             return unsupportedRequired.Count == 0;
         }
 
-        public T? TryGetFeature<T>()
+        public T? TryGetFeature<T>() where T : DeviceFeature
         {
             return Features.OfType<T>().FirstOrDefault();
+        }
+        public bool IsFeatureEnabled<T>() where T : DeviceFeature
+        {
+             return _features
+                .AsValueEnumerable()
+                .OfType<T>()
+                .Where(f => _enabledFeatureNames.Contains(f.Name)).Any();
         }
 
         /// <summary>

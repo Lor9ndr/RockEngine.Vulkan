@@ -10,6 +10,7 @@ using RockEngine.Core.Rendering.Managers;
 using RockEngine.Core.Rendering.Objects;
 using RockEngine.Core.Rendering.Passes;
 using RockEngine.Core.Rendering.Passes.SubPasses;
+using RockEngine.ShaderPreprocessor;
 using RockEngine.Vulkan;
 using RockEngine.Vulkan.DeviceFeatures;
 using Silk.NET.Input;
@@ -61,6 +62,9 @@ namespace RockEngine.Core.DI
             SdlWindowing.Use();
             container.RegisterInstance<IWindow>(Window.Create(WindowOptions.DefaultVulkan  with
             {
+                 VSync = false,
+                 FramesPerSecond = 0,
+                 UpdatesPerSecond = 0,
             }
             ));
            
@@ -140,6 +144,7 @@ namespace RockEngine.Core.DI
             }, Lifestyle.Singleton);
             var registry = new FeatureRegistry();
             container.RegisterInstance<FeatureRegistry>(registry);
+            container.Register<IShaderPreprocessor, MainShaderPreprocessor>();
             // Core features (required)
             registry.RequestFeature(new SamplerAnisotropyFeature() { IsRequired = true });
             registry.RequestFeature(new DepthClampFeature() { IsRequired = true });

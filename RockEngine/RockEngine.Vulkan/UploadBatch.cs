@@ -10,7 +10,7 @@ namespace RockEngine.Vulkan
     {
         public void Dispose() { Action();}
     }
-    public sealed class UploadBatch : IDisposable
+    public sealed class UploadBatch
     {
         private readonly StagingManager _stagingManager;
         private readonly SubmitContext _submitContext;
@@ -104,16 +104,14 @@ namespace RockEngine.Vulkan
             _disposables.Clear();
             SignalSemaphores.Clear();
             WaitSemaphores.Clear();
+            foreach (var item in _secondaryBatches)
+            {
+                SubmitContext.ReturnBatchToPool(item);
+            }
             _secondaryBatches.Clear();
             _isInUse = false;
         }
 
-
-        public void ResetCommandBuffer()
-        {
-            _commandBuffer.Reset(CommandBufferResetFlags.ReleaseResourcesBit);
-            BeginCommandBuffer();
-        }
 
 
         public void StageToBuffer<T>(
@@ -160,7 +158,6 @@ namespace RockEngine.Vulkan
 
             // Add the secondary batch as a dependency to ensure it's disposed properly
             _secondaryBatches.Add(secondaryBatch);
-            AddDependency(secondaryBatch);
 
             _commandBuffer.ExecuteSecondary(secondaryBatch.CommandBuffer);
         }
@@ -179,10 +176,6 @@ namespace RockEngine.Vulkan
             _isInUse = true;
         }
 
-        public void Dispose()
-        {
-            _submitContext.ReturnBatchToPool(this);
-        }
 
         public unsafe void PipelineBarrier(
             Span<MemoryBarrier2> memoryBarriers ,

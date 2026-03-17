@@ -6,6 +6,7 @@ using NLog;
 using RockEngine.Assets;
 using RockEngine.Core.Attributes;
 using RockEngine.Core.DI;
+using RockEngine.Core.Info;
 using RockEngine.Core.Rendering;
 using RockEngine.Core.Rendering.Materials;
 using RockEngine.Core.Rendering.ResourceBindings;
@@ -83,7 +84,6 @@ namespace RockEngine.Core.Assets
         private async Task CreateMaterialAsync()
         {
             var templateManager = IoC.Container.GetInstance<MaterialTemplateManager>();
-            var assetManager = IoC.Container.GetInstance<IAssetManager>();
 
             // Create material from template
             MaterialInstance = templateManager.CreateMaterialFromTemplate(
@@ -117,7 +117,7 @@ namespace RockEngine.Core.Assets
                         if (textureAsset.Texture != null)
                         {
                             _loadedTextures[textureRef.AssetID] = textureAsset.Texture;
-                            MaterialInstance.BindResource(new TextureBinding(2, (uint)i, 0, 1,Silk.NET.Vulkan.ImageLayout.ShaderReadOnlyOptimal, textureAsset.Texture));
+                            MaterialInstance.BindResource(new TextureBinding(MaterialInfo.TEXTURE_SET, (uint)i, 0, 1,Silk.NET.Vulkan.ImageLayout.ShaderReadOnlyOptimal, textureAsset.Texture));
                         }
                     }
                 }

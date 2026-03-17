@@ -15,6 +15,7 @@
     <ResourcesOutputPath>bin\$(Configuration)\$(TargetFramework)\Resources\</ResourcesOutputPath>
     <Configurations>Debug;Release</Configurations>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <PublishAot>true</PublishAot>
   </PropertyGroup>
   
   <PropertyGroup>

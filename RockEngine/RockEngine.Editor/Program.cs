@@ -8,7 +8,6 @@ public static class Program
     private static EditorApplication _app;
     private static CancellationTokenSource _cts;
 
-    [STAThread] 
     public static async Task Main(string[] args)
     {
         try

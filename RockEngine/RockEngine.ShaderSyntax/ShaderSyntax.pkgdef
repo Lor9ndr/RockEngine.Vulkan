@@ -1,0 +1,11 @@
+[$RootKey$\Languages\File Extensions\.vert]
+@"glsl"
+
+[$RootKey$\Languages\File Extensions\.frag]
+@"glsl"
+
+[$RootKey$\Languages\File Extensions\.glsl]
+@"glsl"
+
+[$RootKey$\Languages\File Extensions\.comp]
+@"glsl"

@@ -1,4 +1,7 @@
+#ifndef COMMON_GLSL
+#define COMMON_GLSL
 
+#define MATERIAL_SET 2  
 
 struct GlobalUBO
 {
@@ -12,3 +15,5 @@ struct GlobalUBO
     vec2 screenSize;
     float farClip;
 };
+
+#endif

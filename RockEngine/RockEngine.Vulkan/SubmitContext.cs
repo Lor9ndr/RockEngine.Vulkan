@@ -24,6 +24,8 @@ namespace RockEngine.Vulkan
         private readonly ConcurrentQueue<UploadBatch> _queueB = new();
         private ConcurrentQueue<UploadBatch> _activeQueue;
         private ConcurrentQueue<UploadBatch> _submissionQueue;
+        private readonly FencePool _fencePool;
+        private readonly CommandPoolPool _commandPoolPool;
         private SubmitOperation _lastSubmitOperation;
 
         // Thread-local command pools
@@ -53,6 +55,8 @@ namespace RockEngine.Vulkan
             _targetQueue = targetQueue;
             _activeQueue = _queueA;
             _submissionQueue = _queueB;
+            _fencePool = new FencePool(context);
+            _commandPoolPool = new CommandPoolPool(context, targetQueue.FamilyIndex);
 
             _threadCommandContext = new ThreadLocal<CommandPoolContext>(() => {
                 var ctx = CreateCommandPoolContext();
@@ -63,24 +67,14 @@ namespace RockEngine.Vulkan
 
         private CommandPoolContext CreateCommandPoolContext()
         {
-            var cmdPool = VkCommandPool.Create(
-                _context,
-                CommandPoolCreateFlags.TransientBit | CommandPoolCreateFlags.ResetCommandBufferBit,
-                _targetQueue.FamilyIndex
-            );
-
-            return new CommandPoolContext(cmdPool);
+            var cmdPool = _commandPoolPool.Rent();
+            return new CommandPoolContext(cmdPool, this);
         }
 
         private CommandPoolContext CreateNamedCommandPoolContext(string name)
         {
-            var cmdPool = VkCommandPool.Create(
-                _context,
-                CommandPoolCreateFlags.TransientBit | CommandPoolCreateFlags.ResetCommandBufferBit,
-                _targetQueue.FamilyIndex
-            );
-
-            return new CommandPoolContext(cmdPool, name);
+            var cmdPool = _commandPoolPool.Rent();
+            return new CommandPoolContext(cmdPool, this, name);
         }
 
         private UploadBatch CreateNewBatch(CommandPoolContext context, CommandBufferLevel level, CommandBufferInheritanceInfo? inheritanceInfo = null)
@@ -96,20 +90,22 @@ namespace RockEngine.Vulkan
 
             UploadBatch batch;
 
-
-            // Versioned batch
+            // Try to get an existing batch
             if (!context.TryGetAvailableBatch(parameters.Level, out batch!))
             {
+                // Create a new batch and mark it as taken
                 batch = CreateNewBatch(context, parameters.Level, parameters.InheritanceInfo);
+                context.OnBatchTaken(); // Increment flight counter
+
             }
             else
             {
                 batch.InheritanceInfo = parameters.InheritanceInfo;
             }
+            batch.BeginCommandBuffer();
 
             batch.MarkInUse();
 
-            batch.ResetCommandBuffer();
 
             for (int i = 0; i < parameters.WaitSemaphores.Count; i++)
             {
@@ -170,6 +166,13 @@ namespace RockEngine.Vulkan
                 // Store disposables and batches
                 var disposableList = new List<IDisposable>();
                 var batchList = new List<UploadBatch>();
+                bool poolOwned = fence is null;
+                if (poolOwned)
+                {
+                    fence = _fencePool.GetFence();
+                    batch.AddDependency(new DeferredOperation(()=>_fencePool.ReturnFence(fence)));
+                }
+
 
                 disposableList.AddRange(batch.Disposables);
                 batchList.Add(batch);
@@ -236,9 +239,13 @@ namespace RockEngine.Vulkan
                 _lastSubmitOperation?.Wait();
                 // Swap active and submission queues
                 (_submissionQueue, _activeQueue) = (_activeQueue, _submissionQueue);
-
+                bool poolOwned = fence is null;
+                if (poolOwned)
+                {
+                    fence = _fencePool.GetFence();
+                    AddDependency(new DeferredOperation(() => _fencePool.ReturnFence(fence)));
+                }
                 PrepareSubmissionData();
-                fence ??= VkFence.CreateNotSignaled(_context);
                 SubmitCommandBuffers(fence);
 
                 foreach (var (batches, disposables) in _pendingNoFenceResources)
@@ -388,48 +395,131 @@ namespace RockEngine.Vulkan
 
         public void Dispose()
         {
+            // Dispose all command pool contexts (returns their pools to the pool)
             foreach (var context in _allContexts)
             {
-                context.Pool.Dispose();
+                context.Dispose();
             }
             _allContexts.Clear();
             _namedContexts.Clear();
 
+            // Dispose the pool – this will destroy any remaining command pools
+            _commandPoolPool?.Dispose();
+            _fencePool?.Dispose();
+
             GC.SuppressFinalize(this);
         }
-
-        internal sealed class CommandPoolContext
+        private sealed class CommandPoolPool
         {
-            private readonly ConcurrentDictionary<CommandBufferLevel, ConcurrentQueue<UploadBatch>> _oneTimeBatches = new ConcurrentDictionary<CommandBufferLevel, ConcurrentQueue<UploadBatch>>();
+            private readonly VulkanContext _context;
+            private readonly uint _queueFamily;
+            private readonly ConcurrentBag<VkCommandPool> _available = new();
 
+            public CommandPoolPool(VulkanContext context, uint queueFamily)
+            {
+                _context = context;
+                _queueFamily = queueFamily;
+            }
+
+            public VkCommandPool Rent()
+            {
+                // Try to get an existing pool; it's already reset from previous Return
+                if (_available.TryTake(out var pool))
+                    return pool;
+
+                // Create a new pool with the required flags
+                return VkCommandPool.Create(
+                    _context,
+                    CommandPoolCreateFlags.TransientBit | CommandPoolCreateFlags.ResetCommandBufferBit,
+                    _queueFamily
+                );
+            }
+
+            public void Return(VkCommandPool pool)
+            {
+                // Reset the pool to free all command buffers (redundant if already reset, but safe)
+                pool.Reset();
+                _available.Add(pool);
+            }
+
+            public void Dispose()
+            {
+                foreach (var pool in _available)
+                    pool.Dispose();
+                _available.Clear();
+            }
+        }
+        internal sealed class CommandPoolContext : IDisposable
+        {
+            private readonly SubmitContext _submitContext;
+            private readonly ConcurrentDictionary<CommandBufferLevel, ConcurrentQueue<UploadBatch>> _oneTimeBatches = new();
+            private int _batchesInFlight; // Number of batches currently in use (not yet returned)
             public VkCommandPool Pool { get; }
             public string? Name { get; }
+            private bool _disposed;
 
-            public CommandPoolContext(VkCommandPool pool, string? name = null)
+            public CommandPoolContext(VkCommandPool pool, SubmitContext submitContext, string? name = null)
             {
                 Pool = pool;
+                _submitContext = submitContext;
                 Name = name;
+            }
+
+            /// <summary>Call when a batch is taken (either from queue or newly created).</summary>
+            public void OnBatchTaken()
+            {
+                Interlocked.Increment(ref _batchesInFlight);
             }
 
             public bool TryGetAvailableBatch(CommandBufferLevel level, out UploadBatch? batch)
             {
-                if (!_oneTimeBatches.TryGetValue(level, out var batchQueue))
+                ObjectDisposedException.ThrowIf(_disposed, this);
+                if (!_oneTimeBatches.TryGetValue(level, out var queue))
                 {
                     batch = null;
                     return false;
                 }
-                else
+                if (queue.TryDequeue(out batch))
                 {
-                    return batchQueue.TryDequeue(out batch);
+                    OnBatchTaken();
+                    return true;
                 }
+                batch = null;
+                return false;
             }
 
             public void ReturnBatch(UploadBatch batch)
             {
-                batch.ResetLists();
+                ObjectDisposedException.ThrowIf(_disposed, this);
+                batch.ResetLists(); // Clear internal lists, but NOT the command buffer
                 var queue = _oneTimeBatches.GetOrAdd(batch.Level, _ => new ConcurrentQueue<UploadBatch>());
-                batch.ResetLists();
                 queue.Enqueue(batch);
+
+                int inFlight = Interlocked.Decrement(ref _batchesInFlight);
+                if (inFlight == 0)
+                {
+                    // All batches returned – reset the entire pool (batches all command buffers)
+                    Pool.Reset( CommandPoolResetFlags.None);
+                }
+            }
+
+            public void Dispose()
+            {
+                if (_disposed) return;
+                _disposed = true;
+
+                // Clear any leftover batches (should be none if properly used)
+                foreach (var queue in _oneTimeBatches.Values)
+                {
+                    while (queue.TryDequeue(out var batch))
+                    {
+                        // Command buffer will be freed when pool is reset
+                    }
+                }
+                _oneTimeBatches.Clear();
+
+                // Return the command pool to the central pool (will be reset there)
+                _submitContext._commandPoolPool.Return(Pool);
             }
         }
     }

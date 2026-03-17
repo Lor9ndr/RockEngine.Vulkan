@@ -1,20 +1,24 @@
 ﻿
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using NLog;
-
 using RockEngine.Assets;
 using RockEngine.Core.Assets;
 using RockEngine.Core.DI;
 using RockEngine.Core.Rendering;
 
-using System.Text.Json;
-
 namespace RockEngine.Editor.EditorUI
 {
+    [JsonSerializable(typeof(List<ProjectInfo>))]
+    [JsonSerializable(typeof(ProjectInfo))]
+    internal partial class ProjectInfoJsonContext : JsonSerializerContext { }
+
     public class ProjectSelectionManager
     {
         private readonly IProjectManager _projectManager;
         private readonly IAssetManager _assetManager;
         private List<ProjectInfo> _recentProjects = new List<ProjectInfo>();
+        private JsonSerializerOptions _serializeOptions;
         private const string RecentProjectsFile = "recent_projects.json";
         private static readonly Logger _logger = LogManager.GetCurrentClassLogger();
 
@@ -112,7 +116,13 @@ namespace RockEngine.Editor.EditorUI
                 if (File.Exists(RecentProjectsFile))
                 {
                     var json = File.ReadAllText(RecentProjectsFile);
-                    _recentProjects = JsonSerializer.Deserialize<List<ProjectInfo>>(json) ?? new List<ProjectInfo>();
+                    _serializeOptions ??= new JsonSerializerOptions
+                    {
+                        WriteIndented = true,
+                        TypeInfoResolver = ProjectInfoJsonContext.Default
+                    };
+                    _recentProjects = JsonSerializer.Deserialize(json, ProjectInfoJsonContext.Default.ListProjectInfo)
+                              ?? new List<ProjectInfo>();
 
                     // Sort by last opened date (newest first)
                     _recentProjects = [.. _recentProjects
@@ -130,7 +140,7 @@ namespace RockEngine.Editor.EditorUI
         {
             try
             {
-                var json = JsonSerializer.Serialize(_recentProjects, new JsonSerializerOptions() { WriteIndented = true});
+                var json = JsonSerializer.Serialize(_recentProjects, ProjectInfoJsonContext.Default.ListProjectInfo);
                 File.WriteAllText(RecentProjectsFile, json);
             }
             catch (Exception ex)

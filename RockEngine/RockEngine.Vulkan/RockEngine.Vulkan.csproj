@@ -11,6 +11,7 @@
     <TrimMode>full</TrimMode>
     <IlcGenerateStackTraceData>false</IlcGenerateStackTraceData>
     <Configurations>Debug;Release;Editor</Configurations>
+    <PublishAot>true</PublishAot>
   </PropertyGroup>
 
   <ItemGroup>
