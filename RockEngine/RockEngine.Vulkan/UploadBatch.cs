@@ -3,6 +3,7 @@
 using System.Runtime.CompilerServices;
 
 using static RockEngine.Vulkan.SubmitContext;
+using static RockEngine.Vulkan.SubmitContext.CommandPoolContext;
 
 namespace RockEngine.Vulkan
 {
@@ -10,15 +11,16 @@ namespace RockEngine.Vulkan
     {
         public void Dispose() { Action();}
     }
-    public sealed class UploadBatch
+    public sealed class UploadBatch 
     {
-        private readonly StagingManager _stagingManager;
+        private StagingManager? _stagingManager;
+        private VkCommandBuffer _commandBuffer;
         private readonly SubmitContext _submitContext;
-        private readonly VkCommandBuffer _commandBuffer;
         private readonly List<IDisposable> _disposables;
         private bool _isInUse;
         private readonly CommandBufferLevel _level;
         private CommandBufferInheritanceInfo? _inheritanceInfo;
+        internal PoolSegment? _ownerSegment; // set when batch is created/taken
 
         private readonly List<UploadBatch> _secondaryBatches = new List<UploadBatch>();
 
@@ -29,7 +31,7 @@ namespace RockEngine.Vulkan
         public SubmitContext SubmitContext => _submitContext;
         internal CommandPoolContext Context { get; }
         public CommandBufferLevel Level => _level;
-        public StagingManager StagingManager => _stagingManager;
+        public StagingManager StagingManager => _stagingManager ??= Context.RentStagingManager();
 
         public CommandBufferInheritanceInfo? InheritanceInfo
         {
@@ -39,19 +41,17 @@ namespace RockEngine.Vulkan
 
         internal UploadBatch(
             CommandPoolContext context,
-            StagingManager stagingManager,
             SubmitContext submitContext,
             VkCommandBuffer commandBuffer,
             CommandBufferLevel level,
             CommandBufferInheritanceInfo? inheritanceInfo = null)
         {
             Context = context;
-            _stagingManager = stagingManager;
             _submitContext = submitContext;
             _commandBuffer = commandBuffer;
             _level = level;
             _inheritanceInfo = inheritanceInfo;
-            _disposables = new List<IDisposable>(4);
+            _disposables = [];
         }
 
         public void BeginCommandBuffer()
@@ -84,7 +84,7 @@ namespace RockEngine.Vulkan
                 beginInfo.Flags = CommandBufferUsageFlags.OneTimeSubmitBit;
             }
 
-            _commandBuffer.Begin(beginInfo);
+            _commandBuffer.Begin(in beginInfo);
         }
 
         public void AddWaitSemaphore(VkSemaphore semaphore, PipelineStageFlags stage)
@@ -100,7 +100,11 @@ namespace RockEngine.Vulkan
                 return;
             }
 
-            _stagingManager.Reset();
+            if (_stagingManager != null)
+            {
+                Context.ReturnStagingManager(_stagingManager);
+                _stagingManager = null;
+            }
             _disposables.Clear();
             SignalSemaphores.Clear();
             WaitSemaphores.Clear();
@@ -125,13 +129,13 @@ namespace RockEngine.Vulkan
                 return;
             }
 
-            if (!_stagingManager.TryStage(this, data, out var srcOffset, out _))
+            if (!StagingManager.TryStage(this, data, out var srcOffset, out _))
             {
                 throw new InvalidOperationException("Staging buffer overflow");
             }
 
             _commandBuffer.CopyBuffer(
-                _stagingManager.StagingBuffer,
+                StagingManager.StagingBuffer,
                 destination,
                 new BufferCopy(srcOffset, dstOffset, size)
             );
@@ -175,7 +179,6 @@ namespace RockEngine.Vulkan
         {
             _isInUse = true;
         }
-
 
         public unsafe void PipelineBarrier(
             Span<MemoryBarrier2> memoryBarriers ,
@@ -468,5 +471,7 @@ namespace RockEngine.Vulkan
         {
             _commandBuffer.BlitImage(srcImage, srcImageLayout, dstImage, dstImageLayout, in pRegions, filter);
         }
+
+        
     }
 }

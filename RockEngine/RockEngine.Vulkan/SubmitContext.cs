@@ -1,11 +1,9 @@
-﻿using Silk.NET.Vulkan;
-
-using System.Buffers;
+﻿using System.Buffers;
 using System.Collections.Concurrent;
 using System.Runtime.InteropServices;
-
+using Silk.NET.Vulkan;
 using ZLinq;
-
+using static RockEngine.Vulkan.SubmitContext.CommandPoolContext;
 using Semaphore = Silk.NET.Vulkan.Semaphore;
 
 namespace RockEngine.Vulkan
@@ -45,24 +43,26 @@ namespace RockEngine.Vulkan
 
         private static readonly ArrayPool<CommandBuffer> _commandBufferPool = ArrayPool<CommandBuffer>.Shared;
 
-        private readonly ConcurrentBag<(List<UploadBatch> batches, List<IDisposable> disposables)> _pendingNoFenceResources = new();
+        private readonly bool _useIndividualResets;
 
         public uint QueueFamily => _targetQueue.FamilyIndex;
 
-        public SubmitContext(VulkanContext context, VkQueue targetQueue)
+        public SubmitContext(VulkanContext context, VkQueue targetQueue, bool useIndividualResets = false)
         {
             _context = context;
             _targetQueue = targetQueue;
             _activeQueue = _queueA;
             _submissionQueue = _queueB;
             _fencePool = new FencePool(context);
-            _commandPoolPool = new CommandPoolPool(context, targetQueue.FamilyIndex);
+            _commandPoolPool = new CommandPoolPool(context, targetQueue.FamilyIndex, useIndividualResets);
 
-            _threadCommandContext = new ThreadLocal<CommandPoolContext>(() => {
+            _threadCommandContext = new ThreadLocal<CommandPoolContext>(() =>
+            {
                 var ctx = CreateCommandPoolContext();
                 _allContexts.Add(ctx);
                 return ctx;
             }, trackAllValues: true);
+            _useIndividualResets = useIndividualResets;
         }
 
         private CommandPoolContext CreateCommandPoolContext()
@@ -80,7 +80,7 @@ namespace RockEngine.Vulkan
         private UploadBatch CreateNewBatch(CommandPoolContext context, CommandBufferLevel level, CommandBufferInheritanceInfo? inheritanceInfo = null)
         {
             var commandBuffer = context.Pool.AllocateCommandBuffer(level);
-            return new UploadBatch(context, new StagingManager(_context), this, commandBuffer, level, inheritanceInfo);
+            return new UploadBatch(context,  this, commandBuffer, level, inheritanceInfo);
         }
 
         public UploadBatch CreateBatch(BatchCreationParams? parameters = null)
@@ -88,19 +88,19 @@ namespace RockEngine.Vulkan
             parameters ??= new BatchCreationParams();
             var context = GetOrCreateContext(parameters.Name);
 
-            UploadBatch batch;
 
             // Try to get an existing batch
-            if (!context.TryGetAvailableBatch(parameters.Level, out batch!))
+            if (!context.TryGetAvailableBatch(parameters.Level, out var batch, out var ownerSeg))
             {
-                // Create a new batch and mark it as taken
+                var newPool = _commandPoolPool.Rent();
+                ownerSeg = new PoolSegment(newPool);
                 batch = CreateNewBatch(context, parameters.Level, parameters.InheritanceInfo);
-                context.OnBatchTaken(); // Increment flight counter
-
+                batch._ownerSegment = ownerSeg;
+                context.OnBatchTaken(ownerSeg); 
             }
             else
             {
-                batch.InheritanceInfo = parameters.InheritanceInfo;
+                batch!.InheritanceInfo = parameters.InheritanceInfo;
             }
             batch.BeginCommandBuffer();
 
@@ -206,12 +206,6 @@ namespace RockEngine.Vulkan
                     fence
                 );
 
-                foreach (var (batches, disposables) in _pendingNoFenceResources)
-                {
-                    batchList.AddRange(batches);
-                    disposableList.AddRange(disposables);
-                }
-                _pendingNoFenceResources.Clear();
                 // When fence is provided, SubmitOperation will handle cleanup
                 _lastSubmitOperation = new SubmitOperation(
                     this,
@@ -248,12 +242,6 @@ namespace RockEngine.Vulkan
                 PrepareSubmissionData();
                 SubmitCommandBuffers(fence);
 
-                foreach (var (batches, disposables) in _pendingNoFenceResources)
-                {
-                    _batchList.AddRange(batches);
-                    _disposableList.AddRange(disposables);
-                }
-                _pendingNoFenceResources.Clear();
                 var semaphores = new List<VkSemaphore>();
                 semaphores.AddRange(_signalSemaphores);
                 foreach (var item in _waitSemaphores)
@@ -280,22 +268,6 @@ namespace RockEngine.Vulkan
             {
                 //_submissionLock.Release();
             }
-        }
-
-        private void CleanUpNoFenceResources()
-        {
-            foreach (var (batches, disposables) in _pendingNoFenceResources)
-            {
-                foreach (var item in batches)
-                {
-                    ReturnBatchToPool(item);
-                }
-                foreach (var item in disposables)
-                {
-                    item.Dispose();
-                }
-            }
-            _pendingNoFenceResources.Clear();
         }
 
         private void PrepareSubmissionData()
@@ -371,16 +343,6 @@ namespace RockEngine.Vulkan
             }
         }
 
-        /*private SubmitOperation CreateFlushOperation(VkFence? fence = null)
-        {
-            return new SubmitOperation(
-                this,
-                fence,
-                [.. _batchList],
-                [.. _disposableList]
-            );
-        }*/
-
         private void ResetState()
         {
             _flushDisposables.Clear();
@@ -413,26 +375,26 @@ namespace RockEngine.Vulkan
         {
             private readonly VulkanContext _context;
             private readonly uint _queueFamily;
+            private readonly bool _useIndividualResets;
             private readonly ConcurrentBag<VkCommandPool> _available = new();
 
-            public CommandPoolPool(VulkanContext context, uint queueFamily)
+            public CommandPoolPool(VulkanContext context, uint queueFamily, bool useIndividualResets)
             {
                 _context = context;
                 _queueFamily = queueFamily;
+                _useIndividualResets = useIndividualResets;
             }
 
             public VkCommandPool Rent()
             {
-                // Try to get an existing pool; it's already reset from previous Return
                 if (_available.TryTake(out var pool))
                     return pool;
 
-                // Create a new pool with the required flags
-                return VkCommandPool.Create(
-                    _context,
-                    CommandPoolCreateFlags.TransientBit | CommandPoolCreateFlags.ResetCommandBufferBit,
-                    _queueFamily
-                );
+                var flags = CommandPoolCreateFlags.TransientBit;
+                if (_useIndividualResets)
+                    flags |= CommandPoolCreateFlags.ResetCommandBufferBit;
+
+                return VkCommandPool.Create(_context, flags, _queueFamily);
             }
 
             public void Return(VkCommandPool pool)
@@ -451,9 +413,20 @@ namespace RockEngine.Vulkan
         }
         internal sealed class CommandPoolContext : IDisposable
         {
+            internal class PoolSegment
+            {
+                public VkCommandPool Pool { get; }
+                public ConcurrentDictionary<CommandBufferLevel, ConcurrentQueue<UploadBatch>> FreeBatches { get; } = new();
+                public ConcurrentDictionary<CommandBufferLevel, ConcurrentQueue<UploadBatch>> PendingBatches { get; } = new();
+                public int InFlight;  // Interlocked used
+
+                public PoolSegment(VkCommandPool pool) => Pool = pool;
+            }
             private readonly SubmitContext _submitContext;
-            private readonly ConcurrentDictionary<CommandBufferLevel, ConcurrentQueue<UploadBatch>> _oneTimeBatches = new();
-            private int _batchesInFlight; // Number of batches currently in use (not yet returned)
+            private readonly bool _useIndividualResets;
+            private readonly List<PoolSegment> _segments = new();
+            private readonly object _segmentLock = new(); 
+            private readonly ConcurrentQueue<StagingManager> _stagingManagerPool = new();
             public VkCommandPool Pool { get; }
             public string? Name { get; }
             private bool _disposed;
@@ -462,44 +435,120 @@ namespace RockEngine.Vulkan
             {
                 Pool = pool;
                 _submitContext = submitContext;
+                _useIndividualResets = submitContext._useIndividualResets;
                 Name = name;
             }
 
-            /// <summary>Call when a batch is taken (either from queue or newly created).</summary>
-            public void OnBatchTaken()
+            public void OnBatchTaken(PoolSegment ownerSeg)
             {
-                Interlocked.Increment(ref _batchesInFlight);
+                Interlocked.Increment(ref ownerSeg.InFlight);
             }
 
-            public bool TryGetAvailableBatch(CommandBufferLevel level, out UploadBatch? batch)
+            public bool TryGetAvailableBatch(CommandBufferLevel level, out UploadBatch? batch, out PoolSegment? ownerSegment)
             {
-                ObjectDisposedException.ThrowIf(_disposed, this);
-                if (!_oneTimeBatches.TryGetValue(level, out var queue))
+                lock (_segmentLock)
                 {
-                    batch = null;
-                    return false;
-                }
-                if (queue.TryDequeue(out batch))
-                {
-                    OnBatchTaken();
+                    // First, try to find a free batch in any segment
+                    foreach (var seg in _segments)
+                    {
+                        var freeQueue = seg.FreeBatches.GetOrAdd(level, _ => new ConcurrentQueue<UploadBatch>());
+                        if (freeQueue.TryDequeue(out batch))
+                        {
+                            Interlocked.Increment(ref seg.InFlight);
+                            ownerSegment = seg;
+                            return true;
+                        }
+                    }
+
+                    // No free batches: look for a segment with pending batches and zero in-flight
+                    foreach (var seg in _segments)
+                    {
+                        if (seg.InFlight == 0)
+                        {
+                            var pendingQueue = seg.PendingBatches.GetOrAdd(level, _ => new ConcurrentQueue<UploadBatch>());
+                            if (!pendingQueue.IsEmpty)
+                            {
+                                // Reset the pool, move all pending to free
+                                seg.Pool.Reset(CommandPoolResetFlags.ReleaseResourcesBit);
+                                foreach (var kv in seg.PendingBatches)
+                                {
+                                    var targetFree = seg.FreeBatches.GetOrAdd(kv.Key, _ => new ConcurrentQueue<UploadBatch>());
+                                    while (kv.Value.TryDequeue(out var b))
+                                        targetFree.Enqueue(b);
+                                }
+                                // Now try again (should succeed)
+                                var freeNow = seg.FreeBatches.GetOrAdd(level, _ => new ConcurrentQueue<UploadBatch>());
+                                if (freeNow.TryDequeue(out batch))
+                                {
+                                    Interlocked.Increment(ref seg.InFlight);
+                                    ownerSegment = seg;
+                                    return true;
+                                }
+                            }
+                        }
+                    }
+
+                    // No reusable segment – create a new one
+                    var newPool = _submitContext._commandPoolPool.Rent();
+                    var newSeg = new PoolSegment(newPool);
+                    _segments.Add(newSeg);
+                    // Allocate a fresh command buffer and batch
+                    var cmdBuffer = newPool.AllocateCommandBuffer(level);
+                    batch = new UploadBatch(this, _submitContext, cmdBuffer, level)
+                    {
+                        _ownerSegment = newSeg
+                    };
+                    Interlocked.Increment(ref newSeg.InFlight);
+                    ownerSegment = newSeg;
                     return true;
                 }
-                batch = null;
-                return false;
             }
+            public StagingManager RentStagingManager()
+            {
+                if (_stagingManagerPool.TryDequeue(out var manager))
+                {
+                    return manager;
+                }
+                // Create a new one if none available
+                return new StagingManager(_submitContext._context);
+            }
+            public void ReturnStagingManager(StagingManager manager)
+            {
+                manager.Reset(); // Prepare for reuse
+                _stagingManagerPool.Enqueue(manager);
+            }
+
 
             public void ReturnBatch(UploadBatch batch)
             {
                 ObjectDisposedException.ThrowIf(_disposed, this);
-                batch.ResetLists(); // Clear internal lists, but NOT the command buffer
-                var queue = _oneTimeBatches.GetOrAdd(batch.Level, _ => new ConcurrentQueue<UploadBatch>());
-                queue.Enqueue(batch);
+                var seg = batch._ownerSegment ?? throw new InvalidOperationException("Batch has no owner segment");
+                batch.ResetLists();
 
-                int inFlight = Interlocked.Decrement(ref _batchesInFlight);
-                if (inFlight == 0)
+                if (_useIndividualResets)
                 {
-                    // All batches returned – reset the entire pool (batches all command buffers)
-                    Pool.Reset( CommandPoolResetFlags.None);
+                    batch.CommandBuffer.Reset(CommandBufferResetFlags.ReleaseResourcesBit);
+                    var freeQueue = seg.FreeBatches.GetOrAdd(batch.Level, _ => new ConcurrentQueue<UploadBatch>());
+                    freeQueue.Enqueue(batch);
+                    Interlocked.Decrement(ref seg.InFlight);
+                }
+                else
+                {
+                    var pendingQueue = seg.PendingBatches.GetOrAdd(batch.Level, _ => new ConcurrentQueue<UploadBatch>());
+                    pendingQueue.Enqueue(batch);
+                    int inFlight = Interlocked.Decrement(ref seg.InFlight);
+
+                    if (inFlight == 0)
+                    {
+                        // All batches of this segment are returned – reset the pool and move pending to free
+                        seg.Pool.Reset(CommandPoolResetFlags.ReleaseResourcesBit);
+                        foreach (var kv in seg.PendingBatches)
+                        {
+                            var freeQueue = seg.FreeBatches.GetOrAdd(kv.Key, _ => new ConcurrentQueue<UploadBatch>());
+                            while (kv.Value.TryDequeue(out var b))
+                                freeQueue.Enqueue(b);
+                        }
+                    }
                 }
             }
 
@@ -508,17 +557,20 @@ namespace RockEngine.Vulkan
                 if (_disposed) return;
                 _disposed = true;
 
-                // Clear any leftover batches (should be none if properly used)
-                foreach (var queue in _oneTimeBatches.Values)
+                // Discard any batches – their command buffers will be freed when the pool is destroyed.
+                lock (_segmentLock)
                 {
-                    while (queue.TryDequeue(out var batch))
+                    foreach (var seg in _segments)
                     {
-                        // Command buffer will be freed when pool is reset
+                        _submitContext._commandPoolPool.Return(seg.Pool);
                     }
+                    _segments.Clear();
                 }
-                _oneTimeBatches.Clear();
+                while (_stagingManagerPool.TryDequeue(out var manager))
+                {
+                    manager.Dispose();
+                }
 
-                // Return the command pool to the central pool (will be reset there)
                 _submitContext._commandPoolPool.Return(Pool);
             }
         }
