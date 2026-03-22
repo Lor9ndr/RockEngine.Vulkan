@@ -12,20 +12,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <None Remove="GlslFunctionSignatures.json" />
-    <None Remove="refs\glslangValidator.exe" />
-    <None Remove="refs\RockEngine.ShaderPreProcessor.dll" />
-    <None Remove="refs\RockEngine.ShaderPreProcessor.pdb" />
-    <None Remove="refs\ShaderValidator.deps.json" />
-    <None Remove="refs\ShaderValidator.dll" />
-    <None Remove="refs\ShaderValidator.exe" />
-    <None Remove="refs\ShaderValidator.pdb" />
-    <None Remove="refs\ShaderValidator.runtimeconfig.dev.json" />
-    <None Remove="refs\ShaderValidator.runtimeconfig.json" />
-    <None Remove="ShaderSyntax.pkgdef" />
-  </ItemGroup>
-
-  <ItemGroup>
     <Content Include="refs\glslangValidator.exe" />
     <Content Include="refs\RockEngine.ShaderPreProcessor.dll" />
     <Content Include="refs\RockEngine.ShaderPreProcessor.pdb" />

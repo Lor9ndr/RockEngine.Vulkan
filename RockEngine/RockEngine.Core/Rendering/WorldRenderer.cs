@@ -93,13 +93,16 @@ namespace RockEngine.Core.Rendering
             _lightManager = lightManager;
             _indirectCommandManager = indirectCommandManager;
             _renderPassManager = renderPassManager;
-            SwapchainTarget = new SwapchainRenderTarget(context, graphicsEngine.MainSwapchain);
-          
+
+            if(GraphicsEngine.MainSwapchain is not null)
+            {
+                SwapchainTarget = new SwapchainRenderTarget(context, graphicsEngine.MainSwapchain);
+            }
+
             _iblManager = new IBLManager(
            context,
            new ComputeShaderManager(context,  _pipelineManager),
            _bindingManager
-           //vulkanSynchronizationContext
             );
         }
 
@@ -113,6 +116,7 @@ namespace RockEngine.Core.Rendering
 
                 item.InitializeSubPasses();
             }
+
             RenderPass = _renderPassManager.GetRenderPass<DeferredPassStrategy>();
             SwapchainTarget.Initialize(_renderPassManager.GetRenderPass<SwapchainPassStrategy>());
 

@@ -90,7 +90,7 @@ namespace RockEngine.Editor.EditorComponents
                 model = modelMatrix
             });
 
-            await _uniformBuffer.UpdateAsync(new GridMaterial()
+            _uniformBuffer.Update(new GridMaterial()
             {
                 AxisColor = AxisColor,
                 AxisColorZ = AxisColorZ,
@@ -117,7 +117,7 @@ namespace RockEngine.Editor.EditorComponents
 
             _uniformBuffer = new UniformBuffer(renderer.Context, (ulong)Marshal.SizeOf<GridMaterial>(), false);
 
-            await _uniformBuffer.UpdateAsync(new GridMaterial()
+            _uniformBuffer.Update(new GridMaterial()
             {
                 AxisColor = AxisColor,
                 AxisColorZ = AxisColorZ,

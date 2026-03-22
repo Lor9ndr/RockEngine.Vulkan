@@ -1,6 +1,7 @@
 ﻿using RockEngine.Core.Diagnostics;
 using RockEngine.Core.Rendering.Managers;
 using RockEngine.Core.Rendering.Passes.SubPasses;
+using RockEngine.Core.Rendering.RenderTargets;
 using RockEngine.Vulkan;
 
 using ZLinq;
@@ -26,6 +27,10 @@ namespace RockEngine.Core.Rendering.Passes
                 primaryBatch.Submit();
             }
             return ValueTask.CompletedTask;
+        }
+        public override void InitializeSubPasses()
+        {
+            base.InitializeSubPasses();
         }
     }
 }

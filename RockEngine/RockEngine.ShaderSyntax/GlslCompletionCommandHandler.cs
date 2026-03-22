@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Runtime.InteropServices;
+using System.Threading;
 using Microsoft.VisualStudio;
 using Microsoft.VisualStudio.Language.Intellisense;
 using Microsoft.VisualStudio.OLE.Interop;
@@ -26,13 +27,17 @@ namespace RockEngine.ShaderSyntax
 
         public int QueryStatus(ref Guid pguidCmdGroup, uint cCmds, OLECMD[] prgCmds, IntPtr pCmdText)
         {
+            ThreadHelper.ThrowIfNotOnUIThread();
             return _nextCommandHandler.QueryStatus(ref pguidCmdGroup, cCmds, prgCmds, pCmdText);
         }
 
         public int Exec(ref Guid pguidCmdGroup, uint nCmdID, uint nCmdexecopt, IntPtr pvaIn, IntPtr pvaOut)
         {
+            ThreadHelper.ThrowIfNotOnUIThread();
             if (VsShellUtilities.IsInAutomationFunction(_provider.ServiceProvider))
+            {
                 return _nextCommandHandler.Exec(ref pguidCmdGroup, nCmdID, nCmdexecopt, pvaIn, pvaOut);
+            }
 
             uint commandID = nCmdID;
             char typedChar = char.MinValue;
@@ -101,11 +106,8 @@ namespace RockEngine.ShaderSyntax
 
         private void OnSessionDismissed(object sender, EventArgs e)
         {
-            if (_session != null)
-            {
-                _session.Dismissed -= OnSessionDismissed;
-                _session = null;
-            }
+            _session?.Dismissed -= OnSessionDismissed;
+            _session = null;
         }
     }
 }

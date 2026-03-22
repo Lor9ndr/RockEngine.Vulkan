@@ -25,6 +25,8 @@ namespace RockEngine.Core.Assets
                     CacheDuration = TimeSpan.FromMinutes(10),
                 }, Lifestyle.Singleton);
 
+            container.RegisterSingleton<AssimpLoader>();
+
             // Register serializers
             container.Register<IYamlSerializer, YamlDotNetSerializer>(Lifestyle.Singleton);
             container.Register<IBinarySerializer, MessagePackBinarySerializer>(Lifestyle.Singleton);
@@ -59,6 +61,7 @@ namespace RockEngine.Core.Assets
            Lifestyle.Singleton);
             // Register main manager
             container.Register<IAssetManager, AssetManager>(Lifestyle.Scoped);
+            container.Register<AssetManager>(Lifestyle.Scoped);
             container.Register<IProjectManager>(() =>
                 container.GetInstance<AssetManager>(), Lifestyle.Scoped);
 

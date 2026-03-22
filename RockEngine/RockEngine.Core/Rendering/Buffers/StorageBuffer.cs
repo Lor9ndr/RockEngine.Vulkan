@@ -26,7 +26,7 @@ namespace RockEngine.Core.Rendering.Buffers
 
             var elementSize = (ulong)Unsafe.SizeOf<T>();
             var alignment = context.Device.PhysicalDevice.Properties.Limits.MinStorageBufferOffsetAlignment;
-            _stride = elementSize + alignment - 1 & ~(alignment - 1);
+            _stride = (elementSize + alignment - 1) & ~(alignment - 1);
 
             // Create device-local buffer
             _deviceBuffer = VkBuffer.Create(
@@ -43,6 +43,7 @@ namespace RockEngine.Core.Rendering.Buffers
 
         public void StageData(UploadBatch batch, Span<T> data, ulong startIndex = 0)
         {
+            ObjectDisposedException.ThrowIf(_disposed, this);
             if ((ulong)data.Length + startIndex > Capacity)
             {
                 throw new ArgumentOutOfRangeException(nameof(data), "Exceeds buffer capacity");
@@ -55,9 +56,19 @@ namespace RockEngine.Core.Rendering.Buffers
             batch.StageToBuffer(data, _deviceBuffer, offset,size);
         }
 
-        // Updated Resize method with proper barriers
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="newCapacity">new capacity to change</param>
+        /// <param name="batch">Graphics batch</param>
+
         public void Resize(ulong newCapacity, UploadBatch batch)
         {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            if(batch.SubmitContext.QueueFamily != _context.Device.GraphicsQueue.FamilyIndex)
+            {
+                throw new InvalidOperationException("Invalid batch sended, Pass the graphics batch");
+            }
             if (newCapacity == Capacity)
             {
                 return;
@@ -128,7 +139,7 @@ namespace RockEngine.Core.Rendering.Buffers
                 {
                     SType = StructureType.BufferMemoryBarrier2,
                     SrcStageMask = PipelineStageFlags2.TransferBit,
-                    DstStageMask = PipelineStageFlags2.AllCommandsBit,
+                    DstStageMask = PipelineStageFlags2.AllGraphicsBit | PipelineStageFlags2.ComputeShaderBit,
                     SrcAccessMask = AccessFlags2.TransferWriteBit,
                     DstAccessMask = AccessFlags2.ShaderReadBit | AccessFlags2.ShaderWriteBit,
                     Buffer = newDeviceBuffer,

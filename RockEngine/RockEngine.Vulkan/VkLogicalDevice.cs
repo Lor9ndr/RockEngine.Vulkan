@@ -2,6 +2,7 @@
 using Silk.NET.Core;
 using Silk.NET.Core.Native;
 using Silk.NET.Vulkan;
+using Silk.NET.Vulkan.Extensions.KHR;
 
 namespace RockEngine.Vulkan
 {
@@ -49,7 +50,7 @@ namespace RockEngine.Vulkan
         internal void NameQueues()
         {
             _computeQueue.LabelObject("Compute Queue");
-            _presentQueue.LabelObject("Present Queue");
+            _presentQueue?.LabelObject("Present Queue");
             _graphicsQueue.LabelObject("Graphics Queue");
         }
 
@@ -75,10 +76,9 @@ namespace RockEngine.Vulkan
 
 
 
-        public static VkLogicalDevice Create(VulkanContext context, VkPhysicalDevice physicalDevice, ISurfaceHandler surface, params string[] extensions)
+        public static VkLogicalDevice Create(VulkanContext context, VkPhysicalDevice physicalDevice, ISurfaceHandler? surface, params string[] extensions)
         {
             var api = VulkanContext.Vk;
-            // Find queue families
             QueueFamilyIndices indices = FindQueueFamilies(api, physicalDevice, surface);
             var registry = context.FeatureRegistry;
             if (!registry.CheckSupport(physicalDevice, out var unsupported))
@@ -86,115 +86,111 @@ namespace RockEngine.Vulkan
                 // Handle unsupported required features – throw or disable them.
             }
 
-            // Build the extension list: base extensions + registry extensions
+            // Build extension list: base extensions + registry extensions
             var allExtensions = new HashSet<string>(extensions);
             foreach (var ext in registry.GetAllRequiredExtensions())
                 allExtensions.Add(ext);
 
+            // Only require KHR_swapchain if we have a surface
+            if (surface != null)
+            {
+                allExtensions.Add(KhrSwapchain.ExtensionName);
+            }
+            // Ensure swapchain is not requested in headless mode
+            if (surface == null)
+            {
+                allExtensions.Remove(KhrSwapchain.ExtensionName);
+            }
 
-            // Check if the device is suitable
-            if (!IsDeviceSuitable(api, physicalDevice, surface, extensions, indices))
+            // Check device suitability (skips swapchain checks if surface is null)
+            if (!IsDeviceSuitable(api, physicalDevice, surface, allExtensions.ToArray(), indices))
             {
                 throw new Exception("Device is not suitable.");
             }
 
-            // Create queue create info
-            HashSet<uint> uniqueQueueFamilies = new HashSet<uint>
-            {
-                indices.GraphicsFamily!.Value,
-                indices.PresentFamily!.Value,
-                indices.ComputeFamily!.Value,
-                indices.TransferFamily!.Value
-            };
+            // Collect unique queue families (only those that exist)
+            HashSet<uint> uniqueQueueFamilies = new HashSet<uint>();
+            uniqueQueueFamilies.Add(indices.GraphicsFamily!.Value);
+            if (indices.PresentFamily.HasValue)
+                uniqueQueueFamilies.Add(indices.PresentFamily.Value);
+            uniqueQueueFamilies.Add(indices.ComputeFamily!.Value);
+            uniqueQueueFamilies.Add(indices.TransferFamily!.Value);
+
             var queueCreateInfos = stackalloc DeviceQueueCreateInfo[uniqueQueueFamilies.Count];
             float queuePriority = 1.0f;
 
-            for (int i = 0; i < uniqueQueueFamilies.Count; i++)
+            int idx = 0;
+            foreach (uint family in uniqueQueueFamilies)
             {
-                var queueCreateInfo = new DeviceQueueCreateInfo
+                queueCreateInfos[idx++] = new DeviceQueueCreateInfo
                 {
                     SType = StructureType.DeviceQueueCreateInfo,
-                    QueueFamilyIndex = uniqueQueueFamilies.ElementAt(i),
+                    QueueFamilyIndex = family,
                     QueueCount = 1,
                     PQueuePriorities = &queuePriority
                 };
-                queueCreateInfos[i] = queueCreateInfo;
             }
 
+            // Feature chain setup (unchanged)
             var features2 = new PhysicalDeviceFeatures2();
             var vk11 = new PhysicalDeviceVulkan11Features { SType = StructureType.PhysicalDeviceVulkan11Features };
             var vk12 = new PhysicalDeviceVulkan12Features { SType = StructureType.PhysicalDeviceVulkan12Features };
             var vk13 = new PhysicalDeviceVulkan13Features { SType = StructureType.PhysicalDeviceVulkan13Features };
-            var pageableDeviceLocalMemoryFeatures = new PhysicalDevicePageableDeviceLocalMemoryFeaturesEXT{ SType = StructureType.PhysicalDevicePageableDeviceLocalMemoryFeaturesExt };
+            var pageableDeviceLocalMemoryFeatures = new PhysicalDevicePageableDeviceLocalMemoryFeaturesEXT { SType = StructureType.PhysicalDevicePageableDeviceLocalMemoryFeaturesExt };
 
-            // 6. Build feature chain
-            uint extensionCount = 0;
-
-            // 7. Let each enabled feature modify the structs / add to chain
             foreach (var feature in registry.Features.Where(f => registry.EnabledFeatures.Contains(f.Name)))
             {
-                ///TODO: REWORK CHAIN PASSING
                 using var chain2 = Chain.Create(features2, vk11, vk12, vk13, pageableDeviceLocalMemoryFeatures);
                 if (feature.IsSupported(physicalDevice))
                 {
                     feature.Enable(ref features2, ref vk11, ref vk12, ref vk13, ref pageableDeviceLocalMemoryFeatures, chain2);
-                    extensionCount++;
                 }
             }
             using var chain = Chain.Create(features2, vk11, vk12, vk13, pageableDeviceLocalMemoryFeatures);
 
-
-            // Create device info with proper feature chain
+            // Prepare device create info
             var deviceCreateInfo = new DeviceCreateInfo
             {
                 SType = StructureType.DeviceCreateInfo,
                 QueueCreateInfoCount = (uint)uniqueQueueFamilies.Count,
                 PQueueCreateInfos = queueCreateInfos,
                 PNext = chain.HeadPtr,
-                EnabledExtensionCount = extensionCount,
-                PpEnabledExtensionNames = (byte**)SilkMarshal.StringArrayToPtr(extensions)
+                EnabledExtensionCount = (uint)allExtensions.Count,
+                PpEnabledExtensionNames = (byte**)SilkMarshal.StringArrayToPtr(allExtensions.ToArray())
             };
 
-            // Set extensions
-            if (extensions != null && extensionCount > 0)
-            {
-                deviceCreateInfo.PpEnabledExtensionNames = (byte**)SilkMarshal.StringArrayToPtr(extensions);
-                deviceCreateInfo.EnabledExtensionCount = (uint)extensions.Length;
-            }
-
-            // Create the logical device
+            // Create logical device
             if (api.CreateDevice(physicalDevice, in deviceCreateInfo, null, out Device logicalDevice) != Result.Success)
             {
                 throw new Exception("Failed to create logical device.");
             }
 
-            // Retrieve queue handles
+            // Retrieve queues
             api.GetDeviceQueue(logicalDevice, indices.GraphicsFamily.Value, 0, out Queue graphicsQueue);
-            api.GetDeviceQueue(logicalDevice, indices.PresentFamily.Value, 0, out Queue presentQueue);
             api.GetDeviceQueue(logicalDevice, indices.ComputeFamily.Value, 0, out Queue computeQueue);
             api.GetDeviceQueue(logicalDevice, indices.TransferFamily.Value, 0, out Queue transferQueue);
 
-            var x = api.IsDeviceExtensionPresent(context.Instance, "VK_EXT_pageable_device_local_memory");
+            Queue presentQueue = default;
+            if (indices.PresentFamily.HasValue)
+            {
+                api.GetDeviceQueue(logicalDevice, indices.PresentFamily.Value, 0, out presentQueue);
+            }
 
             // Free unmanaged memory
-            if (deviceCreateInfo.EnabledExtensionCount != 0)
-            {
-                SilkMarshal.Free((nint)deviceCreateInfo.PpEnabledExtensionNames);
-            }
-            SilkMarshal.Free((nint)deviceCreateInfo.PQueueCreateInfos);
+            SilkMarshal.Free((nint)deviceCreateInfo.PpEnabledExtensionNames);
 
             return new VkLogicalDevice(
-                api, 
-                logicalDevice, 
-                new VkQueue(context, in graphicsQueue,indices.GraphicsFamily.Value),
-                new VkQueue(context, in presentQueue, indices.PresentFamily.Value),
+                api,
+                logicalDevice,
+                new VkQueue(context, in graphicsQueue, indices.GraphicsFamily.Value),
+                indices.PresentFamily.HasValue ? new VkQueue(context, in presentQueue, indices.PresentFamily.Value) : null!,
                 new VkQueue(context, in computeQueue, indices.ComputeFamily.Value),
                 new VkQueue(context, in transferQueue, indices.TransferFamily.Value),
                 indices,
                 physicalDevice);
         }
 
-        private static unsafe QueueFamilyIndices FindQueueFamilies(Vk api, PhysicalDevice device, ISurfaceHandler surface)
+        private static QueueFamilyIndices FindQueueFamilies(Vk api, PhysicalDevice device, ISurfaceHandler? surface)
         {
             QueueFamilyIndices indices = new QueueFamilyIndices();
 
@@ -206,12 +202,15 @@ namespace RockEngine.Vulkan
 
             for (uint i = 0; i < queueFamilies.Length; i++)
             {
-                Bool32 presentSupport = false;
-                surface.SurfaceApi.GetPhysicalDeviceSurfaceSupport(device, i, surface.Surface, &presentSupport);
-
-                if (presentSupport)
+                // Check presentation support only if a surface exists
+                if (surface != null)
                 {
-                    indices.PresentFamily = i;
+                    Bool32 presentSupport = false;
+                    surface.SurfaceApi.GetPhysicalDeviceSurfaceSupport(device, i, surface.Surface, &presentSupport);
+                    if (presentSupport)
+                    {
+                        indices.PresentFamily = i;
+                    }
                 }
 
                 if (queueFamilies[i].QueueFlags.HasFlag(QueueFlags.GraphicsBit))
@@ -224,7 +223,7 @@ namespace RockEngine.Vulkan
                     indices.ComputeFamily = i;
                 }
 
-                // Look for dedicated transfer queue (non-graphics/compute)
+                // Look for dedicated transfer queue
                 if (queueFamilies[i].QueueFlags.HasFlag(QueueFlags.TransferBit) &&
                     !queueFamilies[i].QueueFlags.HasFlag(QueueFlags.GraphicsBit) &&
                     !queueFamilies[i].QueueFlags.HasFlag(QueueFlags.ComputeBit))
@@ -232,26 +231,25 @@ namespace RockEngine.Vulkan
                     indices.TransferFamily = i;
                 }
 
-                if (indices.IsComplete() && indices.TransferFamily.HasValue)
+                if (indices.IsComplete() && (surface == null || indices.PresentFamily.HasValue))
                 {
                     break;
                 }
             }
 
-            // Fallbacks if dedicated transfer queue not found
+            // Fallbacks
             indices.ComputeFamily ??= indices.GraphicsFamily;
-            indices.TransferFamily ??= indices.GraphicsFamily; // Fallback to graphics queue
-
+            indices.TransferFamily ??= indices.GraphicsFamily;
             return indices;
         }
 
-        private static bool IsDeviceSuitable(Vk api, PhysicalDevice device, ISurfaceHandler surface, string[] extensions, QueueFamilyIndices indices)
+        private static bool IsDeviceSuitable(Vk api, PhysicalDevice device, ISurfaceHandler? surface, string[] extensions, QueueFamilyIndices indices)
         {
             ArgumentNullException.ThrowIfNull(extensions);
 
             bool extensionsSupported = CheckDeviceExtensionsSupported(api, device, extensions);
-            bool swapChainAdequate = false;
-            if (extensionsSupported)
+            bool swapChainAdequate = true; // Assume adequate if no surface
+            if (extensionsSupported && surface is not null)
             {
                 SwapChainSupportDetails swapChainSupport = VkHelper.QuerySwapChainSupport(device, surface);
                 swapChainAdequate = swapChainSupport.Formats.Length != 0 && swapChainSupport.PresentModes.Length != 0;

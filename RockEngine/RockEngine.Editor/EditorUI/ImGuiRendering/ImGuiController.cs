@@ -67,7 +67,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
 
 
 
-        public unsafe ImGuiController(VulkanContext vkContext, GraphicsContext graphicsEngine,
+        public ImGuiController(VulkanContext vkContext, GraphicsContext graphicsEngine,
                                       BindingManager bindingManager, InputManager inputContext, WorldRenderer renderer,
                                       IWindow mainWindow, Application application)
         {

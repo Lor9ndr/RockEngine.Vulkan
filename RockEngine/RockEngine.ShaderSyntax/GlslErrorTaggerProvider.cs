@@ -1,5 +1,4 @@
 ﻿using System.ComponentModel.Composition;
-using System.Diagnostics;
 using System.IO;
 using System.Reflection;
 using Microsoft.VisualStudio.Text;

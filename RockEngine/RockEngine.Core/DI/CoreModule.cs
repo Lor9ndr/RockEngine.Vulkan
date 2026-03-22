@@ -24,7 +24,6 @@ namespace RockEngine.Core.DI
 {
     public class CoreModule : IDependencyModule
     {
-
         public void RegisterDependencies(Container container)
         {
             container.Options.AllowOverridingRegistrations = true;
@@ -33,7 +32,6 @@ namespace RockEngine.Core.DI
             container.Register<ILayerStack,LayerStack>(Lifestyle.Scoped);
 
             // Singleton services
-            container.RegisterSingleton<AssimpLoader>();
 
             // Window-dependent registrations (factory pattern)
             container.Register<VulkanContext>(Lifestyle.Scoped);
@@ -49,15 +47,6 @@ namespace RockEngine.Core.DI
             container.Register<IServiceProvider, Container>(Lifestyle.Singleton);
 
 
-            /*IoC.Container.RegisterInitializer<LayerStack>(async s =>
-            {
-                foreach (var item in IoC.Container.GetInstance<IEnumerable<ILayer>>())
-                {
-                    await s.PushLayer(item);
-                }
-            });*/
-           
-
             // Factory for IWindow
             SdlWindowing.Use();
             container.RegisterInstance<IWindow>(Window.Create(WindowOptions.DefaultVulkan  with
@@ -68,7 +57,7 @@ namespace RockEngine.Core.DI
             }
             ));
            
-            IoC.Container.RegisterInitializer<InputManager>(s =>
+            container.RegisterInitializer<InputManager>(s =>
             {
                 var window = container.GetInstance<IWindow>();
                 s.SetInput(window, window.CreateInput());
@@ -89,6 +78,9 @@ namespace RockEngine.Core.DI
             container.RegisterRenderSubPass<PostLightPass, DeferredPassStrategy>();
 
             container.RegisterRenderSubPass<ShadowPass, ShadowPassStrategy>();
+
+            container.Register<RenderLayerSystem>(Lifestyle.Scoped);
+
 
             // Components
             container.Register<MeshRenderer>(Lifestyle.Transient);
@@ -138,7 +130,6 @@ namespace RockEngine.Core.DI
             container.Register<IRegistry<RckRenderPass, Type>, RenderPassRegistry>(Lifestyle.Scoped);
             container.Register<GlobalGeometryBuffer>(() =>
             {
-                var settings = container.GetInstance<AppSettings>();
                 var context = container.GetInstance<VulkanContext>();
                 return new GlobalGeometryBuffer(context);
             }, Lifestyle.Singleton);
@@ -159,9 +150,6 @@ namespace RockEngine.Core.DI
             registry.RequestFeature(new HostQueryResetFeature() { IsRequired = true });
             registry.RequestFeature(new ScalarBlockLayoutFeature() { IsRequired = true });
             registry.RequestFeature(new Synchronization2Feature() { IsRequired = true });
-
-
-
         }
     }
 }

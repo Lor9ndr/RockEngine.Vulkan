@@ -155,9 +155,10 @@ namespace RockEngine.Core.Rendering.Texturing
         {
             if (!_disposed)
             {
-                _completionSemaphore?.Dispose();
-                _image?.Dispose();
-                _disposed = true;
+                // can be still used in gpu. late dispose
+                _context.GraphicsSubmitContext.AddDependency(_completionSemaphore);
+                _context.GraphicsSubmitContext.AddDependency(_image);
+                _context.GraphicsSubmitContext.AddDependency(new DeferredOperation(() => _disposed = true));
             }
         }
     }

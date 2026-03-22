@@ -1,6 +1,4 @@
 ﻿using Silk.NET.Vulkan;
-
-using System;
 using System.Runtime.InteropServices;
 
 using Buffer = Silk.NET.Vulkan.Buffer;
@@ -12,9 +10,10 @@ namespace RockEngine.Vulkan
         private readonly VulkanContext _context;
         private readonly VkDeviceMemory _deviceMemory;
         private readonly BufferUsageFlags _usage;
+        private readonly bool _isPersistentlyMapped;
 
         public ulong Size => _deviceMemory.Size;
-        public nint MappedData => _deviceMemory.MappedData ?? throw new InvalidOperationException("Buffer is not mapped");
+        public nint? MappedData => _deviceMemory.MappedData;
 
         public VkBuffer(VulkanContext context, in Buffer bufferNative, VkDeviceMemory deviceMemory, BufferUsageFlags usage)
             : base(in bufferNative)
@@ -23,9 +22,10 @@ namespace RockEngine.Vulkan
             _deviceMemory = deviceMemory;
             _usage = usage;
             // Persistently map if memory is host-visible
-            if ((_deviceMemory.Properties & MemoryPropertyFlags.HostVisibleBit) != 0)
+            _isPersistentlyMapped = (_deviceMemory.Properties & MemoryPropertyFlags.HostVisibleBit) != 0;
+            if (_isPersistentlyMapped)
             {
-                MapPrivate();
+                MapPrivate(); // persistent map
             }
         }
 
@@ -139,7 +139,7 @@ namespace RockEngine.Vulkan
 
         public ValueTask WriteToBufferAsync<T>(in T data, ulong size = Vk.WholeSize, ulong offset = 0) where T : unmanaged
         {
-            Span<T> singleItem = stackalloc T[] { data };
+            Span<T> singleItem = [data];
             WriteToBufferPrivate(singleItem, size, offset);
             return default;
         }
@@ -156,14 +156,24 @@ namespace RockEngine.Vulkan
             var span = new ReadOnlySpan<byte>(data, (int)dataSize);
             WriteToBufferPrivate(span, size, offset);
         }
+        public void WriteToBuffer<T>(T data,  ulong size = Vk.WholeSize, ulong offset = 0) where T : unmanaged
+        {
+            WriteToBufferPrivate([data], size, offset);
+        }
 
         public void WriteToBuffer<T>(Span<T> data, ulong size = Vk.WholeSize, ulong offset = 0) where T : unmanaged
         {
             WriteToBufferPrivate(data, size, offset);
         }
 
-        private void WriteToBufferPrivate<T>(Span<T> data, ulong size = Vk.WholeSize, ulong offset = 0) where T : unmanaged
+        public void WriteToBuffer<T>(ReadOnlySpan<T> data, ulong size = Vk.WholeSize, ulong offset = 0) where T : unmanaged
         {
+            WriteToBufferPrivate(data, size, offset);
+        }
+
+        private void WriteToBufferPrivate<T>(ReadOnlySpan<T> data, ulong size = Vk.WholeSize, ulong offset = 0) where T : unmanaged
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
             if (data.IsEmpty || data.Length == 0)
             {
                 throw new ArgumentException("Data array is null or empty", nameof(data));
@@ -184,25 +194,15 @@ namespace RockEngine.Vulkan
             {
                 throw new ArgumentException("Data exceeds buffer size", nameof(size));
             }
-
-            if (_deviceMemory.IsMapped)
-            {
-                using var memory = MapMemory(actualSize, offset);
-                var destSpan = memory.GetSpan<T>();
-                data.CopyTo(destSpan);
-                Flush(actualSize, offset);
-            }
-            else
-            {
-                using var memory = MapMemory(actualSize, offset);
-                var destSpan = memory.GetSpan<T>();
-                data.CopyTo(destSpan);
-                Flush(actualSize, offset);
-            }
+            using var memory = MapMemory(actualSize, offset);
+            var destSpan = memory.GetSpan<T>();
+            data.CopyTo(destSpan);
+            memory.Flush();
         }
 
         private unsafe void WriteToBufferPrivate(ReadOnlySpan<byte> data, ulong size = Vk.WholeSize, ulong offset = 0)
         {
+            ObjectDisposedException.ThrowIf(_disposed, this);
             if (data.IsEmpty)
             {
                 throw new ArgumentException("Data span is empty", nameof(data));
@@ -228,7 +228,7 @@ namespace RockEngine.Vulkan
             {
                 var mappedPtr = _deviceMemory.MappedData!.Value;
                 var destSpan = new Span<byte>((byte*)mappedPtr + offset, (int)actualSize);
-                data.Slice(0, (int)actualSize).CopyTo(destSpan);
+                data[..(int)actualSize].CopyTo(destSpan);
 
                 if ((_deviceMemory.Properties & MemoryPropertyFlags.HostCoherentBit) == 0)
                 {
@@ -251,6 +251,7 @@ namespace RockEngine.Vulkan
 
         private void MapPrivate(ulong size = Vk.WholeSize, ulong offset = 0)
         {
+            ObjectDisposedException.ThrowIf(_disposed, this);
             if (_deviceMemory.IsMapped)
             {
                 return;
@@ -260,22 +261,26 @@ namespace RockEngine.Vulkan
 
         private void MapPrivate(out nint pdata, ulong size = Vk.WholeSize, ulong offset = 0)
         {
+            ObjectDisposedException.ThrowIf(_disposed, this);
             MapPrivate(size, offset);
             pdata = new nint(_deviceMemory.MappedData!.Value);
         }
 
         private void UnmapPrivate()
         {
+            ObjectDisposedException.ThrowIf(_disposed, this);
             _deviceMemory.Unmap();
         }
 
         public void BindVertexBuffer(UploadBatch batch, ulong vertexOffset = 0)
         {
+            ObjectDisposedException.ThrowIf(_disposed, this);
             batch.BindVertexBuffer(this, vertexOffset);
         }
 
         public void BindIndexBuffer(UploadBatch batch, ulong indexOffset, IndexType type)
         {
+            ObjectDisposedException.ThrowIf(_disposed, this);
             batch.BindIndexBuffer(this, indexOffset, type);
         }
 
@@ -309,12 +314,24 @@ namespace RockEngine.Vulkan
         /// <returns>Disposable mapped memory object</returns>
         public MappedMemory MapMemory(ulong size = Vk.WholeSize, ulong offset = 0)
         {
-            if(size == Vk.WholeSize)
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            if (size == Vk.WholeSize) size = Size;
+
+            nint mappedPtr;
+            if (_deviceMemory.IsMapped)
             {
-                size = Size;
+                // Already persistently mapped – just add offset
+                mappedPtr = _deviceMemory.MappedData.Value + (nint)offset;
             }
-            MapPrivate(out nint mappedPtr, size, offset);
-            return new MappedMemory(this, mappedPtr, size, offset);
+            else
+            {
+                // Not mapped – map the required range
+                MapPrivate(out mappedPtr, size, offset);
+                // mappedPtr already points to base + offset
+            }
+
+            bool shouldUnmap = !_isPersistentlyMapped;
+            return new MappedMemory(this, mappedPtr, size, offset, shouldUnmap);
         }
 
         internal void Unmap()

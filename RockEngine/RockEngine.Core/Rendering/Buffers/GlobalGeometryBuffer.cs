@@ -29,6 +29,7 @@ namespace RockEngine.Core.Rendering.Buffers
         // Defragmentation tracking
         private ulong _vertexFragmentationScore;
         private ulong _indexFragmentationScore;
+        private bool _disposed;
         private const ulong FRAGMENTATION_THRESHOLD = 1024 * 1024; // 1MB
         private static readonly Logger _logger = LogManager.GetCurrentClassLogger();
 
@@ -58,6 +59,8 @@ namespace RockEngine.Core.Rendering.Buffers
                 BufferUsageFlags.IndexBufferBit | BufferUsageFlags.TransferDstBit | BufferUsageFlags.TransferSrcBit,
                 MemoryPropertyFlags.DeviceLocalBit
             );
+            _vertexBuffer.LabelObject("GlobalGeometryVertexBuffer");
+            _indexBuffer.LabelObject("GlobalGeometryIndexBuffer");
         }
 
         public async ValueTask<MeshAllocation> AddMeshAsync<T>(Guid meshID, T[] vertices, uint[] indices) where T : unmanaged, IVertex
@@ -142,6 +145,7 @@ namespace RockEngine.Core.Rendering.Buffers
         }
         public uint GetVertexStride(Guid meshID)
         {
+            ObjectDisposedException.ThrowIf(_disposed, this);
             lock (_allocationLock)
             {
                 return _vertexStrides.TryGetValue(meshID, out var stride)
@@ -151,7 +155,7 @@ namespace RockEngine.Core.Rendering.Buffers
         }
 
 
-        private  ValueTask<MeshAllocation> UploadMeshData<T>(Guid meshID, T[] vertices, uint[] indices,
+        private async ValueTask<MeshAllocation> UploadMeshData<T>(Guid meshID, T[] vertices, uint[] indices,
              ulong vertexSize, ulong indexSize, ulong vertexOffset, ulong indexOffset) where T : unmanaged, IVertex
         {
             var transferBatch = _context.TransferSubmitContext.CreateBatch();
@@ -160,7 +164,7 @@ namespace RockEngine.Core.Rendering.Buffers
             // Copy vertex data to staging buffer
             transferBatch.StageToBuffer<T>(vertices, _vertexBuffer, vertexOffset, vertexSize);
             transferBatch.StageToBuffer<uint>(indices, _indexBuffer, indexOffset, indexSize);
-            transferBatch.PipelineBarrier([], [
+            transferBatch.PipelineBarrier( [
                 new BufferMemoryBarrier2() {
                     SType = StructureType.BufferMemoryBarrier2,
                     Buffer = _vertexBuffer,
@@ -173,8 +177,8 @@ namespace RockEngine.Core.Rendering.Buffers
                     SrcStageMask = PipelineStageFlags2.TransferBit,
                     DstStageMask = PipelineStageFlags2.VertexInputBit
 
-                }], []);
-            transferBatch.PipelineBarrier([],[
+                }]);
+            transferBatch.PipelineBarrier([
              new BufferMemoryBarrier2() {
                     SType = StructureType.BufferMemoryBarrier2,
                     Buffer = _indexBuffer,
@@ -186,19 +190,27 @@ namespace RockEngine.Core.Rendering.Buffers
                     DstQueueFamilyIndex = _context.Device.GraphicsQueue.FamilyIndex,
                     SrcStageMask = PipelineStageFlags2.TransferBit,
                     DstStageMask = PipelineStageFlags2.IndexInputBit
-                }], []);
+                }]);
 
 
             transferBatch.Submit();
-
-            return ValueTask.FromResult(new MeshAllocation(meshID,
+            // TODO: SOMEHOW avoid submitting right now the transferSubmitcontext for test correct execution,
+            // or just in test we have to await for submittion after the uploading mesh.
+            // THEN it is incorrect implementation and not understandable for user that we have to await transfer context
+            // make it sync and write comments of requirements to submit context or rewrite method to return mesh pending allocation then or smth.
+            return await _context.TransferSubmitContext.Submit().AsTask()
+                .ContinueWith((_) =>
+            {
+                return new MeshAllocation(meshID,
                 new FreeBlock(vertexOffset, vertexSize),
                 new FreeBlock(indexOffset, indexSize),
-                (uint)vertices.Length, (uint)indices.Length));
+                (uint)vertices.Length, (uint)indices.Length);
+            });
         }
 
         public void RemoveMesh(Guid meshID)
         {
+            ObjectDisposedException.ThrowIf(_disposed, this);
             lock (_allocationLock)
             {
                 if (_meshAllocations.TryGetValue(meshID, out var allocation))
@@ -210,6 +222,8 @@ namespace RockEngine.Core.Rendering.Buffers
                     // Remove from allocations and formats
                     _meshAllocations.Remove(meshID);
                     _vertexFormats.Remove(meshID);
+                    _vertexStrides.Remove(meshID);
+                    _vertexTypes.Remove(meshID);
 
                     // Update fragmentation scores
                     _vertexFragmentationScore += allocation.VertexSize;
@@ -225,9 +239,9 @@ namespace RockEngine.Core.Rendering.Buffers
             }
         }
 
-        // Functional approach: Direct access to vertex format without type storage
         public VertexInputBindingDescription GetVertexBindingDescription(Guid meshID)
         {
+            ObjectDisposedException.ThrowIf(_disposed, this);
             lock (_allocationLock)
             {
                 return _vertexFormats.TryGetValue(meshID, out var format)
@@ -238,6 +252,7 @@ namespace RockEngine.Core.Rendering.Buffers
 
         public VertexInputAttributeDescription[] GetVertexAttributeDescriptions(Guid meshID)
         {
+            ObjectDisposedException.ThrowIf(_disposed, this);
             lock (_allocationLock)
             {
                 return _vertexFormats.TryGetValue(meshID, out var format)
@@ -249,6 +264,7 @@ namespace RockEngine.Core.Rendering.Buffers
         // Functional programming style: Higher-order function for mesh operations
         public TResult WithMeshFormat<TResult>(Guid meshID, Func<VertexInputBindingDescription, VertexInputAttributeDescription[], TResult> operation)
         {
+            ObjectDisposedException.ThrowIf(_disposed, this);
             lock (_allocationLock)
             {
                 if (!_vertexFormats.TryGetValue(meshID, out var format))
@@ -275,6 +291,7 @@ namespace RockEngine.Core.Rendering.Buffers
 
         public void ForEachMesh(Action<Guid, MeshAllocation, VertexFormat> action)
         {
+            ObjectDisposedException.ThrowIf(_disposed, this);
             lock (_allocationLock)
             {
                 foreach (var (meshId, allocation) in _meshAllocations)
@@ -288,6 +305,7 @@ namespace RockEngine.Core.Rendering.Buffers
         }
         public async ValueTask DefragmentAsync()
         {
+            ObjectDisposedException.ThrowIf(_disposed, this);
             List<MeshAllocation> allocationsSnapshot;
             Dictionary<Guid, uint> stridesSnapshot;
             Dictionary<Guid, VertexFormat> formatsSnapshot;
@@ -444,7 +462,7 @@ namespace RockEngine.Core.Rendering.Buffers
                     DstStageMask = PipelineStageFlags2.IndexInputBit
                 };
 
-                transferBatch.PipelineBarrier([], [vertexBarrier, indexBarrier], []);
+                transferBatch.PipelineBarrier([vertexBarrier, indexBarrier]);
                 transferBatch.Submit();
                 // Submit the transfer batch
                 //_ =_context.TransferSubmitContext.SubmitSingle(transferBatch);
@@ -639,14 +657,17 @@ namespace RockEngine.Core.Rendering.Buffers
             transferBatch.CopyBuffer(_vertexBuffer, newBuffer, 0, 0, _vertexBufferSize);
 
             AddToFreeList(_vertexFreeList, _vertexBufferSize, newSize - _vertexBufferSize);
+            transferBatch.Submit();
 
-            _vertexBuffer.Dispose();
+            _context.TransferSubmitContext.AddDependency(_vertexBuffer);
             _vertexBuffer = newBuffer;
             _vertexBufferSize = newSize;
+            _vertexBuffer.LabelObject("GlobalGeometryVertexBuffer");
         }
 
         private void ExpandIndexBuffer(ulong additionalSize)
         {
+
             var newSize = _indexBufferSize * 2;
             while (newSize - _indexBufferSize < additionalSize)
             {
@@ -664,22 +685,26 @@ namespace RockEngine.Core.Rendering.Buffers
             transferBatch.CopyBuffer(_indexBuffer, newBuffer, 0, 0, _indexBufferSize);
 
             AddToFreeList(_indexFreeList, _indexBufferSize, newSize - _indexBufferSize);
+            transferBatch.Submit();
 
-            _indexBuffer.Dispose();
+            _context.TransferSubmitContext.AddDependency(_indexBuffer);
             _indexBuffer = newBuffer;
             _indexBufferSize = newSize;
+            _indexBuffer.LabelObject("GlobalGeometryIndexBuffer");
         }
 
-     
+
 
         public void Bind(UploadBatch batch)
         {
+            ObjectDisposedException.ThrowIf(_disposed, this);
             _vertexBuffer.BindVertexBuffer(batch);
             _indexBuffer.BindIndexBuffer(batch, 0, IndexType.Uint32);
         }
 
         public MeshAllocation GetMeshAllocation(Guid meshId)
         {
+            ObjectDisposedException.ThrowIf(_disposed,this);
             lock (_allocationLock)
             {
                 return _meshAllocations[meshId];
@@ -688,6 +713,7 @@ namespace RockEngine.Core.Rendering.Buffers
 
         public void Dispose()
         {
+            _disposed = true;
             _vertexBuffer?.Dispose();
             _indexBuffer?.Dispose();
         }

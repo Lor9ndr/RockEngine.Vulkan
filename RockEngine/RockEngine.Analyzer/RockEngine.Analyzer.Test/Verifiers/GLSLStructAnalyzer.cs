@@ -1,20 +1,11 @@
-﻿using Microsoft.CodeAnalysis;
-using Microsoft.CodeAnalysis.CodeFixes;
-using Microsoft.CodeAnalysis.CSharp;
-using Microsoft.CodeAnalysis.CSharp.Testing;
-using Microsoft.CodeAnalysis.Diagnostics;
-using Microsoft.CodeAnalysis.Testing;
-using Microsoft.CodeAnalysis.Testing.Verifiers;
-using Microsoft.VisualStudio.TestTools.UnitTesting;
-
-using System.Collections.Generic;
+﻿using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace RockEngine.Analyzer.Tests
+namespace RockEngine.Analyzer.Test.Verifiers
 {
     [TestClass]
-    public class GLSLStructAnalyzerTests : CSharpAnalyzerTest<GLSLStructAnalyzer, MSTestVerifier>
+    public class GLSLStructAnalyzerTests : CSharpAnalyzerTest<GLSLStructAnalyzer, DefaultVerifier>
     {
 
         [TestMethod]
@@ -232,7 +223,7 @@ public struct StructWithMethods
 
         private async Task VerifyAnalyzerAsync(string source, params DiagnosticResult[] expected)
         {
-            var test = new CSharpAnalyzerTest<GLSLStructAnalyzer, MSTestVerifier>
+            var test = new CSharpAnalyzerTest<GLSLStructAnalyzer, DefaultVerifier>
             {
                 TestCode = source,
                 ReferenceAssemblies = ReferenceAssemblies.Net.Net60
@@ -258,11 +249,11 @@ public struct StructWithMethods
             DiagnosticResult[] expectedDiagnostics,
             string fixedSource)
         {
-            var test = new CSharpCodeFixTest<GLSLStructAnalyzer, GLSLStructCodeFixProvider, MSTestVerifier>
+            var test = new CSharpCodeFixTest<GLSLStructAnalyzer, GLSLStructCodeFixProvider, DefaultVerifier>
             {
                 TestCode = source,
                 FixedCode = fixedSource,
-                ReferenceAssemblies = ReferenceAssemblies.Net.Net60
+                ReferenceAssemblies = ReferenceAssemblies.Net.Net100
             };
 
             test.TestState.AdditionalReferences.Add(

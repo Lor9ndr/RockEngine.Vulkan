@@ -14,7 +14,7 @@ namespace RockEngine.Vulkan
     public sealed class UploadBatch 
     {
         private StagingManager? _stagingManager;
-        private VkCommandBuffer _commandBuffer;
+        private readonly VkCommandBuffer _commandBuffer;
         private readonly SubmitContext _submitContext;
         private readonly List<IDisposable> _disposables;
         private bool _isInUse;

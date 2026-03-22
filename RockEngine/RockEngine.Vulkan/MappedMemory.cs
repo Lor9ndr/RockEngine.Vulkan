@@ -8,17 +8,19 @@ namespace RockEngine.Vulkan
         private readonly nint _mappedPointer;
         private readonly ulong _size;
         private readonly ulong _offset;
+        private readonly bool _shouldUnmap;
 
         public nint Pointer => _mappedPointer;
         public ulong Size => _size;
         public ulong Offset => _offset;
 
-        internal MappedMemory(VkBuffer buffer, nint mappedPointer, ulong size, ulong offset)
+        internal MappedMemory(VkBuffer buffer, nint mappedPointer, ulong size, ulong offset, bool shouldUnmap)
         {
             _buffer = buffer;
             _mappedPointer = mappedPointer;
             _size = size;
             _offset = offset;
+            _shouldUnmap = shouldUnmap;
         }
 
         /// <summary>
@@ -61,7 +63,10 @@ namespace RockEngine.Vulkan
         /// </summary>
         public void Dispose()
         {
-            _buffer.Unmap();
+            if (_shouldUnmap)
+            {
+                _buffer.Unmap();
+            }
         }
     }
 }

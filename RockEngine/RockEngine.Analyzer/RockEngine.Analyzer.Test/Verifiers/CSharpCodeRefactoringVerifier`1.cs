@@ -26,6 +26,7 @@ namespace RockEngine.Analyzer.Test
         {
             var test = new Test
             {
+               
                 TestCode = source,
                 FixedCode = fixedSource,
             };

@@ -12,7 +12,7 @@
 
         public readonly bool IsComplete()
         {
-            return GraphicsFamily.HasValue && ComputeFamily.HasValue && TransferFamily.HasValue && PresentFamily.HasValue;
+            return GraphicsFamily.HasValue && ComputeFamily.HasValue && TransferFamily.HasValue; //&& PresentFamily.HasValue;
         }
     }
 }

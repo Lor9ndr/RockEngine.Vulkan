@@ -216,12 +216,12 @@ namespace RockEngine.Core.Rendering.Managers
             {
                 SType = StructureType.BufferMemoryBarrier2,
                 SrcAccessMask = AccessFlags2.VertexAttributeReadBit | AccessFlags2.IndexReadBit,
+                SrcStageMask = PipelineStageFlags2.VertexInputBit | PipelineStageFlags2.IndexInputBit,
+                DstStageMask = PipelineStageFlags2.TransferBit,
                 DstAccessMask = AccessFlags2.TransferWriteBit,
                 Buffer = buffer.Buffer,
                 Offset = 0,
                 Size = Vk.WholeSize,
-                SrcStageMask = PipelineStageFlags2.VertexInputBit | PipelineStageFlags2.IndexInputBit,
-                DstStageMask = PipelineStageFlags2.TransferBit
             };
 
             batch.PipelineBarrier(

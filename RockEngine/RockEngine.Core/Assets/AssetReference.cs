@@ -77,6 +77,12 @@ namespace RockEngine.Core.Assets
                 return;
             }
 
+            var assetRepository = IoC.Container.GetInstance<IAssetRepository>();
+            if (assetRepository.TryGet(_assetId, out var asset))
+            {
+                Set((T)asset);
+                return;
+            }
             var assetManager = IoC.Container.GetInstance<IAssetManager>();
 
             // If not found synchronously, start async loading but don't wait

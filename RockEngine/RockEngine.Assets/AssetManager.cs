@@ -33,7 +33,7 @@ namespace RockEngine.Assets
 
         public IProject? CurrentProject => _currentProject;
         public bool IsProjectLoaded => _currentProject != null;
-        public string BasePath => _currentProject?.Path.Folder ?? string.Empty;
+        public string BasePath => _currentProject?.Path.Folder ?? throw new Exception("Project isn't loaded");
 
         public AssetManager(
             IOptions<AssetManagerOptions> options,
@@ -248,7 +248,7 @@ namespace RockEngine.Assets
                 }
             });
 
-            _assetCache.Set(asset.Path.ToString(), asset, options);
+            _assetCache.Set(AssetPathNormalizer.Normalize(asset.Path.ToString()), asset, options);
             _assetCache.Set(asset.ID.ToString(), asset, options);
         }
 
@@ -274,7 +274,9 @@ namespace RockEngine.Assets
             var fullPath = GetFullPath(asset.Path);
             var directory = Path.GetDirectoryName(fullPath);
             if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
+            {
                 Directory.CreateDirectory(directory);
+            }
 
             using var stream = new FileStream(fullPath, FileMode.OpenOrCreate, FileAccess.Write,
                 FileShare.None, AssetConstants.OptimalBufferSize, FileOptions.Asynchronous);

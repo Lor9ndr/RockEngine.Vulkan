@@ -52,7 +52,7 @@ namespace RockEngine.Core.ECS
         [Key(5)]
         public RenderLayer Layer { get; set; }
 
-        public event Action OnDestroy;
+        public event Action? OnDestroy;
 
         public Entity()
         {
@@ -98,7 +98,7 @@ namespace RockEngine.Core.ECS
         {
             if (component is Transform)
             {
-                throw new Exception("Can not remove Transform from entity");
+                throw new InvalidOperationException("Can not remove Transform from entity");
             }
             return _components.Remove(component);
         }

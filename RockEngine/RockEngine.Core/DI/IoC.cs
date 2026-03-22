@@ -9,7 +9,7 @@ namespace RockEngine.Core.DI
 {
     public static class IoC
     {
-        public static readonly Container Container = new Container();
+        public static Container Container = new Container();
         private static bool _isInitialized = false;
 
         public static void Initialize(Application application)
@@ -36,6 +36,31 @@ namespace RockEngine.Core.DI
 /*#if DEBUG
             Container.Verify();
 #endif*/
+
+            _isInitialized = true;
+        }
+        public static void Initialize(Container container)
+        {
+            if (_isInitialized)
+            {
+                return;
+            }
+            Container = container;
+            container.Options.ConstructorResolutionBehavior = new GreediestConstructorBehavior();
+
+            container.Options.DefaultScopedLifestyle = new AsyncScopedLifestyle();
+            container.Options.EnableAutoVerification = false;
+            container.Options.ResolveUnregisteredConcreteTypes = true;
+            container.Options.DefaultLifestyle = Lifestyle.Scoped;
+            container.Collection.Register<ILayer>(Array.Empty<Type>());
+
+            // Then register modules
+            DependencyRegistrator.RegisterModules(container);
+
+            // Verify container for configuration errors
+            /*#if DEBUG
+                        Container.Verify();
+            #endif*/
 
             _isInitialized = true;
         }

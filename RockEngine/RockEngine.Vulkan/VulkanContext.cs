@@ -1,15 +1,13 @@
-﻿using NLog;
-
+﻿using System.Diagnostics;
+using System.Runtime.InteropServices;
+using System.Text;
+using NLog;
 using RockEngine.Vulkan.Builders;
-
 using Silk.NET.Core;
+using Silk.NET.Core.Native;
 using Silk.NET.Vulkan;
 using Silk.NET.Vulkan.Extensions.KHR;
 using Silk.NET.Windowing;
-
-using System.Diagnostics;
-using System.Runtime.InteropServices;
-using System.Text;
 
 namespace RockEngine.Vulkan
 {
@@ -44,48 +42,46 @@ namespace RockEngine.Vulkan
         private readonly AppSettings _settings;
         public readonly Vk Api = Vk;
 
-        public VulkanContext(IWindow window, AppSettings settings, FeatureRegistry featureRegistry)
+        public VulkanContext(IWindow? window, AppSettings settings, FeatureRegistry featureRegistry)
         {
             _settings = settings;
             FeatureRegistry = featureRegistry;
-            if (_singleton is not null)
-            {
-                // Have to think about supporting multiple windows with different contexts
-                throw new NotSupportedException("For now it is unsupported to have multiple contexts");
-            }
             Instance = CreateInstance(window, _settings);
-            Surface = CreateSurface(window);
+            Surface = window != null ? CreateSurface(window) : null!; // Surface may be null
             Device = CreateDevice(Surface, Instance, this);
             _debugUtilsFunctions = new DebugUtilsFunctions(Vk, Device, _settings);
-            
+
             Device.NameQueues();
 
             MaxFramesPerFlight = _settings.MaxFramesPerFlight;
             _singleton = this;
             SamplerCache = new SamplerCache(this);
 
-            GraphicsSubmitContext =  new SubmitContext(this, Device.GraphicsQueue);
-
+            GraphicsSubmitContext = new SubmitContext(this, Device.GraphicsQueue);
             ComputeSubmitContext = new SubmitContext(this, Device.ComputeQueue);
             TransferSubmitContext = new SubmitContext(this, Device.TransferQueue);
-            PresentSubmitContext = new SubmitContext(this, Device.PresentQueue);
+
+            // Present queue is only created if a surface exists
+            if (Device.PresentQueue != null)
+            {
+                PresentSubmitContext = new SubmitContext(this, Device.PresentQueue);
+            }
 
             _settings = settings;
         }
 
-      
 
         private SurfaceHandler CreateSurface(IWindow window)
         {
             return SurfaceHandler.CreateSurface(window, this);
         }
 
-        private static unsafe VkInstance CreateInstance(IWindow surface, AppSettings appSettings)
+        private static unsafe VkInstance CreateInstance(IWindow? window, AppSettings appSettings)
         {
             var appname = (byte*)Marshal.StringToHGlobalAnsi(appSettings.Name);
             var appInfo = new ApplicationInfo()
             {
-                ApiVersion = Vk.MakeVersion(1,4,312),
+                ApiVersion = Vk.MakeVersion(1, 4, 312),
                 ApplicationVersion = Vk.MakeVersion(1, 0, 0),
                 EngineVersion = Vk.MakeVersion(1, 0, 0),
                 PApplicationName = appname,
@@ -97,23 +93,43 @@ namespace RockEngine.Vulkan
             {
                 SType = StructureType.InstanceCreateInfo,
                 PApplicationInfo = &appInfo,
-                 
             };
 
             _debugCallback = DebugUtilsMessengerCallbackFunctionEXT;
             IntPtr callbackPtr = Marshal.GetFunctionPointerForDelegate(_debugCallback);
-
-
-            PfnDebugUtilsMessengerCallbackEXT dbcallback = new PfnDebugUtilsMessengerCallbackEXT(
+            var dbcallback = new PfnDebugUtilsMessengerCallbackEXT(
                 (delegate* unmanaged[Cdecl]<DebugUtilsMessageSeverityFlagsEXT, DebugUtilsMessageTypeFlagsEXT, DebugUtilsMessengerCallbackDataEXT*, void*, Bool32>)callbackPtr);
 
+            // Determine instance extensions
+            List<string> extensionsList = new List<string>();
 
-            var extensions = surface.VkSurface.GetRequiredExtensions(out uint countExtensions);
-            ci.PpEnabledExtensionNames = extensions;
-            ci.EnabledExtensionCount = countExtensions;
+            if (window != null && window.VkSurface is not null)
+            {
+                // Use window's required surface extensions
+                var extPtr = window.VkSurface.GetRequiredExtensions(out uint count);
+                for (uint i = 0; i < count; i++)
+                {
+                    extensionsList.Add(Marshal.PtrToStringAnsi((nint)extPtr[i])!);
+                }
+            }
+            else
+            {
+                // Headless: enable only essential extensions (e.g., for debug utils and device properties)
+                extensionsList.Add("VK_KHR_get_physical_device_properties2");
+                // If validation layers are enabled, we also need debug utils extension
+                if (appSettings.EnableValidationLayers)
+                {
+                    extensionsList.Add("VK_EXT_debug_utils");
+                }
+            }
+
+            var extensionsArray = extensionsList.Distinct().ToArray();
+            var ppExtensions = SilkMarshal.StringArrayToPtr(extensionsArray);
+            ci.PpEnabledExtensionNames = (byte**)ppExtensions;
+            ci.EnabledExtensionCount = (uint)extensionsArray.Length;
 
             var instanceBuilder = new VkInstanceBuilder();
-                
+
             if (appSettings.EnableValidationLayers)
             {
                 instanceBuilder.UseValidationLayers(_validationLayers)
@@ -123,7 +139,7 @@ namespace RockEngine.Vulkan
             }
 
             var instance = instanceBuilder.Build(ref ci);
-
+            SilkMarshal.Free(ppExtensions);
             Marshal.FreeHGlobal((nint)appname);
             return instance;
         }
@@ -227,8 +243,8 @@ namespace RockEngine.Vulkan
             GraphicsSubmitContext.Dispose();
             TransferSubmitContext.Dispose();
             ComputeSubmitContext.Dispose();
-            PresentSubmitContext.Dispose();
-            Surface.Dispose();
+            PresentSubmitContext?.Dispose();
+            Surface?.Dispose();
             Device.Dispose();
             Instance.Dispose();
         }
