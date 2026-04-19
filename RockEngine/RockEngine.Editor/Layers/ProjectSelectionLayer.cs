@@ -1,16 +1,12 @@
-﻿using ImGuiNET;
-
+﻿using System.Numerics;
+using ImGuiNET;
 using NLog;
-
 using RockEngine.Assets;
 using RockEngine.Core.Rendering;
 using RockEngine.Editor.EditorUI;
 using RockEngine.Editor.Extensions;
 using RockEngine.Vulkan;
-
 using Silk.NET.Windowing;
-
-using System.Numerics;
 
 namespace RockEngine.Editor.Layers
 {
@@ -166,7 +162,7 @@ namespace RockEngine.Editor.Layers
                     ImGui.End();
                 }
             }
-           
+
 
             // Create project modal
             if (_showCreateProjectModal && !_isOperationInProgress)
@@ -228,7 +224,7 @@ namespace RockEngine.Editor.Layers
 
             try
             {
-                var success = await _projectManager.OpenProjectAsync(path,this);
+                var success = await _projectManager.OpenProjectAsync(path, this);
                 if (!success)
                 {
                     _statusMessage = "Failed to open project";

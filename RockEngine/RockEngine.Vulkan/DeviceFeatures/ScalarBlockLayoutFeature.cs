@@ -4,7 +4,7 @@ namespace RockEngine.Vulkan.DeviceFeatures
 {
     public class ScalarBlockLayoutFeature : DeviceFeature
     {
-        public ScalarBlockLayoutFeature() :base("Scalar Block Layout")
+        public ScalarBlockLayoutFeature() : base("Scalar Block Layout")
         {
 
         }

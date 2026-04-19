@@ -1,5 +1,5 @@
-﻿using NLog;
-
+﻿using System.Numerics;
+using NLog;
 using RockEngine.Core.Builders;
 using RockEngine.Core.Diagnostics;
 using RockEngine.Core.ECS.Components;
@@ -10,11 +10,7 @@ using RockEngine.Core.Rendering.Passes;
 using RockEngine.Core.Rendering.Passes.SubPasses;
 using RockEngine.Core.Rendering.RenderTargets;
 using RockEngine.Vulkan;
-
 using Silk.NET.Vulkan;
-
-using System.Numerics;
-
 using ZLinq;
 
 namespace RockEngine.Core.Rendering
@@ -54,7 +50,7 @@ namespace RockEngine.Core.Rendering
 
         public LightManager LightManager => _lightManager;
 
-        public PipelineManager PipelineManager =>_pipelineManager;
+        public PipelineManager PipelineManager => _pipelineManager;
 
         public BindingManager BindingManager => _bindingManager;
         public SubmitContext SubmitContext => _context.GraphicsSubmitContext;
@@ -94,14 +90,14 @@ namespace RockEngine.Core.Rendering
             _indirectCommandManager = indirectCommandManager;
             _renderPassManager = renderPassManager;
 
-            if(GraphicsEngine.MainSwapchain is not null)
+            if (GraphicsEngine.MainSwapchain is not null)
             {
                 SwapchainTarget = new SwapchainRenderTarget(context, graphicsEngine.MainSwapchain);
             }
 
             _iblManager = new IBLManager(
            context,
-           new ComputeShaderManager(context,  _pipelineManager),
+           new ComputeShaderManager(context, _pipelineManager),
            _bindingManager
             );
         }
@@ -128,6 +124,7 @@ namespace RockEngine.Core.Rendering
 
         public async Task Render(RenderContext renderContext)
         {
+            //TODO: OPTIMIZE, PARALLEL EXECUTION EXCEPT DEPENDENCIES OF THE MAIN SWAPCHAIN IMAGE OR OTHER
             using (PerformanceTracer.BeginSection("Frame Render"))
             {
                 foreach (IRenderPassStrategy? item in _renderPassStrategies)
@@ -137,13 +134,10 @@ namespace RockEngine.Core.Rendering
                 }
             }
         }
-
+        
         public async ValueTask UpdateFrameData()
         {
-            if (_prevFrameIndex == FrameIndex)
-            {
-                //return;
-            }
+
 
             // Get shadow-casting lights before updates
             var shadowCastingLights = _lightManager.GetShadowCastingLights().ToList();
@@ -165,7 +159,6 @@ namespace RockEngine.Core.Rendering
 
             // Wait for all updates concurrently
             await Task.WhenAll(updateTasks).ConfigureAwait(false);
-
 
             if (cameras.Count > 0)
             {
@@ -210,7 +203,7 @@ namespace RockEngine.Core.Rendering
                         BlendEnable = false
                     }
               };
-            using var pipelineBuilder = GraphicsPipelineBuilder.CreateDefault(_context, "Skybox", RenderPass,[vertShader, fragShader]);
+            using var pipelineBuilder = GraphicsPipelineBuilder.CreateDefault(_context, "Skybox", RenderPass, [vertShader, fragShader]);
             pipelineBuilder.WithColorBlendState(new VulkanColorBlendStateBuilder()
                     .AddAttachment(colorBlendAttachments))
                 .WithVertexInputState(new VulkanPipelineVertexInputStateBuilder()

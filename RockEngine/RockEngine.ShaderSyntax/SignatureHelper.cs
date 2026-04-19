@@ -18,7 +18,7 @@ namespace RockEngine.ShaderSyntax
 
         ReadOnlyCollection<IParameter> ISignature.Parameters => new ReadOnlyCollection<IParameter>(_parameters);
 
-        public IParameter CurrentParameter
+        public IParameter? CurrentParameter
         {
             get => _currentParameter;
             set

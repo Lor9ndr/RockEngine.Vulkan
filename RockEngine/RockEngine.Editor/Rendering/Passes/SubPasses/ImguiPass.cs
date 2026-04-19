@@ -16,7 +16,7 @@ namespace RockEngine.Editor.Rendering.Passes.SubPasses
         private readonly IndirectCommandManager _commandManager;
 
         public ImGuiPass(
-            GraphicsContext graphicsEngine, 
+            GraphicsContext graphicsEngine,
             IndirectCommandManager commandManager)
         {
             _graphicsEngine = graphicsEngine;
@@ -41,7 +41,7 @@ namespace RockEngine.Editor.Rendering.Passes.SubPasses
                 {
                     if (command is ImguiRenderCommand imguiCmd)
                     {
-                        imguiCmd.RenderCommand(batch,  _graphicsEngine.FrameIndex, renderer);
+                        imguiCmd.RenderCommand(batch, _graphicsEngine.FrameIndex, renderer);
                     }
                     else
                     {

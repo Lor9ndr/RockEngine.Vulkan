@@ -1,4 +1,6 @@
-﻿using RockEngine.Core;
+﻿using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using RockEngine.Core;
 using RockEngine.Core.Builders;
 using RockEngine.Core.DI;
 using RockEngine.Core.Diagnostics;
@@ -11,13 +13,8 @@ using RockEngine.Core.Rendering.Objects;
 using RockEngine.Core.Rendering.Passes.SubPasses;
 using RockEngine.Editor.Rendering.RenderTargets;
 using RockEngine.Vulkan;
-
 using Silk.NET.Core;
 using Silk.NET.Vulkan;
-
-using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
-
 using ZLinq;
 
 namespace RockEngine.Editor.Rendering.Passes.SubPasses
@@ -86,7 +83,7 @@ namespace RockEngine.Editor.Rendering.Passes.SubPasses
                 var indirectBuffer = _indirectCommands.IndirectBuffer.Buffer;
                 if (drawGroups.Count == 0 && pickingGroups.Count == 0)
                 {
-                    return ;
+                    return;
                 }
 
                 _globalGeometryBuffer.Bind(cmd);
@@ -163,6 +160,7 @@ namespace RockEngine.Editor.Rendering.Passes.SubPasses
                         lastMaterialPass = drawGroup.MaterialPass;
                         _bindingManager.BindResourcesForMaterial(
                           frameIndex,
+                          drawGroup.MeshRenderer.Material,
                           lastMaterialPass,
                           cmd,
                           false,
@@ -193,7 +191,7 @@ namespace RockEngine.Editor.Rendering.Passes.SubPasses
                     }
                 }
             }
-            return ;
+            return;
 
         }
 

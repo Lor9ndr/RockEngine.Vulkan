@@ -1,7 +1,9 @@
-﻿using ImGuiNET;
-
+﻿using System.Collections;
+using System.Collections.Concurrent;
+using System.Diagnostics;
+using System.Numerics;
+using ImGuiNET;
 using NLog;
-
 using RockEngine.Assets;
 using RockEngine.Core.Assets;
 using RockEngine.Core.Coroutines;
@@ -12,12 +14,6 @@ using RockEngine.Editor.EditorUI.Thumbnails;
 using RockEngine.Editor.Extensions;
 using RockEngine.Editor.Helpers;
 using RockEngine.Vulkan;
-
-using System.Collections;
-using System.Collections.Concurrent;
-using System.Diagnostics;
-using System.Numerics;
-using System.Runtime.CompilerServices;
 
 namespace RockEngine.Editor.Layers
 {
@@ -52,7 +48,7 @@ namespace RockEngine.Editor.Layers
 
         // Visual State
         private readonly Dictionary<string, Vector4> _folderColors = new();
-        private string _currentHoveredItem = null;
+        private string? _currentHoveredItem = null;
         private double _hoverStartTime = 0;
         private ImGuiSortDirection _sortDirection = ImGuiSortDirection.Ascending;
         private int _sortColumn = 0; // 0 = Name, 1 = Type, 2 = Size, 3 = Modified
@@ -61,9 +57,9 @@ namespace RockEngine.Editor.Layers
 
         private class FileSystemItem
         {
-            public string Path { get; set; }
-            public string Name { get; set; }
-            public string DisplayName { get; set; }
+            public required string Path { get; set; }
+            public required string Name { get; set; }
+            public required string DisplayName { get; set; }
             public char Icon { get; set; } = Icons.File;
             public bool IsDirectory { get; set; }
             public bool IsAssetFile { get; set; }
@@ -74,7 +70,7 @@ namespace RockEngine.Editor.Layers
             public FileInfo? FileInfo { get; set; }
             public DirectoryInfo? DirectoryInfo { get; set; }
             public Stopwatch? LoadTimer { get; set; }
-            public string FileExtension { get; set; }
+            public required string FileExtension { get; set; }
             public long FileSize { get; set; }
             public DateTime LastModified { get; set; }
             public Thumbnail? Thumbnail { get; set; }
@@ -248,7 +244,7 @@ namespace RockEngine.Editor.Layers
         private void DrawToolbar()
         {
             // Use a child to group toolbar elements
-            ImGui.BeginChild("##Toolbar", new Vector2(0, ImGui.GetFrameHeightWithSpacing() * 2.5f),  ImGuiChildFlags.None, ImGuiWindowFlags.NoScrollbar);
+            ImGui.BeginChild("##Toolbar", new Vector2(0, ImGui.GetFrameHeightWithSpacing() * 2.5f), ImGuiChildFlags.None, ImGuiWindowFlags.NoScrollbar);
 
             // Row 1: Breadcrumb + path bar
             DrawPathBar();
@@ -344,7 +340,6 @@ namespace RockEngine.Editor.Layers
             ImGui.SetNextItemWidth(120);
             string[] sortOptions = { "Name", "Size", "Date Modified", "Type" };
             int currentSort = 0; // placeholder
-            bool sortAscending = true; // placeholder
             if (ImGui.BeginCombo("##Sort", sortOptions[currentSort]))
             {
                 for (int i = 0; i < sortOptions.Length; i++)
@@ -356,7 +351,9 @@ namespace RockEngine.Editor.Layers
                         // Trigger re-sort
                     }
                     if (isSelected)
+                    {
                         ImGui.SetItemDefaultFocus();
+                    }
                 }
                 ImGui.EndCombo();
             }
@@ -381,7 +378,9 @@ namespace RockEngine.Editor.Layers
             ImGui.SameLine();
             ImGui.Checkbox("Ext", ref _showFileExtensions);
             if (ImGui.IsItemHovered())
+            {
                 ImGui.SetTooltip("Show file extensions");
+            }
         }
 
         private void DrawContentArea()
@@ -490,13 +489,23 @@ namespace RockEngine.Editor.Layers
                 filesProcessed++;
 
                 if (filesProcessed % 20 == 0)
+                {
                     yield return new WaitForNextFrame();
+                }
             }
 
             _currentDirectoryItems.Sort((a, b) =>
             {
-                if (a.IsDirectory && !b.IsDirectory) return -1;
-                if (!a.IsDirectory && b.IsDirectory) return 1;
+                if (a.IsDirectory && !b.IsDirectory)
+                {
+                    return -1;
+                }
+
+                if (!a.IsDirectory && b.IsDirectory)
+                {
+                    return 1;
+                }
+
                 return string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase);
             });
 
@@ -517,7 +526,10 @@ namespace RockEngine.Editor.Layers
             {
                 foreach (var item in _currentDirectoryItems)
                 {
-                    if (ShouldFilterItem(item)) continue;
+                    if (ShouldFilterItem(item))
+                    {
+                        continue;
+                    }
 
                     ImGui.TableNextColumn();
                     ImGui.PushID(item.UniqueId);
@@ -544,7 +556,10 @@ namespace RockEngine.Editor.Layers
             // Background
             uint bgColor = ImGui.GetColorU32(isSelected ? ImGuiCol.Header : ImGuiCol.WindowBg);
             if (isHovered && !isSelected)
+            {
                 bgColor = ImGui.GetColorU32(ImGuiCol.HeaderHovered);
+            }
+
             drawList.AddRectFilled(cardMin, cardMax, bgColor, 6.0f);
             drawList.AddRect(cardMin, cardMax, ImGui.GetColorU32(ImGuiCol.Border), 6.0f);
 
@@ -571,7 +586,7 @@ namespace RockEngine.Editor.Layers
                 drawList.AddText(textPos, ImGui.GetColorU32(ImGuiCol.Text), iconText);
             }
 
-          
+
 
             // If this is a texture asset and thumbnail not yet loaded, start loading
             if (item.IsAssetFile && item.AssetHeader?.AssetType == typeof(TextureAsset) && item.Thumbnail == null && !item.IsThumbnailLoading)
@@ -637,7 +652,11 @@ namespace RockEngine.Editor.Layers
 
                 if (ImGui.IsMouseClicked(ImGuiMouseButton.Right))
                 {
-                    if (!isSelected) _selectedItems.Clear();
+                    if (!isSelected)
+                    {
+                        _selectedItems.Clear();
+                    }
+
                     _selectedItems.Add(item.Path);
                     ImGui.OpenPopup("##ItemContextMenu");
                 }
@@ -670,7 +689,7 @@ namespace RockEngine.Editor.Layers
                 LoadThumbnailCoroutine(item, assetId),
                 $"LoadThumbnail_{assetId}"
             );
-           
+
         }
 
         private IEnumerator LoadThumbnailCoroutine(FileSystemItem item, Guid assetId)
@@ -680,7 +699,7 @@ namespace RockEngine.Editor.Layers
             yield return new WaitForTask<IAsset>(assetTask);
 
             var thumbnailTask = _thumbnailService.GetOrCreateThumbnailAsync(
-                 assetTask.Result 
+                 assetTask.Result
             );
 
             yield return new WaitForTask<Thumbnail>(thumbnailTask);
@@ -760,7 +779,11 @@ namespace RockEngine.Editor.Layers
 
                 foreach (var item in _currentDirectoryItems)
                 {
-                    if (ShouldFilterItem(item)) continue;
+                    if (ShouldFilterItem(item))
+                    {
+                        continue;
+                    }
+
                     ImGui.TableNextRow();
                     DrawListItem(item);
                 }
@@ -777,8 +800,15 @@ namespace RockEngine.Editor.Layers
             int comparison(FileSystemItem a, FileSystemItem b)
             {
                 // Directories always come first
-                if (a.IsDirectory && !b.IsDirectory) return -1;
-                if (!a.IsDirectory && b.IsDirectory) return 1;
+                if (a.IsDirectory && !b.IsDirectory)
+                {
+                    return -1;
+                }
+
+                if (!a.IsDirectory && b.IsDirectory)
+                {
+                    return 1;
+                }
 
                 int result = 0;
                 switch (_sortColumn)
@@ -792,10 +822,23 @@ namespace RockEngine.Editor.Layers
                         result = string.Compare(typeA, typeB, StringComparison.OrdinalIgnoreCase);
                         break;
                     case 2: // Size
-                        if (a.IsDirectory && b.IsDirectory) result = 0;
-                        else if (a.IsDirectory) result = -1;
-                        else if (b.IsDirectory) result = 1;
-                        else result = a.FileSize.CompareTo(b.FileSize);
+                        if (a.IsDirectory && b.IsDirectory)
+                        {
+                            result = 0;
+                        }
+                        else if (a.IsDirectory)
+                        {
+                            result = -1;
+                        }
+                        else if (b.IsDirectory)
+                        {
+                            result = 1;
+                        }
+                        else
+                        {
+                            result = a.FileSize.CompareTo(b.FileSize);
+                        }
+
                         break;
                     case 3: // Modified
                         result = a.LastModified.CompareTo(b.LastModified);
@@ -810,8 +853,16 @@ namespace RockEngine.Editor.Layers
 
         private string GetItemTypeString(FileSystemItem item)
         {
-            if (item.IsDirectory) return "Folder";
-            if (item.IsAssetFile) return "Asset";
+            if (item.IsDirectory)
+            {
+                return "Folder";
+            }
+
+            if (item.IsAssetFile)
+            {
+                return "Asset";
+            }
+
             return item.FileExtension.ToUpper().TrimStart('.');
         }
 
@@ -893,9 +944,13 @@ namespace RockEngine.Editor.Layers
             if (ImGui.MenuItem("Open"))
             {
                 if (item.IsDirectory)
+                {
                     HandleItemDoubleClick(item);
+                }
                 else
+                {
                     OpenFileWithDefaultApplication(item.Path);
+                }
             }
 
             if (ImGui.MenuItem("Open in Explorer"))
@@ -922,9 +977,14 @@ namespace RockEngine.Editor.Layers
                 try
                 {
                     if (item.IsDirectory)
+                    {
                         Directory.Delete(item.Path, true);
+                    }
                     else
+                    {
                         File.Delete(item.Path);
+                    }
+
                     _needsDirectoryRefresh = true;
                 }
                 catch (Exception ex)
@@ -958,7 +1018,7 @@ namespace RockEngine.Editor.Layers
         private void DrawStatusBar()
         {
             ImGui.Separator();
-            ImGui.BeginChild("##StatusBar", new Vector2(0, ImGui.GetFrameHeightWithSpacing()),  ImGuiChildFlags.None, ImGuiWindowFlags.NoScrollbar);
+            ImGui.BeginChild("##StatusBar", new Vector2(0, ImGui.GetFrameHeightWithSpacing()), ImGuiChildFlags.None, ImGuiWindowFlags.NoScrollbar);
 
             int totalItems = _currentDirectoryItems.Count;
             int filteredItems = _currentDirectoryItems.Count(item => !ShouldFilterItem(item));
@@ -985,6 +1045,7 @@ namespace RockEngine.Editor.Layers
                 Path = dirInfo.FullName,
                 Name = dirInfo.Name,
                 DisplayName = dirInfo.Name,
+                FileExtension = dirInfo.Extension,
                 Icon = Icons.Folder,
                 IsDirectory = true,
                 IsAssetFile = false,
@@ -1061,10 +1122,10 @@ namespace RockEngine.Editor.Layers
         {
             _logger.Debug("Starting asset header coroutine for: {Asset}", item.Name);
 
-           
-                using var stream = File.OpenRead(item.Path);
-                var headerTask = _serializer.DeserializeHeaderAsync(stream);
-                yield return new WaitForTask(headerTask);
+
+            using var stream = File.OpenRead(item.Path);
+            var headerTask = _serializer.DeserializeHeaderAsync(stream);
+            yield return new WaitForTask(headerTask);
 
             try
             {
@@ -1095,7 +1156,9 @@ namespace RockEngine.Editor.Layers
         private string GetSimpleTypeName(string assemblyQualifiedName)
         {
             if (string.IsNullOrEmpty(assemblyQualifiedName))
+            {
                 return "Unknown";
+            }
 
             var typeName = assemblyQualifiedName;
             var commaIndex = typeName.IndexOf(',');
@@ -1243,7 +1306,7 @@ namespace RockEngine.Editor.Layers
                         // Map percent from 0-100 to 0.6-0.95 range
                         _loadingProgress = 0.6f + (percent / 100f) * 0.35f;
                     });
-                    var sceneInitTask = Task.Run(()=>sceneAsset.InstantiateEntities(progress));
+                    var sceneInitTask = Task.Run(() => sceneAsset.InstantiateEntities(progress));
 
                     yield return new WaitForTask(sceneInitTask);
                     _loadingProgress = 0.95f;
@@ -1273,14 +1336,18 @@ namespace RockEngine.Editor.Layers
         }
         private float GetEstimatedProgress(Task task)
         {
-            if (task.IsCompleted) return 1.0f;
+            if (task.IsCompleted)
+            {
+                return 1.0f;
+            }
+
             return Math.Min(0.95f, DateTime.Now.Ticks % 1000000 / 1000000f);
         }
 
 
         private void HandleItemDragDrop(FileSystemItem item)
         {
-          
+
         }
 
         private void OpenFileWithDefaultApplication(string filePath)
@@ -1302,7 +1369,10 @@ namespace RockEngine.Editor.Layers
 
         private bool ShouldFilterItem(FileSystemItem item)
         {
-            if (string.IsNullOrEmpty(_searchQuery)) return false;
+            if (string.IsNullOrEmpty(_searchQuery))
+            {
+                return false;
+            }
 
             var searchText = _searchQuery.ToLowerInvariant();
             var itemName = item.Name.ToLowerInvariant();
@@ -1313,14 +1383,16 @@ namespace RockEngine.Editor.Layers
         private string GetDisplayName(FileSystemItem item)
         {
             if (item.IsDirectory)
+            {
                 return item.Name;
+            }
 
             return _showFileExtensions
                 ? item.Name
                 : item.DisplayName;
         }
 
-       
+
 
         private void DrawLoadingModal()
         {

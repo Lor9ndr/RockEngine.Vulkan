@@ -1,13 +1,7 @@
-﻿using RockEngine.Core.Diagnostics;
+﻿using System.Diagnostics;
 using RockEngine.Vulkan;
-
 using Silk.NET.Vulkan;
 using Silk.NET.Vulkan.Extensions.KHR;
-
-using SkiaSharp;
-
-using System.Diagnostics;
-
 using Semaphore = Silk.NET.Vulkan.Semaphore;
 
 namespace RockEngine.Core.Rendering
@@ -40,7 +34,7 @@ namespace RockEngine.Core.Rendering
 
         private struct SwapchainEntry
         {
-            public VkSwapchain Swapchain;
+            public VkSwapchain? Swapchain;
             public bool NeedsRecreation;
             public bool IsMain;
 
@@ -65,7 +59,7 @@ namespace RockEngine.Core.Rendering
         private sealed class FrameState : IDisposable
         {
             public required VkFence InFlightFence;
-            public UploadBatch CurrentBatch;
+            public UploadBatch? CurrentBatch;
             public ulong FrameNumber;
             public int AcquiredSwapchainCount;
 
@@ -121,7 +115,7 @@ namespace RockEngine.Core.Rendering
             {
                 _frames[i] = new FrameState
                 {
-                    InFlightFence =VkFence.CreateNotSignaled(context)
+                    InFlightFence = VkFence.CreateNotSignaled(context)
                 };
             }
             _transferFence = VkFence.CreateNotSignaled(_context);
@@ -129,7 +123,10 @@ namespace RockEngine.Core.Rendering
 
         public void AddSwapchain(VkSwapchain swapchain)
         {
-            if (_disposed) ThrowDisposed();
+            if (_disposed)
+            {
+                ThrowDisposed();
+            }
 
             for (int i = 0; i < _swapchains.Length; i++)
             {
@@ -206,7 +203,10 @@ namespace RockEngine.Core.Rendering
 
         public UploadBatch BeginFrame()
         {
-            if (_disposed) ThrowDisposed();
+            if (_disposed)
+            {
+                ThrowDisposed();
+            }
 
             var frame = _frames[_currentFrameIndex];
             frame.FrameNumber = Interlocked.Increment(ref _frameNumber);
@@ -231,7 +231,10 @@ namespace RockEngine.Core.Rendering
             for (int i = 0; i < _activeSwapchainCount; i++)
             {
                 ref var entry = ref _swapchains[i];
-                if (entry.Swapchain == null) continue;
+                if (entry.Swapchain == null)
+                {
+                    continue;
+                }
 
                 if (entry.NeedsRecreation)
                 {
@@ -302,8 +305,8 @@ namespace RockEngine.Core.Rendering
                     anySwapchainInvalid = true;
                 }
             }
-            
-            
+
+
 
             // Handle swapchain recreation if needed
             if (anySwapchainInvalid)
@@ -312,7 +315,7 @@ namespace RockEngine.Core.Rendering
             }
             if (frame.AcquiredSwapchainCount == 0)
             {
-               // return null;
+                // return null;
             }
             // Create upload batch
             frame.CurrentBatch = _context.GraphicsSubmitContext.CreateBatch();
@@ -339,12 +342,17 @@ namespace RockEngine.Core.Rendering
 
         public bool SubmitAndPresent()
         {
-            if (_disposed) return false;
+            if (_disposed)
+            {
+                return false;
+            }
 
             var frame = _frames[_currentFrameIndex];
 
             if (frame.CurrentBatch == null || frame.AcquiredSwapchainCount == 0)
+            {
                 return false;
+            }
 
             // Add signal semaphores for rendering completion
             for (int i = 0; i < frame.AcquiredSwapchainCount; i++)
@@ -381,7 +389,10 @@ namespace RockEngine.Core.Rendering
 
         private unsafe bool PresentFrame(FrameState frame)
         {
-            if (frame.AcquiredSwapchainCount == 0) return false;
+            if (frame.AcquiredSwapchainCount == 0)
+            {
+                return false;
+            }
 
             // Prepare arrays for presentation
             for (int i = 0; i < frame.AcquiredSwapchainCount; i++)
@@ -461,7 +472,10 @@ namespace RockEngine.Core.Rendering
             for (int i = 0; i < _activeSwapchainCount; i++)
             {
                 ref var entry = ref _swapchains[i];
-                if (!entry.NeedsRecreation || entry.Swapchain == null) continue;
+                if (!entry.NeedsRecreation || entry.Swapchain == null)
+                {
+                    continue;
+                }
 
                 try
                 {
@@ -524,7 +538,11 @@ namespace RockEngine.Core.Rendering
 
         public void Dispose()
         {
-            if (_disposed) return;
+            if (_disposed)
+            {
+                return;
+            }
+
             _disposed = true;
 
             // Wait for all frames to complete
@@ -574,7 +592,10 @@ namespace RockEngine.Core.Rendering
 
         public void RemoveSwapchain(VkSwapchain swapchain)
         {
-            if (_disposed) return;
+            if (_disposed)
+            {
+                return;
+            }
 
             for (int i = 0; i < _activeSwapchainCount; i++)
             {

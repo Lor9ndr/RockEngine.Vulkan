@@ -1,5 +1,5 @@
-﻿using ImGuiNET;
-
+﻿using System.Numerics;
+using ImGuiNET;
 using RockEngine.Core;
 using RockEngine.Core.DI;
 using RockEngine.Core.ECS;
@@ -13,12 +13,8 @@ using RockEngine.Editor.Rendering.Passes;
 using RockEngine.Editor.Rendering.RenderTargets;
 using RockEngine.Editor.Selection;
 using RockEngine.Vulkan;
-
 using Silk.NET.Input;
 using Silk.NET.Vulkan;
-
-using System.Numerics;
-
 using ZLinq;
 
 namespace RockEngine.Editor.EditorUI.EditorWindows
@@ -45,12 +41,14 @@ namespace RockEngine.Editor.EditorUI.EditorWindows
         private DateTime _lastStatsUpdate = DateTime.MinValue;
         private readonly TimeSpan _statsUpdateInterval = TimeSpan.FromSeconds(0.5);
 
-        private TransformGizmo Gizmo => _world.GetEntitiesWithComponent<TransformGizmo>()
+        private TransformGizmo? Gizmo => _world.GetEntitiesWithComponent<TransformGizmo>()
             .FirstOrDefault()?.GetComponent<TransformGizmo>();
 
+        
         public ViewportWindow(string title, World world, InputManager inputManager, ImGuiController imGuiController)
             : this(title, world, inputManager, imGuiController, null) { }
 
+        
         public ViewportWindow(string title, World world, InputManager inputManager,
      ImGuiController imGuiController, ISelectionManager selectionManager) : base(title)
         {
@@ -81,6 +79,7 @@ namespace RockEngine.Editor.EditorUI.EditorWindows
             ImGui.End();
         }
 
+        
         protected override void OnDraw()
         {
             var camera = GetCamera();
@@ -141,7 +140,7 @@ namespace RockEngine.Editor.EditorUI.EditorWindows
             }
         }
 
-        private Camera GetCamera()
+        private Camera? GetCamera()
         {
             var entities = _world.GetEntities();
 
@@ -158,6 +157,7 @@ namespace RockEngine.Editor.EditorUI.EditorWindows
             }
         }
 
+        
         private void HandleViewportInteraction(DebugCamera debugCam)
         {
             var windowHovered = ImGui.IsWindowHovered();
@@ -217,7 +217,7 @@ namespace RockEngine.Editor.EditorUI.EditorWindows
             if (gizmoAxis != GizmoAxis.None && gizmo != null)
             {
                 gizmo.SetSelectedAxis(gizmoAxis);
-                gizmo.StartDrag(ImGui.GetMousePos());
+                gizmo.StartDrag(ImGui.GetMousePos(), GetCamera(), _currentImageMin, _currentImageMax, _currentSize);
                 _isGizmoDragging = true;
             }
             else
@@ -234,11 +234,12 @@ namespace RockEngine.Editor.EditorUI.EditorWindows
                 var selectedEntity = _selectionManager?.CurrentSelection?.PrimaryEntity;
                 if (selectedEntity != null && Gizmo != null)
                 {
-                    Gizmo.UpdateDrag(ImGui.GetMousePos(), debugCam, selectedEntity, Size);
+                    // Pass the current image rectangle from the viewport
+                    Gizmo.UpdateDrag(ImGui.GetMousePos(), debugCam, selectedEntity,
+                                     _currentImageMin, _currentImageMax, _currentSize);
                 }
             }
 
-            // End gizmo drag
             if (_isGizmoDragging && ImGui.IsMouseReleased(ImGuiMouseButton.Left))
             {
                 _isGizmoDragging = false;
@@ -259,6 +260,7 @@ namespace RockEngine.Editor.EditorUI.EditorWindows
                    mousePos.Y >= _currentImageMin.Y && mousePos.Y <= _currentImageMax.Y;
         }
 
+        
         private void HandleGizmoModeSwitching()
         {
             if (ImGui.IsKeyPressed(ImGuiKey.T) || ImGui.IsKeyPressed(ImGuiKey.Keypad1))
@@ -275,6 +277,7 @@ namespace RockEngine.Editor.EditorUI.EditorWindows
             }
         }
 
+        
         private void SetGizmoMode(GizmoType mode)
         {
             Gizmo?.CurrentMode = mode;
@@ -338,6 +341,7 @@ namespace RockEngine.Editor.EditorUI.EditorWindows
             };
         }
 
+        
         private void ShowViewportContextMenu()
         {
             if (ImGui.BeginPopupContextWindow("ViewportContextMenu"))
@@ -365,14 +369,16 @@ namespace RockEngine.Editor.EditorUI.EditorWindows
 
                 ImGui.Separator();
 
-                if (ImGui.MenuItem("Select All")) { /* TODO */ }
+                if (ImGui.MenuItem("Select All"))
+                { /* TODO */ }
                 if (ImGui.MenuItem("Deselect All"))
                 {
                     _selectionManager?.ClearSelection();
                 }
 
                 ImGui.Separator();
-                if (ImGui.MenuItem("Create Empty Entity")) { /* TODO */ }
+                if (ImGui.MenuItem("Create Empty Entity"))
+                { /* TODO */ }
 
                 ImGui.EndPopup();
             }
@@ -486,6 +492,7 @@ namespace RockEngine.Editor.EditorUI.EditorWindows
             return _world.GetEntities().FirstOrDefault(e => e.ID == entityId);
         }
 
+        
         private void DrawRenderTarget(RenderTarget renderTarget, ref Vector2 currentSize)
         {
             if (renderTarget == null)
@@ -537,7 +544,9 @@ namespace RockEngine.Editor.EditorUI.EditorWindows
 
             // Don't draw if no stats
             if (_lastPipelineStats.FrameIndex == 0 && _lastPipelineStats.FragmentShaderInvocations == 0)
+            {
                 return;
+            }
 
             // Create overlay window
             var overlayPos = new Vector2(_currentImageMin.X + 10, _currentImageMin.Y + 40);
@@ -604,7 +613,7 @@ namespace RockEngine.Editor.EditorUI.EditorWindows
                     ImGui.ColorConvertFloat4ToU32(new Vector4(0.2f, 0.8f, 0.8f, 1)),
                     $"Compute: {FormatStatCount(_lastPipelineStats.ComputeShaderInvocations)}");
             }
-            
+
             // Close button
             var closeButtonPos = overlayPos + new Vector2(overlaySize.X - 30, 10);
             if (ImGui.IsMouseHoveringRect(closeButtonPos, closeButtonPos + new Vector2(20, 20)))
@@ -624,15 +633,24 @@ namespace RockEngine.Editor.EditorUI.EditorWindows
         private string FormatStatCount(ulong count)
         {
             if (count >= 1_000_000_000)
+            {
                 return $"{(count / 1_000_000_000f):0.0}B";
+            }
+
             if (count >= 1_000_000)
+            {
                 return $"{(count / 1_000_000f):0.0}M";
+            }
+
             if (count >= 1_000)
+            {
                 return $"{(count / 1_000f):0.0}K";
+            }
+
             return count.ToString("N0");
         }
 
-
+        
         private void DrawGizmoModeIndicator()
         {
             var gizmo = Gizmo;

@@ -5,7 +5,7 @@ namespace RockEngine.ShaderPreprocessor
 {
     public class ShaderPreProcessResult
     {
-        public string ProcessedSource { get;}
+        public string ProcessedSource { get; }
         public List<LineMapping> LineMappings { get; }
         public ShaderPreProcessResult(string processedSource, List<LineMapping> lineMappings)
         {
@@ -22,6 +22,6 @@ namespace RockEngine.ShaderPreprocessor
         /// <param name="filePath">Path of the original file (for include resolution).</param>
         /// <param name="defines">List of preprocessor defines (e.g., "BINDLESS_SUPPORTED").</param>
         /// <returns>Processed shader source.</returns>
-        Task<ShaderPreProcessResult> PreprocessAsync(string source, string filePath, IReadOnlyList<string> defines = null);
+        Task<ShaderPreProcessResult> PreprocessAsync(string source, string filePath, IReadOnlyList<string> defines = null, IReadOnlyList<string> extensions = null);
     }
 }

@@ -13,7 +13,7 @@ namespace RockEngine.Core.Synchronization
             SetSynchronizationContext(this); // Automatically sets itself as current
         }
 
-        public override void Post(SendOrPostCallback d, object state)
+        public override void Post(SendOrPostCallback d, object? state)
         {
             _queue.Enqueue((d, state));
         }

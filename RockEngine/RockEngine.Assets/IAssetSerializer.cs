@@ -17,6 +17,26 @@
     /// </summary>
     public class AssetHeader
     {
+        private Type? _assetType;
+
+        public Guid AssetId { get; set; }
+        public string AssetTypeName { get; set; } = string.Empty;
+        public string Name { get; set; } = string.Empty;
+        public DateTime Created { get; set; }
+        public DateTime Modified { get; set; }
+        public int Version { get; set; } = 1;
+        public string Format { get; set; } = "yaml";
+
+        [System.Text.Json.Serialization.JsonIgnore]
+        public Type? AssetType
+        {
+            get
+            {
+                _assetType ??= Type.GetType(AssetTypeName);
+                return _assetType;
+            }
+        }
+
         public AssetHeader()
         {
         }
@@ -31,17 +51,6 @@
             Version = version;
             Format = format;
         }
-
-        public Guid AssetId { get; set; }
-        public string AssetTypeName { get; set; } = string.Empty;
-        public string Name { get; set; } = string.Empty;
-        public DateTime Created { get; set; }
-        public DateTime Modified { get; set; }
-        public int Version { get; set; } = 1;
-        public string Format { get; set; } = "yaml";
-
-        [System.Text.Json.Serialization.JsonIgnore]
-        public Type? AssetType => Type.GetType(AssetTypeName);
     }
 
     /// <summary>

@@ -14,6 +14,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.PropertyHandlers
     {
         public bool CanHandle(Type propertyType) => propertyType == typeof(MeshProvider);
 
+        
         public void Draw(IComponent component, UIPropertyAccessor accessor, object value, PropertyDrawer drawer)
         {
             var meshProvider = value as MeshProvider;
@@ -31,17 +32,24 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.PropertyHandlers
         private string GetCurrentResourceName(MeshProvider meshProvider)
         {
             if (meshProvider == null)
+            {
                 return "None";
+            }
 
             if (meshProvider.IsAssetBased && meshProvider.AssetReference?.Asset != null)
+            {
                 return meshProvider.AssetReference.Asset.Name;
+            }
 
             if (meshProvider.DirectMesh != null)
+            {
                 return $"Mesh ({meshProvider.DirectMesh.VerticesCount} vertices)";
+            }
 
             return "Mesh Provider";
         }
 
+        
         private void HandleAssetDragDrop(IComponent component, UIPropertyAccessor accessor, PropertyDrawer drawer)
         {
             if (AssetDragDrop.AcceptAssetDrop(out var assetID))
@@ -72,10 +80,14 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.PropertyHandlers
             if (ImGui.BeginPopupContextItem())
             {
                 if (ImGui.MenuItem("Create Primitive"))
+                {
                     ShowPrimitiveCreationMenu(component, accessor, drawer);
+                }
 
                 if (meshProvider?.DirectMesh != null && ImGui.MenuItem("Convert to Asset"))
+                {
                     ConvertToAsset(component, accessor, meshProvider, drawer);
+                }
 
                 ImGui.EndPopup();
             }

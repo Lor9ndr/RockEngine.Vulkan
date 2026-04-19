@@ -1,12 +1,10 @@
-﻿using ImGuiNET;
-
+﻿using System.Numerics;
+using ImGuiNET;
 using RockEngine.Core.Attributes;
 using RockEngine.Core.ECS.Components;
 using RockEngine.Core.Helpers;
 using RockEngine.Editor.EditorUI.UndoRedo;
 using RockEngine.Editor.EditorUI.UndoRedo.Commands;
-
-using System.Numerics;
 
 namespace RockEngine.Editor.EditorUI.ImGuiRendering.PropertyHandlers
 {
@@ -26,10 +24,14 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.PropertyHandlers
             ImGui.DragFloat2(accessor.DisplayName, ref value, step);
 
             if (ImGui.IsItemActivated())
+            {
                 _editingOldValues[controlId] = currentValue;
+            }
 
             if (ImGui.IsItemActive() && accessor.CanWrite)
+            {
                 accessor.SetValue(component, value);
+            }
 
             if (ImGui.IsItemDeactivatedAfterEdit())
             {

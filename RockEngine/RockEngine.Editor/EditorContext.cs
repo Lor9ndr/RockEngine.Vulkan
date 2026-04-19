@@ -24,7 +24,7 @@ namespace RockEngine.Editor
 
         public Task RenderAsync()
         {
-          
+
             return Task.CompletedTask;
         }
 

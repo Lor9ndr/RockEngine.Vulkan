@@ -15,18 +15,21 @@ namespace RockEngine.ShaderSyntax
     internal class GlslCompletionHandlerProvider : IVsTextViewCreationListener
     {
         [Import]
-        internal IVsEditorAdaptersFactoryService AdapterService { get; set; }
+        internal IVsEditorAdaptersFactoryService? AdapterService { get; set; }
 
         [Import]
-        internal ICompletionBroker CompletionBroker { get; set; }
+        internal ICompletionBroker? CompletionBroker { get; set; }
 
         [Import]
-        internal SVsServiceProvider ServiceProvider { get; set; }
+        internal SVsServiceProvider? ServiceProvider { get; set; }
 
         public void VsTextViewCreated(IVsTextView textViewAdapter)
         {
             var textView = AdapterService.GetWpfTextView(textViewAdapter);
-            if (textView == null) return;
+            if (textView == null)
+            {
+                return;
+            }
 
             textView.Properties.GetOrCreateSingletonProperty(
                 () => new GlslCompletionCommandHandler(textViewAdapter, textView, this));

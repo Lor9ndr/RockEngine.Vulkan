@@ -5,9 +5,10 @@ namespace RockEngine.Editor;
 public static class Program
 {
     private static readonly Logger _logger = LogManager.GetCurrentClassLogger();
-    private static EditorApplication _app;
-    private static CancellationTokenSource _cts;
+    private static EditorApplication? _app;
+    private static CancellationTokenSource? _cts;
 
+    
     public static async Task Main(string[] args)
     {
         try
@@ -37,7 +38,7 @@ public static class Program
         }
     }
 
-  
+
 
     private static async Task CleanupAsync()
     {
@@ -61,7 +62,7 @@ public static class Program
 
         if (ex != null)
         {
-        
+
         }
     }
 

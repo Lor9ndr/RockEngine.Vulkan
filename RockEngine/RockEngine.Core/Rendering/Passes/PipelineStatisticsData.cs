@@ -1,6 +1,4 @@
-﻿using RockEngine.Core.Diagnostics;
-
-namespace RockEngine.Core.Rendering.Passes
+﻿namespace RockEngine.Core.Rendering.Passes
 {
     public struct PipelineStatisticsData
     {

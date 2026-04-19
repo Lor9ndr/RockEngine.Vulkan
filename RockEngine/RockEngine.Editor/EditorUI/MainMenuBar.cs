@@ -28,24 +28,36 @@ namespace RockEngine.Editor.EditorUI
             {
                 if (ImGui.BeginMenu("File"))
                 {
-                    if (ImGui.MenuItem("New Scene")) { }
-                    if (ImGui.MenuItem("Open Scene")) { }
+                    if (ImGui.MenuItem("New Scene"))
+                    { 
+                    }
+                    if (ImGui.MenuItem("Open Scene"))
+                    { 
+                    }
                     ImGui.Separator();
-                    if (ImGui.MenuItem("Save Scene")) { }
-                    if (ImGui.MenuItem("Save Scene As...")) { }
+                    if (ImGui.MenuItem("Save Scene"))
+                    { }
+                    if (ImGui.MenuItem("Save Scene As..."))
+                    { }
                     ImGui.Separator();
-                    if (ImGui.MenuItem("Exit")) { }
+                    if (ImGui.MenuItem("Exit"))
+                    { }
                     ImGui.EndMenu();
                 }
 
                 if (ImGui.BeginMenu("Edit"))
                 {
-                    if (ImGui.MenuItem("Undo")) { }
-                    if (ImGui.MenuItem("Redo")) { }
+                    if (ImGui.MenuItem("Undo"))
+                    { }
+                    if (ImGui.MenuItem("Redo"))
+                    { }
                     ImGui.Separator();
-                    if (ImGui.MenuItem("Cut")) { }
-                    if (ImGui.MenuItem("Copy")) { }
-                    if (ImGui.MenuItem("Paste")) { }
+                    if (ImGui.MenuItem("Cut"))
+                    { }
+                    if (ImGui.MenuItem("Copy"))
+                    { }
+                    if (ImGui.MenuItem("Paste"))
+                    { }
                     ImGui.EndMenu();
                 }
 
@@ -86,9 +98,12 @@ namespace RockEngine.Editor.EditorUI
 
                 if (ImGui.BeginMenu("Assets"))
                 {
-                    if (ImGui.MenuItem("Create Material")) { }
-                    if (ImGui.MenuItem("Import Model")) { }
-                    if (ImGui.MenuItem("Import Texture")) { }
+                    if (ImGui.MenuItem("Create Material"))
+                    { }
+                    if (ImGui.MenuItem("Import Model"))
+                    { }
+                    if (ImGui.MenuItem("Import Texture"))
+                    { }
                     ImGui.EndMenu();
                 }
 

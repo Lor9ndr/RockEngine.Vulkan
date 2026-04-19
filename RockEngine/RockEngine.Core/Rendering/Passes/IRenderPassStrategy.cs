@@ -1,7 +1,5 @@
-﻿using RockEngine.Core.Rendering.Managers;
-using RockEngine.Core.Rendering.Objects;
+﻿using RockEngine.Core.Rendering.Objects;
 using RockEngine.Core.Rendering.Passes.SubPasses;
-using RockEngine.Vulkan;
 
 using Silk.NET.Vulkan;
 

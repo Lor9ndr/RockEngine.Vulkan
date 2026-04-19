@@ -1,5 +1,4 @@
-﻿using System;
-using System.Numerics;
+﻿using System.Numerics;
 using System.Runtime.CompilerServices;
 using NUnit.Framework;
 using RockEngine.Core.Rendering.Buffers;
@@ -10,7 +9,7 @@ namespace RockEngine.Tests.Buffers
     [TestFixture]
     public class UniformBufferTests : TestBase
     {
-        private VulkanContext _context;
+        private new VulkanContext? _context;
 
         [OneTimeSetUp]
         public void OneTimeSetUp()
@@ -19,6 +18,7 @@ namespace RockEngine.Tests.Buffers
         }
 
         [Test]
+        
         public void Create_ShouldSucceed()
         {
             ulong size = 256;
@@ -34,6 +34,7 @@ namespace RockEngine.Tests.Buffers
         }
 
         [Test]
+        
         public void CreateDynamic_ShouldSetFlag()
         {
             var uniformBuffer = new UniformBuffer(_context, 256, true);
@@ -42,6 +43,7 @@ namespace RockEngine.Tests.Buffers
         }
 
         [Test]
+        
         public void Update_ShouldWriteData()
         {
             var uniformBuffer = new UniformBuffer(_context, 256);
@@ -60,6 +62,7 @@ namespace RockEngine.Tests.Buffers
         }
 
         [Test]
+        
         public void Update_WithArray_ShouldWriteMultiple()
         {
             using var uniformBuffer = new UniformBuffer(_context, 256);
@@ -71,7 +74,7 @@ namespace RockEngine.Tests.Buffers
 
             uniformBuffer.Update(testArray);
 
-            using(var mapped = uniformBuffer.Buffer.MapMemory())
+            using (var mapped = uniformBuffer.Buffer.MapMemory())
             {
                 var dataSpan = mapped.GetSpan<Vector4>();
                 for (int i = 0; i < testArray.Length; i++)
@@ -82,6 +85,7 @@ namespace RockEngine.Tests.Buffers
         }
 
         [Test]
+        
         public void Update_WithOffsetAndSize_ShouldWriteAtCorrectPosition()
         {
             var uniformBuffer = new UniformBuffer(_context, 128);
@@ -93,7 +97,7 @@ namespace RockEngine.Tests.Buffers
             uniformBuffer.Update(first);
             uniformBuffer.Update(second, elementSize, offset);
 
-            using(var mapped = uniformBuffer.Buffer.MapMemory())
+            using (var mapped = uniformBuffer.Buffer.MapMemory())
             {
                 var dataSpan = mapped.GetSpan<Vector4>();
                 Assert.That(dataSpan[0], Is.EqualTo(first));
@@ -104,6 +108,7 @@ namespace RockEngine.Tests.Buffers
         }
 
         [Test]
+        
         public void Update_WithDataLargerThanRequestedSize_ShouldThrow()
         {
             var uniformBuffer = new UniformBuffer(_context, 32);
@@ -113,6 +118,7 @@ namespace RockEngine.Tests.Buffers
         }
 
         [Test]
+        
         public void Update_WithOffsetPlusSizeExceedingRequestedSize_ShouldThrow()
         {
             var uniformBuffer = new UniformBuffer(_context, 32);
@@ -122,6 +128,7 @@ namespace RockEngine.Tests.Buffers
         }
 
         [Test]
+        
         public void FlushBuffer_ShouldWork()
         {
             var uniformBuffer = new UniformBuffer(_context, 256);
@@ -134,6 +141,7 @@ namespace RockEngine.Tests.Buffers
         }
 
         [Test]
+        
         public void Dispose_ShouldReleaseResources()
         {
             var uniformBuffer = new UniformBuffer(_context, 256);

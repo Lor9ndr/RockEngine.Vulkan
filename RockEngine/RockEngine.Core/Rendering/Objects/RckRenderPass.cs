@@ -9,13 +9,13 @@ namespace RockEngine.Core.Rendering.Objects
     {
         public VkRenderPass RenderPass { get; }
         public IRenderSubPass[] SubPasses { get; }
-        public RckRenderPass(VkRenderPass renderPass,  IRenderSubPass[] subPasses)
+        public RckRenderPass(VkRenderPass renderPass, IRenderSubPass[] subPasses)
         {
             RenderPass = renderPass;
             SubPasses = subPasses;
         }
 
-        public static explicit operator VkRenderPass(RckRenderPass engineRenderPass)=> engineRenderPass.RenderPass;
+        public static explicit operator VkRenderPass(RckRenderPass engineRenderPass) => engineRenderPass.RenderPass;
 
         public static implicit operator RenderPass(RckRenderPass v)
         {

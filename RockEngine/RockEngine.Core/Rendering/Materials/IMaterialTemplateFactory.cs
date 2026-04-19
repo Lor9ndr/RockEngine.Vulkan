@@ -1,5 +1,4 @@
 ﻿using RockEngine.Core.Rendering.Objects;
-using RockEngine.Vulkan;
 
 namespace RockEngine.Core.Rendering.Materials
 {

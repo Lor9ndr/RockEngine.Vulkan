@@ -13,7 +13,7 @@ namespace RockEngine.ShaderSyntax
     public class GlslSignatureHelpSourceProvider : ISignatureHelpSourceProvider
     {
         [ImportMany]
-        internal IEnumerable<ISignatureHelpContributor> Contributors { get; set; }
+        internal IEnumerable<ISignatureHelpContributor>? Contributors { get; set; }
 
         public ISignatureHelpSource TryCreateSignatureHelpSource(ITextBuffer textBuffer)
         {

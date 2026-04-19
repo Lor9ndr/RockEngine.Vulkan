@@ -56,7 +56,7 @@ namespace RockEngine.Editor.Rendering.Passes
                         // Begin render pass
                         BeginRenderPass(PickingRenderTarget, renderer, primaryBatch);
 
-                        
+
                         if (_subPasses.Length > 0)
                         {
                             _subPasses[0].Execute(primaryBatch, renderer.FrameIndex, camera, camIndex, PickingRenderTarget);

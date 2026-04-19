@@ -1,6 +1,6 @@
-﻿using RockEngine.Core.Rendering.ResourceBindings;
-
-using System.Collections;
+﻿using System.Collections;
+using System.Runtime.InteropServices;
+using RockEngine.Core.Rendering.ResourceBindings;
 
 namespace RockEngine.Core.Internal
 {
@@ -14,7 +14,7 @@ namespace RockEngine.Core.Internal
         public uint MaxSetLocation => _setBindings.Keys.LastOrDefault();
         public int CountAllBindings => _setBindings.Sum(kvp => kvp.Value.Count);
         public int Count => _setBindings.Count;
-        internal List<uint> DynamicOffsets => _dynamicOffsets;
+        public ReadOnlySpan<uint> DynamicOffsets => CollectionsMarshal.AsSpan(_dynamicOffsets);
 
         public void Add(ResourceBinding binding)
         {
@@ -40,10 +40,15 @@ namespace RockEngine.Core.Internal
 
         public bool Remove(ResourceBinding binding)
         {
-            if (binding is null) return false;
+            if (binding is null)
+            {
+                return false;
+            }
 
             if (!_setBindings.TryGetValue(binding.SetLocation, out var setBindings))
+            {
                 return false;
+            }
 
             var removed = setBindings.Remove(binding);
 
@@ -77,7 +82,7 @@ namespace RockEngine.Core.Internal
             return _setBindings.TryGetValue(set, out bindings);
         }
 
-        internal void RemoveAll(Func<ResourceBinding, bool> value)
+        public void RemoveAll(Func<ResourceBinding, bool> value)
         {
             foreach (var set in _setBindings)
             {

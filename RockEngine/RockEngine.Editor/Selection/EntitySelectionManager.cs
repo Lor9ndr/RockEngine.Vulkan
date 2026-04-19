@@ -48,7 +48,7 @@ namespace RockEngine.Editor.Selection
             SelectionContextChanged?.Invoke(context);
         }
 
-        public void SelectEntity(Entity entity, SelectionSource source = SelectionSource.Script, object additionalData = null)
+        public void SelectEntity(Entity entity, SelectionSource source = SelectionSource.Script, object? additionalData = null)
         {
             var context = new SelectionContext(entity, source)
             {
@@ -57,7 +57,7 @@ namespace RockEngine.Editor.Selection
             Select(context);
         }
 
-        public void SelectEntities(IEnumerable<Entity> entities, SelectionSource source = SelectionSource.Script, object additionalData = null)
+        public void SelectEntities(IEnumerable<Entity> entities, SelectionSource source = SelectionSource.Script, object? additionalData = null)
         {
             var context = new SelectionContext(entities, source)
             {

@@ -1,20 +1,14 @@
-﻿using ImGuiNET;
-
+﻿using System.Numerics;
+using System.Runtime.InteropServices;
+using ImGuiNET;
 using RockEngine.Core.Rendering;
 using RockEngine.Core.Rendering.Objects;
 using RockEngine.Core.Rendering.RenderTargets;
 using RockEngine.Vulkan;
-
 using Silk.NET.Input;
 using Silk.NET.Maths;
-using Silk.NET.Vulkan;
 using Silk.NET.Windowing;
-
-using System.Numerics;
-using System.Runtime.InteropServices;
-
 using static RockEngine.Editor.EditorUI.ImGuiRendering.ImGuiController;
-
 using Application = RockEngine.Core.Application;
 
 namespace RockEngine.Editor.EditorUI.ImGuiRendering.MultiWindowing
@@ -27,8 +21,8 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.MultiWindowing
         public ImGuiViewportPtr ViewportPtr { get; }
         public bool IsMainViewport { get; }
         public IInputContext InputContext { get; }
-       
-        public bool IsFocused  = true;
+
+        public bool IsFocused = true;
         public bool IsMinimized { get; private set; }
 
         public RckImGuiViewport(IWindow window, ImGuiViewportPtr viewportPtr, IInputContext inputContext, ImGuiViewportManager imGuiViewportManager, bool isMainViewport = false)
@@ -61,14 +55,14 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.MultiWindowing
         private readonly Dictionary<uint, RckImGuiViewport> _viewportMap = new Dictionary<uint, RckImGuiViewport>();
 
         // Delegate definitions
-        public delegate void Platform_CreateWindow(ImGuiViewportPtr vp);                    
+        public delegate void Platform_CreateWindow(ImGuiViewportPtr vp);
         public delegate void Platform_DestroyWindow(ImGuiViewportPtr vp);
-        public delegate void Platform_ShowWindow(ImGuiViewportPtr vp);                      
+        public delegate void Platform_ShowWindow(ImGuiViewportPtr vp);
         public delegate void Platform_SetWindowPos(ImGuiViewportPtr vp, Vector2 pos);
         public delegate void Platform_GetWindowPos(ImGuiViewportPtr vp, out Vector2 outPos);
         public delegate void Platform_SetWindowSize(ImGuiViewportPtr vp, Vector2 size);
         public delegate void Platform_GetWindowSize(ImGuiViewportPtr vp, out Vector2 outSize);
-        public delegate void Platform_SetWindowFocus(ImGuiViewportPtr vp);                  
+        public delegate void Platform_SetWindowFocus(ImGuiViewportPtr vp);
         public delegate byte Platform_GetWindowFocus(ImGuiViewportPtr vp);
         public delegate byte Platform_GetWindowMinimized(ImGuiViewportPtr vp);
         public delegate void Platform_SetWindowTitle(ImGuiViewportPtr vp, IntPtr title);
@@ -102,6 +96,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.MultiWindowing
         public IReadOnlyList<RckImGuiViewport> Viewports => _viewports;
         public RckImGuiViewport MainViewport => _viewports.FirstOrDefault(v => v.IsMainViewport);
 
+        
         public ImGuiViewportManager(VulkanContext vkContext, GraphicsContext graphicsContext, ImGuiController controller, RckRenderPass renderPass, Core.Application application)
         {
             _vkContext = vkContext;
@@ -185,7 +180,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.MultiWindowing
                 window.Initialize();
 
                 var inputContext = window.CreateInput();
-                var viewport = new RckImGuiViewport(window, viewportPtr, inputContext,this);
+                var viewport = new RckImGuiViewport(window, viewportPtr, inputContext, this);
                 AttachInputHandlers(viewport, inputContext);
 
                 _viewports.Add(viewport);
@@ -228,7 +223,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.MultiWindowing
             {
                 try
                 {
-                    
+
                 }
                 catch (Exception ex)
                 {
@@ -289,7 +284,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.MultiWindowing
             if (_viewportMap.TryGetValue(vp.ID, out var viewport))
             {
                 var pos = viewport.Window.Position;
-                outPos =  new Vector2(pos.X, pos.Y);
+                outPos = new Vector2(pos.X, pos.Y);
                 return;
             }
             outPos = Vector2.Zero;
@@ -308,7 +303,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.MultiWindowing
             if (_viewportMap.TryGetValue(vp.ID, out var viewport))
             {
                 var size = viewport.Window.Size;
-                outSize =  new Vector2(size.X, size.Y);
+                outSize = new Vector2(size.X, size.Y);
                 return;
             }
             outSize = Vector2.Zero;
@@ -417,10 +412,13 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.MultiWindowing
             }
         }
 
+        
         private void RendererRenderWindow(ImGuiViewportPtr vp, nint renderArg)
         {
             if (vp.RendererUserData == IntPtr.Zero || vp.DrawData.CmdListsCount == 0)
+            {
                 return;
+            }
 
             try
             {
@@ -428,11 +426,14 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.MultiWindowing
                 var renderContext = (SwapchainRenderTarget)handle.Target;
 
                 // Check if viewport is valid and visible
-                if (!_viewportMap.TryGetValue(vp.ID, out var rckViewport) ||rckViewport.Window.WindowState == WindowState.Minimized)
+                if (!_viewportMap.TryGetValue(vp.ID, out var rckViewport) || rckViewport.Window.WindowState == WindowState.Minimized)
+                {
                     return;
+                }
+
                 try
                 {
-                   
+
                     if (renderContext.Swapchain.CurrentImageIndex == uint.MaxValue)
                     {
                         return;
@@ -443,7 +444,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.MultiWindowing
                     uint imageIndex = vpImgui.FrameIndex;
 
                     _controller.RenderImDrawData(vp.DrawData, renderContext, vpImgui.Batch, vpImgui.FrameIndex, rckViewport);
-                   
+
                 }
                 catch (Exception ex)
                 {
@@ -459,7 +460,9 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.MultiWindowing
         private void RendererSwapBuffers(ImGuiViewportPtr vp, void* renderArg)
         {
             if (vp.RendererUserData == IntPtr.Zero)
+            {
                 return;
+            }
 
             try
             {

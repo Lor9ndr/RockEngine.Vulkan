@@ -1,6 +1,4 @@
-﻿using System;
-
-namespace RockEngine.Mathematics
+﻿namespace RockEngine.Mathematics
 {
 
     public static class ShaderMath

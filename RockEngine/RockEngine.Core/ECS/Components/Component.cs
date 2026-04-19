@@ -16,7 +16,7 @@ namespace RockEngine.Core.ECS.Components
         public Entity Entity { get; private set; }
 
         [Key(6)]
-        public bool IsActive {get; protected set;} = true;
+        public bool IsActive { get; protected set; } = true;
 
         public virtual void SetEntity(Entity entity)
         {

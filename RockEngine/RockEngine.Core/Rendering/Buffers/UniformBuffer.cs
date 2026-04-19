@@ -1,5 +1,4 @@
-﻿using System;
-using System.Runtime.CompilerServices;
+﻿using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using RockEngine.Vulkan;
 using Silk.NET.Vulkan;
@@ -44,6 +43,7 @@ namespace RockEngine.Core.Rendering.Buffers
         /// <param name="context">The Vulkan context.</param>
         /// <param name="size">The requested buffer size in bytes.</param>
         /// <param name="isDynamic">If set to <c>true</c>, indicates this buffer will be used with dynamic offsets.</param>
+        
         public UniformBuffer(VulkanContext context, ulong size, bool isDynamic = false)
         {
             _context = context;
@@ -63,6 +63,7 @@ namespace RockEngine.Core.Rendering.Buffers
         /// </summary>
         /// <param name="size">The requested buffer size in bytes.</param>
         /// <param name="isDynamic">If set to <c>true</c>, indicates this buffer will be used with dynamic offsets.</param>
+        
         public UniformBuffer(ulong size, bool isDynamic = false)
             : this(VulkanContext.GetCurrent(), size, isDynamic)
         {
@@ -92,7 +93,11 @@ namespace RockEngine.Core.Rendering.Buffers
         /// <exception cref="ArgumentException">Thrown if the data range exceeds the requested buffer size.</exception>
         public void Update<T>(T[] data, ulong size = Vk.WholeSize, ulong offset = 0) where T : unmanaged
         {
-            if (data == null) throw new ArgumentNullException(nameof(data));
+            if (data == null)
+            {
+                throw new ArgumentNullException(nameof(data));
+            }
+
             UpdateInternal(data.AsSpan(), size, offset);
         }
 
@@ -105,7 +110,11 @@ namespace RockEngine.Core.Rendering.Buffers
         /// <exception cref="ArgumentException">Thrown if the data range exceeds the requested buffer size.</exception>
         public void Update(Span<byte> data, ulong size = Vk.WholeSize, ulong offset = 0)
         {
-            if (data.IsEmpty) throw new ArgumentException("Data cannot be empty", nameof(data));
+            if (data.IsEmpty)
+            {
+                throw new ArgumentException("Data cannot be empty", nameof(data));
+            }
+
             UpdateInternal(data, size, offset);
         }
 
@@ -115,9 +124,14 @@ namespace RockEngine.Core.Rendering.Buffers
             ulong actualSize = size == Vk.WholeSize ? dataSize : size;
 
             if (actualSize > dataSize)
+            {
                 throw new ArgumentException("Specified size exceeds data size", nameof(size));
+            }
+
             if (offset + actualSize > _requestedSize)
+            {
                 throw new ArgumentException("Data range exceeds buffer requested size");
+            }
 
             using var mapped = _buffer.MapMemory(actualSize, offset);
             var destSpan = mapped.GetSpan<T>();
@@ -131,9 +145,14 @@ namespace RockEngine.Core.Rendering.Buffers
             ulong actualSize = size == Vk.WholeSize ? dataSize : size;
 
             if (actualSize > dataSize)
+            {
                 throw new ArgumentException("Specified size exceeds data size", nameof(size));
+            }
+
             if (offset + actualSize > _requestedSize)
+            {
                 throw new ArgumentException("Data range exceeds buffer requested size");
+            }
 
             using var mapped = _buffer.MapMemory(actualSize, offset);
             var destSpan = mapped.GetSpan();

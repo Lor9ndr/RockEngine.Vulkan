@@ -13,9 +13,10 @@ namespace RockEngine.Core
             meshAsset.SetGeometry(Cube.Vertices, Cube.Indices);
             assetRepository.Add(meshAsset);
         }
-        public static readonly MeshData<Vertex> Cube = new MeshData<Vertex>() { 
+        public static readonly MeshData<Vertex> Cube = new MeshData<Vertex>()
+        {
 
-            Vertices = 
+            Vertices =
             [
                  // Front face (Z+)
                new Vertex(-1.0f, -1.0f,  1.0f,0,0,0,0,0), // 0
@@ -49,6 +50,6 @@ namespace RockEngine.Core
                 // Bottom face
                 4, 5, 1, 1, 0, 4
             ]
-            };
+        };
     }
 }

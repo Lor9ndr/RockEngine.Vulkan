@@ -1,12 +1,9 @@
-﻿using RockEngine.Core.Extensions;
+﻿using System.Collections.Concurrent;
+using RockEngine.Core.Extensions;
 using RockEngine.Core.Helpers;
 using RockEngine.Core.Rendering.Passes.SubPasses;
 using RockEngine.Vulkan;
-
 using Silk.NET.Vulkan;
-
-using System.Collections.Concurrent;
-
 using ZLinq;
 
 namespace RockEngine.Core.Rendering.Passes
@@ -34,7 +31,7 @@ namespace RockEngine.Core.Rendering.Passes
             _cameraIndex = cameraIndex;
             _subpassIndex = subpassIndex;
             _disposed = false;
-           
+
             _strategy?.BeginSubpassPipelineStatistics(_batch, _frameIndex, _cameraIndex, _subpassIndex);
         }
 
@@ -158,7 +155,7 @@ namespace RockEngine.Core.Rendering.Passes
         protected virtual void InitializePipelineStatistics()
         {
             var physicalDeviceFeatures = _context.Device.PhysicalDevice.Features;
-            _pipelineStatsEnabled = physicalDeviceFeatures.PipelineStatisticsQuery;
+            _pipelineStatsEnabled = false;//physicalDeviceFeatures.PipelineStatisticsQuery;
 
             if (!_pipelineStatsEnabled)
             {
@@ -192,7 +189,10 @@ namespace RockEngine.Core.Rendering.Passes
         public void BeginFrameQueries(UploadBatch batch, uint frameIndex)
         {
             if (!_pipelineStatsEnabled || !_pipelineStatsInitialized || !PipelineStatisticsEnabled)
+            {
                 return;
+            }
+
             lock (_semaphoreSlim)
             {
                 // Используем атомарную операцию для установки флага сброса
@@ -217,7 +217,9 @@ namespace RockEngine.Core.Rendering.Passes
         public QueryScope BeginQueryScope(UploadBatch batch, uint frameIndex, uint cameraIndex, uint subpassIndex)
         {
             if (!_pipelineStatsEnabled || !_pipelineStatsInitialized || !PipelineStatisticsEnabled)
+            {
                 return new QueryScope(null, null, 0, 0, 0);
+            }
 
             var frameData = GetOrCreateFrameQueryData(frameIndex);
 
@@ -235,15 +237,19 @@ namespace RockEngine.Core.Rendering.Passes
         public void BeginSubpassPipelineStatistics(UploadBatch batch, uint frameIndex, uint cameraIndex, uint subpassIndex)
         {
             if (!_pipelineStatsEnabled || !_pipelineStatsInitialized || !PipelineStatisticsEnabled)
+            {
                 return;
+            }
 
             if (!_frameQueryData.TryGetValue(frameIndex, out var frameData))
+            {
                 return;
-
+            }
 
             if (!frameData.CameraQueries.TryGetValue(cameraIndex, out var cameraInfo))
+            {
                 return;
-
+            }
 
             uint queryIndex = cameraInfo.GetQueryIndex(subpassIndex);
 
@@ -259,18 +265,26 @@ namespace RockEngine.Core.Rendering.Passes
         public void EndSubpassPipelineStatistics(UploadBatch batch, uint frameIndex, uint cameraIndex, uint subpassIndex)
         {
             if (!_pipelineStatsEnabled || !_pipelineStatsInitialized || !PipelineStatisticsEnabled)
+            {
                 return;
+            }
 
             if (!_frameQueryData.TryGetValue(frameIndex, out var frameData))
+            {
                 return;
+            }
 
             if (!frameData.CameraQueries.TryGetValue(cameraIndex, out var cameraInfo))
+            {
                 return;
+            }
 
             uint queryIndex = cameraInfo.GetQueryIndex(subpassIndex);
 
             if (queryIndex >= frameData.QueryPool.QueryCount)
+            {
                 return;
+            }
 
             batch.EndQuery(frameData.QueryPool, queryIndex);
         }
@@ -278,7 +292,9 @@ namespace RockEngine.Core.Rendering.Passes
         protected void ResizeQueryPool(UploadBatch batch, uint frameIndex, int requiredQueries)
         {
             if (!_frameQueryData.TryGetValue(frameIndex, out var oldFrameData))
+            {
                 return;
+            }
 
             int newSize = (int)Math.Max(requiredQueries, oldFrameData.QueryPool.QueryCount * QueryPoolGrowthFactor);
             newSize = (int)Math.Pow(2, Math.Ceiling(Math.Log(newSize, 2)));
@@ -315,14 +331,20 @@ namespace RockEngine.Core.Rendering.Passes
         protected void RetrievePipelineStatistics(uint frameIndex)
         {
             if (!_pipelineStatsEnabled || !_pipelineStatsInitialized || !PipelineStatisticsEnabled)
+            {
                 return;
+            }
 
             if (!_frameQueryData.TryGetValue(frameIndex, out var frameData))
+            {
                 return;
+            }
 
             // Skip if no queries were recorded
             if (frameData.TotalQueries == 0)
+            {
                 return;
+            }
 
             const int valuesPerQuery = 12;
 
@@ -363,7 +385,9 @@ namespace RockEngine.Core.Rendering.Passes
 
                         ulong availability = results[baseResultIndex];
                         if (availability == 0)
+                        {
                             continue;
+                        }
 
                         anyDataAvailable = true;
                         int statsIndex = baseResultIndex + 1;
@@ -426,7 +450,9 @@ namespace RockEngine.Core.Rendering.Passes
             {
                 var stats = kvp.Value.FirstOrDefault(s => s.FrameIndex == frameIndex);
                 if (stats.FrameIndex == frameIndex)
+                {
                     result.Add(stats);
+                }
             }
             return result;
         }
@@ -464,7 +490,9 @@ namespace RockEngine.Core.Rendering.Passes
         public PipelineStatisticsData GetCurrentStatistics(uint frameIndex)
         {
             if (!_pipelineStatsEnabled || !_pipelineStatsInitialized)
+            {
                 return default;
+            }
 
             return _frameStatistics.GetValueOrDefault(frameIndex);
         }

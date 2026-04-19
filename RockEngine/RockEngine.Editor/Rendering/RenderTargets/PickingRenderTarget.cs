@@ -90,21 +90,21 @@ namespace RockEngine.Editor.Rendering.RenderTargets
         public override void PrepareForRender(UploadBatch cmd)
         {
             // Transition color attachment to color attachment optimal
-         /*   if (OutputTexture.Image.GetMipLayout(0) != ImageLayout.ColorAttachmentOptimal)
-            {
-                OutputTexture.Image.TransitionImageLayout(cmd, ImageLayout.ColorAttachmentOptimal);
-            }*/
+            /*   if (OutputTexture.Image.GetMipLayout(0) != ImageLayout.ColorAttachmentOptimal)
+               {
+                   OutputTexture.Image.TransitionImageLayout(cmd, ImageLayout.ColorAttachmentOptimal);
+               }*/
         }
 
         public override void TransitionToRead(UploadBatch cmd)
         {
             // Transition color attachment to transfer source for reading
-             /*OutputTexture.Image.TransitionImageLayout(cmd, ImageLayout.TransferSrcOptimal);*/
+            /*OutputTexture.Image.TransitionImageLayout(cmd, ImageLayout.TransferSrcOptimal);*/
         }
 
         protected override void DisposeResources()
         {
- 
+
             foreach (var framebuffer in Framebuffers)
             {
                 _context.GraphicsSubmitContext.AddDependency(framebuffer);
@@ -129,7 +129,7 @@ namespace RockEngine.Editor.Rendering.RenderTargets
             // Recreate output texture with new size
             //_context.GraphicsSubmitContext.AddDependency(new DeferredOperation(() =>
             {
-               // _context.Device.GraphicsQueue.WaitIdle();
+                // _context.Device.GraphicsQueue.WaitIdle();
 
                 base.Resize(newSize);
 
@@ -148,7 +148,7 @@ namespace RockEngine.Editor.Rendering.RenderTargets
 
                 CreateFramebuffers();
             }//));
-            
+
         }
     }
 }

@@ -1,11 +1,10 @@
-﻿using Microsoft.CodeAnalysis;
-using Microsoft.CodeAnalysis.CSharp.Syntax;
-
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Globalization;
 using System.Linq;
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 namespace RockEngine.CodeGenerator
 {
@@ -35,7 +34,7 @@ namespace RockEngine.CodeGenerator
                                                m.IsKind(Microsoft.CodeAnalysis.CSharp.SyntaxKind.InternalKeyword));
         }
 
-        private static ClassDeclarationSyntax GetSemanticTargetForGeneration(GeneratorSyntaxContext context)
+        private static ClassDeclarationSyntax? GetSemanticTargetForGeneration(GeneratorSyntaxContext context)
         {
             var classDeclaration = (ClassDeclarationSyntax)context.Node;
 

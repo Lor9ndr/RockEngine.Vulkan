@@ -1,6 +1,4 @@
-﻿using RockEngine.Assets;
-
-using System.Numerics;
+﻿using System.Numerics;
 
 namespace RockEngine.Core.Assets
 {

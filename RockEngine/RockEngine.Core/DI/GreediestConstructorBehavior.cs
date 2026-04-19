@@ -1,13 +1,13 @@
-﻿using SimpleInjector.Advanced;
-
+﻿using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
+using SimpleInjector.Advanced;
 
 namespace RockEngine.Core.DI
 {
     public class GreediestConstructorBehavior : IConstructorResolutionBehavior
     {
         public ConstructorInfo? TryGetConstructor(
-            Type implementationType, out string? errorMessage)
+            [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] Type implementationType, out string? errorMessage)
         {
             errorMessage = $"{implementationType} has no public constructors.";
 

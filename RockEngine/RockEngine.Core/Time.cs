@@ -52,7 +52,7 @@
                 _frameCount++;
 
                 // Update FPS every second
-                if (_totalTime - _lastFpsUpdateTime >= 1.0f) 
+                if (_totalTime - _lastFpsUpdateTime >= 1.0f)
                 {
                     // Calculate FPS based on actual frame count in the last second
                     _currentFps = _frameCount;
@@ -69,7 +69,9 @@
             lock (_lock)
             {
                 if (_deltaTimeHistory.Count == 0)
+                {
                     return _unscaledDeltaTime;
+                }
 
                 return _deltaTimeHistory.Average();
             }

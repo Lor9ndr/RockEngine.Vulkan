@@ -12,7 +12,7 @@ namespace RockEngine.Tests.Buffers
     [TestFixture]
     public class StorageBufferTests : TestBase
     {
-        private VulkanContext _context;
+        private new VulkanContext? _context;
 
         private struct SimpleVertex : IVertex
         {
@@ -67,6 +67,7 @@ namespace RockEngine.Tests.Buffers
         }
 
         [Test]
+        
         public async Task Create_ShouldSucceed()
         {
             ulong capacity = 100;
@@ -81,6 +82,7 @@ namespace RockEngine.Tests.Buffers
         }
 
         [Test]
+        
         public async Task StageData_ShouldWriteData()
         {
             var vertices = new[]
@@ -100,6 +102,7 @@ namespace RockEngine.Tests.Buffers
         }
 
         [Test]
+        
         public async Task StageData_ShouldThrowIfExceedsCapacity()
         {
             ulong capacity = 2;
@@ -118,6 +121,7 @@ namespace RockEngine.Tests.Buffers
         }
 
         [Test]
+        
         public async Task Resize_ShouldPreserveData()
         {
             var initialData = new[]
@@ -145,6 +149,7 @@ namespace RockEngine.Tests.Buffers
         }
 
         [Test]
+        
         public async Task Resize_ShouldWorkWhenCapacityDecreases()
         {
             ulong initialCapacity = 10;
@@ -160,6 +165,7 @@ namespace RockEngine.Tests.Buffers
         }
 
         [Test]
+        
         public async Task Dispose_ShouldReleaseResources()
         {
             var storageBuffer = new StorageBuffer<SimpleVertex>(_context, 1);

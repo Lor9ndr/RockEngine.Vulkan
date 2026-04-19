@@ -1,6 +1,5 @@
-﻿using MessagePack;
-
-using System.Numerics;
+﻿using System.Numerics;
+using MessagePack;
 
 namespace RockEngine.Core.Assets
 {

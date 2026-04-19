@@ -18,6 +18,7 @@ namespace RockEngine.Core.ECS.Components
         [Key(7)]
         public AssetReference<TextureAsset> Cubemap { get; set; }
 
+        
         public override async ValueTask OnStart(WorldRenderer renderer)
         {
             if (Cubemap is null)
@@ -26,22 +27,25 @@ namespace RockEngine.Core.ECS.Components
             }
             var assetFactory = IoC.Container.GetInstance<AssetFactory>();
             var assetManager = IoC.Container.GetInstance<IAssetManager>();
-            
+
 
             var tmpAsset = assetFactory.Create<MeshAsset>(new AssetPath("tmp", "tmpMesh"));
             var tmpMatAsset = assetFactory.Create<MaterialAsset>(new AssetPath("tmp", "tmpMeshMat"));
-            
+
             var texAsset = await Cubemap.GetAssetAsync();
             await texAsset.LoadDataAsync();
             await assetManager.SaveAsync(texAsset);
             tmpMatAsset.SetData(new MaterialData()
             {
                 PipelineName = "Skybox",
-                Textures = [Cubemap]
+                Textures = new Dictionary<string, AssetReference<TextureAsset>>()
+                {
+                    { "cubemapTex", Cubemap}
+                }
             });
             tmpAsset.SetGeometry(DefaultMeshes.Cube.Vertices, DefaultMeshes.Cube.Indices);
-           // await assetManager.SaveAsync(tmpAsset);
-           // await assetManager.SaveAsync(tmpMatAsset);
+            // await assetManager.SaveAsync(tmpAsset);
+            // await assetManager.SaveAsync(tmpMatAsset);
             var mesh = Entity.AddComponent<MeshRenderer>();
             mesh.SetProviders(tmpAsset, tmpMatAsset);
 

@@ -1,8 +1,7 @@
-﻿using Silk.NET.Vulkan;
+﻿using System.Numerics;
+using Silk.NET.Vulkan;
 using Silk.NET.Vulkan.Extensions.KHR;
 using Silk.NET.Windowing;
-
-using System.Numerics;
 
 namespace RockEngine.Vulkan
 {

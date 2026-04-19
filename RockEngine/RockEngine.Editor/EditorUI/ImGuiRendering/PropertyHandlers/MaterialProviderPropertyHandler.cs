@@ -1,13 +1,11 @@
-﻿using ImGuiNET;
-
+﻿using System.Numerics;
+using ImGuiNET;
 using RockEngine.Core.Assets;
 using RockEngine.Core.ECS.Components;
 using RockEngine.Core.Helpers;
 using RockEngine.Core.ResourceProviders;
 using RockEngine.Editor.EditorUI.UndoRedo;
 using RockEngine.Editor.EditorUI.UndoRedo.Commands;
-
-using System.Numerics;
 
 namespace RockEngine.Editor.EditorUI.ImGuiRendering.PropertyHandlers
 {
@@ -21,10 +19,15 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.PropertyHandlers
         public void Draw(IComponent component, UIPropertyAccessor accessor, object value, PropertyDrawer drawer)
         {
             if (value is not MaterialProvider materialProvider || !materialProvider.IsAssetBased)
+            {
                 return;
+            }
 
             var material = materialProvider.AssetReference.Asset;
-            if (material == null) return;
+            if (material == null)
+            {
+                return;
+            }
 
             ImGui.NewLine();
             ImGui.PushID(material.GetHashCode());
@@ -34,41 +37,70 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.PropertyHandlers
             ImGui.SameLine();
 
             if (ImGui.CollapsingHeader($"Textures ({material.Textures.Count})", ImGuiTreeNodeFlags.DefaultOpen))
+            {
                 DrawTextureList(material, drawer);
+            }
 
             if (ImGui.CollapsingHeader($"Parameters ({material.Parameters.Count})", ImGuiTreeNodeFlags.DefaultOpen))
+            {
                 DrawParameterList(material, drawer);
+            }
 
             ImGui.PopID();
         }
 
         private void DrawTextureList(MaterialAsset material, PropertyDrawer drawer)
         {
-            for (int i = 0; i < material.Textures.Count; i++)
+            if (material.MaterialInstance is null)
             {
-                var texRef = material.Textures[i];
-                ImGui.PushID(i);
+                return;
+            }
 
+            foreach (var pass in material.MaterialInstance.Passes)
+            {
+                ImGui.PushID(pass.Key);
                 ImGui.BeginGroup();
-                DrawTextureThumbnail(texRef, drawer);
-                ImGui.SameLine();
-                ImGui.BeginGroup();
-                ImGui.Text(texRef.Asset?.Name ?? texRef.AssetID.ToString());
-                ImGui.TextDisabled($"Slot {i}");
-                ImGui.SameLine();
-                if (ImGui.SmallButton("X"))
+
+                foreach (var expectedTexture in pass.Value.ExpectedResources)
                 {
-                    var cmd = new ChangeMaterialTextureCommand(material, i, texRef, null);
-                    UndoRedoService.Instance.Execute(cmd);
+                    if (expectedTexture.Value.Reflection.DescriptorType != Silk.NET.Vulkan.DescriptorType.CombinedImageSampler)
+                    {
+                        continue;
+                    }
+                    if (material.Textures.TryGetValue(expectedTexture.Key, out var texRef))
+                    {
+                        ImGui.BeginGroup();
+                        ImGui.TextDisabled(expectedTexture.Key);
+                        ImGui.SameLine();
+                        DrawTextureThumbnail(texRef, drawer);
+                        ImGui.SameLine();
+                        if (ImGui.SmallButton($"X##{expectedTexture.Key}"))
+                        {
+                            var cmd = new ChangeMaterialTextureCommand(material, expectedTexture.Key, texRef, null);
+                            UndoRedoService.Instance.Execute(cmd);
+                        }
+                        ImGui.EndGroup();
+
+                        if (ImGui.BeginDragDropTarget())
+                        {
+                            HandleTextureDrop(material, expectedTexture.Key, drawer);
+                            ImGui.EndDragDropTarget();
+                        }
+                    }
+                    else
+                    {
+                        ImGui.BeginGroup();
+                        ImGui.TextDisabled(expectedTexture.Key);
+                        ImGui.EndGroup();
+
+                        if (ImGui.BeginDragDropTarget())
+                        {
+                            HandleTextureDrop(material, expectedTexture.Key, drawer);
+                            ImGui.EndDragDropTarget();
+                        }
+                    }
                 }
                 ImGui.EndGroup();
-                ImGui.EndGroup();
-
-                if (ImGui.BeginDragDropTarget())
-                {
-                    HandleTextureDrop(material, i, drawer);
-                    ImGui.EndDragDropTarget();
-                }
 
                 ImGui.PopID();
             }
@@ -104,7 +136,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.PropertyHandlers
             ImGui.Text($"[{Icons.QuestionCircle}]");
         }
 
-        private void HandleTextureDrop(MaterialAsset material, int slot, PropertyDrawer drawer)
+        private void HandleTextureDrop(MaterialAsset material, string slot, PropertyDrawer drawer)
         {
             if (AssetDragDrop.AcceptAssetDrop(out var assetID))
             {
@@ -112,7 +144,9 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.PropertyHandlers
                 if (textureAsset != null)
                 {
                     var newRef = new AssetReference<TextureAsset>(textureAsset);
-                    var oldRef = slot < material.Textures.Count ? material.Textures[slot] : null;
+
+                    material.Textures.TryGetValue(slot, out AssetReference<TextureAsset>? oldRef);
+
                     var cmd = new ChangeMaterialTextureCommand(material, slot, oldRef, newRef);
                     UndoRedoService.Instance.Execute(cmd);
                 }
@@ -131,11 +165,13 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.PropertyHandlers
 
                 var value = kvp.Value;
                 bool changed = false;
-                object newValue = null;
+                object? newValue = null;
                 string controlId = $"{material.GetHashCode()}_{kvp.Key}";
 
                 if (ImGui.IsItemActivated())
+                {
                     _editingParamOldValues[controlId] = value;
+                }
 
                 switch (value)
                 {
@@ -170,7 +206,9 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.PropertyHandlers
                 }
 
                 if (changed)
+                {
                     material.UpdateParameter(kvp.Key, newValue);
+                }
 
                 if (ImGui.IsItemDeactivatedAfterEdit())
                 {

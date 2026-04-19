@@ -1,9 +1,6 @@
-﻿using RockEngine.Core.DI;
+﻿using System.Collections.Concurrent;
 using RockEngine.Core.ECS.Components;
 using RockEngine.Core.Rendering;
-
-using System.Collections.Concurrent;
-
 using ZLinq;
 
 namespace RockEngine.Core.ECS
@@ -11,7 +8,7 @@ namespace RockEngine.Core.ECS
     public class World : IDisposable
     {
         private readonly List<Entity> _entities = new List<Entity>();
-        private static World _singleton;
+        private static World? _singleton;
         private enum WorldState { NotStarted, Starting, Started }
         private WorldState _state = WorldState.NotStarted;
         private readonly ConcurrentQueue<IComponent> _pendingStartComponents = new();
@@ -19,7 +16,7 @@ namespace RockEngine.Core.ECS
 
         public static World GetCurrent()
         {
-            return _singleton;
+            return _singleton ?? new World();
         }
 
         public World()
@@ -42,10 +39,10 @@ namespace RockEngine.Core.ECS
             {
                 entity.Name = name;
             }
-            
+
             return entity;
         }
-     
+
 
         public void RemoveEntity(Entity entity)
         {
@@ -58,7 +55,7 @@ namespace RockEngine.Core.ECS
         }
         public ValueEnumerable<ZLinq.Linq.ListWhere<Entity>, Entity> GetEntitiesWithComponent<T>() where T : IComponent
         {
-            return _entities.AsValueEnumerable().Where(s=>s.GetComponent<T>() is not null);
+            return _entities.AsValueEnumerable().Where(s => s.GetComponent<T>() is not null);
         }
 
         public async Task Start(WorldRenderer renderer)
@@ -103,7 +100,7 @@ namespace RockEngine.Core.ECS
         {
             while (_pendingStartComponents.TryDequeue(out var component))
             {
-                if(component.Entity is null)
+                if (component.Entity is null)
                 {
                     continue;
                 }

@@ -1,7 +1,5 @@
 ﻿using Silk.NET.Vulkan;
 
-using System.Net.Mail;
-
 namespace RockEngine.Vulkan
 {
     public class VkFrameBuffer : VkObject<Framebuffer>
@@ -13,7 +11,7 @@ namespace RockEngine.Vulkan
         private uint _width;
         private uint _height;
 
-        public VkImageView[] AttachmentViews => _attachments; 
+        public VkImageView[] AttachmentViews => _attachments;
         private VkFrameBuffer(VulkanContext context, in Framebuffer framebuffer, VkImageView[] attachments, in FramebufferCreateInfo framebufferCreateInfo)
             : base(framebuffer)
         {
@@ -31,12 +29,12 @@ namespace RockEngine.Vulkan
         }
         public static unsafe VkFrameBuffer Create(VulkanContext context, VkRenderPass renderPass, VkImageView[] attachments)
         {
-            if(attachments.Length == 0)
+            if (attachments.Length == 0)
             {
                 throw new ArgumentException("attachments can not be empty");
             }
             var size = attachments[0].Image.Extent;
-            return Create(context, renderPass, attachments, size.Width,size.Height, 1);
+            return Create(context, renderPass, attachments, size.Width, size.Height, 1);
         }
 
         private unsafe Framebuffer CreateFramebufferInternal()
@@ -56,7 +54,7 @@ namespace RockEngine.Vulkan
 
         public unsafe static VkFrameBuffer Create(VulkanContext context, VkRenderPass renderPass, VkImageView[] attachments, uint width, uint height, uint layers = 1)
         {
-            fixed(ImageView* pAttachments = attachments.Select(s => s.VkObjectNative).ToArray())
+            fixed (ImageView* pAttachments = attachments.Select(s => s.VkObjectNative).ToArray())
             {
                 FramebufferCreateInfo ci = new FramebufferCreateInfo()
                 {
@@ -96,7 +94,7 @@ namespace RockEngine.Vulkan
 
         private void DisposeInternal()
         {
-           VulkanContext.Vk.DestroyFramebuffer(_context.Device, _vkObject, in VulkanContext.CustomAllocator<VkFrameBuffer>());
+            VulkanContext.Vk.DestroyFramebuffer(_context.Device, _vkObject, in VulkanContext.CustomAllocator<VkFrameBuffer>());
         }
 
     }

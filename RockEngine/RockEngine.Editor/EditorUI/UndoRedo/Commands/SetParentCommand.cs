@@ -18,17 +18,25 @@ namespace RockEngine.Editor.EditorUI.UndoRedo.Commands
         public void Execute()
         {
             if (_newParent != null)
+            {
                 _newParent.AddChild(_entity);
+            }
             else
+            {
                 _entity.Parent?.RemoveChild(_entity);
+            }
         }
 
         public void Undo()
         {
             if (_oldParent != null)
+            {
                 _oldParent.AddChild(_entity);
+            }
             else
+            {
                 _entity.Parent?.RemoveChild(_entity);
+            }
         }
     }
 }

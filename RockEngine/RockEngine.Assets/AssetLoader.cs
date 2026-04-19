@@ -1,4 +1,5 @@
 ﻿using System.Collections.Concurrent;
+using NLog;
 
 namespace RockEngine.Assets
 {
@@ -8,6 +9,7 @@ namespace RockEngine.Assets
         private readonly List<IAssetLoadStrategy> _loadStrategies;
         private string _basePath = string.Empty;
         private readonly ConcurrentDictionary<Guid, string> _idToPathMap = new();
+        private static readonly Logger _logger = LogManager.GetCurrentClassLogger();
 
         public AssetLoader(
             IAssetSerializer serializer,
@@ -18,10 +20,10 @@ namespace RockEngine.Assets
             _loadStrategies = new List<IAssetLoadStrategy> { mmapStrategy, streamStrategy };
         }
 
-        public void SetBasePath(string basePath)
+        public async Task SetBasePathAsync(string basePath)
         {
             _basePath = basePath;
-            BuildIdToPathMap();
+            await BuildIdToPathMap();
         }
 
         private string GetFullPath(string assetPath) =>
@@ -34,32 +36,36 @@ namespace RockEngine.Assets
             foreach (var strategy in _loadStrategies)
             {
                 if (strategy.CanHandle(fileInfo.Length))
+                {
                     return strategy;
+                }
             }
 
             return _loadStrategies.Last(); // Fallback
         }
 
-        private void BuildIdToPathMap()
+        private async Task BuildIdToPathMap()
         {
             if (string.IsNullOrEmpty(_basePath) || !Directory.Exists(_basePath))
+            {
                 return;
+            }
 
             var assetFiles = Directory.GetFiles(_basePath, "*.asset", SearchOption.AllDirectories);
 
-            Parallel.ForEach(assetFiles, file =>
+            await Parallel.ForEachAsync(assetFiles, async (file, ct) =>
             {
                 try
                 {
                     using var stream = File.OpenRead(file);
-                    var header = _serializer.DeserializeHeaderAsync(stream).GetAwaiter().GetResult();
+                    var header = await _serializer.DeserializeHeaderAsync(stream);
                     var relativePath = Path.GetRelativePath(_basePath, file);
                     _idToPathMap[header.AssetId] = relativePath;
                 }
                 catch (Exception ex)
                 {
                     // Log warning but continue
-                    Console.WriteLine($"Failed to read header from {file}: {ex.Message}");
+                    _logger.Error(ex, "Failed to read header from {file}", file);
                 }
             });
         }
@@ -67,7 +73,9 @@ namespace RockEngine.Assets
         public async Task<IAsset> LoadAssetAsync(Guid assetId)
         {
             if (!_idToPathMap.TryGetValue(assetId, out var path))
+            {
                 throw new FileNotFoundException($"Asset with ID {assetId} not found in index");
+            }
 
             return await LoadAssetAsync(path);
         }
@@ -77,8 +85,7 @@ namespace RockEngine.Assets
             var fullPath = GetFullPath(assetPath);
             var strategy = GetLoadStrategy(fullPath);
 
-            using var stream = new FileStream(fullPath, FileMode.Open, FileAccess.Read, FileShare.Read);
-            var asset = await _serializer.DeserializeAssetAsync(stream, new AssetPath(assetPath));
+            var asset = await strategy.LoadAssetAsync(fullPath, _serializer);
 
             // Update ID to path map
             _idToPathMap[asset.ID] = assetPath;
@@ -106,7 +113,9 @@ namespace RockEngine.Assets
         public async Task LoadAssetDataAsync(IAsset asset, Type dataType)
         {
             if (asset.IsDataLoaded)
+            {
                 return;
+            }
 
             var fullPath = GetFullPath(asset.Path.ToString());
             var strategy = GetLoadStrategy(fullPath);

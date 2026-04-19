@@ -31,8 +31,8 @@
             return layer;
         }
 
-        public RenderLayer GetLayer(string name) => _layers.TryGetValue(name, out var layer) ? layer : null;
-        public RenderLayer GetLayer(uint id) => _layerIdToName.TryGetValue(id, out var name) ? _layers[name] : null;
+        public RenderLayer? GetLayer(string name) => _layers.TryGetValue(name, out var layer) ? layer : null;
+        public RenderLayer? GetLayer(uint id) => _layerIdToName.TryGetValue(id, out var name) ? _layers[name] : null;
 
         public IEnumerable<RenderLayer> GetLayers() => _layers.Values.OrderBy(l => l.Order);
         public IEnumerable<RenderLayer> GetEnabledLayers() => _layers.Values.Where(l => l.Enabled).OrderBy(l => l.Order);

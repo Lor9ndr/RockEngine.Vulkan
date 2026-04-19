@@ -1,19 +1,17 @@
 ﻿
+using System.Collections.Concurrent;
 using MessagePack;
-
 using NLog;
-
-using RockEngine.Assets;
 using RockEngine.Core.Attributes;
 using RockEngine.Core.DI;
 using RockEngine.Core.Info;
 using RockEngine.Core.Rendering;
+using RockEngine.Core.Rendering.Managers;
 using RockEngine.Core.Rendering.Materials;
 using RockEngine.Core.Rendering.ResourceBindings;
 using RockEngine.Core.Rendering.Texturing;
 using RockEngine.Core.ResourceProviders;
-
-using System.Collections.Concurrent;
+using Silk.NET.Vulkan;
 
 namespace RockEngine.Core.Assets
 {
@@ -32,15 +30,15 @@ namespace RockEngine.Core.Assets
         public Material? MaterialInstance { get; private set; }
 
         private static readonly Logger _logger = LogManager.GetCurrentClassLogger();
-        
+
         [SerializeIgnore]
         [IgnoreMember]
         private readonly ConcurrentDictionary<Guid, Texture> _loadedTextures = new();
-        
+
         [SerializeIgnore]
         [IgnoreMember]
         private readonly SemaphoreSlim _gpuLock = new(1, 1);
-        
+
         [SerializeIgnore]
         [IgnoreMember]
         private bool _disposed;
@@ -50,18 +48,26 @@ namespace RockEngine.Core.Assets
         public string PipelineName => Data?.PipelineName ?? "Default";
 
         [Key(11)]
-        public List<AssetReference<TextureAsset>> Textures => Data?.Textures ?? new();
+        public Dictionary<string, AssetReference<TextureAsset>> Textures => Data.Textures;
+
         [Key(12)]
         public Dictionary<string, object> Parameters => Data?.Parameters ?? new();
 
+        
         public async ValueTask LoadGpuResourcesAsync()
         {
-            if (GpuReady) return;
+            if (GpuReady)
+            {
+                return;
+            }
 
             await _gpuLock.WaitAsync();
             try
             {
-                if (GpuReady) return;
+                if (GpuReady)
+                {
+                    return;
+                }
 
                 if (!IsDataLoaded)
                 {
@@ -81,6 +87,7 @@ namespace RockEngine.Core.Assets
             }
         }
 
+        
         private async Task CreateMaterialAsync()
         {
             var templateManager = IoC.Container.GetInstance<MaterialTemplateManager>();
@@ -100,45 +107,119 @@ namespace RockEngine.Core.Assets
             _logger.Debug("Created material '{MaterialName}' with template '{Template}'", Name, Data.PipelineName);
         }
 
+        
         private async Task LoadAndBindTextures()
         {
-            if (MaterialInstance == null || Data?.Textures == null) return;
-
-            for (int i = 0; i < Data.Textures.Count; i++)
+            if (MaterialInstance == null || Data?.Textures == null)
             {
-                var textureRef = Data.Textures[i];
-                try
-                {
-                    var textureAsset = await textureRef.GetAssetAsync();
-                    if (textureAsset != null)
-                    {
-                        await textureAsset.LoadGpuResourcesAsync();
+                return;
+            }
 
-                        if (textureAsset.Texture != null)
+            // Get the list of expected texture resources from the material
+            var expectedTextures = MaterialInstance.Passes.SelectMany(pass => pass.Value.ExpectedResources
+                .Where(kv => kv.Value.Image.HasValue)
+                .Select(kv => kv.Key))
+                .ToList();
+
+            // If no expected resources are known, fall back to low‑level binding (legacy)
+            if (expectedTextures.Count == 0)
+            {
+                // Fallback to direct binding (as before)
+                int i = 0;
+                foreach (var texture in Data.Textures)
+                {
+                    var textureRef = texture.Value;
+                    var textureAsset = await textureRef.GetAssetAsync();
+                    if (textureAsset?.Texture != null)
+                    {
+                        _loadedTextures[textureRef.AssetID] = textureAsset.Texture;
+                        MaterialInstance.BindResource(new TextureBinding(
+                            MaterialInfo.TEXTURE_SET, (uint)i, 0, 1,
+                            ImageLayout.ShaderReadOnlyOptimal, textureAsset.Texture));
+                    }
+                    i++;
+                }
+
+                return;
+            }
+
+
+            foreach (var pass in MaterialInstance.Passes.Values)
+            {
+                if (pass.UsesBindlessTextures())
+                {
+                    // Get the ordered texture slot names from push constants
+                    var slotNames = pass.GetTextureSlotNamesFromPushConstants();
+                    if (slotNames.Count == 0)
+                    {
+                        continue;
+                    }
+
+                    // Build texture array in the same order as slotNames
+                    var textures = new List<Texture>();
+                    foreach (var slot in slotNames)
+                    {
+                        if (Data.Textures.TryGetValue(slot, out var texRef))
                         {
-                            _loadedTextures[textureRef.AssetID] = textureAsset.Texture;
-                            MaterialInstance.BindResource(new TextureBinding(MaterialInfo.TEXTURE_SET, (uint)i, 0, 1,Silk.NET.Vulkan.ImageLayout.ShaderReadOnlyOptimal, textureAsset.Texture));
+                            var texAsset = await texRef.GetAssetAsync();
+                            await texAsset.LoadGpuResourcesAsync();
+                            textures.Add(texAsset.Texture);
+                            var globalArray = IoC.Container.GetInstance<GlobalTextureArray>();
+                            var index = globalArray.AllocateIndex(texAsset.Texture);
+                            pass.PushConstant($"{slot}Index", index);
+
+                        }
+                        else
+                        {
+                            _logger.Warn($"Material '{Name}' missing texture for slot '{slot}'");
+                            // HAVE TO HANDLE SOMEHOW
+                            textures.Add(null);
                         }
                     }
+
+                    // Set push constant indices for each slot
+                    for (int i = 0; i < slotNames.Count; i++)
+                    {
+                        string slot = slotNames[i];
+                    }
                 }
-                catch (Exception ex)
+                else
                 {
-                    _logger.Warn(ex, "Failed to load texture {ID} for material {Material}",
-                        textureRef.AssetID, Name);
+
+                    foreach (var item in pass.ExpectedResources)
+                    {
+                        if (Data.Textures.TryGetValue(item.Key, out var assetRef))
+                        {
+                            var texAsset = await assetRef.GetAssetAsync();
+                            await texAsset.LoadGpuResourcesAsync();
+                            var binding = new TextureBinding(
+                                   setLocation: item.Value.Set,
+                                   bindingLocation: item.Value.Reflection.Binding,
+                                   baseMipLevel: 0,
+                                   levelCount: Vk.RemainingMipLevels,
+                                   imageLayout: ImageLayout.ShaderReadOnlyOptimal,
+                                   textures: texAsset.Texture!
+                             );
+                            pass.BindResource(binding);
+                        }
+                    }
                 }
             }
         }
 
         private void ApplyMaterialParameters()
         {
-            if (MaterialInstance == null || Data?.Parameters == null) return;
+            if (MaterialInstance == null || Data?.Parameters == null)
+            {
+                return;
+            }
 
             foreach (var param in Data.Parameters)
             {
                 try
                 {
-                    MaterialInstance.PushConstant(param.Key,param.Value);
-                    
+                    MaterialInstance.SetPushConstant<object>(param.Key, param.Value);
+
                 }
                 catch (Exception ex)
                 {
@@ -154,24 +235,24 @@ namespace RockEngine.Core.Assets
             {
                 Data.Parameters[name] = value;
                 // Update GPU if loaded
-                MaterialInstance?.PushConstant(name, value);
+                MaterialInstance?.SetPushConstant(name, value);
             }
         }
 
-        public void AddTexture(AssetReference<TextureAsset> textureRef, string slotName = "")
+        public void AddTexture(AssetReference<TextureAsset> textureRef, string slotName)
         {
             if (Data != null)
             {
-                Data.Textures.Add(textureRef);
+                Data.Textures[slotName] = textureRef;
                 UpdateModified();
             }
         }
 
-        public void RemoveTexture(Guid textureId)
+        public void RemoveTexture(string slot)
         {
             if (Data != null)
             {
-                Data.Textures.RemoveAll(t => t.AssetID == textureId);
+                Data.Textures.Remove(slot);
                 UpdateModified();
             }
         }
@@ -208,16 +289,23 @@ namespace RockEngine.Core.Assets
 
         public void Dispose()
         {
-            if (_disposed) return;
+            if (_disposed)
+            {
+                return;
+            }
 
             UnloadGpuResources();
             _gpuLock.Dispose();
             _disposed = true;
         }
 
+        
         public async ValueTask<Material> GetAsync()
         {
-            if (MaterialInstance != null) return MaterialInstance;
+            if (MaterialInstance != null)
+            {
+                return MaterialInstance;
+            }
 
             await LoadGpuResourcesAsync();
             return MaterialInstance!;

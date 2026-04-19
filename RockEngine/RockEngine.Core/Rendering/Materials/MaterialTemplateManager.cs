@@ -1,22 +1,21 @@
-﻿using RockEngine.Core.DI;
+﻿using System.Collections.Concurrent;
 using RockEngine.Core.Rendering.Managers;
-using RockEngine.Vulkan;
-
-using System.Collections.Concurrent;
 
 namespace RockEngine.Core.Rendering.Materials
 {
     public class MaterialTemplateManager : IDisposable
     {
         private readonly IMaterialTemplateFactory _factory;
+        private readonly PipelineManager _pipelineManager;
         private readonly ConcurrentDictionary<string, MaterialTemplate> _templates = new();
         private bool _disposed;
 
         public IReadOnlyDictionary<string, MaterialTemplate> Templates => _templates;
 
-        public MaterialTemplateManager(IMaterialTemplateFactory factory)
+        public MaterialTemplateManager(IMaterialTemplateFactory factory, PipelineManager pipelineManager)
         {
             _factory = factory;
+            _pipelineManager = pipelineManager;
             InitializeDefaultTemplates();
         }
 
@@ -47,8 +46,7 @@ namespace RockEngine.Core.Rendering.Materials
         public Material CreateMaterialFromTemplate(string pipelineName, string materialName)
         {
             var template = GetOrCreateTemplate(pipelineName);
-            var pipelineManager = IoC.Container.GetInstance<PipelineManager>();
-            return template.CreateInstance(materialName, pipelineManager);
+            return template.CreateInstance(materialName, _pipelineManager);
         }
 
         public void RegisterTemplate(MaterialTemplate template)

@@ -65,13 +65,13 @@ vec4 sampleMRA(vec2 uv)   { return texture(uBindlessTextures[nonuniformEXT(mater
 
 ```
 // Automatically generated from [MATERIAL] annotation
-layout(set = MATERIAL_SET, binding = 0) uniform sampler2D uAlbedo;
-layout(set = MATERIAL_SET, binding = 1) uniform sampler2D uNormal;
-layout(set = MATERIAL_SET, binding = 2) uniform sampler2D uMRA;
+layout(set = MATERIAL_SET, binding = 0) uniform sampler2D Albedo;
+layout(set = MATERIAL_SET, binding = 1) uniform sampler2D Normal;
+layout(set = MATERIAL_SET, binding = 2) uniform sampler2D MRA;
 
-vec4 sampleAlbedo(vec2 uv) { return texture(uAlbedo, uv); }
-vec4 sampleNormal(vec2 uv) { return texture(uNormal, uv); }
-vec4 sampleMRA(vec2 uv)   { return texture(uMRA, uv); }
+vec4 sampleAlbedo(vec2 uv) { return texture(Albedo, uv); }
+vec4 sampleNormal(vec2 uv) { return texture(Normal, uv); }
+vec4 sampleMRA(vec2 uv)   { return texture(MRA, uv); }
 ```
 
 * Each texture gets a dedicated binding slot, starting at 0.

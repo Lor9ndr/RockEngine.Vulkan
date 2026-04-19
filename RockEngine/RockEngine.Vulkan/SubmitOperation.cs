@@ -13,12 +13,13 @@ namespace RockEngine.Vulkan
         private readonly List<UploadBatch> _batches;
         private readonly List<IDisposable> _disposables;
         private readonly List<VkSemaphore> _semaphores;
-        private VkFence _fence;
+        private VkFence? _fence;
         private bool _completed;
 
         public VkFence Fence => _fence;
         public bool IsCompleted => _completed;
         private readonly Lock _lock = new Lock();
+        private readonly ManualResetEventSlim _completedEvent = new();
 
         internal SubmitOperation(
             SubmitContext context,
@@ -36,7 +37,11 @@ namespace RockEngine.Vulkan
 
         public void Wait()
         {
-            if (_completed) return;
+            if (_completed)
+            {
+                return;
+            }
+
             if (_fence != null && !_fence.IsDisposed)
             {
                 _fence.Wait();
@@ -46,7 +51,11 @@ namespace RockEngine.Vulkan
 
         private async Task WaitAsync(CancellationToken cancellationToken = default)
         {
-            if (_completed) return;
+            if (_completed)
+            {
+                return;
+            }
+
             if (_fence != null && !_fence.IsDisposed)
             {
                 await _fence.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -59,16 +68,29 @@ namespace RockEngine.Vulkan
 
         private void Complete()
         {
-           if (_completed) return;
+            if (_completed)
+            {
+                return;
+            }
+
             lock (_lock)
             {
-                if (_completed) return;
+                if (_completed)
+                {
+                    return;
+                }
 
                 // Dispose all user‑provided disposables
-                foreach (var d in _disposables) d.Dispose();
+                foreach (var d in _disposables)
+                {
+                    d.Dispose();
+                }
 
                 // Return batches to their pools
-                foreach (var b in _batches) _context.ReturnBatchToPool(b);
+                foreach (var b in _batches)
+                {
+                    _context.ReturnBatchToPool(b);
+                }
 
                 _fence = null;
 
@@ -78,18 +100,26 @@ namespace RockEngine.Vulkan
                 _semaphores.Clear();
                 _completed = true;
             }
-           
+
         }
 
         public void Dispose()
         {
-            if (!_completed) Wait();   // synchronous wait, but user should have awaited
+            if (!_completed)
+            {
+                Wait();   // synchronous wait, but user should have awaited
+            }
+
             GC.SuppressFinalize(this);
         }
 
         public async ValueTask DisposeAsync()
         {
-            if (!_completed) await WaitAsync();
+            if (!_completed)
+            {
+                await WaitAsync();
+            }
+
             GC.SuppressFinalize(this);
         }
     }

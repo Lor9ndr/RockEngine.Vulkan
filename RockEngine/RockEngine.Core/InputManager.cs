@@ -1,13 +1,12 @@
-﻿using Silk.NET.GLFW;
-using Silk.NET.Input;
+﻿using Silk.NET.Input;
 using Silk.NET.Windowing;
 
 namespace RockEngine.Core
 {
     public class InputManager
     {
-        public IWindow InputOwner { get; private set;}
-        public IInputContext Context { get; private set; }
+        public IWindow? InputOwner { get; private set; }
+        public IInputContext? Context { get; private set; }
         public IMouse PrimaryMouse => Context.Mice[0];
         public IKeyboard PrimaryKeyboard => Context.Keyboards[0];
 

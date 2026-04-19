@@ -20,7 +20,7 @@ namespace RockEngine.Vulkan
                 .VkAssertResult("Failed to create semaphore.");
             return new VkSemaphore(context, semaphore);
         }
-       
+
 
         protected override void Dispose(bool disposing)
         {

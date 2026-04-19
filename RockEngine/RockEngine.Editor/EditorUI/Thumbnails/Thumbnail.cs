@@ -1,5 +1,4 @@
 ﻿using RockEngine.Assets;
-using RockEngine.Core.Assets;
 using RockEngine.Core.Rendering.Texturing;
 
 namespace RockEngine.Editor.EditorUI.Thumbnails

@@ -4,9 +4,9 @@ namespace RockEngine.Core.Rendering
 {
     public class RenderContext
     {
-        public SubmitContext GraphicsContext { get;}
-        public SubmitContext TransferContext { get;}
-        public SubmitContext ComputeContext { get;}
+        public SubmitContext GraphicsContext { get; }
+        public SubmitContext TransferContext { get; }
+        public SubmitContext ComputeContext { get; }
         public WorldRenderer WorldRenderer { get; }
         public uint FrameIndex { get; }
 

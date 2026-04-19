@@ -14,8 +14,8 @@ namespace RockEngine.Vulkan
             Result = result;
         }
 
-        public VulkanException(DebugUtilsMessageSeverityFlagsEXT messageSeverity, string? message):
-            base(messageSeverity.ToString() +  Environment.NewLine + message) 
+        public VulkanException(DebugUtilsMessageSeverityFlagsEXT messageSeverity, string? message) :
+            base(messageSeverity.ToString() + Environment.NewLine + message)
         {
             Data["Result"] = messageSeverity;
         }

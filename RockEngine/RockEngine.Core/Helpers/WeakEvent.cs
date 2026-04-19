@@ -30,7 +30,7 @@
         }
         public void RemoveHandler(EventHandler<TEventArgs> handler)
         {
-            _eventHandlers.RemoveAll(s=> !s.TryGetTarget(out var target) || target == handler);
+            _eventHandlers.RemoveAll(s => !s.TryGetTarget(out var target) || target == handler);
         }
     }
 

@@ -1,6 +1,4 @@
-﻿using Assimp;
-
-using MessagePack;
+﻿using MessagePack;
 
 using RockEngine.Core.Assets;
 
@@ -148,7 +146,7 @@ namespace RockEngine.Core.Rendering.Texturing
             Height = height;
             Depth = depth;
             MipLevels = mipLevels;
-            ArrayLayers = arrayLayers; 
+            ArrayLayers = arrayLayers;
             GenerateMipmaps = generateMipmaps;
             Sampler = sampler;
             Usage = usage;
@@ -200,9 +198,9 @@ namespace RockEngine.Core.Rendering.Texturing
         [Key(1)]
         public TextureFormat Format { get; set; } = TextureFormat.R8G8B8A8Unorm;
         [Key(2)]
-        public uint Width { get; set; }
+        public uint Width { get; set; } = 1;
         [Key(3)]
-        public uint Height { get; set; }
+        public uint Height { get; set; } = 1;
         [Key(4)]
         public uint Depth { get; set; } = 1;
         [Key(5)]
@@ -313,7 +311,7 @@ namespace RockEngine.Core.Rendering.Texturing
                 (SKColorType.Bgra8888, false) => Silk.NET.Vulkan.Format.B8G8R8A8Unorm,
                 (SKColorType.Bgra8888, true) => Silk.NET.Vulkan.Format.B8G8R8A8Srgb,
                 (SKColorType.Gray8, _) => Silk.NET.Vulkan.Format.R8Unorm,      // single channel
-                                                               // Add more mappings as needed
+                                                                               // Add more mappings as needed
                 _ => throw new NotSupportedException($"Unsupported SKColorType: {colorType}")
             };
         }
@@ -326,7 +324,7 @@ namespace RockEngine.Core.Rendering.Texturing
                 (SKColorType.Bgra8888, false) => TextureFormat.B8G8R8A8Unorm,
                 (SKColorType.Bgra8888, true) => TextureFormat.B8G8R8A8Srgb,
                 (SKColorType.Gray8, _) => TextureFormat.R8Unorm,      // single channel
-                                                                               // Add more mappings as needed
+                                                                      // Add more mappings as needed
                 _ => throw new NotSupportedException($"Unsupported SKColorType: {colorType}")
             };
         }
@@ -336,19 +334,39 @@ namespace RockEngine.Core.Rendering.Texturing
             ImageUsageFlags flags = ImageUsageFlags.None;
 
             if (Usage.HasFlag(TextureUsage.Sampled))
+            {
                 flags |= ImageUsageFlags.SampledBit;
+            }
+
             if (Usage.HasFlag(TextureUsage.Storage))
+            {
                 flags |= ImageUsageFlags.StorageBit;
+            }
+
             if (Usage.HasFlag(TextureUsage.ColorAttachment))
+            {
                 flags |= ImageUsageFlags.ColorAttachmentBit;
+            }
+
             if (Usage.HasFlag(TextureUsage.DepthStencilAttachment))
+            {
                 flags |= ImageUsageFlags.DepthStencilAttachmentBit;
+            }
+
             if (Usage.HasFlag(TextureUsage.TransferSrc))
+            {
                 flags |= ImageUsageFlags.TransferSrcBit;
+            }
+
             if (Usage.HasFlag(TextureUsage.TransferDst))
+            {
                 flags |= ImageUsageFlags.TransferDstBit;
+            }
+
             if (Usage.HasFlag(TextureUsage.TransientAttachment))
+            {
                 flags |= ImageUsageFlags.TransientAttachmentBit;
+            }
 
             return flags;
         }
@@ -358,21 +376,35 @@ namespace RockEngine.Core.Rendering.Texturing
             MemoryPropertyFlags flags = MemoryPropertyFlags.None;
 
             if (MemoryFlags.HasFlag(MemoryFlags.DeviceLocal))
+            {
                 flags |= MemoryPropertyFlags.DeviceLocalBit;
+            }
+
             if (MemoryFlags.HasFlag(MemoryFlags.HostVisible))
+            {
                 flags |= MemoryPropertyFlags.HostVisibleBit;
+            }
+
             if (MemoryFlags.HasFlag(MemoryFlags.HostCoherent))
+            {
                 flags |= MemoryPropertyFlags.HostCoherentBit;
+            }
+
             if (MemoryFlags.HasFlag(MemoryFlags.HostCached))
+            {
                 flags |= MemoryPropertyFlags.HostCachedBit;
+            }
 
             return flags;
         }
-     
+
 
         public uint CalculateMipLevels()
         {
-            if (!GenerateMipmaps) return 1;
+            if (!GenerateMipmaps)
+            {
+                return 1;
+            }
 
             uint maxDimension = Math.Max(Width, Math.Max(Height, Depth));
             return (uint)Math.Floor(Math.Log2(maxDimension)) + 1;
@@ -381,8 +413,15 @@ namespace RockEngine.Core.Rendering.Texturing
         public bool Validate()
         {
             //if (Width == 0 || Height == 0) return false;
-            if (IsCubeMap && FilePaths.Count != 6) return false;
-            if (IsArray && Depth == 0) return false;
+            if (IsCubeMap && FilePaths.Count != 6)
+            {
+                return false;
+            }
+
+            if (IsArray && Depth == 0)
+            {
+                return false;
+            }
 
             return true;
         }

@@ -11,20 +11,20 @@ namespace RockEngine.Core.Rendering.Managers
         private readonly VulkanContext _context;
         private readonly PipelineManager _pipelineManager;
 
-        public ComputeShaderManager(VulkanContext context,  PipelineManager pipelineManager)
+        public ComputeShaderManager(VulkanContext context, PipelineManager pipelineManager)
         {
             _context = context;
             _pipelineManager = pipelineManager;
         }
 
-        public async Task<RckPipeline> CreateComputePipelineAsync(string shaderPath,string pipelineName)
+        public async Task<RckPipeline> CreateComputePipelineAsync(string shaderPath, string pipelineName)
         {
             var shader = await VkShaderModule.CreateAsync(
                 _context,
                 shaderPath,
                 ShaderStageFlags.ComputeBit
             );
-            
+
             return _pipelineManager.Create(new ComputePipelineBuilder(_context, pipelineName)
                 .WithShaderModule(shader));
         }

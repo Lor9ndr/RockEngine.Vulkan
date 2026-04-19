@@ -12,9 +12,9 @@ namespace RockEngine.Core.Rendering.Texturing
 
         public Texture3D(VulkanContext context, VkImage image,
                         VkSampler sampler)
-            : base(context, image,  sampler) { }
+            : base(context, image, sampler) { }
 
-   
+
 
         private static VkImage CreateVulkanImage(
             VulkanContext context,
@@ -45,6 +45,7 @@ namespace RockEngine.Core.Rendering.Texturing
             return VkImage.Create(context, imageInfo, MemoryPropertyFlags.DeviceLocalBit, ImageAspectFlags.ColorBit);
         }
 
+        
         internal static Texture3D GetDefaultCubemapTexture(VulkanContext context)
         {
             // Create a simple 16x16 default cubemap with colored faces

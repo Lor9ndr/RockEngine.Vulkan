@@ -1,5 +1,6 @@
-﻿using ImGuiNET;
-
+﻿using System.Diagnostics.CodeAnalysis;
+using System.Numerics;
+using ImGuiNET;
 using RockEngine.Assets;
 using RockEngine.Core.Assets;
 using RockEngine.Core.ECS.Components;
@@ -7,8 +8,6 @@ using RockEngine.Core.Helpers;
 using RockEngine.Core.Rendering;
 using RockEngine.Core.Rendering.Materials;
 using RockEngine.Core.ResourceProviders;
-
-using System.Numerics;
 
 namespace RockEngine.Editor.EditorUI.ImGuiRendering.PropertyHandlers
 {
@@ -19,6 +18,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.PropertyHandlers
             propertyType.IsGenericType &&
             propertyType.GetGenericTypeDefinition() == typeof(IResourceProvider<>);
 
+        
         public void Draw(IComponent component, UIPropertyAccessor accessor, object value, PropertyDrawer drawer)
         {
             var resourceProvider = value as IResourceProvider;
@@ -68,6 +68,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.PropertyHandlers
             return $"{resourceType.Name} Provider";
         }
 
+        
         private void HandleAssetDragDrop(IComponent component, UIPropertyAccessor accessor, Type resourceType, PropertyDrawer drawer)
         {
             if (AssetDragDrop.AcceptAssetDrop(out var assetID))
@@ -86,7 +87,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.PropertyHandlers
             }
         }
 
-        private Type GetAssetTypeForResourceType(Type resourceType)
+        private Type? GetAssetTypeForResourceType(Type resourceType)
         {
             // Map resource types to asset types
             if (resourceType == typeof(IMesh) || resourceType.Name.Contains("Mesh"))
@@ -103,7 +104,8 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.PropertyHandlers
             return null;
         }
 
-        private object CreateProviderForAsset(Type providerType, IAsset asset)
+        
+        private object? CreateProviderForAsset([DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] Type providerType, IAsset asset)
         {
             var resourceType = providerType.GetGenericArguments()[0];
 

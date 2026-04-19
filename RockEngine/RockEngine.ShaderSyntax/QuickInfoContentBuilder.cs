@@ -12,11 +12,11 @@ namespace RockEngine.ShaderSyntax
     {
         public static FrameworkElement BuildForFunction(FunctionSignature signature, int overloadCount)
         {
-            var panel = new StackPanel { Margin = new Thickness(5)};
+            var panel = new StackPanel { Margin = new Thickness(5) };
 
             // Signature line (return type and name)
             var signatureText = new TextBlock();
-            signatureText.Inlines.Add(new Run(signature.ReturnType + " ") { FontWeight = FontWeights.Normal, Foreground = Brushes.White  });
+            signatureText.Inlines.Add(new Run(signature.ReturnType + " ") { FontWeight = FontWeights.Normal, Foreground = Brushes.White });
             signatureText.Inlines.Add(new Run(signature.Name) { FontWeight = FontWeights.Bold, Foreground = Brushes.White });
             signatureText.Inlines.Add(new Run("(") { Foreground = Brushes.White });
 
@@ -30,7 +30,7 @@ namespace RockEngine.ShaderSyntax
                 }
 
                 // Parameter type and name (optional name)
-                signatureText.Inlines.Add(new Run(p.Type) { FontStyle = FontStyles.Italic,  Foreground = Brushes.White });
+                signatureText.Inlines.Add(new Run(p.Type) { FontStyle = FontStyles.Italic, Foreground = Brushes.White });
                 if (!string.IsNullOrEmpty(p.Name))
                 {
                     signatureText.Inlines.Add(new Run(" " + p.Name) { Foreground = Brushes.White });
@@ -56,7 +56,7 @@ namespace RockEngine.ShaderSyntax
             if (!string.IsNullOrEmpty(signature.DocumentationUrl))
             {
                 var linkPanel = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 5, 0, 0) };
-                linkPanel.Children.Add(new TextBlock { Text = "More info: " ,Foreground = Brushes.White });
+                linkPanel.Children.Add(new TextBlock { Text = "More info: ", Foreground = Brushes.White });
 
                 var hyperlink = new Hyperlink();
                 hyperlink.Inlines.Add(signature.DocumentationUrl);

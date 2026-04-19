@@ -1,6 +1,5 @@
-﻿using Silk.NET.Vulkan;
-using System.Runtime.InteropServices;
-
+﻿using System.Runtime.InteropServices;
+using Silk.NET.Vulkan;
 using Buffer = Silk.NET.Vulkan.Buffer;
 
 namespace RockEngine.Vulkan
@@ -29,6 +28,7 @@ namespace RockEngine.Vulkan
             }
         }
 
+        
         public static VkBuffer Create(VulkanContext context, ulong size, BufferUsageFlags usage, MemoryPropertyFlags properties)
         {
             var allignmentSize = usage switch
@@ -64,6 +64,7 @@ namespace RockEngine.Vulkan
             return new VkBuffer(context, bufferHandle, deviceMemory, usage);
         }
 
+        
         public static unsafe VkBuffer CreateAndCopyToStagingBuffer(VulkanContext context, void* data, ulong size)
         {
             var stagingBuffer = Create(context, size, BufferUsageFlags.TransferSrcBit,
@@ -78,6 +79,7 @@ namespace RockEngine.Vulkan
             return stagingBuffer;
         }
 
+        
         public static async ValueTask<VkBuffer> CreateAndCopyToStagingBuffer<T>(VulkanContext context, T[] data, ulong size) where T : unmanaged
         {
             var stagingBuffer = Create(context, size, BufferUsageFlags.TransferSrcBit,
@@ -156,7 +158,7 @@ namespace RockEngine.Vulkan
             var span = new ReadOnlySpan<byte>(data, (int)dataSize);
             WriteToBufferPrivate(span, size, offset);
         }
-        public void WriteToBuffer<T>(T data,  ulong size = Vk.WholeSize, ulong offset = 0) where T : unmanaged
+        public void WriteToBuffer<T>(T data, ulong size = Vk.WholeSize, ulong offset = 0) where T : unmanaged
         {
             WriteToBufferPrivate([data], size, offset);
         }
@@ -315,7 +317,10 @@ namespace RockEngine.Vulkan
         public MappedMemory MapMemory(ulong size = Vk.WholeSize, ulong offset = 0)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
-            if (size == Vk.WholeSize) size = Size;
+            if (size == Vk.WholeSize)
+            {
+                size = Size;
+            }
 
             nint mappedPtr;
             if (_deviceMemory.IsMapped)

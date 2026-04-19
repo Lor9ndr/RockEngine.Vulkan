@@ -6,12 +6,12 @@ namespace RockEngine.Core.Rendering.Materials
     public class MaterialTemplate
     {
         public string Name { get; }
-        public ShaderReflectionData ReflectionData { get; }
+        public MergedShaderReflectionData ReflectionData { get; }
         private readonly Dictionary<string, MaterialPassTemplate> _passTemplates = new();
 
         public IReadOnlyDictionary<string, MaterialPassTemplate> PassTemplates => _passTemplates;
 
-        public MaterialTemplate(string name, ShaderReflectionData reflectionData)
+        public MaterialTemplate(string name, MergedShaderReflectionData reflectionData)
         {
             Name = name;
             ReflectionData = reflectionData;
@@ -25,7 +25,6 @@ namespace RockEngine.Core.Rendering.Materials
         public Material CreateInstance(string instanceName, PipelineManager pipelineManager)
         {
             var material = new Material(instanceName);
-
             foreach (var (subpassName, passTemplate) in _passTemplates)
             {
                 var pipeline = pipelineManager.GetPipelineByName(passTemplate.PipelineName);

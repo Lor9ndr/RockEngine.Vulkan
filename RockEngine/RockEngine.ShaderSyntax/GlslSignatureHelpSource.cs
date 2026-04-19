@@ -23,7 +23,10 @@ namespace RockEngine.ShaderSyntax
         public void AugmentSignatureHelpSession(ISignatureHelpSession session, IList<ISignature> signatures)
         {
             Debug.WriteLine("AugmentSignatureHelpSession entered");
-            if (_disposed) return;
+            if (_disposed)
+            {
+                return;
+            }
 
             var triggerPoint = session.GetTriggerPoint(_buffer.CurrentSnapshot);
             if (!triggerPoint.HasValue)
@@ -59,11 +62,15 @@ namespace RockEngine.ShaderSyntax
 
             int start = parenPos - 1;
             while (start >= 0 && char.IsWhiteSpace(lineText[start]))
+            {
                 start--;
+            }
 
             int end = start + 1;
             while (start >= 0 && (char.IsLetterOrDigit(lineText[start]) || lineText[start] == '_'))
+            {
                 start--;
+            }
 
             int identifierStart = start + 1;
             if (identifierStart >= end)
@@ -84,7 +91,9 @@ namespace RockEngine.ShaderSyntax
                 {
                     var sigs = contributor.GetSignatures(functionName, snapshot, triggerPoint.Value);
                     foreach (var sig in sigs)
+                    {
                         signatures.Add(sig);
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -93,11 +102,14 @@ namespace RockEngine.ShaderSyntax
             }
         }
 
-        public ISignature GetBestMatch(ISignatureHelpSession session)
+        public ISignature? GetBestMatch(ISignatureHelpSession session)
         {
             Debug.WriteLine("GetBestMatch called");
             if (session.Signatures.Any())
+            {
                 return session.Signatures.First();
+            }
+
             return null;
         }
 
@@ -115,7 +127,11 @@ namespace RockEngine.ShaderSyntax
                 foreach (var line in lines)
                 {
                     var trimmed = line.Trim().TrimEnd(',', ';');
-                    if (string.IsNullOrWhiteSpace(trimmed)) continue;
+                    if (string.IsNullOrWhiteSpace(trimmed))
+                    {
+                        continue;
+                    }
+
                     var parts = trimmed.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
                     if (parts.Length == 2)
                     {

@@ -1,7 +1,5 @@
-﻿using Silk.NET.Vulkan;
-
-using System.Runtime.CompilerServices;
-
+﻿using System.Runtime.CompilerServices;
+using Silk.NET.Vulkan;
 using static RockEngine.Vulkan.SubmitContext;
 using static RockEngine.Vulkan.SubmitContext.CommandPoolContext;
 
@@ -9,9 +7,9 @@ namespace RockEngine.Vulkan
 {
     public record DeferredOperation(Action Action) : IDisposable
     {
-        public void Dispose() { Action();}
+        public void Dispose() { Action(); }
     }
-    public sealed class UploadBatch 
+    public sealed class UploadBatch
     {
         private StagingManager? _stagingManager;
         private readonly VkCommandBuffer _commandBuffer;
@@ -31,6 +29,8 @@ namespace RockEngine.Vulkan
         public SubmitContext SubmitContext => _submitContext;
         internal CommandPoolContext Context { get; }
         public CommandBufferLevel Level => _level;
+
+        
         public StagingManager StagingManager => _stagingManager ??= Context.RentStagingManager();
 
         public CommandBufferInheritanceInfo? InheritanceInfo
@@ -116,8 +116,7 @@ namespace RockEngine.Vulkan
             _isInUse = false;
         }
 
-
-
+        
         public void StageToBuffer<T>(
             ReadOnlySpan<T> data,
             VkBuffer destination,
@@ -181,7 +180,7 @@ namespace RockEngine.Vulkan
         }
 
         public unsafe void PipelineBarrier(
-            Span<MemoryBarrier2> memoryBarriers ,
+            Span<MemoryBarrier2> memoryBarriers,
             Span<BufferMemoryBarrier2> bufferMemoryBarriers,
             Span<ImageMemoryBarrier2> imageMemoryBarriers,
             DependencyFlags dependencyFlags = DependencyFlags.None)
@@ -191,11 +190,11 @@ namespace RockEngine.Vulkan
                 SType = StructureType.DependencyInfo,
                 DependencyFlags = dependencyFlags,
                 MemoryBarrierCount = (uint)memoryBarriers.Length,
-                PMemoryBarriers = memoryBarriers.Length > 0 ? (MemoryBarrier2*)Unsafe.AsPointer(ref memoryBarriers[0]) :default,
+                PMemoryBarriers = memoryBarriers.Length > 0 ? (MemoryBarrier2*)Unsafe.AsPointer(ref memoryBarriers[0]) : default,
                 BufferMemoryBarrierCount = (uint)bufferMemoryBarriers.Length,
                 PBufferMemoryBarriers = bufferMemoryBarriers.Length > 0 ? (BufferMemoryBarrier2*)Unsafe.AsPointer(ref bufferMemoryBarriers[0]) : default,
                 ImageMemoryBarrierCount = (uint)imageMemoryBarriers.Length,
-                PImageMemoryBarriers = imageMemoryBarriers.Length > 0 ? (ImageMemoryBarrier2*)Unsafe.AsPointer(ref  imageMemoryBarriers[0]) : default,
+                PImageMemoryBarriers = imageMemoryBarriers.Length > 0 ? (ImageMemoryBarrier2*)Unsafe.AsPointer(ref imageMemoryBarriers[0]) : default,
 
             };
             _commandBuffer.PipelineBarrier2(in dependencyInfo);
@@ -215,7 +214,7 @@ namespace RockEngine.Vulkan
             Span<MemoryBarrier2> mem = [];
             Span<ImageMemoryBarrier2> img = [];
 
-            PipelineBarrier(mem, bufferMemoryBarriers, img,dependencyFlags);
+            PipelineBarrier(mem, bufferMemoryBarriers, img, dependencyFlags);
         }
         public void PipelineBarrier(
            Span<ImageMemoryBarrier2> imageMemoryBarriers,
@@ -348,9 +347,9 @@ namespace RockEngine.Vulkan
 
         public unsafe void PushConstants(VkPipelineLayout layout, ShaderStageFlags stageFlags, uint offset, uint size, byte* dataPtr)
         {
-            _commandBuffer.PushConstants(layout,stageFlags,offset,size,dataPtr);
+            _commandBuffer.PushConstants(layout, stageFlags, offset, size, dataPtr);
         }
-        public void PushConstants<T>(VkPipelineLayout layout, ShaderStageFlags stageFlags, uint offset, uint size, Span<T> data) where T:unmanaged
+        public void PushConstants<T>(VkPipelineLayout layout, ShaderStageFlags stageFlags, uint offset, uint size, Span<T> data) where T : unmanaged
         {
             _commandBuffer.PushConstants(layout, stageFlags, offset, size, data);
         }
@@ -359,7 +358,7 @@ namespace RockEngine.Vulkan
             _commandBuffer.PushConstants(layout, stageFlags, offset, size, ref data);
         }
 
-        public void BindDescriptorSets(PipelineBindPoint pipelineBindPoint, VkPipelineLayout pipelineLayout, uint minSetIndex,  Span<DescriptorSet> descriptorSets, Span<uint> dynamicOffsets)
+        public void BindDescriptorSets(PipelineBindPoint pipelineBindPoint, VkPipelineLayout pipelineLayout, uint minSetIndex, ReadOnlySpan<DescriptorSet> descriptorSets, ReadOnlySpan<uint> dynamicOffsets)
         {
             _commandBuffer.BindDescriptorSet(pipelineBindPoint, pipelineLayout, minSetIndex, descriptorSets, dynamicOffsets);
 
@@ -398,15 +397,15 @@ namespace RockEngine.Vulkan
 
         public void CopyImageToBuffer(VkImage srcImage, ImageLayout srcImageLayout, VkBuffer dstBuffer, in BufferImageCopy pRegions)
         {
-            _commandBuffer.CopyImageToBuffer(srcImage, srcImageLayout, dstBuffer,  pRegions);
+            _commandBuffer.CopyImageToBuffer(srcImage, srcImageLayout, dstBuffer, pRegions);
         }
 
-        public  void CopyBufferToImage(VkBuffer srcBuffer, VkImage dstImage, ImageLayout dstImageLayout,  Span<BufferImageCopy> pRegions)
+        public void CopyBufferToImage(VkBuffer srcBuffer, VkImage dstImage, ImageLayout dstImageLayout, Span<BufferImageCopy> pRegions)
         {
-            _commandBuffer.CopyBufferToImage(srcBuffer,dstImage, dstImageLayout, (uint)pRegions.Length, pRegions);
+            _commandBuffer.CopyBufferToImage(srcBuffer, dstImage, dstImageLayout, (uint)pRegions.Length, pRegions);
         }
 
-     
+
         public void CopyBufferToImage(VkBuffer srcBuffer, VkImage dstImage, ImageLayout dstImageLayout, in BufferImageCopy pRegions)
         {
             _commandBuffer.CopyBufferToImage(srcBuffer, dstImage, dstImageLayout, 1, pRegions);
@@ -439,12 +438,12 @@ namespace RockEngine.Vulkan
 
         public void DrawIndexedIndirect(VkBuffer buffer, uint drawCount, ulong offset, uint stride)
         {
-            _commandBuffer.DrawIndirect(buffer,drawCount,offset,stride);
+            _commandBuffer.DrawIndirect(buffer, drawCount, offset, stride);
         }
 
         public void Draw(uint vertexCount, uint instanceCount, uint firstVertex, uint firstInstance)
         {
-            _commandBuffer.Draw(vertexCount,instanceCount,firstVertex,firstInstance);
+            _commandBuffer.Draw(vertexCount, instanceCount, firstVertex, firstInstance);
         }
 
         public void ResetQueryPool(VkQueryPool pool, uint first, uint count)
@@ -472,6 +471,6 @@ namespace RockEngine.Vulkan
             _commandBuffer.BlitImage(srcImage, srcImageLayout, dstImage, dstImageLayout, in pRegions, filter);
         }
 
-        
+
     }
 }

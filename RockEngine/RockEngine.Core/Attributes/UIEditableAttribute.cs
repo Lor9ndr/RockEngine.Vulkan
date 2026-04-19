@@ -12,14 +12,22 @@
     {
         public float Min { get; }
         public float Max { get; }
-        public RangeAttribute(float min, float max) { Min = min; Max = max; }
+        public RangeAttribute(float min, float max)
+        {
+            Min = min;
+            Max = max;
+        }
     }
     [AttributeUsage(AttributeTargets.Property | AttributeTargets.Field)]
     public class RangeAttribute<T> : Attribute
     {
         public T Min { get; }
         public T Max { get; }
-        public RangeAttribute(T min, T max) { Min = min; Max = max; }
+        public RangeAttribute(T min, T max)
+        {
+            Min = min;
+            Max = max;
+        }
     }
 
     [AttributeUsage(AttributeTargets.Property | AttributeTargets.Field)]

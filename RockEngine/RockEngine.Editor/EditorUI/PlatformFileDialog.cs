@@ -58,7 +58,7 @@ namespace RockEngine.Editor.EditorUI
 
             [DllImport("ole32.dll")]
             private static extern void OleUninitialize();
-            # pragma warning disable 
+#pragma warning disable
             [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
             private struct OpenFileName
             {
@@ -86,7 +86,7 @@ namespace RockEngine.Editor.EditorUI
                 public int dwReserved;
                 public int flagsEx;
             }
-            #pragma warning enable
+#pragma warning enable
 
             [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
             private struct BROWSEINFO

@@ -22,12 +22,12 @@ namespace RockEngine.Core.Rendering.RenderTargets
         {
             CreateFramebuffers();
 
-            ClearValues =new Memory<ClearValue>(
-                [ 
+            ClearValues = new Memory<ClearValue>(
+                [
                 new ClearValue { Color = new ClearColorValue(0) },
                 new ClearValue { DepthStencil = new ClearDepthStencilValue(1.0f, 0) }
                 ]);
-            
+
 
             UpdateViewportAndScissor();
         }
@@ -52,7 +52,7 @@ namespace RockEngine.Core.Rendering.RenderTargets
             // Dispose old resources
             foreach (var fb in Framebuffers)
             {
-                if(fb is not null)
+                if (fb is not null)
                 {
                     Context.GraphicsSubmitContext.AddDependency(fb);
                 }

@@ -1,11 +1,8 @@
-﻿using JoltPhysicsSharp;
-
+﻿using System.Numerics;
+using JoltPhysicsSharp;
 using MessagePack;
-
 using RockEngine.Core.ECS.Components.Physics;
 using RockEngine.Core.Rendering;
-
-using System.Numerics;
 
 namespace RockEngine.Core.ECS.Components
 {

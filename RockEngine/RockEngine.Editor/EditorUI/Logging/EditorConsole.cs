@@ -1,8 +1,6 @@
-﻿using ImGuiNET;
-
+﻿using System.Numerics;
+using ImGuiNET;
 using NLog;
-
-using System.Numerics;
 
 namespace RockEngine.Editor.EditorUI.Logging
 {
@@ -156,8 +154,8 @@ namespace RockEngine.Editor.EditorUI.Logging
 
         private class LogEntry
         {
-            public LogLevel Level { get; set; }
-            public string Message { get; set; }
+            public required LogLevel Level { get; set; }
+            public required string Message { get; set; }
             public DateTime Time { get; set; }
         }
     }

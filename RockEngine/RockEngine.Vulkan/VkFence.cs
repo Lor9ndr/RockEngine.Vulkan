@@ -39,8 +39,8 @@ namespace RockEngine.Vulkan
 
         public void Wait(ulong timeoutMs = 10_000_000_000)
         {
-/*            var status = GetFenceStatus();
-            if (status == Result.Success) return; // Уже сигнален*/
+            /*            var status = GetFenceStatus();
+                        if (status == Result.Success) return; // Уже сигнален*/
 
             Vk.WaitForFences(_context.Device, 1, in _vkObject, true, timeoutMs) // 10 сек
                 .VkAssertResult("Failed to wait fence");
@@ -49,22 +49,22 @@ namespace RockEngine.Vulkan
         {
             Wait();
             return;
-           /* while (true)
-            {
-                var result = GetFenceStatus();
-                Console.WriteLine(result);
-                switch (result)
-                {
-                    case Result.Success:
-                        return;
-                    case Result.NotReady:
-                        await Task.Delay(1, cancellationToken).ConfigureAwait(false);
-                        continue;
-                    case Result.Timeout:
-                        throw new VulkanException(result, "Failed to wait fence, timeout");
+            /* while (true)
+             {
+                 var result = GetFenceStatus();
+                 Console.WriteLine(result);
+                 switch (result)
+                 {
+                     case Result.Success:
+                         return;
+                     case Result.NotReady:
+                         await Task.Delay(1, cancellationToken).ConfigureAwait(false);
+                         continue;
+                     case Result.Timeout:
+                         throw new VulkanException(result, "Failed to wait fence, timeout");
 
-                }
-            }*/
+                 }
+             }*/
         }
 
         public Result GetFenceStatus()

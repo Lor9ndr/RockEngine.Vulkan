@@ -166,7 +166,7 @@ namespace RockEngine.Core.Diagnostics
             var frame = _frameData[frameIndex];
             frame.BeginFrame();
         }
-      
+
 
         public static void ProcessQueries(VulkanContext context, uint frameIndex)
         {
@@ -448,7 +448,7 @@ namespace RockEngine.Core.Diagnostics
                 _disposed = false;
 
                 // Reserve queries first to get the start index
-                _startIndex = _frame.ReserveQueries(_scopeId, 2); 
+                _startIndex = _frame.ReserveQueries(_scopeId, 2);
                 // resetting query pools by cmd, not by host.
                 _batch.ResetQueryPool(_frame.QueryPool, _startIndex, 2);
                 // Write start timestamp
@@ -468,10 +468,10 @@ namespace RockEngine.Core.Diagnostics
 
                 // Write end timestamp
                 _batch.WriteTimestamp(PipelineStageFlags2.AllCommandsBit, _frame.QueryPool, _startIndex + 1);
-                
+
                 _currentGpuScope.Value = _previousScope;
             }
-           
+
         }
 
         public sealed class PerFrameData : IDisposable
@@ -654,7 +654,7 @@ namespace RockEngine.Core.Diagnostics
                 }
             }
 
-          
+
 
             private readonly struct GpuQuery
             {

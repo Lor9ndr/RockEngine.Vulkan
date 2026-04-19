@@ -1,13 +1,10 @@
-﻿using ImGuiNET;
-
+﻿using System.Numerics;
+using ImGuiNET;
 using RockEngine.Core.Attributes;
 using RockEngine.Core.ECS.Components;
 using RockEngine.Core.Helpers;
 using RockEngine.Editor.EditorUI.UndoRedo;
 using RockEngine.Editor.EditorUI.UndoRedo.Commands;
-
-using System.Collections.Generic;
-using System.Numerics;
 
 namespace RockEngine.Editor.EditorUI.ImGuiRendering.PropertyHandlers
 {

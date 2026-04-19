@@ -40,7 +40,9 @@ namespace RockEngine.Vulkan
             uint count = 0;
             VulkanContext.Vk.EnumeratePhysicalDevices(instance, ref count, null);
             if (count == 0)
+            {
                 throw new Exception("Failed to find GPUs with Vulkan support.");
+            }
 
             Span<PhysicalDevice> devices = stackalloc PhysicalDevice[(int)count];
             VulkanContext.Vk.EnumeratePhysicalDevices(instance, &count, devices);

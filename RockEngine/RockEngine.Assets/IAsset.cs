@@ -1,6 +1,6 @@
 ﻿namespace RockEngine.Assets
 {
-    public interface IAsset: IPolymorphicSerializable
+    public interface IAsset : IPolymorphicSerializable
     {
         Guid ID { get; set; }
 
@@ -42,5 +42,5 @@
 
     }
 
-   
+
 }

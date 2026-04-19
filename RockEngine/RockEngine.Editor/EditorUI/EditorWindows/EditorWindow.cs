@@ -1,6 +1,5 @@
-﻿using ImGuiNET;
-
-using System.Numerics;
+﻿using System.Numerics;
+using ImGuiNET;
 
 namespace RockEngine.Editor.EditorUI.EditorWindows
 {

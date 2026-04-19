@@ -115,10 +115,14 @@ namespace RockEngine.Editor.EditorUI.EditorWindows
         {
             var flags = ImGuiTreeNodeFlags.OpenOnArrow | ImGuiTreeNodeFlags.SpanAvailWidth;
             if (entity.Children.Count == 0)
+            {
                 flags |= ImGuiTreeNodeFlags.Leaf;
+            }
 
             if (_selectionManager.IsEntitySelected(entity))
+            {
                 flags |= ImGuiTreeNodeFlags.Selected;
+            }
 
             bool isOpen = ImGui.TreeNodeEx($"{entity.Name}##{entity.ID}", flags);
             HandleEntitySelection(entity);
@@ -195,10 +199,26 @@ namespace RockEngine.Editor.EditorUI.EditorWindows
         /// </summary>
         private bool CanReparent(Entity dragged, Entity newParent)
         {
-            if (dragged == null || newParent == null) return false;
-            if (dragged == newParent) return false; // Can't parent to itself
-            if (IsDescendantOf(newParent, dragged)) return false; // Can't set a descendant as parent (would create cycle)
-            if (dragged.Parent == newParent) return false; // Already child
+            if (dragged == null || newParent == null)
+            {
+                return false;
+            }
+
+            if (dragged == newParent)
+            {
+                return false; // Can't parent to itself
+            }
+
+            if (IsDescendantOf(newParent, dragged))
+            {
+                return false; // Can't set a descendant as parent (would create cycle)
+            }
+
+            if (dragged.Parent == newParent)
+            {
+                return false; // Already child
+            }
+
             return true;
         }
 
@@ -211,7 +231,10 @@ namespace RockEngine.Editor.EditorUI.EditorWindows
             while (current != null)
             {
                 if (current == potentialAncestor)
+                {
                     return true;
+                }
+
                 current = current.Parent;
             }
             return false;
@@ -225,9 +248,13 @@ namespace RockEngine.Editor.EditorUI.EditorWindows
                 if (io.KeyCtrl)
                 {
                     if (_selectionManager.IsEntitySelected(entity))
+                    {
                         _selectionManager.RemoveFromSelection(entity, SelectionSource.SceneHierarchy);
+                    }
                     else
+                    {
                         _selectionManager.AddToSelection(entity, SelectionSource.SceneHierarchy);
+                    }
                 }
                 else if (io.KeyShift)
                 {

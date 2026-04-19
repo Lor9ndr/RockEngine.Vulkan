@@ -9,9 +9,9 @@ namespace RockEngine.Assets
         {
         }
 
-        public bool CanHandle(long fileSize) => true; // Fallback strategy
+        public bool CanHandle(long fileSize) => false; // Fallback strategy
 
-        public async Task<AssetHeader> LoadMetadataAsync(string filePath, IAssetSerializer serializer)
+        public async Task<AssetHeader> LoadHeaderAsync(string filePath, IAssetSerializer serializer)
         {
             using var fileStream = new FileStream(filePath, FileMode.Open, FileAccess.Read,
                 FileShare.Read, OptimalBufferSize, FileOptions.SequentialScan);
@@ -33,24 +33,28 @@ namespace RockEngine.Assets
         public async Task LoadDataAsync(IAsset asset, Type dataType, string filePath, IAssetSerializer serializer)
         {
             using var memoryStream = new MemoryStream();
-            using var fileStream = new FileStream(filePath, FileMode.Open, FileAccess.Read,
-                FileShare.Read, OptimalBufferSize, FileOptions.SequentialScan);
+            using (var fileStream = new FileStream(filePath, FileMode.Open, FileAccess.Read,
+                FileShare.Read, OptimalBufferSize, FileOptions.SequentialScan))
+            {
+                await fileStream.CopyToAsync(memoryStream);
+            }
 
-            await fileStream.CopyToAsync(memoryStream);
             memoryStream.Position = 0;
 
             await LoadDataForAssetAsync(asset, dataType, memoryStream, serializer);
 
         }
 
-        public async Task<IAsset> LoadAssetAsync(string filePath, AssetHeader assetHeader, IAssetSerializer serializer)
+        public async Task<IAsset> LoadAssetAsync(string filePath, IAssetSerializer serializer)
         {
             using var memoryStream = new MemoryStream();
 
-            using var fileStream = new FileStream(filePath, FileMode.Open, FileAccess.Read,
-                FileShare.Read, OptimalBufferSize, FileOptions.SequentialScan);
+            using (var fileStream = new FileStream(filePath, FileMode.Open, FileAccess.Read,
+                FileShare.Read, OptimalBufferSize, FileOptions.SequentialScan))
+            {
+                await fileStream.CopyToAsync(memoryStream);
+            }
 
-            await fileStream.CopyToAsync(memoryStream);
             memoryStream.Position = 0;
             var path = new AssetPath(filePath);
             return await serializer.DeserializeAssetAsync(memoryStream, path);

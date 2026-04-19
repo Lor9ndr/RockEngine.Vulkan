@@ -1,13 +1,18 @@
-﻿
-using Silk.NET.Vulkan;
+﻿using Silk.NET.Vulkan;
 
 namespace RockEngine.Vulkan
 {
-    public class VkImageView : VkObject<ImageView>
+    public class VkImageView : VkObject<ImageView>, IResourceTrackable
     {
         private readonly VulkanContext _context;
-        private VkImage _image;
+        private readonly VkImage _image;
         private ImageViewCreateInfo _createInfo;
+        private readonly ImageObserver _imageObserver;
+        private readonly IDisposable _imageSubscription; // подписка на изменения изображения
+
+        private readonly ResourceTracker _tracker = new ResourceTracker();
+        public ulong ID => _tracker.ID;
+        public IDisposable Subscribe(IResourceObserver observer) => _tracker.Subscribe(observer);
 
         public Format Format => _createInfo.Format;
         public ImageAspectFlags AspectFlags => _createInfo.SubresourceRange.AspectMask;
@@ -18,24 +23,35 @@ namespace RockEngine.Vulkan
 
         public VkImage Image => _image;
 
-        public event Action? WasUpdated;
-
         private VkImageView(VulkanContext context, VkImage image, in ImageView vkObject, in ImageViewCreateInfo ci)
             : base(in vkObject)
         {
             _context = context;
             _image = image;
             _createInfo = ci;
-            _image.OnImageResized += Recreate;
+            _imageObserver = new ImageObserver(this);
+            _imageSubscription = _image.Subscribe(_imageObserver);
         }
 
+        // Внутренний наблюдатель за изменениями VkImage
+        private sealed class ImageObserver(VkImageView imageView) : IResourceObserver
+        {
+            public void OnResourceChanged(ulong resourceId, ResourceChangeType changeType)
+            {
+                if (changeType == ResourceChangeType.Resized)
+                {
+                    imageView.Recreate();
+                }
+            }
+        }
 
-        public static unsafe VkImageView Create(VulkanContext context, VkImage image, in ImageViewCreateInfo ci)
+        public static VkImageView Create(VulkanContext context, VkImage image, in ImageViewCreateInfo ci)
         {
             VulkanContext.Vk.CreateImageView(context.Device, in ci, in VulkanContext.CustomAllocator<VkImageView>(), out var imageView)
                .VkAssertResult("Failed to create image view!");
-            return new VkImageView(context, image, imageView,in ci);
+            return new VkImageView(context, image, imageView, in ci);
         }
+
         public static VkImageView Create(
             VulkanContext context,
             VkImage image,
@@ -51,7 +67,7 @@ namespace RockEngine.Vulkan
             {
                 SType = StructureType.ImageViewCreateInfo,
                 Image = image,
-                ViewType = type, 
+                ViewType = type,
                 Format = format,
                 Components = new ComponentMapping(),
                 SubresourceRange = new ImageSubresourceRange
@@ -63,45 +79,50 @@ namespace RockEngine.Vulkan
                     LayerCount = arrayLayers
                 }
             };
-
             return Create(context, image, createInfo);
         }
 
-        private unsafe void Recreate(VkImage image)
+        private void Recreate()
         {
             // Destroy existing view
             if (_vkObject.Handle != 0)
             {
                 VulkanContext.Vk.DestroyImageView(_context.Device, _vkObject, in VulkanContext.CustomAllocator<VkImageView>());
             }
-            _image = image;
             _createInfo.Image = _image;
-           
 
             VulkanContext.Vk.CreateImageView(_context.Device, in _createInfo, in VulkanContext.CustomAllocator<VkImageView>(), out var imageView);
             _vkObject = imageView;
 
-            WasUpdated?.Invoke();
+            // Уведомляем подписчиков об изменении вью
+            _tracker.NotifyObservers(ResourceChangeType.DataUpdated);
         }
 
-
-        protected override unsafe void Dispose(bool disposing)
+        protected override void Dispose(bool disposing)
         {
             if (_disposed)
             {
                 return;
             }
-            _image.RemoveViewFromCache(this);
 
+            if (disposing)
+            {
+                _imageSubscription?.Dispose(); // отписываемся от изображения
+                _tracker.NotifyObservers(ResourceChangeType.Disposed);
+                _tracker.Clear();
+            }
+
+            _image.RemoveViewFromCache(this);
             VulkanContext.Vk.DestroyImageView(_context.Device, _vkObject, in VulkanContext.CustomAllocator<VkImageView>());
             _disposed = true;
         }
 
         public override void LabelObject(string name) => _context.DebugUtils.SetDebugUtilsObjectName(_vkObject, ObjectType.ImageView, name);
 
-        internal void Update()
+        // Вместо старого события WasUpdated теперь можно просто уведомлять трекер
+        public void Update()
         {
-            WasUpdated?.Invoke();
+            _tracker.NotifyObservers(ResourceChangeType.DataUpdated);
         }
     }
 }

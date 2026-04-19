@@ -80,7 +80,7 @@ namespace RockEngine.Vulkan
         private UploadBatch CreateNewBatch(CommandPoolContext context, CommandBufferLevel level, CommandBufferInheritanceInfo? inheritanceInfo = null)
         {
             var commandBuffer = context.Pool.AllocateCommandBuffer(level);
-            return new UploadBatch(context,  this, commandBuffer, level, inheritanceInfo);
+            return new UploadBatch(context, this, commandBuffer, level, inheritanceInfo);
         }
 
         public UploadBatch CreateBatch(BatchCreationParams? parameters = null)
@@ -96,7 +96,7 @@ namespace RockEngine.Vulkan
                 ownerSeg = new PoolSegment(newPool);
                 batch = CreateNewBatch(context, parameters.Level, parameters.InheritanceInfo);
                 batch._ownerSegment = ownerSeg;
-                context.OnBatchTaken(ownerSeg); 
+                context.OnBatchTaken(ownerSeg);
             }
             else
             {
@@ -130,7 +130,8 @@ namespace RockEngine.Vulkan
                 return _threadCommandContext.Value!;
             }
 
-            return _namedContexts.GetOrAdd(name, n => {
+            return _namedContexts.GetOrAdd(name, n =>
+            {
                 var ctx = CreateNamedCommandPoolContext(n);
                 _allContexts.Add(ctx);
                 return ctx;
@@ -170,7 +171,7 @@ namespace RockEngine.Vulkan
                 if (poolOwned)
                 {
                     fence = _fencePool.GetFence();
-                    batch.AddDependency(new DeferredOperation(()=>_fencePool.ReturnFence(fence)));
+                    batch.AddDependency(new DeferredOperation(() => _fencePool.ReturnFence(fence)));
                 }
 
 
@@ -221,7 +222,7 @@ namespace RockEngine.Vulkan
             {
                 //_submissionLock.Release();
             }
-           
+
         }
 
         private SubmitOperation SubmitInternal(VkFence? fence = null)
@@ -304,10 +305,17 @@ namespace RockEngine.Vulkan
                 // Fill signalSemaphores
                 int index = 0;
                 foreach (var s in _signalSemaphores)
+                {
                     signalSemaphores[index++] = s.VkObjectNative;
+                }
+
                 foreach (var b in _batchList)
+                {
                     foreach (var s in b.SignalSemaphores)
+                    {
                         signalSemaphores[index++] = s.VkObjectNative;
+                    }
+                }
 
                 // Fill waitSemaphores and waitStages
                 index = 0;
@@ -351,6 +359,7 @@ namespace RockEngine.Vulkan
         }
 
         public void AddDependency(IDisposable disposable) => _flushDisposables.Add(disposable);
+        public void AddDependency(Action disposable) => _flushDisposables.Add(new DeferredOperation(disposable));
         public void AddWaitSemaphore(VkSemaphore semaphore, PipelineStageFlags stage) => _waitSemaphores[semaphore] = stage;
         public void AddSignalSemaphore(VkSemaphore semaphore) => _signalSemaphores.Add(semaphore);
 
@@ -388,11 +397,15 @@ namespace RockEngine.Vulkan
             public VkCommandPool Rent()
             {
                 if (_available.TryTake(out var pool))
+                {
                     return pool;
+                }
 
                 var flags = CommandPoolCreateFlags.TransientBit;
                 if (_useIndividualResets)
+                {
                     flags |= CommandPoolCreateFlags.ResetCommandBufferBit;
+                }
 
                 return VkCommandPool.Create(_context, flags, _queueFamily);
             }
@@ -407,7 +420,10 @@ namespace RockEngine.Vulkan
             public void Dispose()
             {
                 foreach (var pool in _available)
+                {
                     pool.Dispose();
+                }
+
                 _available.Clear();
             }
         }
@@ -425,7 +441,7 @@ namespace RockEngine.Vulkan
             private readonly SubmitContext _submitContext;
             private readonly bool _useIndividualResets;
             private readonly List<PoolSegment> _segments = new();
-            private readonly object _segmentLock = new(); 
+            private readonly object _segmentLock = new();
             private readonly ConcurrentQueue<StagingManager> _stagingManagerPool = new();
             public VkCommandPool Pool { get; }
             public string? Name { get; }
@@ -474,7 +490,9 @@ namespace RockEngine.Vulkan
                                 {
                                     var targetFree = seg.FreeBatches.GetOrAdd(kv.Key, _ => new ConcurrentQueue<UploadBatch>());
                                     while (kv.Value.TryDequeue(out var b))
+                                    {
                                         targetFree.Enqueue(b);
+                                    }
                                 }
                                 // Now try again (should succeed)
                                 var freeNow = seg.FreeBatches.GetOrAdd(level, _ => new ConcurrentQueue<UploadBatch>());
@@ -503,6 +521,8 @@ namespace RockEngine.Vulkan
                     return true;
                 }
             }
+
+            
             public StagingManager RentStagingManager()
             {
                 if (_stagingManagerPool.TryDequeue(out var manager))
@@ -546,7 +566,9 @@ namespace RockEngine.Vulkan
                         {
                             var freeQueue = seg.FreeBatches.GetOrAdd(kv.Key, _ => new ConcurrentQueue<UploadBatch>());
                             while (kv.Value.TryDequeue(out var b))
+                            {
                                 freeQueue.Enqueue(b);
+                            }
                         }
                     }
                 }
@@ -554,7 +576,11 @@ namespace RockEngine.Vulkan
 
             public void Dispose()
             {
-                if (_disposed) return;
+                if (_disposed)
+                {
+                    return;
+                }
+
                 _disposed = true;
 
                 // Discard any batches – their command buffers will be freed when the pool is destroyed.

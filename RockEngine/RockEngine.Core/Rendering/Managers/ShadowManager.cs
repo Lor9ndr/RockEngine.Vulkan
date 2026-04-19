@@ -1,17 +1,14 @@
-﻿using NLog;
-
+﻿using System.Numerics;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using NLog;
 using RockEngine.Core.ECS.Components;
 using RockEngine.Core.Helpers;
 using RockEngine.Core.Rendering.Buffers;
 using RockEngine.Core.Rendering.ResourceBindings;
 using RockEngine.Core.Rendering.Texturing;
 using RockEngine.Vulkan;
-
 using Silk.NET.Vulkan;
-
-using System.Numerics;
-using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
 
 namespace RockEngine.Core.Rendering.Managers
 {
@@ -32,6 +29,7 @@ namespace RockEngine.Core.Rendering.Managers
         private readonly uint _maxShadowMaps = 20;
         private static readonly Logger _logger = LogManager.GetCurrentClassLogger();
 
+        
         public ShadowManager(VulkanContext context)
         {
             _context = context;
@@ -57,7 +55,7 @@ namespace RockEngine.Core.Rendering.Managers
                                                     0,
                                                     _shadowMapArray.Image.ArrayLayers,
                                                     _shadowMapArray);
-            _pointShadowMapsBinding = new TextureBinding(4, 1, 0, 1, ImageLayout.ShaderReadOnlyOptimal,0, _pointShadowMapArray.Image.ArrayLayers, _pointShadowMapArray);
+            _pointShadowMapsBinding = new TextureBinding(4, 1, 0, 1, ImageLayout.ShaderReadOnlyOptimal, 0, _pointShadowMapArray.Image.ArrayLayers, _pointShadowMapArray);
 
             // Initialize available indices
             for (uint i = 0; i < _maxShadowMaps; i++)
@@ -125,7 +123,9 @@ namespace RockEngine.Core.Rendering.Managers
         public void UpdateShadowTexture(UploadBatch batch, Light light, VkImage shadowImage)
         {
             if (!_lightShadowMapIndices.TryGetValue(light, out var shadowIndex) || shadowIndex == uint.MaxValue)
+            {
                 return;
+            }
 
             uint layerCount = GetLayerCountForLight(light);
             var targetTexture = light.Type == LightType.Point ? _pointShadowMapArray : _shadowMapArray;
@@ -201,19 +201,29 @@ namespace RockEngine.Core.Rendering.Managers
         public UniformBufferBinding GetShadowMatricesBinding() => _shadowMatricesBinding;
         public UniformBufferBinding GetCSMDataBinding() => _csmDataBinding;
 
+        
         public void UpdateShadowMatrices(List<Light> shadowCastingLights, Camera mainCamera)
         {
-            if (shadowCastingLights.Count == 0) return;
+            if (shadowCastingLights.Count == 0)
+            {
+                return;
+            }
 
             var shadowMatrices = new List<Matrix4x4>();
             var csmDataArray = new CSMData[_maxShadowMaps];
 
             foreach (var light in shadowCastingLights)
             {
-                if (shadowMatrices.Count >= _maxShadowMaps * 16) break;
+                if (shadowMatrices.Count >= _maxShadowMaps * 16)
+                {
+                    break;
+                }
 
                 var shadowIndex = AssignShadowMapIndex(light);
-                if (shadowIndex == uint.MaxValue) continue;
+                if (shadowIndex == uint.MaxValue)
+                {
+                    continue;
+                }
 
                 light.SetShadowIndices(shadowIndex);
 
@@ -254,10 +264,10 @@ namespace RockEngine.Core.Rendering.Managers
 
                     // Pad to 16 matrices for UBO alignment
                     int matricesToAdd = 16 - light.CascadeCount;
-                    for (int i = 0; i < matricesToAdd; i++)
+                    /*for (int i = 0; i < matricesToAdd; i++)
                     {
                         shadowMatrices.Add(Matrix4x4.Identity);
-                    }
+                    }*/
                 }
                 else if (light.Type == LightType.Point)
                 {
@@ -267,22 +277,22 @@ namespace RockEngine.Core.Rendering.Managers
                     {
                         shadowMatrices.Add(pointMatrices[i]);
                     }
-                    // Pad to 16
-                    for (int i = 6; i < 16; i++)
+                    /*// Pad to 16
+                    for (int i = 6; i < 16 - pointMatrices.Length; i++)
                     {
                         shadowMatrices.Add(Matrix4x4.Identity);
-                    }
+                    }*/
                 }
                 else
                 {
                     // Single matrix for spot/non-CSM directional
                     var singleMatrix = light.GetShadowMatrix();
                     shadowMatrices.Add(singleMatrix[0]);
-                    // Pad to 16
-                    for (int i = 1; i < 16; i++)
-                    {
-                        shadowMatrices.Add(Matrix4x4.Identity);
-                    }
+                    /* // Pad to 16
+                     for (int i = 1; i < 16 - singleMatrix.Length; i++)
+                     {
+                         shadowMatrices.Add(Matrix4x4.Identity);
+                     }*/
                 }
             }
 

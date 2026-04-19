@@ -13,16 +13,15 @@ namespace RockEngine.ShaderPreprocessor
     {
         private readonly ConcurrentDictionary<string, string> _includeCache = new ConcurrentDictionary<string, string>();
 
-
-        public MainShaderPreprocessor()
-        {
-        }
-
-        public async Task<ShaderPreProcessResult> PreprocessAsync(string source, string filePath, IReadOnlyList<string> defines = null)
+        public async Task<ShaderPreProcessResult> PreprocessAsync(
+            string source,
+            string filePath,
+            IReadOnlyList<string> defines = null,
+            IReadOnlyList<string> extensions = null)
         {
             var lineMappings = new List<LineMapping>();
 
-            // Step 1: Initialize 1:1 mapping for every line in the original source
+            // Step 1: Initialize 1:1 mapping
             string[] originalLines = source.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
             for (int i = 0; i < originalLines.Length; i++)
             {
@@ -34,13 +33,121 @@ namespace RockEngine.ShaderPreprocessor
                 });
             }
 
-            // Step 2: Process includes (recursive)
+            // Step 2: Insert required extensions after #version
+            if (extensions != null && extensions.Any())
+            {
+                source = InsertExtensions(source, extensions, lineMappings, filePath);
+            }
+
+            // Step 3: Automatically include "Include/common.glsl" if [MATERIAL] block is present
+            source = EnsureCommonInclude(source, filePath, lineMappings);
+
+            // Step 4: Process all #include directives (including the newly added one)
             source = await ProcessIncludesAsync(source, Path.GetDirectoryName(filePath), filePath, lineMappings);
 
-            // Step 3: Process material annotations
+            // Step 5: Process [MATERIAL] annotations
             source = ProcessMaterialAnnotations(source, defines ?? Array.Empty<string>(), filePath, lineMappings);
 
             return new ShaderPreProcessResult(source, lineMappings);
+        }
+
+        private string InsertExtensions(string source, IReadOnlyList<string> extensions, List<LineMapping> lineMappings, string filePath)
+        {
+            // Find the line containing #version
+            int versionIndex = source.IndexOf("#version");
+            if (versionIndex < 0)
+            {
+                versionIndex = 0;
+            }
+
+            int lineEnd = source.IndexOf('\n', versionIndex);
+            if (lineEnd < 0)
+            {
+                lineEnd = source.Length;
+            }
+
+            var extensionLines = new StringBuilder();
+            foreach (var ext in extensions)
+            {
+                extensionLines.AppendLine($"#extension {ext}");
+            }
+
+            int insertPos = lineEnd + 1;
+            string newSource = source.Insert(insertPos, extensionLines.ToString());
+
+            int versionLineNumber = GetLineNumber(source, versionIndex);
+            int addedLineCount = extensions.Count();
+            ShiftMappingsAfter(versionLineNumber, addedLineCount, lineMappings);
+
+            int originalLine = GetOriginalLineFromPreprocessed(versionLineNumber, lineMappings);
+            for (int i = 0; i < addedLineCount; i++)
+            {
+                lineMappings.Add(new LineMapping
+                {
+                    OriginalLine = originalLine,
+                    PreprocessedLine = versionLineNumber + i + 1,
+                    SourceFilePath = filePath
+                });
+            }
+
+            return newSource;
+        }
+
+        /// <summary>
+        /// Automatically inserts #include "Include/common.glsl" if a [MATERIAL] block exists
+        /// and the include is not already present.
+        /// </summary>
+        private string EnsureCommonInclude(string source, string filePath, List<LineMapping> lineMappings)
+        {
+            // Check if [MATERIAL] block exists
+            if (!Regex.IsMatch(source, @"\[MATERIAL\]\s*\{", RegexOptions.Singleline))
+            {
+                return source;
+            }
+
+            // Check if common.glsl is already included
+            if (Regex.IsMatch(source, @"#include\s+[""']Include/common\.glsl[""']"))
+            {
+                return source;
+            }
+
+            // Find insertion point: after #version line (or beginning if no #version)
+            int insertIndex = 0;
+            int lineNumberAfterVersion = 1;
+            int versionIndex = source.IndexOf("#version");
+            if (versionIndex >= 0)
+            {
+                int lineEnd = source.IndexOf('\n', versionIndex);
+                if (lineEnd < 0)
+                {
+                    lineEnd = source.Length;
+                }
+
+                insertIndex = lineEnd + 1;
+                lineNumberAfterVersion = GetLineNumber(source, versionIndex) + 1;
+            }
+            else
+            {
+                insertIndex = 0;
+                lineNumberAfterVersion = 1;
+            }
+
+            string includeLine = "#include \"Include/common.glsl\"\n";
+            source = source.Insert(insertIndex, includeLine);
+
+            // Shift existing mappings that are at or after the insertion line
+            ShiftMappingsAfter(lineNumberAfterVersion - 1, 1, lineMappings);
+
+            // Add mapping for the new include line
+            int originalLine = GetOriginalLineFromPreprocessed(lineNumberAfterVersion, lineMappings);
+            lineMappings.Add(new LineMapping
+            {
+                OriginalLine = originalLine,
+                PreprocessedLine = lineNumberAfterVersion,
+                SourceFilePath = filePath
+            });
+
+            return source;
         }
 
         private async Task<string> ProcessIncludesAsync(string source, string baseDirectory, string filePath, List<LineMapping> lineMappings)
@@ -48,41 +155,34 @@ namespace RockEngine.ShaderPreprocessor
             var includePattern = @"#include\s+[""'](.+?)[""']";
             var matches = Regex.Matches(source, includePattern);
 
-            // Process in reverse to keep indices valid
             for (int i = matches.Count - 1; i >= 0; i--)
             {
                 var match = matches[i];
                 string includeFile = match.Groups[1].Value;
                 string includePath = ResolveIncludePath(includeFile, baseDirectory);
 
-                // Read and recursively process the included file
                 if (!_includeCache.TryGetValue(includePath, out string includeSource))
                 {
                     includeSource = await File.ReadAllTextAsync(includePath);
-                    // Recursive call – note: we do NOT track mappings for the included file separately.
-                    // We will map all lines from the include back to the original #include line.
                     includeSource = await ProcessIncludesAsync(includeSource, Path.GetDirectoryName(includePath), filePath, lineMappings);
                     _includeCache[includePath] = includeSource;
                 }
 
-                int lineNumberOfInclude = GetLineNumber(source, match.Index); // line in current expanded source
+                int lineNumberOfInclude = GetLineNumber(source, match.Index);
                 int includeLineCount = includeSource.Count(c => c == '\n') + 1;
 
-                // Shift mappings for all lines after the include directive
                 ShiftMappingsAfter(lineNumberOfInclude, includeLineCount, lineMappings);
 
-                // Map each line of the included content to the include directive's original line
                 for (int j = 0; j < includeLineCount; j++)
                 {
                     lineMappings.Add(new LineMapping
                     {
-                        OriginalLine = GetOriginalLineFromPreprocessed(lineNumberOfInclude, lineMappings), // line of #include in original
-                        PreprocessedLine = lineNumberOfInclude + j + 1, // new preprocessed lines
-                        SourceFilePath = filePath // still the main file (or we could store includePath)
+                        OriginalLine = GetOriginalLineFromPreprocessed(lineNumberOfInclude, lineMappings),
+                        PreprocessedLine = lineNumberOfInclude + j + 1,
+                        SourceFilePath = filePath
                     });
                 }
 
-                // Insert the include source (without #line directives)
                 source = source.Remove(match.Index, match.Length);
                 source = source.Insert(match.Index, includeSource);
             }
@@ -96,7 +196,9 @@ namespace RockEngine.ShaderPreprocessor
             var matches = Regex.Matches(source, pattern, RegexOptions.Singleline);
 
             if (matches.Count == 0)
+            {
                 return source;
+            }
 
             bool bindlessEnabled = defines?.Contains("BINDLESS_SUPPORTED") ?? false;
 
@@ -107,15 +209,13 @@ namespace RockEngine.ShaderPreprocessor
                 var textures = ParseTextureDeclarations(blockContent);
                 var generatedCode = GenerateMaterialCode(textures, bindlessEnabled);
 
-                int lineNumberOfBlock = GetLineNumber(source, match.Index); // line in current expanded source
+                int lineNumberOfBlock = GetLineNumber(source, match.Index);
                 int blockLineCount = match.Value.Count(c => c == '\n') + 1;
                 int generatedLineCount = generatedCode.Count(c => c == '\n') + 1;
                 int delta = generatedLineCount - blockLineCount;
 
-                // Shift mappings after the block
                 ShiftMappingsAfter(lineNumberOfBlock + blockLineCount - 1, delta, lineMappings);
 
-                // Map each generated line to the original line of the [MATERIAL] block
                 int originalLineOfBlock = GetOriginalLineFromPreprocessed(lineNumberOfBlock, lineMappings);
                 for (int j = 0; j < generatedLineCount; j++)
                 {
@@ -127,7 +227,6 @@ namespace RockEngine.ShaderPreprocessor
                     });
                 }
 
-                // Replace the block with generated code
                 source = source.Remove(match.Index, match.Length);
                 source = source.Insert(match.Index, generatedCode);
             }
@@ -135,7 +234,6 @@ namespace RockEngine.ShaderPreprocessor
             return source;
         }
 
-        // Helper: shift all mappings with PreprocessedLine > afterLine by delta
         private void ShiftMappingsAfter(int afterLine, int delta, List<LineMapping> lineMappings)
         {
             foreach (var mapping in lineMappings)
@@ -147,16 +245,16 @@ namespace RockEngine.ShaderPreprocessor
             }
         }
 
-        // Helper: find the original line number that corresponds to a given preprocessed line
         private int GetOriginalLineFromPreprocessed(int preprocessedLine, List<LineMapping> lineMappings)
         {
-            // Search from end to get the most recent mapping (since lines may have been inserted)
             for (int i = lineMappings.Count - 1; i >= 0; i--)
             {
                 if (lineMappings[i].PreprocessedLine == preprocessedLine)
+                {
                     return lineMappings[i].OriginalLine;
+                }
             }
-            return preprocessedLine; // fallback (should not happen)
+            return preprocessedLine;
         }
 
         private int GetLineNumber(string source, int index)
@@ -165,21 +263,25 @@ namespace RockEngine.ShaderPreprocessor
             for (int i = 0; i < index; i++)
             {
                 if (source[i] == '\n')
+                {
                     line++;
+                }
             }
             return line;
         }
 
         private string ResolveIncludePath(string includeFile, string baseDirectory)
         {
-            // Try relative to the current file
             var relativePath = Path.Combine(baseDirectory, includeFile);
             if (File.Exists(relativePath))
+            {
                 return relativePath;
+            }
 
-            // Try absolute path
             if (File.Exists(includeFile))
+            {
                 return includeFile;
+            }
 
             throw new FileNotFoundException($"Include file not found: {includeFile}");
         }
@@ -191,7 +293,11 @@ namespace RockEngine.ShaderPreprocessor
             foreach (var line in lines)
             {
                 var trimmed = line.Trim().TrimEnd(',', ';');
-                if (string.IsNullOrWhiteSpace(trimmed)) continue;
+                if (string.IsNullOrWhiteSpace(trimmed))
+                {
+                    continue;
+                }
+
                 var parts = trimmed.Split(' ', StringSplitOptions.RemoveEmptyEntries);
                 if (parts.Length == 2)
                 {
@@ -222,9 +328,13 @@ namespace RockEngine.ShaderPreprocessor
                 foreach (var (type, name) in textures)
                 {
                     if (type.StartsWith("Texture2D"))
+                    {
                         sb.AppendLine($"vec4 sample{name}(vec2 uv) {{ return texture(uBindlessTextures[nonuniformEXT(material.{name}Index)], uv); }}");
+                    }
                     else if (type.StartsWith("Texture3D"))
+                    {
                         sb.AppendLine($"vec4 sample{name}(vec3 uv) {{ return texture(uBindlessTextures[nonuniformEXT(material.{name}Index)], uv); }}");
+                    }
                 }
                 sb.AppendLine("#else");
             }
@@ -234,11 +344,17 @@ namespace RockEngine.ShaderPreprocessor
             {
                 string layoutLine;
                 if (textures[i].type.StartsWith("Texture2D"))
-                    layoutLine = $"layout(set = MATERIAL_SET, binding = {i}) uniform sampler2D u{textures[i].name};";
+                {
+                    layoutLine = $"layout(set = MATERIAL_SET, binding = {i}) uniform sampler2D {textures[i].name};";
+                }
                 else if (textures[i].type.StartsWith("Texture3D"))
-                    layoutLine = $"layout(set = MATERIAL_SET, binding = {i}) uniform sampler3D u{textures[i].name};";
+                {
+                    layoutLine = $"layout(set = MATERIAL_SET, binding = {i}) uniform sampler3D {textures[i].name};";
+                }
                 else
+                {
                     continue;
+                }
                 sb.AppendLine(layoutLine);
             }
             sb.AppendLine();
@@ -246,13 +362,19 @@ namespace RockEngine.ShaderPreprocessor
             foreach (var (type, name) in textures)
             {
                 if (type.StartsWith("Texture2D"))
-                    sb.AppendLine($"vec4 sample{name}(vec2 uv) {{ return texture(u{name}, uv); }}");
+                {
+                    sb.AppendLine($"vec4 sample{name}(vec2 uv) {{ return texture({name}, uv); }}");
+                }
                 else if (type.StartsWith("Texture3D"))
-                    sb.AppendLine($"vec4 sample{name}(vec3 uv) {{ return texture(u{name}, uv); }}");
+                {
+                    sb.AppendLine($"vec4 sample{name}(vec3 uv) {{ return texture({name}, uv); }}");
+                }
             }
 
             if (bindlessEnabled)
+            {
                 sb.AppendLine("#endif // BINDLESS_SUPPORTED");
+            }
 
             return sb.ToString();
         }

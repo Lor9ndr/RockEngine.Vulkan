@@ -1,26 +1,28 @@
-﻿using RockEngine.Core.Rendering.Managers;
+﻿using System.Collections.Concurrent;
+using RockEngine.Core.Rendering.Managers;
 using RockEngine.Core.Rendering.Objects;
 using RockEngine.Vulkan;
-
-using System.Collections.Concurrent;
 
 namespace RockEngine.Core.Rendering.Materials
 {
     public class MaterialTemplateFactory : IMaterialTemplateFactory
     {
         private readonly PipelineManager _pipelineManager;
+        private readonly VulkanContext _context;
         private readonly IShaderReflectionProvider _reflectionProvider;
         private readonly ITypeBasedResourceProvider _resourceProvider;
         private readonly ConcurrentDictionary<string, MaterialTemplate> _templateCache = new();
 
         public MaterialTemplateFactory(
             PipelineManager pipelineManager,
+            VulkanContext context,
             IShaderReflectionProvider reflectionProvider,
-            ITypeBasedResourceProvider resourceProvider = null)
+            ITypeBasedResourceProvider? resourceProvider = null)
         {
             _pipelineManager = pipelineManager ?? throw new ArgumentNullException(nameof(pipelineManager));
+            _context = context;
             _reflectionProvider = reflectionProvider ?? throw new ArgumentNullException(nameof(reflectionProvider));
-            _resourceProvider = resourceProvider ?? new TypeBasedResourceProvider();
+            _resourceProvider = resourceProvider ?? new TypeBasedResourceProvider(context);
         }
 
         public MaterialTemplate CreateTemplate(string pipelineName, RckPipeline pipeline)
@@ -28,11 +30,11 @@ namespace RockEngine.Core.Rendering.Materials
             ArgumentException.ThrowIfNullOrEmpty(pipelineName, nameof(pipelineName));
             ArgumentNullException.ThrowIfNull(pipeline, nameof(pipeline));
 
-            var reflection = _reflectionProvider.GetPipelineReflection(pipeline.VkPipeline);
+            var reflection = pipeline.Layout.MergedReflectionData;
             var template = new MaterialTemplate(pipelineName, reflection);
 
             // Use the subpass metadata from the RckPipeline
-            var passTemplate = new MaterialPassTemplate(pipeline.SubpassName, pipelineName, reflection, _resourceProvider);
+            var passTemplate = new MaterialPassTemplate(pipeline.SubpassName, pipelineName, reflection, _context, _resourceProvider);
             template.AddPassTemplate(pipeline.SubpassName, passTemplate);
 
             return template;

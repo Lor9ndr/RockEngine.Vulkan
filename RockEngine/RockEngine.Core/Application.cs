@@ -37,6 +37,8 @@ namespace RockEngine.Core
         private readonly ManualResetEventSlim _initialized = new(false);
         private bool _isInitialized;
         private bool _isMinimized;
+
+        
         protected Application()
         {
             IoC.Initialize(this);
@@ -44,6 +46,7 @@ namespace RockEngine.Core
             ConfigureWindow();
         }
 
+        
         private void ConfigureWindow()
         {
             var settings = IoC.Container.GetInstance<AppSettings>();
@@ -51,12 +54,12 @@ namespace RockEngine.Core
             _window = IoC.Container.GetInstance<IWindow>();
 
             // Setup event handlers
-            _window.Load +=  () =>
+            _window.Load += () =>
             {
-                 OnWindowLoad().GetAwaiter().GetResult();
+                OnWindowLoad().GetAwaiter().GetResult();
             };
             _window.UpdatesPerSecond = 0;
-            _window.Update +=  (delta) =>  OnWindowUpdate(delta).GetAwaiter().GetResult();
+            _window.Update += (delta) => OnWindowUpdate(delta).GetAwaiter().GetResult();
             _window.Render += (delta) => OnWindowRender(delta).GetAwaiter().GetResult();
             _window.Initialize();
             _window.StateChanged += _window_StateChanged;
@@ -80,7 +83,7 @@ namespace RockEngine.Core
                 PerformanceTracer.Initialize(_context);
                 var surface = SurfaceHandler.CreateSurface(_window, _context);
                 var swapchain = VkSwapchain.Create(_context, surface);
-                
+
                 _graphicsEngine.AddSwapchain(swapchain);
                 _renderer = IoC.Container.GetInstance<WorldRenderer>();
                 _layerStack = IoC.Container.GetInstance<LayerStack>();
@@ -89,6 +92,7 @@ namespace RockEngine.Core
                 // Initialize shaders
                 var shaderManager = IoC.Container.GetInstance<IShaderManager>();
                 await shaderManager.CompileAllShadersAsync();
+
 
                 // Initialize renderer
                 await _renderer.InitializeAsync();
@@ -111,10 +115,13 @@ namespace RockEngine.Core
             }
         }
 
+        
         private async Task OnWindowUpdate(double _)
         {
             if (!_isInitialized || _appCts.IsCancellationRequested)
+            {
                 return;
+            }
 
             try
             {
@@ -142,15 +149,17 @@ namespace RockEngine.Core
 
         private async Task OnWindowRender(double deltaTime)
         {
-            if (!_isInitialized  || _appCts.IsCancellationRequested)
+            if (!_isInitialized || _appCts.IsCancellationRequested)
+            {
                 return;
+            }
 
             PerformanceTracer.ProcessQueries(_context, _graphicsEngine.FrameIndex);
             PerformanceTracer.BeginFrame(_graphicsEngine.FrameIndex);
 
             // Begin frame
             _graphicsEngine.BeginFrame();
-            
+
             try
             {
                 RenderContext renderContext = new RenderContext(
@@ -184,9 +193,8 @@ namespace RockEngine.Core
                 _logger.Error(ex, "Render failed");
             }
 
-
         }
-       
+
 
         private void RenderImGui(RenderContext renderContext)
         {
@@ -199,7 +207,6 @@ namespace RockEngine.Core
                 }
             }
             batch.Submit();
-
         }
 
         private void RenderLayers(RenderContext renderContext)
@@ -219,7 +226,7 @@ namespace RockEngine.Core
         {
             using (PerformanceTracer.BeginSection("World Render"))
             {
-               await _renderer.Render(renderContext);
+                await _renderer.Render(renderContext);
             }
         }
 
@@ -253,7 +260,9 @@ namespace RockEngine.Core
         public virtual void Dispose()
         {
             if (_appCts.IsCancellationRequested)
+            {
                 return;
+            }
 
             _appCts.Cancel();
 
@@ -268,7 +277,7 @@ namespace RockEngine.Core
                 _renderer?.Dispose();
                 _graphicsEngine?.Dispose();
                 _context?.Dispose();
-               
+
                 _applicationScope?.Dispose();
 
                 _logger.Info("Application shutdown complete");

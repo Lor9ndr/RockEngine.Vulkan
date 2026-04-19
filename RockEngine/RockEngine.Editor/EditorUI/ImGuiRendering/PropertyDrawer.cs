@@ -1,16 +1,14 @@
-﻿using ImGuiNET;
-
+﻿using System.Diagnostics.CodeAnalysis;
+using System.Numerics;
+using System.Reflection;
+using ImGuiNET;
 using RockEngine.Assets;
-using RockEngine.Core.Assets;
 using RockEngine.Core.Attributes;
 using RockEngine.Core.ECS.Components;
 using RockEngine.Core.Helpers;
 using RockEngine.Core.Rendering.Texturing;
 using RockEngine.Editor.EditorUI.ImGuiRendering.PropertyHandlers;
 using RockEngine.Editor.EditorUI.Thumbnails;
-
-using System.Numerics;
-using System.Reflection;
 
 namespace RockEngine.Editor.EditorUI.ImGuiRendering
 {
@@ -26,6 +24,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
 
         public IThumbnailService ThumbnailService { get; }
 
+        [RequiresUnreferencedCode("Calls System.Reflection.Assembly.GetTypes()")]
         public PropertyDrawer(IAssetManager assetManager, ImGuiController imGuiController, IThumbnailService thumbnailService)
         {
             _assetManager = assetManager;
@@ -36,6 +35,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
             InitializeHandlers();
         }
 
+        [RequiresUnreferencedCode("Calls System.Reflection.Assembly.GetTypes()")]
         private void InitializeHandlers()
         {
             // Discover and register all handlers via reflection
@@ -102,7 +102,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
             }
         }
 
-        private IReadOnlyList<UIPropertyAccessor> GetPropertyAccessors(Type componentType)
+        private IReadOnlyList<UIPropertyAccessor> GetPropertyAccessors([DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicMethods)] Type componentType)
         {
             if (!_propertyCache.TryGetValue(componentType, out var accessors))
             {
@@ -126,7 +126,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
             return accessors;
         }
 
-        private IReadOnlyList<UIPropertyAccessor> CreateAccessorsViaReflection(Type componentType)
+        private IReadOnlyList<UIPropertyAccessor> CreateAccessorsViaReflection([DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties)] Type componentType)
         {
             var properties = componentType.GetProperties(BindingFlags.Public | BindingFlags.Instance)
                 .Where(p => p.CanRead &&
@@ -185,7 +185,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
             return lambda.Compile();
         }
 
-        private IPropertyHandler FindHandler(Type propertyType)
+        private IPropertyHandler FindHandler([DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.Interfaces)] Type propertyType)
         {
             // Exact type match
             if (_propertyHandlers.TryGetValue(propertyType, out var handler))

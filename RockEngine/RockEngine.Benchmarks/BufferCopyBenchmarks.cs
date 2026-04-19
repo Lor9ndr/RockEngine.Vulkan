@@ -1,10 +1,9 @@
-﻿using BenchmarkDotNet.Attributes;
-
-using System.Numerics;
+﻿using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Runtime.Intrinsics;
 using System.Runtime.Intrinsics.X86;
+using BenchmarkDotNet.Attributes;
 
 namespace RockEngine.Benchmarks
 {
@@ -13,8 +12,8 @@ namespace RockEngine.Benchmarks
     {
         [Params(2000, 20000)]
         public int MatrixCount { get; set; }
-        private Matrix4x4[] _sourceMatrices;
-        private byte[] _matrixDestinationData;
+        private Matrix4x4[]? _sourceMatrices;
+        private byte[]? _matrixDestinationData;
 
         [GlobalSetup]
         public unsafe void Setup()

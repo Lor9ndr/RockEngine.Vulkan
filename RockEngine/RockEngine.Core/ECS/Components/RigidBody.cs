@@ -1,11 +1,8 @@
-﻿using JoltPhysicsSharp;
-
-using System.Numerics;
-
-using RockEngine.Core.Rendering;
-using RockEngine.Core.Physics;
-
+﻿using System.Numerics;
+using JoltPhysicsSharp;
 using MessagePack;
+using RockEngine.Core.Physics;
+using RockEngine.Core.Rendering;
 
 namespace RockEngine.Core.ECS.Components.Physics
 {
@@ -165,7 +162,9 @@ namespace RockEngine.Core.ECS.Components.Physics
         public override async ValueTask OnStart(WorldRenderer renderer)
         {
             if (Entity == null)
+            {
                 return;
+            }
 
             await base.OnStart(renderer);
 
@@ -174,7 +173,9 @@ namespace RockEngine.Core.ECS.Components.Physics
 
             var transform = Entity.GetComponent<Transform>();
             if (transform == null)
+            {
                 return;
+            }
 
             CreatePhysicsBody(transform);
 
@@ -294,7 +295,9 @@ namespace RockEngine.Core.ECS.Components.Physics
         private Shape? CreateCollisionShape()
         {
             if (_colliders.Count == 0)
+            {
                 return null;
+            }
 
             // Если только один коллайдер
             if (_colliders.Count == 1)
@@ -313,11 +316,15 @@ namespace RockEngine.Core.ECS.Components.Physics
         public override async ValueTask Update(WorldRenderer renderer)
         {
             if (Entity == null || !IsActive || _isDisposed)
+            {
                 return;
+            }
 
             var transform = Entity.GetComponent<Transform>();
             if (transform == null)
+            {
                 return;
+            }
 
             // Пересоздать тело, если изменились важные параметры
             if (_isDirty || _bodyType != _lastBodyType || _motionQuality != _lastMotionQuality)
@@ -404,7 +411,9 @@ namespace RockEngine.Core.ECS.Components.Physics
         public void AddForce(Vector3 force, ForceMode mode = ForceMode.Force)
         {
             if (_bodyId == null || Entity == null)
+            {
                 return;
+            }
 
             _physicsManager.QueueUpdate(Entity.ID, new PhysicsUpdate
             {
@@ -417,7 +426,9 @@ namespace RockEngine.Core.ECS.Components.Physics
         public void SetVelocity(Vector3 linear, Vector3 angular)
         {
             if (_bodyId == null || Entity == null)
+            {
                 return;
+            }
 
             LinearVelocity = linear;
             AngularVelocity = angular;
@@ -438,7 +449,9 @@ namespace RockEngine.Core.ECS.Components.Physics
         public void WakeUp()
         {
             if (_bodyId == null || Entity == null)
+            {
                 return;
+            }
 
             _physicsManager.QueueUpdate(Entity.ID, new PhysicsUpdate
             {
@@ -456,7 +469,9 @@ namespace RockEngine.Core.ECS.Components.Physics
         public void Dispose()
         {
             if (_isDisposed)
+            {
                 return;
+            }
 
             _isDisposed = true;
 

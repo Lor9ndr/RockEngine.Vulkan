@@ -7,12 +7,12 @@ namespace RockEngine.Tests
     [TestFixture]
     public class EntityTests : TestBase
     {
-        private World _world;
+        private World? _world;
 
-        [SetUp] 
+        [SetUp]
         public void SetUp()
         {
-            _world = Scope.GetInstance<World>();
+            _world = World.GetCurrent();
 
         }
 
@@ -43,7 +43,7 @@ namespace RockEngine.Tests
         {
             var entity = _world.CreateEntity();
             var transform = entity.AddComponent<Transform>();
-            Assert.Throws<InvalidOperationException>(()=>entity.RemoveComponent<Transform>(transform));
+            Assert.Throws<InvalidOperationException>(() => entity.RemoveComponent<Transform>(transform));
         }
 
         [Test]

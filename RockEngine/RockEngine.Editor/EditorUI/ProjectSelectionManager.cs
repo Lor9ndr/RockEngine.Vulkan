@@ -97,7 +97,7 @@ namespace RockEngine.Editor.EditorUI
             //Directory.SetCurrentDirectory(Path.GetDirectoryName(project.Path.ToString()));
             var layerStack = IoC.Container.GetInstance<LayerStack>();
             var allLayers = IoC.Container.GetAllInstances<ILayer>();
-            
+
             foreach (var item in excludeLayers)
             {
                 layerStack.PopLayer(item);

@@ -1,4 +1,4 @@
-﻿namespace RockEngine.Core.Internal 
+﻿namespace RockEngine.Core.Internal
 {
 
     /// <summary>

@@ -1,13 +1,10 @@
-﻿using RockEngine.Core.ECS.Components;
-using RockEngine.Core.Internal;
+﻿using RockEngine.Core.Internal;
 using RockEngine.Core.Rendering.Materials;
 using RockEngine.Core.Rendering.Objects;
 using RockEngine.Core.Rendering.ResourceBindings;
 using RockEngine.Vulkan;
-
+using RockEngine.Vulkan.DeviceFeatures;
 using Silk.NET.Vulkan;
-
-using System.Runtime.InteropServices;
 
 namespace RockEngine.Core.Rendering.Managers
 {
@@ -15,18 +12,22 @@ namespace RockEngine.Core.Rendering.Managers
     {
         private readonly VulkanContext _context;
         private readonly DescriptorPoolManager _descriptorPoolManager;
-        private readonly GraphicsContext _graphicsEngine;
-        private readonly object _updateLocker = new object();
+        private readonly ITypeBasedResourceProvider _typeBasedResourceProvider;
+        private readonly bool _bindlessEnabled;
+        private readonly Lock _updateLocker = new Lock();
 
-        public BindingManager(VulkanContext context, DescriptorPoolManager descriptorPool, GraphicsContext graphicsEngine)
+        public BindingManager(VulkanContext context, DescriptorPoolManager descriptorPool, ITypeBasedResourceProvider typeBasedResourceProvider, FeatureRegistry featureRegistry)
         {
             _context = context;
             _descriptorPoolManager = descriptorPool;
-            _graphicsEngine = graphicsEngine;
+            _typeBasedResourceProvider = typeBasedResourceProvider;
+            _bindlessEnabled = featureRegistry.EnabledFeatures.Contains(new DescriptorIndexingFeature().Name);
+
         }
 
         public void BindResourcesForMaterial(
              uint frameIndex,
+             Material material,
              MaterialPass materialPass,
              UploadBatch batch,
              bool isCompute = false,
@@ -102,7 +103,7 @@ namespace RockEngine.Core.Rendering.Managers
                     batch,
                     materialPass.Pipeline.Layout,
                     setsToBind,
-                    CollectionsMarshal.AsSpan(materialPass.Bindings.DynamicOffsets),
+                    materialPass.Bindings.DynamicOffsets,
                     materialPass.Bindings.MinSetLocation,
                     isCompute
                 );
@@ -138,18 +139,30 @@ namespace RockEngine.Core.Rendering.Managers
             BindDescriptorSetsToCommandBuffer(batch, pipelineLayout, [descriptorSet], dynamicOffsets, perSetBindings.Set, isCompute);
         }
         public void BindResource(
+         VkDescriptorSet set,
+         UploadBatch batch,
+         VkDescriptorSetLayout setLayout,
+         VkPipelineLayout pipelineLayout,
+         bool isCompute = false)
+        {
+
+            BindDescriptorSetsToCommandBuffer(batch, pipelineLayout, [set], [], setLayout.SetLocation, isCompute);
+        }
+        public void BindResource(
          uint frameIndex,
          UploadBatch batch,
          RckPipeline pipeline,
          bool isCompute,
          params Span<ResourceBinding> bindings)
         {
-            MaterialPass materialPass = new MaterialPass(pipeline);
+            using Material material = new Material("tmp");
+            using MaterialPass materialPass = new MaterialPass(pipeline);
+            material.AddPass(pipeline.SubpassMetadata.Name, materialPass);
             foreach (var binding in bindings)
             {
                 materialPass.BindResource(binding);
             }
-            BindResourcesForMaterial(frameIndex, materialPass,batch, isCompute);
+            BindResourcesForMaterial(frameIndex, material, materialPass, batch, isCompute);
         }
 
         private void ProcessSet(uint frameIndex, VkPipelineLayout pipelineLayout, uint setLocation,
@@ -159,15 +172,18 @@ namespace RockEngine.Core.Rendering.Managers
             setsToBind[index++] = descriptorSet;
         }
 
-        private VkDescriptorSet GetOrCreateDescriptorSet(uint frameIndex, VkPipelineLayout pipelineLayout,
-            uint setLocation, PerSetBindings perSetBindings)
+        private VkDescriptorSet GetOrCreateDescriptorSet(uint frameIndex, VkPipelineLayout pipelineLayout, uint setLocation, PerSetBindings perSetBindings)
         {
             lock (_updateLocker)
             {
                 var setLayout = pipelineLayout.GetSetLayout(setLocation);
+                if (setLayout == default)
+                {
+                    throw new InvalidOperationException("Failed to find set layout");
+                }
 
-                // Check if any binding already has a descriptor set for this layout
-                VkDescriptorSet existingSet = null;
+                // Find existing set
+                VkDescriptorSet? existingSet = null;
                 foreach (var binding in perSetBindings)
                 {
                     existingSet = binding.GetDescriptorSetForLayout(setLayout, frameIndex);
@@ -176,27 +192,44 @@ namespace RockEngine.Core.Rendering.Managers
                         break;
                     }
                 }
-                if (existingSet is not null && !existingSet.IsDirty)
+
+                if (existingSet != null && !existingSet.IsDirty)
                 {
                     return existingSet;
                 }
 
-                var descriptorSet = existingSet ?? _descriptorPoolManager.AllocateDescriptorSet(setLayout);
+                // Build variable descriptor counts if the layout has variable bindings
+                uint[]? variableCounts = null;
+                if (setLayout.VariableBindingIndices.Count > 0)
+                {
+                    variableCounts = new uint[setLayout.VariableBindingIndices.Count];
+                    for (int i = 0; i < setLayout.VariableBindingIndices.Count; i++)
+                    {
+                        uint bindingIdx = (uint)setLayout.VariableBindingIndices[i];
+                        var binding = perSetBindings.GetBinding(bindingIdx);
+                        variableCounts[i] = binding?.DescriptorCount ?? 0;
+                    }
+                }
 
-                // Update all bindings with this new descriptor set
+                // Allocate new set (or reuse dirty one)
+                var descriptorSet = existingSet ??
+                    _descriptorPoolManager.AllocateDescriptorSet(setLayout, variableCounts);
+
+                // Update all bindings with this set
                 foreach (var binding in perSetBindings)
                 {
-                    if(existingSet is null)
+                    if (existingSet == null)
                     {
                         binding.SetDescriptorSetForLayout(setLayout, frameIndex, descriptorSet);
                     }
+
                     if (descriptorSet.IsDirty)
                     {
                         binding.UpdateDescriptorSet(_context, frameIndex, setLayout);
                     }
                 }
-                descriptorSet.IsDirty = false;
 
+                descriptorSet.IsDirty = false;
                 return descriptorSet;
             }
         }
@@ -205,7 +238,7 @@ namespace RockEngine.Core.Rendering.Managers
                 UploadBatch batch,
                 VkPipelineLayout pipelineLayout,
                 Span<DescriptorSet> descriptorSets,
-                Span<uint> dynamicOffsets,
+                ReadOnlySpan<uint> dynamicOffsets,
                 uint minSetIndex,
                 bool isCompute)
         {

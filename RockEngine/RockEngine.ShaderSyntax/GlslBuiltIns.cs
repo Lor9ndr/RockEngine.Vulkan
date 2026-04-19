@@ -8,17 +8,17 @@ namespace RockEngine.ShaderSyntax
 
     public class ParameterInfo
     {
-        public string Type { get; set; }
-        public string Name { get; set; }
+        public string? Type { get; set; }
+        public string? Name { get; set; }
     }
 
     public class FunctionSignature
     {
-        public string ReturnType { get; set; }
-        public string Name { get; set; }
+        public string? ReturnType { get; set; }
+        public string? Name { get; set; }
         public List<ParameterInfo> Parameters { get; set; } = new();
-        public string Description { get; set; }
-        public string DocumentationUrl { get; set; }
+        public string? Description { get; set; }
+        public string? DocumentationUrl { get; set; }
     }
 
     internal static class GlslBuiltIns

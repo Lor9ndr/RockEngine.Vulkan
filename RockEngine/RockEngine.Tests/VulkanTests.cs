@@ -1,5 +1,4 @@
 ﻿using System.Runtime.InteropServices;
-using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
 using RockEngine.Vulkan;
 using RockEngine.Vulkan.DeviceFeatures;
@@ -10,9 +9,9 @@ namespace RockEngine.Tests
     [TestFixture]
     public class VulkanHeadlessTests
     {
-        private VulkanContext _context;
-        private AppSettings _settings;
-        private FeatureRegistry _featureRegistry;
+        private VulkanContext? _context;
+        private AppSettings? _settings;
+        private FeatureRegistry? _featureRegistry;
 
         [OneTimeSetUp]
         public void Setup()
@@ -32,7 +31,7 @@ namespace RockEngine.Tests
             _featureRegistry.RequestFeature(new Synchronization2Feature() { IsRequired = true });
 
             // Create headless Vulkan context (no window)
-            _context = new VulkanContext(null,_settings, _featureRegistry);
+            _context = new VulkanContext(null, _settings, _featureRegistry);
         }
 
         [OneTimeTearDown]

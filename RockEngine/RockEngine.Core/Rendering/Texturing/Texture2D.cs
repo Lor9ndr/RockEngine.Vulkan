@@ -3,7 +3,6 @@ using RockEngine.Core.Rendering.ResourceBindings;
 using RockEngine.Vulkan;
 
 using Silk.NET.Maths;
-using Silk.NET.SDL;
 using Silk.NET.Vulkan;
 
 using SkiaSharp;
@@ -31,14 +30,16 @@ namespace RockEngine.Core.Rendering.Texturing
             CancellationToken cancellationToken = default)
         {
             if (!textureData.Validate())
+            {
                 throw new ArgumentException("Invalid texture data", nameof(textureData));
+            }
 
             return textureData.Dimension switch
             {
                 TextureDimension.Texture2D => await Create2DAsync(context, textureData, cancellationToken),
                 TextureDimension.TextureCube => await CreateCubeAsync(context, textureData, cancellationToken),
-               /* TextureDimension.TextureArray => await CreateArrayAsync(context, textureData, cancellationToken),
-                TextureDimension.TextureCubeArray => await CreateCubeArrayAsync(context, textureData, cancellationToken),*/
+                /* TextureDimension.TextureArray => await CreateArrayAsync(context, textureData, cancellationToken),
+                 TextureDimension.TextureCubeArray => await CreateCubeArrayAsync(context, textureData, cancellationToken),*/
                 _ => throw new NotSupportedException($"Texture dimension {textureData.Dimension} not supported")
             };
         }
@@ -62,7 +63,9 @@ namespace RockEngine.Core.Rendering.Texturing
             CancellationToken cancellationToken)
         {
             if (textureData.FilePaths.Count != 6)
+            {
                 throw new ArgumentException("Cube map requires exactly 6 file paths");
+            }
 
             return await CreateCubeFromFilesAsync(context, textureData, cancellationToken);
         }
@@ -92,8 +95,8 @@ namespace RockEngine.Core.Rendering.Texturing
         {
             var textureData = new TextureData()
             {
-                 FilePaths = [filePath],
-                 GenerateMipmaps = generateMipmaps
+                FilePaths = [filePath],
+                GenerateMipmaps = generateMipmaps
             };
 
             return await CreateAsync(context, textureData, cancellationToken);
@@ -180,7 +183,7 @@ namespace RockEngine.Core.Rendering.Texturing
             CopyImageData(context, transferBatch, skBitmap, image, format);
             transferBatch.AddSignalSemaphore(transferComplete);
 
-            var transferOp =  context.TransferSubmitContext.SubmitSingle(transferBatch);
+            var transferOp = context.TransferSubmitContext.SubmitSingle(transferBatch);
 
             // Generate all mip levels on GPU
             var graphicsBatch = context.GraphicsSubmitContext.CreateBatch();
@@ -254,7 +257,7 @@ namespace RockEngine.Core.Rendering.Texturing
             CancellationToken cancellationToken)
         {
             var faceBitmaps = new SKBitmap[6];
-            await Parallel.ForAsync(0, 6, async (i,ct) =>
+            await Parallel.ForAsync(0, 6, async (i, ct) =>
             {
 
                 var bytes = await File.ReadAllBytesAsync(textureData.FilePaths[i], cancellationToken);
@@ -265,7 +268,7 @@ namespace RockEngine.Core.Rendering.Texturing
                     faceBitmaps[i] = FlipBitmapVertically(faceBitmaps[i]);
                 }
             });
-            
+
 
             return await CreateCubeFromBitmapsAsync(context, faceBitmaps, textureData, cancellationToken);
         }
@@ -278,7 +281,7 @@ namespace RockEngine.Core.Rendering.Texturing
             {
                 throw new ArgumentException("Cube map requires exactly 6 face paths.");
             }
-           
+
 
             uint width = (uint)faceBitmaps[0].Width;
             uint height = (uint)faceBitmaps[0].Height;
@@ -323,8 +326,8 @@ namespace RockEngine.Core.Rendering.Texturing
                 var bufferBarrier = new BufferMemoryBarrier2
                 {
                     SType = StructureType.BufferMemoryBarrier2,
-                    SrcStageMask = PipelineStageFlags2.HostBit,     
-                    DstStageMask = PipelineStageFlags2.TransferBit, 
+                    SrcStageMask = PipelineStageFlags2.HostBit,
+                    DstStageMask = PipelineStageFlags2.TransferBit,
                     SrcAccessMask = AccessFlags2.HostWriteBit,
                     DstAccessMask = AccessFlags2.TransferReadBit,
                     Buffer = transferBatch.StagingManager.StagingBuffer,
@@ -431,7 +434,9 @@ namespace RockEngine.Core.Rendering.Texturing
 
             var flags = ImageCreateFlags.None;
             if (textureData.IsCubeMap)
+            {
                 flags |= ImageCreateFlags.CreateCubeCompatibleBit;
+            }
 
             var imageInfo = new ImageCreateInfo
             {
@@ -440,7 +445,7 @@ namespace RockEngine.Core.Rendering.Texturing
                 Format = textureData.GetVulkanFormat(),
                 Extent = new Extent3D(textureData.Width, textureData.Height, textureData.Depth),
                 MipLevels = textureData.EnsureMipLevels(),
-                ArrayLayers = textureData.ArrayLayers,   
+                ArrayLayers = textureData.ArrayLayers,
                 Samples = SampleCountFlags.Count1Bit,
                 Tiling = ImageTiling.Optimal,
                 Usage = textureData.GetVulkanUsageFlags(),
@@ -500,6 +505,7 @@ namespace RockEngine.Core.Rendering.Texturing
             };
         }
 
+
         private static void CopyImageData(VulkanContext context, UploadBatch batch,
             SKBitmap skBitmap, VkImage vkImage, Format format, uint arrayLayer = 0)
         {
@@ -507,7 +513,8 @@ namespace RockEngine.Core.Rendering.Texturing
                 (uint)skBitmap.Width, (uint)skBitmap.Height, format, arrayLayer);
         }
 
-        private static  void CopyImageDataFromPointer(UploadBatch batch, VkImage vkImage,
+
+        private static void CopyImageDataFromPointer(UploadBatch batch, VkImage vkImage,
             Span<byte> data, uint width, uint height, Format format, uint arrayLayer = 0)
         {
             var imageSize = (ulong)(width * height * GetBytesPerPixel(format));
@@ -555,24 +562,27 @@ namespace RockEngine.Core.Rendering.Texturing
             };
         }
 
-        private static uint CalculateMipLevels(uint width, uint height)
+        private static new uint CalculateMipLevels(uint width, uint height)
         {
             uint maxDimension = Math.Max(width, height);
             return (uint)Math.Floor(Math.Log2(maxDimension)) + 1;
         }
 
         // Static texture getters remain the same
+
         public static Texture2D GetEmptyTexture(VulkanContext context)
         {
             _emptyTexture ??= CreateColorTexture(context, new Vector4D<byte>(128, 128, 128, 255));
             return _emptyTexture;
         }
 
+
         public static Texture2D GetEmptyWhiteTexture(VulkanContext context)
         {
             _emptyWhiteTexture ??= CreateColorTexture(context, new Vector4D<byte>(255, 255, 255, 255));
             return _emptyWhiteTexture;
         }
+
 
         public static Texture2D CreateColorTexture(VulkanContext context, Vector4D<byte> color, string? name = null, uint mipLevels = 1)
         {
@@ -589,18 +599,20 @@ namespace RockEngine.Core.Rendering.Texturing
             };
             return LoadFromSKImage(context, bitmap, texData, name: name);
         }
+
+
         public static Texture2D LoadFromSKImage(VulkanContext context, SKBitmap skImage, TextureData? textureData = null, string? name = null)
         {
             var width = (uint)skImage.Width;
             var height = (uint)skImage.Height;
             var format = GetVulkanFormat(skImage.Info.ColorType, context);
-            textureData  ??=  new TextureData();
-            textureData.Usage |=  TextureUsage.TransferDst | TextureUsage.Sampled;
+            textureData ??= new TextureData();
+            textureData.Usage |= TextureUsage.TransferDst | TextureUsage.Sampled;
             textureData.Width = width;
             textureData.Height = height;
 
             var vkImage = CreateVulkanImage(context, textureData, ImageAspectFlags.ColorBit);
-           
+
 
             var transferComplete = VkSemaphore.Create(context);
             var graphicsComplete = VkSemaphore.Create(context);
@@ -781,7 +793,7 @@ namespace RockEngine.Core.Rendering.Texturing
 
             return texture;
         }
-      
+
         public Texture2D CopyWithNewUsage(PipelineManager pipelineManager, BindingManager bindingManager, ImageUsageFlags additionalUsage, Format newFormat = Format.R8G8B8A8Unorm)
         {
             // Compute the new usage flags
@@ -801,7 +813,7 @@ namespace RockEngine.Core.Rendering.Texturing
             // Copy data using compute shader
             CopyViaComputeShader(pipelineManager, bindingManager, this, newTexture);
             return newTexture;
-            
+
         }
 
         private void CopyViaComputeShader(PipelineManager pipelineManager, BindingManager bindingManager, Texture src, Texture dst)
@@ -828,7 +840,7 @@ namespace RockEngine.Core.Rendering.Texturing
                         levelCount: 1,
                         imageLayout: ImageLayout.ShaderReadOnlyOptimal,
                         arrayLayer: layer,
-                        layerCount:1,
+                        layerCount: 1,
                         src);
 
                     var storageBinding = new StorageImageBinding(

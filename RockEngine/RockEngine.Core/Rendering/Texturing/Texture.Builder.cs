@@ -94,7 +94,7 @@ namespace RockEngine.Core.Rendering.Texturing
                 }
                 return this;
             }
-         
+
 
             public Texture Build()
             {
@@ -124,7 +124,7 @@ namespace RockEngine.Core.Rendering.Texturing
                 }
                 if (_isCubeMap)
                 {
-                    return new Texture3D(_context, image,sampler);
+                    return new Texture3D(_context, image, sampler);
                 }
                 else
                 {
@@ -153,7 +153,7 @@ namespace RockEngine.Core.Rendering.Texturing
             {
                 unsafe
                 {
-                    fixed(uint* pQueueFamilyIndices = _queueFamilyIndices)
+                    fixed (uint* pQueueFamilyIndices = _queueFamilyIndices)
                     {
                         var imageInfo = new ImageCreateInfo
                         {
@@ -176,7 +176,7 @@ namespace RockEngine.Core.Rendering.Texturing
                         return VkImage.Create(_context, imageInfo, MemoryPropertyFlags.DeviceLocalBit, _aspectMask);
                     }
                 }
-               
+
             }
 
             private VkImageView CreateImageView(VkImage image)

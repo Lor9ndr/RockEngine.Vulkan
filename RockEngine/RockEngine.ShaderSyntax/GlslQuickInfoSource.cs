@@ -61,7 +61,7 @@ namespace RockEngine.ShaderSyntax
             _buffer = buffer;
         }
 
-        public async Task<QuickInfoItem> GetQuickInfoItemAsync(IAsyncQuickInfoSession session, CancellationToken cancellationToken)
+        public async Task<QuickInfoItem?> GetQuickInfoItemAsync(IAsyncQuickInfoSession session, CancellationToken cancellationToken)
         {
             if (_disposed)
             {
@@ -82,13 +82,20 @@ namespace RockEngine.ShaderSyntax
             // Find the word under the cursor
             int start = posInLine;
             while (start > 0 && (char.IsLetterOrDigit(lineText[start - 1]) || lineText[start - 1] == '_'))
+            {
                 start--;
+            }
+
             int end = posInLine;
             while (end < lineText.Length && (char.IsLetterOrDigit(lineText[end]) || lineText[end] == '_'))
+            {
                 end++;
+            }
 
             if (start == end)
+            {
                 return null;
+            }
 
             string word = lineText.Substring(start, end - start);
 
@@ -147,7 +154,11 @@ namespace RockEngine.ShaderSyntax
                 foreach (var line in lines)
                 {
                     var trimmed = line.Trim().TrimEnd(',', ';');
-                    if (string.IsNullOrWhiteSpace(trimmed)) continue;
+                    if (string.IsNullOrWhiteSpace(trimmed))
+                    {
+                        continue;
+                    }
+
                     var parts = trimmed.Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries);
                     if (parts.Length == 2)
                     {

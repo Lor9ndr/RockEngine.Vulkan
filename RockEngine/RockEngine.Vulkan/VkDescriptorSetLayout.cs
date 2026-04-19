@@ -9,14 +9,25 @@ namespace RockEngine.Vulkan
         public readonly DescriptorSetLayoutBindingReflected[] Bindings;
         public readonly int StageFlagsSum;
 
+        public IReadOnlyList<int> VariableBindingIndices { get; }
+
         public VkDescriptorSetLayout(DescriptorSetLayout descriptorSetLayout, uint setLocation, DescriptorSetLayoutBindingReflected[] bindingsArr)
         {
             DescriptorSetLayout = descriptorSetLayout;
             SetLocation = setLocation;
             Bindings = bindingsArr;
-            StageFlagsSum = bindingsArr.Sum(s=>(int)s.StageFlags);
+            StageFlagsSum = bindingsArr.Sum(s => (int)s.StageFlags);
+            VariableBindingIndices = Bindings
+               .Select((b, idx) => (b.DescriptorCount == 0, idx))
+               .Where(x => x.Item1)
+               .Select(x => x.idx)
+               .ToList()
+               .AsReadOnly();
         }
-
+        public override readonly int GetHashCode()
+        {
+            return DescriptorSetLayout.GetHashCode() ^ StageFlagsSum.GetHashCode()  ^ VariableBindingIndices.GetHashCode()  ^ Bindings.GetHashCode();
+        }
 
         public bool Equals(VkDescriptorSetLayout other)
         {
@@ -72,5 +83,12 @@ namespace RockEngine.Vulkan
         {
             return !(left == right);
         }
+
+        public override bool Equals(object? obj)
+        {
+            return obj is VkDescriptorSetLayout layout && Equals(layout);
+        }
+
+       
     }
 }

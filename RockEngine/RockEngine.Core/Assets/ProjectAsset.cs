@@ -2,12 +2,12 @@
 
 namespace RockEngine.Core.Assets
 {
-    
+
     public class ProjectAsset : Asset<ProjectData>, IProject
     {
         private readonly List<Guid> _scenes;
 
-       
+
         public IReadOnlyList<Guid> Scenes => _scenes;
 
         public Guid? MainScene { get; set; }
@@ -66,6 +66,6 @@ namespace RockEngine.Core.Assets
             LastModified = DateTime.UtcNow;
         }
 
-   
+
     }
 }

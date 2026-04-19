@@ -1,11 +1,8 @@
-﻿using MessagePack;
-
+﻿using System.Diagnostics;
+using MessagePack;
 using RockEngine.Core.DI;
 using RockEngine.Core.ECS.Components;
 using RockEngine.Core.Rendering;
-
-using System.Diagnostics;
-
 using ZLinq;
 
 namespace RockEngine.Core.ECS
@@ -25,7 +22,7 @@ namespace RockEngine.Core.ECS
         public bool IsActive { get; private set; } = true;
 
         [Key(2)]
-        public ulong ID { get;  init; }
+        public ulong ID { get; init; }
 
         [Key(3)]
         private List<IComponent> _components = [];
@@ -74,7 +71,7 @@ namespace RockEngine.Core.ECS
 
             return component;
         }
-        public IComponent AddComponent(Type componentType) 
+        public IComponent AddComponent(Type componentType)
         {
             var component = (IComponent)IoC.Container.GetInstance(componentType);
             AddComponent(component);
@@ -110,7 +107,10 @@ namespace RockEngine.Core.ECS
 
         public void AddChild(Entity child)
         {
-            if (child.Parent == this) return;
+            if (child.Parent == this)
+            {
+                return;
+            }
 
             child.Parent?.RemoveChild(child);
             child.Parent = this;
@@ -121,7 +121,10 @@ namespace RockEngine.Core.ECS
 
         public bool RemoveChild(Entity child)
         {
-            if (!_children.Remove(child)) return false;
+            if (!_children.Remove(child))
+            {
+                return false;
+            }
 
             child.Parent = null;
             child.ParentID = null;            // sync ParentID
@@ -139,7 +142,7 @@ namespace RockEngine.Core.ECS
             for (int i = 0; i < array.Length; i++)
             {
                 IComponent? item = array[i];
-                if(item is not null)
+                if (item is not null)
                 {
                     await item.Update(renderer).ConfigureAwait(false);
                 }
@@ -179,12 +182,12 @@ namespace RockEngine.Core.ECS
 
         public bool HasComponent<T>()
         {
-            return _components.OfType<T>().Any();
+            return _components.AsValueEnumerable().OfType<T>().Any();
         }
 
         public bool TryGetComponent<T>(out T? component)
         {
-            component = _components.OfType<T>().FirstOrDefault();
+            component = _components.AsValueEnumerable().OfType<T>().FirstOrDefault();
             return component != null;
         }
     }

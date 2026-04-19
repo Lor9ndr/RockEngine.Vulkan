@@ -10,7 +10,8 @@ namespace RockEngine.Editor
     public class EditorApplication : Application
     {
         private readonly RenderDocIntegration _renderDoc;
-        public EditorApplication(): base()
+
+        public EditorApplication() : base()
         {
             var config = new NLog.Config.LoggingConfiguration();
             var consoleTarget = new EditorConsoleTarget(IoC.Container.GetInstance<EditorConsole>());
@@ -30,6 +31,6 @@ namespace RockEngine.Editor
             await _layerStack.PushLayer(imGuiLayer).ConfigureAwait(false);
             await _layerStack.PushLayer(projectLayer).ConfigureAwait(false);
         }
-       
+
     }
 }

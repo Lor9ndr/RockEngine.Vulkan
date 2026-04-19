@@ -1,5 +1,6 @@
-﻿using MessagePack;
-
+﻿using System.Numerics;
+using System.Runtime.InteropServices;
+using MessagePack;
 using RockEngine.Core;
 using RockEngine.Core.Assets;
 using RockEngine.Core.Builders;
@@ -15,11 +16,7 @@ using RockEngine.Core.Rendering.Passes.SubPasses;
 using RockEngine.Core.Rendering.ResourceBindings;
 using RockEngine.Core.ResourceProviders;
 using RockEngine.Vulkan;
-
 using Silk.NET.Vulkan;
-
-using System.Numerics;
-using System.Runtime.InteropServices;
 
 namespace RockEngine.Editor.EditorComponents
 {
@@ -34,6 +31,8 @@ namespace RockEngine.Editor.EditorComponents
             public Vector4 AxisColorZ;
             public float GridStep;
             public float MajorGridStep;
+            private float _padding1;
+            private float _padding2;
         }
 
         [GLSLStruct(GLSLMemoryLayout.Std140)]
@@ -48,7 +47,7 @@ namespace RockEngine.Editor.EditorComponents
         private const float GRID_STEP = 1.0f;
         private const float MAJOR_GRID_STEP = 10.0f;
 
-        private Material _material;
+        private Material? _material;
         private bool _isInitialized = false;
 
         public Vector4 GridColor { get; set; } = new Vector4(0.5f, 0.5f, 0.5f, 0.3f);
@@ -57,8 +56,9 @@ namespace RockEngine.Editor.EditorComponents
         public Vector4 AxisColorZ { get; set; } = new Vector4(0.0f, 0.0f, 1.0f, 1.0f); // Z - Blue
         public float GridScale { get; set; } = 1.0f;
 
-        private UniformBuffer _uniformBuffer;
+        private UniformBuffer? _uniformBuffer;
 
+        
         public override async ValueTask OnStart(WorldRenderer renderer)
         {
             await InitializeGrid(renderer);
@@ -82,7 +82,7 @@ namespace RockEngine.Editor.EditorComponents
             var modelMatrix = Matrix4x4.CreateScale(1000.0f) *
                             Matrix4x4.CreateTranslation(cameraPos.X, 0, cameraPos.Z);
 
-            _material.PushConstant("push", new GridPushConstants()
+            _material.SetPushConstant("push", new GridPushConstants()
             {
                 cameraPosition = cameraPos,
                 gridScale = GridScale,
@@ -101,6 +101,7 @@ namespace RockEngine.Editor.EditorComponents
             });
         }
 
+        
         private async ValueTask InitializeGrid(WorldRenderer renderer)
         {
             // Simple quad geometry - the grid will be generated in the shader
@@ -199,7 +200,7 @@ namespace RockEngine.Editor.EditorComponents
 
             public PositionVertex(Vector3 position)
             {
-                Position = new(position,0);
+                Position = new(position, 0);
             }
 
             public static VertexInputBindingDescription GetBindingDescription() => new VertexInputBindingDescription

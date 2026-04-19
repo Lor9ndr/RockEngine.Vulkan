@@ -17,21 +17,21 @@ namespace RockEngine.Core.Rendering.Managers
             _registry = registry;
         }
 
-        public RckRenderPass? GetRenderPass<T>() where T:IRenderPassStrategy
-        { 
+        public RckRenderPass? GetRenderPass<T>() where T : IRenderPassStrategy
+        {
             return _registry.Get(typeof(T));
         }
 
 
         public RckRenderPass CreateRenderPass<T>(VkRenderPass renderPass, params IRenderSubPass[] subPasses) where T : IRenderPassStrategy
         {
-            var engineRenderPass =  new RckRenderPass(renderPass, subPasses);
-            _registry.Register(typeof(T),engineRenderPass);
+            var engineRenderPass = new RckRenderPass(renderPass, subPasses);
+            _registry.Register(typeof(T), engineRenderPass);
             return engineRenderPass;
         }
-        public RckRenderPass CreateRenderPass(VkRenderPass renderPass, Type passProvider, params IRenderSubPass[] subPasses) 
+        public RckRenderPass CreateRenderPass(VkRenderPass renderPass, Type passProvider, params IRenderSubPass[] subPasses)
         {
-            var engineRenderPass = new RckRenderPass(renderPass,  subPasses);
+            var engineRenderPass = new RckRenderPass(renderPass, subPasses);
             _registry.Register(passProvider, engineRenderPass);
             return engineRenderPass;
         }

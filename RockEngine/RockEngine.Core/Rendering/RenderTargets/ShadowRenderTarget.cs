@@ -22,16 +22,22 @@ namespace RockEngine.Core.Rendering.RenderTargets
             get
             {
                 if (_light.Type == LightType.Point)
+                {
                     return 6u; // Cube map faces
+                }
                 else if (_light.Type == LightType.Directional && _light.CascadeCount > 1)
+                {
                     return (uint)_light.CascadeCount; // CSM cascades
+                }
                 else
+                {
                     return 1u; // Single layer for spot/directional without CSM
+                }
             }
         }
 
         public ShadowRenderTarget(VulkanContext context, Light light)
-            :base(context, new Extent2D(light.ShadowMapSize, light.ShadowMapSize), Format.D32Sfloat, ImageUsageFlags.DepthStencilAttachmentBit | ImageUsageFlags.SampledBit | ImageUsageFlags.TransferSrcBit)
+            : base(context, new Extent2D(light.ShadowMapSize, light.ShadowMapSize), Format.D32Sfloat, ImageUsageFlags.DepthStencilAttachmentBit | ImageUsageFlags.SampledBit | ImageUsageFlags.TransferSrcBit)
         {
             _context = context;
             _light = light;
@@ -125,7 +131,7 @@ namespace RockEngine.Core.Rendering.RenderTargets
             Sampler = VkSampler.Create(_context, createInfo);
         }
 
-      
+
         public override void PrepareForRender(UploadBatch batch)
         {
         }

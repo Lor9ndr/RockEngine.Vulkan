@@ -49,7 +49,7 @@ namespace RockEngine.Vulkan
         {
             unsafe
             {
-                fixed(CommandBufferInheritanceInfo* pInheritanceInfo = &inheritanceInfo)
+                fixed (CommandBufferInheritanceInfo* pInheritanceInfo = &inheritanceInfo)
                 {
                     Begin(new CommandBufferBeginInfo()
                     {
@@ -165,7 +165,7 @@ namespace RockEngine.Vulkan
             {
                 // Dispose managed state (managed objects).
             }
-            
+
             _disposed = true;
             _commandPool.FreeCommandBuffer(this);
             _vkObject = default;
@@ -183,7 +183,7 @@ namespace RockEngine.Vulkan
         {
             //lock (_commandPool._lock)
             {
-                fixed (CommandBuffer* ptr = secondaryCommandBuffer.AsValueEnumerable().Select(s=>s.VkObjectNative).ToArray())
+                fixed (CommandBuffer* ptr = secondaryCommandBuffer.AsValueEnumerable().Select(s => s.VkObjectNative).ToArray())
                 {
                     VulkanContext.Vk.CmdExecuteCommands(
                     commandBuffer: _vkObject,
@@ -224,7 +224,7 @@ namespace RockEngine.Vulkan
         {
             VulkanContext.Vk.CmdPushConstants(this, layout, stageFlags, offset, size, ref value);
         }
-        public void PushConstants<T>(PipelineLayout layout, ShaderStageFlags stageFlags, uint offset, uint size,  Span<T> value) where T : unmanaged
+        public void PushConstants<T>(PipelineLayout layout, ShaderStageFlags stageFlags, uint offset, uint size, Span<T> value) where T : unmanaged
         {
             VulkanContext.Vk.CmdPushConstants(this, layout, stageFlags, offset, size, value);
         }
@@ -264,11 +264,11 @@ namespace RockEngine.Vulkan
         {
             VulkanContext.Vk.CmdCopyBufferToImage(this, srcBuffer, dstImage, dstImageLayout, regionCount, pRegions);
         }
-        public  void CopyImageToBuffer(VkImage srcImage, ImageLayout srcImageLayout, VkBuffer dstBuffer, in BufferImageCopy pRegions)
+        public void CopyImageToBuffer(VkImage srcImage, ImageLayout srcImageLayout, VkBuffer dstBuffer, in BufferImageCopy pRegions)
         {
-            VulkanContext.Vk.CmdCopyImageToBuffer(this, srcImage , srcImageLayout, dstBuffer, 1, in pRegions);
+            VulkanContext.Vk.CmdCopyImageToBuffer(this, srcImage, srcImageLayout, dstBuffer, 1, in pRegions);
         }
-        public void CopyImageToBuffer(VkImage srcImage, ImageLayout srcImageLayout, VkBuffer dstBuffer,  Span<BufferImageCopy> pRegions)
+        public void CopyImageToBuffer(VkImage srcImage, ImageLayout srcImageLayout, VkBuffer dstBuffer, Span<BufferImageCopy> pRegions)
         {
             VulkanContext.Vk.CmdCopyImageToBuffer(this, srcImage, srcImageLayout, dstBuffer, (uint)pRegions.Length, pRegions);
         }
@@ -287,14 +287,14 @@ namespace RockEngine.Vulkan
             Vk.CmdDispatch(this, groupCountX, groupCountY, groupCountZ);
         }
 
-        public void ClearDepthStencilImage(VkImage image, ImageLayout layout, float depth, uint stencil,in ImageSubresourceRange imageSubresourceRange)
+        public void ClearDepthStencilImage(VkImage image, ImageLayout layout, float depth, uint stencil, in ImageSubresourceRange imageSubresourceRange)
         {
             ClearDepthStencilValue clearDepthStencilValue = new ClearDepthStencilValue()
             {
                 Depth = depth,
                 Stencil = stencil
             };
-            Vk.CmdClearDepthStencilImage(this, image, layout,in clearDepthStencilValue, 1, in imageSubresourceRange);
+            Vk.CmdClearDepthStencilImage(this, image, layout, in clearDepthStencilValue, 1, in imageSubresourceRange);
         }
 
         public void BeginQuery(VkQueryPool vkQueryPool, uint query, QueryControlFlags flags)

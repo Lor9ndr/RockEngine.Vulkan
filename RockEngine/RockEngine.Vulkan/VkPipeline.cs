@@ -24,7 +24,7 @@ namespace RockEngine.Vulkan
             _name = name;
             SubPass = subpass;
         }
-        public VkPipeline(VulkanContext context, string name, Pipeline pipeline, VkPipelineLayout pipelineLayout): base(pipeline)
+        public VkPipeline(VulkanContext context, string name, Pipeline pipeline, VkPipelineLayout pipelineLayout) : base(pipeline)
         {
             _context = context;
             _pipelineLayout = pipelineLayout;
@@ -41,14 +41,14 @@ namespace RockEngine.Vulkan
                                                      out Pipeline pipeline)
                   .VkAssertResult("Failed to create pipeline");
 
-            var vkPipeline =  new VkPipeline(context, name, pipeline, layout, renderPass, ci.Subpass);
+            var vkPipeline = new VkPipeline(context, name, pipeline, layout, renderPass, ci.Subpass);
             vkPipeline.LabelObject(name);
             return vkPipeline;
         }
 
-        public static VkPipeline CreateComputePipeline(VulkanContext context, string name, VkPipelineLayout layout,in ComputePipelineCreateInfo ci)
+        public static VkPipeline CreateComputePipeline(VulkanContext context, string name, VkPipelineLayout layout, in ComputePipelineCreateInfo ci)
         {
-            VulkanContext.Vk.CreateComputePipelines(context.Device, default,1u, in ci, in VulkanContext.CustomAllocator<VkPipeline>(),  out Pipeline pipeline);
+            VulkanContext.Vk.CreateComputePipelines(context.Device, default, 1u, in ci, in VulkanContext.CustomAllocator<VkPipeline>(), out Pipeline pipeline);
             var vkPipeline = new VkPipeline(context, name, pipeline, layout, null, 0);
             vkPipeline.LabelObject(name);
             return vkPipeline;
@@ -69,6 +69,6 @@ namespace RockEngine.Vulkan
             }
         }
 
-       
+
     }
 }

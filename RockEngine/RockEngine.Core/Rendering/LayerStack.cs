@@ -1,8 +1,6 @@
-﻿using RockEngine.Vulkan;
-
-using System.Buffers;
+﻿using System.Buffers;
 using System.Collections.Concurrent;
-using System.Runtime.CompilerServices;
+using RockEngine.Vulkan;
 
 namespace RockEngine.Core.Rendering
 {
@@ -37,7 +35,7 @@ namespace RockEngine.Core.Rendering
 
         public async Task PushLayer(ILayer layer)
         {
-            ObjectDisposedException.ThrowIf(_disposed,this);
+            ObjectDisposedException.ThrowIf(_disposed, this);
 
             if (_activeLayers.Contains(layer))
             {
@@ -279,10 +277,14 @@ namespace RockEngine.Core.Rendering
             _activeLayerCount = 0;
 
             // Clear queues
-            while (_layersToAdd.TryDequeue(out _)) { }
-            while (_layersToRemove.TryDequeue(out _)) { }
-            while (_pendingAttachmentTasks.TryDequeue(out _)) { }
-            while (_pendingRemovals.TryDequeue(out _)) { }
+            while (_layersToAdd.TryDequeue(out _))
+            { }
+            while (_layersToRemove.TryDequeue(out _))
+            { }
+            while (_pendingAttachmentTasks.TryDequeue(out _))
+            { }
+            while (_pendingRemovals.TryDequeue(out _))
+            { }
         }
     }
 }

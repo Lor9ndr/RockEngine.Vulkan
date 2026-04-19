@@ -1,8 +1,8 @@
 # RockEngine Configuration
 Name: "RockEngine"
 LoadSize:
-  X: 1280
-  Y: 720
+  X: 1920
+  Y: 1080
 MaxFramesPerFlight: 3
 EnableValidationLayers: true
 MaxCamerasSupported: 10

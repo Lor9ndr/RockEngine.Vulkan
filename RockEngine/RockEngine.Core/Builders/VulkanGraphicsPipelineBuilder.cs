@@ -1,19 +1,13 @@
-﻿using Microsoft.Extensions.DependencyInjection;
-
-using RockEngine.Core.DI;
+﻿using System.Buffers;
+using System.Text;
+using Microsoft.Extensions.DependencyInjection;
 using RockEngine.Core.Rendering.Managers;
 using RockEngine.Core.Rendering.Objects;
 using RockEngine.Core.Rendering.Passes;
 using RockEngine.Core.Rendering.Passes.SubPasses;
 using RockEngine.Vulkan;
 using RockEngine.Vulkan.Builders;
-
 using Silk.NET.Vulkan;
-
-using SimpleInjector;
-
-using System.Buffers;
-using System.Text;
 
 namespace RockEngine.Core.Builders
 {
@@ -44,7 +38,7 @@ namespace RockEngine.Core.Builders
 
         public static GraphicsPipelineBuilder CreateDefault(VulkanContext context, string name, RckRenderPass renderPass, params VkShaderModule[] shaders)
         {
-            var builder =  new GraphicsPipelineBuilder(context, name)
+            var builder = new GraphicsPipelineBuilder(context, name)
                 .WithShaderModule(shaders)
                 .WithVertexInputState(new VulkanPipelineVertexInputStateBuilder())
                 .WithInputAssembly(new VulkanInputAssemblyBuilder().Configure())
@@ -72,7 +66,7 @@ namespace RockEngine.Core.Builders
 
             return builder;
         }
-        public static GraphicsPipelineBuilder CreateDefault<TRenderPassStrategy>(VulkanContext context, string name, IServiceProvider container, params VkShaderModule[] shaders) where TRenderPassStrategy : class,IRenderPassStrategy
+        public static GraphicsPipelineBuilder CreateDefault<TRenderPassStrategy>(VulkanContext context, string name, IServiceProvider container, params VkShaderModule[] shaders) where TRenderPassStrategy : class, IRenderPassStrategy
         {
             var renderPassStrategy = container.GetService<TRenderPassStrategy>();
             var builder = new GraphicsPipelineBuilder(context, name)
@@ -161,7 +155,7 @@ namespace RockEngine.Core.Builders
             _vertexInputStateBuilder = vertexInputStateBuilder;
             return this;
         }
-        public GraphicsPipelineBuilder WithVertexInputState<T>() where T: IVertex
+        public GraphicsPipelineBuilder WithVertexInputState<T>() where T : IVertex
         {
             _vertexInputStateBuilder = new VulkanPipelineVertexInputStateBuilder().Add<T>();
             return this;

@@ -1,6 +1,5 @@
-﻿using RockEngine.Vulkan;
-
-using System.Runtime.InteropServices;
+﻿using System.Runtime.InteropServices;
+using RockEngine.Vulkan;
 
 namespace RockEngine.Core.Extensions
 {

@@ -13,7 +13,7 @@ namespace RockEngine.Editor.EditorUI.Thumbnails
     {
         Task<Thumbnail> RenderThumbnailAsync(IAsset asset, int size = 128, CancellationToken cancellationToken = default);
     }
-    public class ThumbnailRenderer:IThumbnailRenderer
+    public class ThumbnailRenderer : IThumbnailRenderer
     {
         private readonly VulkanContext _context;
         private readonly PipelineManager _pipelineManager;
@@ -30,15 +30,16 @@ namespace RockEngine.Editor.EditorUI.Thumbnails
             pipelineManager.Create(builder);
         }
 
+        
         public async Task<Thumbnail> RenderThumbnailAsync(IAsset asset, int size = 128, CancellationToken cancellationToken = default)
         {
-            if(asset is TextureAsset textureAsset)
+            if (asset is TextureAsset textureAsset)
             {
-                if(textureAsset.Texture is null)
+                if (textureAsset.Texture is null)
                 {
                     await textureAsset.LoadGpuResourcesAsync();
                 }
-                if(textureAsset.Texture is Texture2D texture2D)
+                if (textureAsset.Texture is Texture2D texture2D)
                 {
                     var texture = await CreateTextureThumbnail(texture2D, _pipelineManager, _bindingManager);
                     var thumbnail = new Thumbnail(asset, size, size, texture);
@@ -94,7 +95,6 @@ namespace RockEngine.Editor.EditorUI.Thumbnails
             {
                 uint cellSize = size / 3; // each face will occupy cellSize x cellSize pixels
                 uint cols = 3;
-                uint rows = 2;
 
                 for (uint layer = 0; layer < 6; layer++)
                 {

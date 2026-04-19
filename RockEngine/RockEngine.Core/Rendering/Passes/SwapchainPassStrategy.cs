@@ -1,14 +1,13 @@
 ﻿using RockEngine.Core.Diagnostics;
 using RockEngine.Core.Rendering.Managers;
 using RockEngine.Core.Rendering.Passes.SubPasses;
-using RockEngine.Core.Rendering.RenderTargets;
 using RockEngine.Vulkan;
 
 using ZLinq;
 
 namespace RockEngine.Core.Rendering.Passes
 {
-    public class SwapchainPassStrategy(VulkanContext vulkanContext, CameraManager cameraManager, IEnumerable<IRenderSubPass> subPasses) 
+    public class SwapchainPassStrategy(VulkanContext vulkanContext, CameraManager cameraManager, IEnumerable<IRenderSubPass> subPasses)
         : PassStrategyBase(vulkanContext, subPasses)
     {
         public override int Order => int.MaxValue;

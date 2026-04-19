@@ -4,9 +4,9 @@ namespace RockEngine.Vulkan.DeviceFeatures
 {
     public class PageableDeviceLocalMemoryFeature : DeviceFeature
     {
-        public PageableDeviceLocalMemoryFeature() :base("Pageable Device Local Memory")
+        public PageableDeviceLocalMemoryFeature() : base("Pageable Device Local Memory")
         {
-                
+
         }
 
         public override bool IsSupported(VkPhysicalDevice physicalDevice)
@@ -20,7 +20,7 @@ namespace RockEngine.Vulkan.DeviceFeatures
               Chain chain)
         {
             pageableDeviceLocalMemoryFeatures.PageableDeviceLocalMemory = true;
-           
+
         }
 
         public override IEnumerable<string> GetRequiredExtensions()

@@ -35,7 +35,10 @@ namespace RockEngine.Assets
             get
             {
                 if (string.IsNullOrEmpty(Folder))
+                {
                     return $"{Name}{Extension}";
+                }
+
                 return $"{Folder}/{Name}{Extension}";
             }
         }
@@ -48,7 +51,10 @@ namespace RockEngine.Assets
             get
             {
                 if (string.IsNullOrEmpty(Folder))
+                {
                     return Name;
+                }
+
                 return $"{Folder}/{Name}";
             }
         }
@@ -82,7 +88,9 @@ namespace RockEngine.Assets
         public AssetPath(string folder, string name, string extension = ".asset")
         {
             if (string.IsNullOrWhiteSpace(name))
+            {
                 throw new ArgumentException("File name cannot be null or empty.", nameof(name));
+            }
 
             _normalizedFolder = NormalizeFolder(folder);
             _name = name.Trim();
@@ -97,7 +105,9 @@ namespace RockEngine.Assets
         public AssetPath(string fullPath)
         {
             if (string.IsNullOrWhiteSpace(fullPath))
+            {
                 throw new ArgumentException("Full path cannot be null or empty.", nameof(fullPath));
+            }
 
             // Normalize and parse the path
             var normalizedPath = fullPath.Replace('\\', '/').Trim('/');
@@ -154,7 +164,9 @@ namespace RockEngine.Assets
             path = Empty;
 
             if (string.IsNullOrWhiteSpace(name))
+            {
                 return false;
+            }
 
             try
             {
@@ -178,7 +190,9 @@ namespace RockEngine.Assets
             path = Empty;
 
             if (string.IsNullOrWhiteSpace(fullPath))
+            {
                 return false;
+            }
 
             try
             {
@@ -229,7 +243,9 @@ namespace RockEngine.Assets
         public AssetPath Combine(params string[] paths)
         {
             if (paths == null || paths.Length == 0)
+            {
                 return this;
+            }
 
             var combinedFolder = Folder;
             foreach (var path in paths)
@@ -238,9 +254,13 @@ namespace RockEngine.Assets
                 {
                     var normalizedPath = path.Replace('\\', '/').Trim('/');
                     if (string.IsNullOrEmpty(combinedFolder))
+                    {
                         combinedFolder = normalizedPath;
+                    }
                     else
+                    {
                         combinedFolder = $"{combinedFolder}/{normalizedPath}";
+                    }
                 }
             }
 
@@ -263,10 +283,16 @@ namespace RockEngine.Assets
         public readonly int CompareTo(AssetPath other)
         {
             var folderComparison = string.Compare(Folder, other.Folder, StringComparison.Ordinal);
-            if (folderComparison != 0) return folderComparison;
+            if (folderComparison != 0)
+            {
+                return folderComparison;
+            }
 
             var nameComparison = string.Compare(Name, other.Name, StringComparison.Ordinal);
-            if (nameComparison != 0) return nameComparison;
+            if (nameComparison != 0)
+            {
+                return nameComparison;
+            }
 
             return string.Compare(Extension, other.Extension, StringComparison.Ordinal);
         }
@@ -280,7 +306,9 @@ namespace RockEngine.Assets
         private static string NormalizeFolder(string folder)
         {
             if (string.IsNullOrWhiteSpace(folder))
+            {
                 return string.Empty;
+            }
 
             return folder.Replace('\\', '/')
                         .Trim('/')
@@ -290,7 +318,9 @@ namespace RockEngine.Assets
         private static string NormalizeExtension(string extension)
         {
             if (string.IsNullOrWhiteSpace(extension))
+            {
                 return ".asset";
+            }
 
             extension = extension.Trim();
             return extension.StartsWith(".") ? extension : $".{extension}";
@@ -299,7 +329,9 @@ namespace RockEngine.Assets
         private static bool HasInvalidCharacters(string path, bool allowPathSeparators = false)
         {
             if (string.IsNullOrEmpty(path))
+            {
                 return false;
+            }
 
             var invalidChars = Path.GetInvalidFileNameChars();
             if (allowPathSeparators)

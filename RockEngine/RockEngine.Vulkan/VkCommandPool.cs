@@ -19,7 +19,7 @@ namespace RockEngine.Vulkan
         public static unsafe VkCommandPool Create(VulkanContext context, in CommandPoolCreateInfo ci)
         {
             VulkanContext.Vk.CreateCommandPool(context.Device, in ci, in VulkanContext.CustomAllocator<VkCommandPool>(), out var commandPool);
-            return new VkCommandPool(context, commandPool,ci.QueueFamilyIndex);
+            return new VkCommandPool(context, commandPool, ci.QueueFamilyIndex);
         }
 
         public static unsafe VkCommandPool Create(VulkanContext context, CommandPoolCreateFlags flags, uint queueFamilyIndex)
@@ -43,7 +43,7 @@ namespace RockEngine.Vulkan
 
             return AllocateCommandBuffer(in allocateInfo);
         }
-       
+
         public unsafe VkCommandBuffer AllocateCommandBuffer(in CommandBufferAllocateInfo allocInfo)
         {
             //lock (_lock)
@@ -112,7 +112,7 @@ namespace RockEngine.Vulkan
                 item.Dispose();
             }
         }
-       
+
         public override void LabelObject(string name) => _context.DebugUtils.SetDebugUtilsObjectName(_vkObject, ObjectType.CommandPool, name);
 
         protected override unsafe void Dispose(bool disposing)
@@ -129,7 +129,7 @@ namespace RockEngine.Vulkan
                     FreeCommandBuffers(_commandBuffers.ToArray());
                     // Should be already empty at that moment, but let it be for now
                     _commandBuffers.Clear();
-                        VulkanContext.Vk.DestroyCommandPool(_context.Device, _vkObject, in VulkanContext.CustomAllocator<VkCommandPool>());
+                    VulkanContext.Vk.DestroyCommandPool(_context.Device, _vkObject, in VulkanContext.CustomAllocator<VkCommandPool>());
                 }
 
                 _disposed = true;

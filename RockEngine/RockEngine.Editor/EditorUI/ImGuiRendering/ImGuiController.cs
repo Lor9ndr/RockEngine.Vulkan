@@ -1,5 +1,8 @@
-﻿using ImGuiNET;
-
+﻿using System.Numerics;
+using System.Reflection;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using ImGuiNET;
 using RockEngine.Core;
 using RockEngine.Core.Builders;
 using RockEngine.Core.Diagnostics;
@@ -13,17 +16,11 @@ using RockEngine.Editor.EditorUI.EditorWindows;
 using RockEngine.Editor.EditorUI.ImGuiRendering.MultiWindowing;
 using RockEngine.Editor.Rendering.Passes.SubPasses;
 using RockEngine.Vulkan;
-
 using Silk.NET.Input;
 using Silk.NET.Input.Extensions;
 using Silk.NET.Maths;
 using Silk.NET.Vulkan;
 using Silk.NET.Windowing;
-
-using System.Numerics;
-using System.Reflection;
-using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
 
 namespace RockEngine.Editor.EditorUI.ImGuiRendering
 {
@@ -50,14 +47,16 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
         private readonly Lock _textureCacheLock = new Lock();
         private bool _disposed;
         private readonly RenderTarget _uiRenderTarget;
+        private readonly GlobalTextureArray _globalTextureArray;
         private ImFontPtr _iconFont;
         private bool _initialized;
-        private TextureBinding _fontTextureBinding;
 
         private uint _currentFrame = 0;
         private ImGuiViewportManager _viewportManager;
         private nint _allocatedMonitorsData;
         private Vector2D<int> _lastMousePosition;
+
+        private readonly Dictionary<Texture, uint> _textureIndices = new();
 
         public ImFontPtr IconFont { get => _iconFont; set => _iconFont = value; }
 
@@ -65,17 +64,22 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
         private readonly Dictionary<RckImGuiViewport, (VkBuffer VertexBuffer, VkBuffer IndexBuffer)[]> _viewportBuffers = new();
         private readonly Lock _bufferLock = new();
 
-
-
-        public ImGuiController(VulkanContext vkContext, GraphicsContext graphicsEngine,
-                                      BindingManager bindingManager, InputManager inputContext, WorldRenderer renderer,
-                                      IWindow mainWindow, Application application)
+        
+        public ImGuiController(VulkanContext vkContext,
+                               GraphicsContext graphicsEngine,
+                               BindingManager bindingManager,
+                               InputManager inputContext,
+                               WorldRenderer renderer,
+                               IWindow mainWindow,
+                               GlobalTextureArray textureArray,
+                               Application application)
         {
             _vkContext = vkContext;
             _bindingManager = bindingManager;
             _graphicsContext = graphicsEngine;
             _input = inputContext;
             _uiRenderTarget = renderer.SwapchainTarget;
+            _globalTextureArray = textureArray;
             _renderPass = _uiRenderTarget.RenderPass;
 
             // Create and set ImGui context
@@ -113,7 +117,6 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
             // Initialize device objects
             CreateDeviceObjects();
             CreateFontResources();
-            CreateDescriptorSet();
             UpdateMonitors();
 
             // Set up input
@@ -123,8 +126,8 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
             EditorTheme.ApplyModernDarkTheme();
 
             // Initialize viewport manager AFTER basic setup
-            _viewportManager = new ImGuiViewportManager(_vkContext, _graphicsContext, this,_renderPass, application);
-             _viewportManager.RegisterMainViewport(mainWindow, _input.Context);
+            _viewportManager = new ImGuiViewportManager(_vkContext, _graphicsContext, this, _renderPass, application);
+            _viewportManager.RegisterMainViewport(mainWindow, _input.Context);
             ImGui.NewFrame();
             _frameBegun = true;
             _initialized = true;
@@ -217,7 +220,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
             var io = ImGui.GetIO();
 
             // Clear all keyboard state
-            RckImGuiViewport mouseFocusedViewport = null;
+            RckImGuiViewport? mouseFocusedViewport = null;
             // Determine which viewport has mouse focus
             unsafe
             {
@@ -227,7 +230,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
 
             // Update input for each viewport based on focus
             // Update keyboard input for the viewport that has keyboard focus
-            if(mouseFocusedViewport is not null)
+            if (mouseFocusedViewport is not null)
             {
                 _input.SetInput(mouseFocusedViewport.Window, mouseFocusedViewport.InputContext);
 
@@ -259,7 +262,9 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
                 _ => -1
             };
             if (button >= 0)
+            {
                 ImGui.GetIO().AddMouseButtonEvent(button, down);
+            }
         }
 
         public void OnMouseScroll(RckImGuiViewport viewport, ScrollWheel scroll)
@@ -270,7 +275,9 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
         public void OnKey(RckImGuiViewport viewport, Key key, bool down)
         {
             if (TryMapKey(key, out ImGuiKey imKey))
+            {
                 ImGui.GetIO().AddKeyEvent(imKey, down);
+            }
         }
 
         public void OnChar(RckImGuiViewport viewport, char ch)
@@ -291,7 +298,10 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
             // Update key states for this specific viewport
             foreach (Key key in state.GetSupportedKeys())
             {
-                if (key == Key.Unknown) continue;
+                if (key == Key.Unknown)
+                {
+                    continue;
+                }
 
                 if (TryMapKey(key, out ImGuiKey imguikey))
                 {
@@ -313,7 +323,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
             if (mouseState != null)
             {
                 var mousePos = new Vector2D<int>();
-                
+
                 _windowingApi.GetGlobalMouseState(ref mousePos.X, ref mousePos.Y);
                 // Apply viewport offset if this is not the main window
                 io.MousePos = new Vector2(mousePos.X, mousePos.Y);
@@ -450,6 +460,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
 
         }
 
+        
         public void Render(UploadBatch batch, uint frameIndex, WorldRenderer renderer)
         {
             if (!_initialized)
@@ -473,7 +484,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
                     ImGui.Render();
                 }
 
-                RenderImDrawData(_viewportManager.MainViewport.ViewportPtr.DrawData, renderer.SwapchainTarget,batch, frameIndex, _viewportManager.MainViewport);
+                RenderImDrawData(_viewportManager.MainViewport.ViewportPtr.DrawData, renderer.SwapchainTarget, batch, frameIndex, _viewportManager.MainViewport);
                 if ((ImGui.GetIO().ConfigFlags & ImGuiConfigFlags.ViewportsEnable) != 0)
                 {
 
@@ -498,7 +509,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
                 // Reset frame state for next frame
                 _frameBegun = false;
             }
-            
+
         }
         internal struct ViewportImguiStruct
         {
@@ -506,7 +517,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
             public uint FrameIndex;
         }
 
-
+        
         public unsafe void RenderImDrawData(ImDrawDataPtr drawData, SwapchainRenderTarget renderTarget, UploadBatch uploadBatch, uint frameIndex, RckImGuiViewport imguiViewport)
         {
             if (drawData.CmdListsCount == 0)
@@ -516,7 +527,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
             renderTarget.PrepareForRender(uploadBatch);
             using (PerformanceTracer.BeginSection("IMGUI", uploadBatch, frameIndex))
             {
-              
+
                 unsafe
                 {
                     fixed (ClearValue* pClearValue = renderTarget.ClearValues.Span)
@@ -591,10 +602,6 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
                     pvtx_dst.Flush();
                     pidx_dst.Flush();
                 }
-               
-
-              
-               
 
                 // Setup render state
                 uploadBatch.BindPipeline(_pipeline);
@@ -616,8 +623,6 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
                 uploadBatch.PushConstants(_pipelineLayout, ShaderStageFlags.VertexBit, sizeof(float) * 0, sizeof(float) * 2, scale);
                 uploadBatch.PushConstants(_pipelineLayout, ShaderStageFlags.VertexBit, sizeof(float) * 2, sizeof(float) * 2, translate);
 
-                // Bind font texture
-                _bindingManager.BindResource(frameIndex, _fontTextureBinding, uploadBatch, _pipelineLayout);
 
                 // Render command lists
                 Vector2 clipOff = drawData.DisplayPos;
@@ -626,10 +631,13 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
                 int global_vtx_offset = 0;
                 int global_idx_offset = 0;
 
+                _bindingManager.BindResource(frameIndex, _globalTextureArray.GetBinding(), uploadBatch, _pipelineLayout);
 
                 for (int n = 0; n < drawData.CmdListsCount; n++)
                 {
                     var cmd_list = drawData.CmdLists[n];
+                    cmd_list._TryMergeDrawCmds();
+                    cmd_list._PopUnusedDrawCmd();
                     for (int cmd_i = 0; cmd_i < cmd_list.CmdBuffer.Size; cmd_i++)
                     {
                         ImDrawCmdPtr pcmd = cmd_list.CmdBuffer[cmd_i];
@@ -645,11 +653,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
                             }
 
                             // Get texture binding
-                            var textureBinding = GetTextureBindingFromId(pcmd.TextureId);
-                            if (textureBinding != null)
-                            {
-                                _bindingManager.BindResource(frameIndex, textureBinding, uploadBatch, _pipelineLayout);
-                            }
+                            BindTextureForDraw(uploadBatch, pcmd.TextureId);
 
                             // Apply scissor/clipping rectangle
                             Vector4 clipRect;
@@ -711,7 +715,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
                 {
                     for (int i = 0; i < buffersArray.Length; i++)
                     {
-                        if(buffersArray[i].VertexBuffer is not null)
+                        if (buffersArray[i].VertexBuffer is not null)
                         {
                             _vkContext.GraphicsSubmitContext.AddDependency(buffersArray[i].VertexBuffer);
                         }
@@ -725,6 +729,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
             }
         }
 
+        
         private void CreateOrResizeBuffer(ref VkBuffer? buffer, ulong size, BufferUsageFlags usage)
         {
             if (buffer is null || buffer.Size < size)
@@ -741,12 +746,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
             }
         }
 
-        private unsafe void CreateDescriptorSet()
-        {
-            _fontTextureBinding = new TextureBinding(0, 0, 0, 1, ImageLayout.ShaderReadOnlyOptimal, _fontTexture);
-            _bindingManager.AllocateAndUpdateDescriptorSet(0, _fontTextureBinding, _pipelineLayout);
-        }
-
+        
         private unsafe void CreateFontResources()
         {
             var io = ImGui.GetIO();
@@ -812,14 +812,14 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
                 var bytes = new Span<byte>((void*)pixels, width * height * bytesPerPixel).ToArray();
                 TextureData texData = new TextureData()
                 {
-                     Width = (uint)width,
-                     Height = (uint)height,
-                     Format = TextureFormat.R8G8B8A8Unorm,
-                     GenerateMipmaps = false
+                    Width = (uint)width,
+                    Height = (uint)height,
+                    Format = TextureFormat.R8G8B8A8Unorm,
+                    GenerateMipmaps = false
                 };
                 //byte[] destinationArray = new byte[width * height * bytesPerPixel];
                 //Marshal.Copy(pixels, destinationArray, 0, destinationArray.Length);
-                _fontTexture =  Texture2D.CreateFromBytes(_vkContext, bytes: bytes, texData);
+                _fontTexture = Texture2D.CreateFromBytes(_vkContext, bytes: bytes, texData);
 
                 // Store texture identifier
                 io.Fonts.SetTexID(GetTextureID(_fontTexture));
@@ -839,7 +839,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
             }
         }
 
-        private unsafe ImFontPtr LoadFontFromResources(string resourcePath, float size, bool mergeMode = false, ushort[] glyphRanges = null)
+        private unsafe ImFontPtr LoadFontFromResources(string resourcePath, float size, bool mergeMode = false, ushort[]? glyphRanges = null)
         {
             var io = ImGui.GetIO();
 
@@ -917,7 +917,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
 
             return data;
         }
-        private TextureBinding GetTextureBindingFromId(IntPtr textureId)
+        private TextureBinding? GetTextureBindingFromId(IntPtr textureId)
         {
             if (textureId == IntPtr.Zero)
             {
@@ -943,7 +943,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
         }
 
         // Helper method to get Texture from ID
-        private unsafe Texture GetTextureFromId(IntPtr textureId)
+        private unsafe Texture? GetTextureFromId(IntPtr textureId)
         {
             // This assumes textureId is the address of the Texture object
             // You might need to adjust this based on how you're storing textures
@@ -953,7 +953,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
 
 
         // Modify GetTextureID to return texture address instead of descriptor set handle
-        public unsafe IntPtr GetTextureID(Texture texture)
+        public IntPtr GetTextureID(Texture texture)
         {
             if (texture == null || texture.IsDisposed)
             {
@@ -962,23 +962,27 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
 
             lock (_textureCacheLock)
             {
-                if (!_textureBindings.TryGetValue(texture, out _))
+                if (!_textureIndices.TryGetValue(texture, out uint index))
                 {
-                    // Create new texture binding
-                    TextureBinding? binding = new TextureBinding(0, 0, 0, 1, ImageLayout.ShaderReadOnlyOptimal,texture);
-                    _textureBindings[texture] = binding;
-
-                    // Allocate descriptor sets for all frames
-                    for (int i = 0; i < _vkContext.MaxFramesPerFlight; i++)
-                    {
-                        _bindingManager.AllocateDescriptorSet((uint)i, binding, _pipelineLayout);
-                    }
+                    // Allocate a new slot in the global texture array
+                    index = _globalTextureArray.AllocateIndex(texture);
+                    _textureIndices[texture] = index;
                 }
-
-                // Return the address of the texture as the ID
-                GCHandle handle = GCHandle.Alloc(texture, GCHandleType.Weak);
-                return GCHandle.ToIntPtr(handle);
+                // Return the index as a pointer (ImGui expects IntPtr, we store the integer index)
+                return (IntPtr)index;
             }
+        }
+
+        private void BindTextureForDraw(UploadBatch uploadBatch, IntPtr textureId)
+        {
+            uint index = GetTextureIndexFromId(textureId);
+            uploadBatch.PushConstants(_pipelineLayout, ShaderStageFlags.FragmentBit, 16, sizeof(uint), new Span<uint>(ref index));
+        }
+
+        private uint GetTextureIndexFromId(IntPtr textureId)
+        {
+            // textureId is the direct index (cast to uint)
+            return (uint)textureId;
         }
 
         // Modify CleanupTextureCache to handle texture bindings
@@ -986,19 +990,18 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
         {
             lock (_textureCacheLock)
             {
-                var texturesToRemove = new List<Texture>();
-
-                foreach (var kvp in _textureBindings)
+                var toRemove = new List<Texture>();
+                foreach (var kvp in _textureIndices)
                 {
                     if (kvp.Key.IsDisposed)
                     {
-                        texturesToRemove.Add(kvp.Key);
+                        _globalTextureArray.FreeIndex(kvp.Value);
+                        toRemove.Add(kvp.Key);
                     }
                 }
-
-                foreach (var texture in texturesToRemove)
+                foreach (var tex in toRemove)
                 {
-                    _textureBindings.Remove(texture);
+                    _textureIndices.Remove(tex);
                 }
             }
         }
@@ -1014,7 +1017,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
             SetPipeline(vertShaderModule, fragShaderModule);
 
         }
-      
+
 
         private unsafe void SetPipeline(VkShaderModule vertShaderModule, VkShaderModule fragShaderModule)
         {

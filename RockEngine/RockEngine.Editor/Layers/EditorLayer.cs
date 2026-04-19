@@ -1,5 +1,5 @@
-﻿using NLog;
-
+﻿using System.Numerics;
+using NLog;
 using RockEngine.Assets;
 using RockEngine.Core;
 using RockEngine.Core.Assets;
@@ -20,10 +20,7 @@ using RockEngine.Editor.EditorUI.Logging;
 using RockEngine.Editor.EditorUI.Thumbnails;
 using RockEngine.Editor.Selection;
 using RockEngine.Vulkan;
-
 using Silk.NET.Vulkan;
-
-using System.Numerics;
 
 namespace RockEngine.Editor.Layers
 {
@@ -53,6 +50,7 @@ namespace RockEngine.Editor.Layers
         private readonly ConsoleWindow _console;
         private readonly PerformanceWindow _performance;
 
+        
         public EditorLayer(
             World world,
             VulkanContext context,
@@ -62,7 +60,7 @@ namespace RockEngine.Editor.Layers
             IAssetManager assetManager,
             EditorConsole editorConsole,
             ImGuiController imGuiController,
-            ISelectionManager selectionManager, 
+            ISelectionManager selectionManager,
             IAssetRepository assetRepository,
             IAssetFactory assetFactory,
             IProjectManager projectManager, IThumbnailService thumbnailService)
@@ -103,12 +101,22 @@ namespace RockEngine.Editor.Layers
         {
             switch (viewName)
             {
-                case "Scene Hierarchy": _sceneHierarchy.IsOpen = isVisible; break;
-                case "Inspector": _inspector.IsOpen = isVisible; break;
-                case "Console": _console.IsOpen = isVisible; break;
-                case "Performance": _performance.IsOpen = isVisible; break;
-                case "Material Templates": /* TODO */ break;
-                case "Memory Stats": /* TODO */ break;
+                case "Scene Hierarchy":
+                    _sceneHierarchy.IsOpen = isVisible;
+                    break;
+                case "Inspector":
+                    _inspector.IsOpen = isVisible;
+                    break;
+                case "Console":
+                    _console.IsOpen = isVisible;
+                    break;
+                case "Performance":
+                    _performance.IsOpen = isVisible;
+                    break;
+                case "Material Templates": /* TODO */
+                    break;
+                case "Memory Stats": /* TODO */
+                    break;
             }
         }
 
@@ -116,10 +124,11 @@ namespace RockEngine.Editor.Layers
         {
             CreateSolidPipeline();
             // Uncomment to load assets when needed
-            //await LoadOrCreateAssets();
+            // await LoadOrCreateAssets();
 
         }
 
+        
         private async Task LoadOrCreateAssets()
         {
             bool loadFromProject = false;
@@ -155,6 +164,7 @@ namespace RockEngine.Editor.Layers
             }
         }
 
+        
         private async Task CreateAssetsProgrammatically()
         {
             try
@@ -188,6 +198,7 @@ namespace RockEngine.Editor.Layers
             }
         }
 
+        
         private async Task<TextureAsset> CreateTexture(string folder, string name, string[] filePaths, TextureDimension type)
         {
             var texture = _assetFactory.Create<TextureAsset>(new AssetPath(folder, name));
@@ -203,6 +214,7 @@ namespace RockEngine.Editor.Layers
             return texture;
         }
 
+        
         private async Task CreateSceneEntities(SceneAsset scene, MeshAsset cubeMesh, TextureAsset skyboxAsset)
         {
             // Skybox
@@ -250,6 +262,7 @@ namespace RockEngine.Editor.Layers
             }
         }
 
+        
         private void CreateModelEntities(SceneAsset scene, ModelAsset model, Vector3 position, Vector3 scale, Quaternion? rotation = null)
         {
             var parent = scene.CreateEntity();
@@ -264,7 +277,7 @@ namespace RockEngine.Editor.Layers
             foreach (var part in model.Parts)
             {
                 var entity = scene.CreateEntity();
-                if(part.Name != null)
+                if (part.Name != null)
                 {
                     entity.Name = part.Name;
                 }

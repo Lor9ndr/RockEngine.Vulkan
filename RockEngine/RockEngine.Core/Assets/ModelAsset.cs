@@ -1,11 +1,9 @@
 ﻿
+using System.Text.Json.Serialization;
 using NLog;
-
 using RockEngine.Assets;
 using RockEngine.Core.DI;
 using RockEngine.Core.Rendering;
-
-using System.Text.Json.Serialization;
 
 namespace RockEngine.Core.Assets
 {
@@ -85,6 +83,7 @@ namespace RockEngine.Core.Assets
             }
         }
 
+        
         public override async Task LoadDataAsync()
         {
             await base.LoadDataAsync();
@@ -106,6 +105,7 @@ namespace RockEngine.Core.Assets
 
         }
 
+        
         public async ValueTask LoadGpuResourcesAsync()
         {
             foreach (var part in Parts)
@@ -115,6 +115,7 @@ namespace RockEngine.Core.Assets
             }
         }
 
+        
         public void UnloadGpuResources()
         {
             foreach (var part in Parts)
@@ -124,6 +125,7 @@ namespace RockEngine.Core.Assets
             }
         }
 
+        
         public void Dispose()
         {
             UnloadGpuResources();

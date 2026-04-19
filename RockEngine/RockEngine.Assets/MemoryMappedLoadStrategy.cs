@@ -5,9 +5,9 @@ namespace RockEngine.Assets
 
     public class MemoryMappedLoadStrategy : IAssetLoadStrategy
     {
-        public bool CanHandle(long fileSize) => fileSize > 1024 * 1024;
+        public bool CanHandle(long fileSize) => true;
 
-        public async Task<AssetHeader> LoadMetadataAsync(string filePath, IAssetSerializer serializer)
+        public async Task<AssetHeader> LoadHeaderAsync(string filePath, IAssetSerializer serializer)
         {
             var fileInfo = new FileInfo(filePath);
             using var mmf = MemoryMappedFile.CreateFromFile(filePath, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
@@ -31,7 +31,7 @@ namespace RockEngine.Assets
             asset.SetData(data);
         }
 
-        public async Task<IAsset> LoadAssetAsync(string filePath, AssetHeader assetHeader, IAssetSerializer serializer)
+        public async Task<IAsset> LoadAssetAsync(string filePath, IAssetSerializer serializer)
         {
             var fileInfo = new FileInfo(filePath);
             using var mmf = MemoryMappedFile.CreateFromFile(filePath, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);

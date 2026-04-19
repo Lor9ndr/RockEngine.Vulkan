@@ -1,5 +1,4 @@
 ﻿using RockEngine.Core.Rendering.Objects;
-using RockEngine.Vulkan;
 
 namespace RockEngine.Core.Registries
 {
@@ -7,10 +6,10 @@ namespace RockEngine.Core.Registries
     {
         private readonly Dictionary<string, RckPipeline> _pipelines = new();
 
-      
+
         public RckPipeline? Get(string key)
         {
-            if(_pipelines.TryGetValue(key, out var value))
+            if (_pipelines.TryGetValue(key, out var value))
             {
                 return value;
             }

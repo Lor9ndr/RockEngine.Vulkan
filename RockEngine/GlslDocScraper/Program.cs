@@ -8,17 +8,17 @@ namespace GlslDocScraper
 {
     public class ParameterInfo
     {
-        public string Type { get; set; }
-        public string Name { get; set; }
+        public required string Type { get; set; }
+        public required string Name { get; set; }
     }
 
     public class FunctionSignature
     {
-        public string ReturnType { get; set; }
-        public string Name { get; set; }
+        public required string ReturnType { get; set; }
+        public required string Name { get; set; }
         public List<ParameterInfo> Parameters { get; set; } = new();
-        public string Description { get; set; }
-        public string DocumentationUrl { get; set; }
+        public required string Description { get; set; }
+        public required string DocumentationUrl { get; set; }
     }
 
     internal class Program
@@ -110,21 +110,32 @@ namespace GlslDocScraper
             foreach (var table in tables)
             {
                 var headerRow = table.QuerySelector("thead tr");
-                if (headerRow == null) continue;
+                if (headerRow == null)
+                {
+                    continue;
+                }
 
                 var headers = headerRow.QuerySelectorAll("th").Select(th => th.TextContent.Trim()).ToArray();
                 int typeCol = Array.FindIndex(headers, h => h.Equals("Type", StringComparison.OrdinalIgnoreCase));
-                if (typeCol == -1) continue;
+                if (typeCol == -1)
+                {
+                    continue;
+                }
 
                 var rows = table.QuerySelectorAll("tbody tr");
                 foreach (var row in rows)
                 {
                     var cells = row.QuerySelectorAll("td");
-                    if (typeCol >= cells.Length) continue;
+                    if (typeCol >= cells.Length)
+                    {
+                        continue;
+                    }
 
                     var typeName = cells[typeCol].TextContent.Trim();
                     if (IsValidIdentifier(typeName))
+                    {
                         types.Add(typeName);
+                    }
                 }
             }
         }
@@ -140,7 +151,10 @@ namespace GlslDocScraper
                 foreach (var line in lines)
                 {
                     var trimmed = line.Trim();
-                    if (string.IsNullOrWhiteSpace(trimmed)) continue;
+                    if (string.IsNullOrWhiteSpace(trimmed))
+                    {
+                        continue;
+                    }
 
                     // Match declarations like: "in int gl_VertexID;" or "out vec4 gl_Position;"
                     // Also handle arrays: "float gl_ClipDistance[];"
@@ -150,7 +164,9 @@ namespace GlslDocScraper
                     {
                         var varName = match.Groups[1].Value;
                         if (IsValidIdentifier(varName))
+                        {
                             builtIns.Add(varName);
+                        }
                     }
                 }
             }
@@ -165,7 +181,9 @@ namespace GlslDocScraper
                 {
                     var varName = match.Groups[1].Value;
                     if (IsValidIdentifier(varName))
+                    {
                         builtIns.Add(varName);
+                    }
                 }
             }
         }
@@ -181,13 +199,17 @@ namespace GlslDocScraper
             {
                 var headingText = h.TextContent.Trim();
                 if (headingText.Contains(' ') || headingText.Length > 30)
+                {
                     continue;
+                }
 
                 if (IsValidIdentifier(headingText) && !headingText.StartsWith("gl_"))
+                {
                     names.Add(headingText);
+                }
 
                 // ----- Get the documentation URL from the anchor inside the heading -----
-                string docUrl = null;
+                string? docUrl = null;
                 var anchor = h.QuerySelector("a.anchor");
                 if (anchor != null)
                 {
@@ -200,17 +222,23 @@ namespace GlslDocScraper
                 }
 
                 // ----- Locate the <pre> block following this heading -----
-                IElement preElement = null;
+                IElement? preElement = null;
                 var next = h.NextElementSibling;
                 while (next != null && !IsHeading(next))
                 {
                     preElement = next.QuerySelector("pre");
                     if (preElement != null)
+                    {
                         break;
+                    }
+
                     next = next.NextElementSibling;
                 }
 
-                if (preElement == null) continue;
+                if (preElement == null)
+                {
+                    continue;
+                }
 
                 var codeElement = preElement.QuerySelector("code") ?? preElement;
                 var codeText = codeElement.TextContent;
@@ -219,18 +247,26 @@ namespace GlslDocScraper
                 foreach (var line in lines)
                 {
                     var trimmed = line.Trim();
-                    if (string.IsNullOrWhiteSpace(trimmed) || trimmed == "glsl") continue;
+                    if (string.IsNullOrWhiteSpace(trimmed) || trimmed == "glsl")
+                    {
+                        continue;
+                    }
 
                     var sigMatch = Regex.Match(trimmed,
                         @"^(?:(?:highp|lowp|mediump)\s+)?([\w<>]+)\s+(\w+)\s*\(([^)]*)\)\s*;?$");
-                    if (!sigMatch.Success) continue;
+                    if (!sigMatch.Success)
+                    {
+                        continue;
+                    }
 
                     var returnType = sigMatch.Groups[1].Value;
                     var funcName = sigMatch.Groups[2].Value;
                     var paramsStr = sigMatch.Groups[3].Value;
 
                     if (IsValidIdentifier(funcName))
+                    {
                         names.Add(funcName);
+                    }
 
                     var parameters = ParseParameters(paramsStr);
 
@@ -301,13 +337,18 @@ namespace GlslDocScraper
         {
             var parameters = new List<ParameterInfo>();
             if (string.IsNullOrWhiteSpace(paramsStr))
+            {
                 return parameters;
+            }
 
             var paramParts = paramsStr.Split(',');
             foreach (var p in paramParts)
             {
                 var pTrim = p.Trim();
-                if (string.IsNullOrWhiteSpace(pTrim)) continue;
+                if (string.IsNullOrWhiteSpace(pTrim))
+                {
+                    continue;
+                }
 
                 var pMatch = Regex.Match(pTrim,
                     @"^(?:(?:highp|lowp|mediump|out|inout|in)\s+)*([\w<>]+)(?:\s+(\w+))?$");
@@ -327,8 +368,16 @@ namespace GlslDocScraper
 
         private static bool IsValidIdentifier(string s)
         {
-            if (string.IsNullOrWhiteSpace(s)) return false;
-            if (!char.IsLetter(s[0]) && s[0] != '_') return false;
+            if (string.IsNullOrWhiteSpace(s))
+            {
+                return false;
+            }
+
+            if (!char.IsLetter(s[0]) && s[0] != '_')
+            {
+                return false;
+            }
+
             return s.All(c => char.IsLetterOrDigit(c) || c == '_');
         }
 
@@ -337,7 +386,10 @@ namespace GlslDocScraper
             sb.AppendLine($"        public static readonly string[] {name} = new[]");
             sb.AppendLine("        {");
             foreach (var v in values.OrderBy(v => v))
+            {
                 sb.AppendLine($"            \"{v}\",");
+            }
+
             sb.AppendLine("        };");
         }
     }

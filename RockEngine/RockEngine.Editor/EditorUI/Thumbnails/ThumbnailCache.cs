@@ -1,7 +1,6 @@
-﻿using RockEngine.Assets;
+﻿using System.Collections.Concurrent;
+using RockEngine.Assets;
 using RockEngine.Core.Registries;
-
-using System.Collections.Concurrent;
 
 namespace RockEngine.Editor.EditorUI.Thumbnails
 {
@@ -15,7 +14,7 @@ namespace RockEngine.Editor.EditorUI.Thumbnails
 
         public Thumbnail? Get(IAsset key)
         {
-            if(_cache.TryGetValue(key, out var value))
+            if (_cache.TryGetValue(key, out var value))
             {
                 return value;
             }

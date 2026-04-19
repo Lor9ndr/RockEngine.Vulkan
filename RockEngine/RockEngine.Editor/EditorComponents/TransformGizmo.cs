@@ -1,10 +1,14 @@
-﻿using RockEngine.Core;
+﻿using System.Numerics;
+using System.Runtime.InteropServices;
+using ImGuiNET;
+using RockEngine.Core;
 using RockEngine.Core.Assets;
 using RockEngine.Core.Builders;
 using RockEngine.Core.DI;
 using RockEngine.Core.ECS;
 using RockEngine.Core.ECS.Components;
 using RockEngine.Core.Helpers;
+using RockEngine.Core.Physics;
 using RockEngine.Core.Rendering;
 using RockEngine.Core.Rendering.Materials;
 using RockEngine.Core.Rendering.Objects;
@@ -13,11 +17,7 @@ using RockEngine.Core.ResourceProviders;
 using RockEngine.Editor.Rendering.Passes;
 using RockEngine.Editor.Rendering.Passes.SubPasses;
 using RockEngine.Vulkan;
-
 using Silk.NET.Vulkan;
-
-using System.Numerics;
-using System.Runtime.InteropServices;
 
 namespace RockEngine.Editor.EditorComponents
 {
@@ -28,7 +28,7 @@ namespace RockEngine.Editor.EditorComponents
         Scale = 2
     }
 
-    public enum GizmoAxis:uint
+    public enum GizmoAxis : uint
     {
         None = 0,
         X = 1,
@@ -68,9 +68,14 @@ namespace RockEngine.Editor.EditorComponents
         private Quaternion _dragStartRotation;
         private Vector3 _dragStartScale;
 
-        private Material _gizmoMaterial;
-        private MeshRenderer _meshRenderer;
+        private Material? _gizmoMaterial;
+        private MeshRenderer? _meshRenderer;
         private Vector2 _viewportSize;
+        private Vector2 _currentImageMin;
+        private Vector2 _currentImageMax;
+        private Vector3 _dragPlanePoint;
+        private Vector3 _dragAxisDirection;
+        private Vector3 _dragPlaneNormal;
 
         // Colors for different axes
         private readonly Vector4 _colorX = new Vector4(0.9f, 0.2f, 0.2f, 1.0f);
@@ -80,7 +85,7 @@ namespace RockEngine.Editor.EditorComponents
         private readonly Vector4 _colorHover = new Vector4(1.0f, 0.9f, 0.2f, 1.0f);
         private readonly Vector4 _colorCenter = new Vector4(0.8f, 0.8f, 0.8f, 0.8f);
 
-
+        
         internal GizmoType CurrentMode
         {
             get => _currentMode;
@@ -91,12 +96,14 @@ namespace RockEngine.Editor.EditorComponents
             }
         }
 
+        
         public override async ValueTask OnStart(WorldRenderer renderer)
         {
             await InitializeGizmo(renderer);
             Entity.Layer = IoC.Container.GetInstance<RenderLayerSystem>().Debug;
         }
 
+        
         private async ValueTask InitializeGizmo(WorldRenderer renderer)
         {
             _gizmoMaterial = await CreateGizmoMaterial(renderer);
@@ -112,7 +119,7 @@ namespace RockEngine.Editor.EditorComponents
                 GizmoType = (uint)_currentMode,
             };
 
-            _gizmoMaterial.PushConstant("push", pushConstants);
+            _gizmoMaterial.SetPushConstant("push", pushConstants);
 
             // Also push fragment constants for picking
             var fragConstants = new GizmoPushFragConstants
@@ -121,14 +128,14 @@ namespace RockEngine.Editor.EditorComponents
                 AxisMask = (uint)_selectedAxis
             };
 
-            _gizmoMaterial.PushConstant("push_frag", fragConstants);
+            _gizmoMaterial.SetPushConstant("push_frag", fragConstants);
 
             return ValueTask.CompletedTask;
         }
 
         private Vector4 GetCurrentGizmoColor()
         {
-            
+
             if (_selectedAxis != GizmoAxis.None)
             {
                 return _selectedAxis switch
@@ -157,6 +164,7 @@ namespace RockEngine.Editor.EditorComponents
             return new Vector4(1, 1, 1, 1);
         }
 
+        
         private void UpdateGizmoGeometry()
         {
             var (vertices, indices) = GenerateGizmoGeometry(_currentMode);
@@ -537,19 +545,19 @@ namespace RockEngine.Editor.EditorComponents
             var vertShader = await VkShaderModule.CreateAsync(renderer.Context, "Shaders/Gizmo.vert.spv", ShaderStageFlags.VertexBit);
             var fragShader = await VkShaderModule.CreateAsync(renderer.Context, "Shaders/Gizmo.frag.spv", ShaderStageFlags.FragmentBit);
 
-            var pipeline = CreateGizmoPipeline<PostLightPass>(renderer,renderer.RenderPass, vertShader, fragShader, "Gizmo");
+            var pipeline = CreateGizmoPipeline<PostLightPass>(renderer, renderer.RenderPass, vertShader, fragShader, "Gizmo");
             material.AddPass(PostLightPass.Name, new MaterialPass(pipeline));
 
             var vertPickingShader = await VkShaderModule.CreateAsync(renderer.Context, "Shaders/Gizmo.vert.spv", ShaderStageFlags.VertexBit);
             var fragPickingShader = await VkShaderModule.CreateAsync(renderer.Context, "Shaders/GizmoPicking.frag.spv", ShaderStageFlags.FragmentBit);
-            
+
             var pickingRenderPass = IoC.Container.GetInstance<PickingPassStrategy>().RenderPass;
             if (pickingRenderPass is not null)
             {
                 var pickingPipeline = CreateGizmoPipeline<PickingSubPass>(renderer, pickingRenderPass, vertPickingShader, fragPickingShader, "GizmoPicking");
                 material.AddPass(PickingSubPass.Name, new MaterialPass(pickingPipeline));
             }
-           
+
 
             return material;
         }
@@ -603,7 +611,7 @@ namespace RockEngine.Editor.EditorComponents
             return renderer.PipelineManager.Create(pipelineBuilder);
         }
 
-        public void StartDrag(Vector2 mousePosition)
+        public void StartDrag(Vector2 mousePosition, Camera camera, Vector2 imageMin, Vector2 imageMax, Vector2 viewportSize)
         {
             if (_selectedAxis == GizmoAxis.None)
             {
@@ -612,32 +620,84 @@ namespace RockEngine.Editor.EditorComponents
 
             _isDragging = true;
             _dragStartPosition = mousePosition;
-            _dragStartWorldPos = Entity.Transform.Position;
-            _dragStartRotation = Entity.Transform.Rotation;
-            _dragStartScale = Entity.Transform.Scale;
+
+            // Store the initial world state of the selected entity (set by caller)
+            // We'll receive the selected entity in UpdateDrag, so we capture start values there.
+            // For plane setup we need the gizmo's current position.
+            var gizmoPos = Entity.Transform.Position;
+
+            // Pre-calculate the drag plane based on selected axis and camera
+            SetupDragPlane(camera, gizmoPos);
+        }
+        private void SetupDragPlane(Camera camera, Vector3 planePoint)
+        {
+            _dragPlanePoint = planePoint;
+            var gizmoTransform = Entity.Transform;
+
+            if (_selectedAxis == GizmoAxis.X || _selectedAxis == GizmoAxis.Y || _selectedAxis == GizmoAxis.Z)
+            {
+                _dragAxisDirection = _selectedAxis switch
+                {
+                    GizmoAxis.X => gizmoTransform.Right,
+                    GizmoAxis.Y => gizmoTransform.Up,
+                    GizmoAxis.Z => gizmoTransform.Forward,
+                    _ => Vector3.Zero
+                };
+
+                // Plane that contains the axis AND is parallel to the camera's view direction.
+                // Normal = cross(axis, cameraForward). This makes the axis appear as a line on screen.
+                Vector3 cameraForward = camera.Entity.Transform.Forward;
+                _dragPlaneNormal = Vector3.Normalize(Vector3.Cross(_dragAxisDirection, cameraForward));
+
+                // If axis is parallel to camera forward, use camera up instead.
+                if (_dragPlaneNormal.LengthSquared() < 0.1f)
+                {
+                    _dragPlaneNormal = Vector3.Normalize(Vector3.Cross(_dragAxisDirection, camera.Entity.Transform.Up));
+                }
+            }
+            else if (_selectedAxis == GizmoAxis.Uniform)
+            {
+                _dragAxisDirection = Vector3.Zero;
+                // View plane (parallel to camera near/far)
+                _dragPlaneNormal = camera.Entity.Transform.Forward;
+            }
+            else // None or View
+            {
+                _dragAxisDirection = Vector3.Zero;
+                _dragPlaneNormal = camera.Entity.Transform.Forward;
+            }
         }
 
-        public void UpdateDrag(Vector2 mousePos, Camera camera, Entity selectedEntity, Vector2 viewportSize)
+        public void UpdateDrag(Vector2 currentMousePos, Camera camera, Entity selectedEntity,
+                       Vector2 imageMin, Vector2 imageMax, Vector2 viewportSize)
         {
             if (!_isDragging || selectedEntity == null)
             {
                 return;
             }
 
-            _viewportSize = viewportSize;
+            // Capture start values on first drag update
+            if (_dragStartWorldPos == default)
+            {
+                _dragStartWorldPos = selectedEntity.Transform.Position;
+                _dragStartRotation = selectedEntity.Transform.Rotation;
+                _dragStartScale = selectedEntity.Transform.Scale;
+            }
 
-            var mouseDelta = _dragStartPosition - mousePos;
+            // Build rays from the start and current mouse positions
+            Ray startRay = GetMouseRay(_dragStartPosition, camera, imageMin, imageMax, viewportSize);
+            Ray currentRay = GetMouseRay(currentMousePos, camera, imageMin, imageMax, viewportSize);
 
             switch (_currentMode)
             {
                 case GizmoType.Translate:
-                    UpdateTranslation(mouseDelta, camera, selectedEntity);
+                    UpdateTranslation(startRay, currentRay, selectedEntity);
                     break;
                 case GizmoType.Rotate:
-                    UpdateRotation(mouseDelta, camera, selectedEntity);
+                    UpdateRotation(startRay, currentRay, selectedEntity);
                     break;
                 case GizmoType.Scale:
-                    UpdateScale(mouseDelta, camera, selectedEntity);
+                    UpdateScale(startRay, currentRay, selectedEntity);
                     break;
             }
         }
@@ -646,171 +706,154 @@ namespace RockEngine.Editor.EditorComponents
         public void EndDrag()
         {
             _isDragging = false;
-            _dragStartPosition = new Vector2(0);
+            _dragStartWorldPos = default;
+            _dragStartRotation = Quaternion.Identity;
+            _dragStartScale = Vector3.Zero;
         }
 
-        private void UpdateTranslation(Vector2 mouseDelta, Camera camera, Entity selectedEntity)
+        private Ray GetMouseRay(Vector2 mouseScreenPos, Camera camera,
+                          Vector2 imageMin, Vector2 imageMax, Vector2 viewportSize)
+        {
+            // Convert to normalized image coordinates [0..1] within the actual drawn image
+            Vector2 imagePos = (mouseScreenPos - imageMin) / (imageMax - imageMin);
+            imagePos = Vector2.Clamp(imagePos, Vector2.Zero, Vector2.One);
+
+            // NDC [-1..1] with Y flipped (ImGui top-left origin)
+            Vector2 ndc = new Vector2(
+                imagePos.X * 2.0f - 1.0f,
+                1.0f - imagePos.Y * 2.0f
+            );
+
+            Matrix4x4.Invert(camera.ProjectionMatrix, out var invProj);
+            Matrix4x4.Invert(camera.ViewMatrix, out var invView);
+
+            Vector4 viewNear = Vector4.Transform(new Vector4(ndc, 0.0f, 1.0f), invProj);
+            viewNear /= viewNear.W;
+            Vector4 viewFar = Vector4.Transform(new Vector4(ndc, 1.0f, 1.0f), invProj);
+            viewFar /= viewFar.W;
+
+            Vector3 worldNear = Vector3.Transform(new Vector3(viewNear.X, viewNear.Y, viewNear.Z), invView);
+            Vector3 worldFar = Vector3.Transform(new Vector3(viewFar.X, viewFar.Y, viewFar.Z), invView);
+
+            return new Ray(worldNear, Vector3.Normalize(worldFar - worldNear));
+        }
+
+        private void UpdateTranslation(Ray startRay, Ray currentRay, Entity selectedEntity)
         {
             var transform = selectedEntity.Transform;
-            var gizmoTransform = Entity.Transform;
-
-            // Simple screen-space to world-space conversion
-            // This approach works better for gizmos than ray-plane intersection
             Vector3 movement = Vector3.Zero;
 
-            // Calculate sensitivity based on distance from camera
-            float distance = Vector3.Distance(camera.Entity.Transform.Position, _dragStartWorldPos);
-            float sensitivity = distance * 0.002f; 
-
-            if (_selectedAxis == GizmoAxis.X)
+            if (Ray.RayPlaneIntersection(currentRay, _dragPlanePoint, _dragPlaneNormal, out float tCurrent) &&
+                Ray.RayPlaneIntersection(startRay, _dragPlanePoint, _dragPlaneNormal, out float tStart))
             {
-                // Move along X axis (right vector)
-                Vector3 axisDir = gizmoTransform.Right;
+                Vector3 worldCurrent = currentRay.GetPoint(tCurrent);
+                Vector3 worldStart = startRay.GetPoint(tStart);
+                Vector3 delta = worldCurrent - worldStart;
 
-                // Get screen-space direction of the X axis
-                Vector3 screenDir = GetAxisScreenDirection(axisDir, camera);
-
-                // Use mouse delta in screen space along the axis direction
-                float axisMovement = (mouseDelta.X * screenDir.X + mouseDelta.Y * screenDir.Y) * sensitivity;
-                movement = axisDir * axisMovement;
-            }
-            else if (_selectedAxis == GizmoAxis.Y)
-            {
-                // Move along Y axis (up vector)
-                Vector3 axisDir = gizmoTransform.Up;
-
-                // Get screen-space direction of the Y axis
-                Vector3 screenDir = GetAxisScreenDirection(axisDir, camera);
-
-                // Use mouse delta in screen space along the axis direction
-                float axisMovement = (mouseDelta.X * screenDir.X + mouseDelta.Y * screenDir.Y) * sensitivity;
-                movement = axisDir * axisMovement;
-            }
-            else if (_selectedAxis == GizmoAxis.Z)
-            {
-                // Move along Z axis (forward vector)
-                Vector3 axisDir = gizmoTransform.Forward;
-
-                // Get screen-space direction of the Z axis
-                Vector3 screenDir = GetAxisScreenDirection(axisDir, camera);
-
-                // Use mouse delta in screen space along the axis direction
-                float axisMovement = (mouseDelta.X * screenDir.X + mouseDelta.Y * screenDir.Y) * sensitivity;
-                movement = axisDir * axisMovement;
-            }
-            else if (_selectedAxis == GizmoAxis.Uniform)
-            {
-                // For uniform movement in view plane
-                Vector3 cameraRight = camera.Entity.Transform.Right;
-                Vector3 cameraUp = camera.Entity.Transform.Up;
-
-                // Map mouse movement to camera plane
-                movement = (cameraRight * mouseDelta.X + cameraUp * -mouseDelta.Y) * sensitivity;
+                if (_selectedAxis == GizmoAxis.Uniform)
+                {
+                    movement = delta;
+                }
+                else
+                {
+                    // Project delta onto the movement axis
+                    movement = Vector3.Dot(delta, _dragAxisDirection) * _dragAxisDirection;
+                }
             }
 
             transform.Position = _dragStartWorldPos + movement;
         }
-        private Vector3 GetAxisScreenDirection(Vector3 worldDir, Camera camera)
-        {
-            // Project the world direction to screen space
-            // First, get the axis direction in view space
-            Matrix4x4 viewMatrix = camera.ViewMatrix;
-            Vector4 viewDir = Vector4.Transform(new Vector4(worldDir, 0), viewMatrix);
 
-            // Convert to normalized screen direction
-            // We only care about X and Y components for screen movement
-            return  Vector3.Normalize(new Vector3(viewDir.X, viewDir.Y, 0));
-        }
-
-
-        private void UpdateRotation(Vector2 mouseDelta, Camera camera, Entity selectedEntity)
+        private void UpdateRotation(Ray startRay, Ray currentRay, Entity selectedEntity)
         {
             var transform = selectedEntity.Transform;
+            var gizmoTransform = Entity.Transform;
 
-            // Rotation sensitivity (degrees per pixel)
-            float sensitivity = 0.5f;
-
-            Vector3 rotationDelta = Vector3.Zero;
-
-            if (_selectedAxis == GizmoAxis.X)
+            // Plane perpendicular to rotation axis, passing through gizmo center
+            Vector3 axis = _selectedAxis switch
             {
-                // Rotate around X axis (pitch)
-                rotationDelta.X = mouseDelta.Y * sensitivity;
-            }
-            else if (_selectedAxis == GizmoAxis.Y)
+                GizmoAxis.X => gizmoTransform.Right,
+                GizmoAxis.Y => gizmoTransform.Up,
+                GizmoAxis.Z => gizmoTransform.Forward,
+                _ => Vector3.Zero
+            };
+            Vector3 planeNormal = axis;
+            Vector3 planePoint = _dragStartWorldPos; // gizmo is at selected entity's position
+
+            if (Ray.RayPlaneIntersection(currentRay, planePoint, planeNormal, out float tCurrent) &&
+                Ray.RayPlaneIntersection(startRay, planePoint, planeNormal, out float tStart))
             {
-                // Rotate around Y axis (yaw)
-                rotationDelta.Y = mouseDelta.X * sensitivity;
+                Vector3 pCurrent = currentRay.GetPoint(tCurrent);
+                Vector3 pStart = startRay.GetPoint(tStart);
+
+                Vector3 vStart = Vector3.Normalize(pStart - planePoint);
+                Vector3 vCurrent = Vector3.Normalize(pCurrent - planePoint);
+
+                float angle = MathF.Atan2(
+                    Vector3.Dot(Vector3.Cross(vStart, vCurrent), axis),
+                    Vector3.Dot(vStart, vCurrent)
+                );
+
+                Quaternion deltaRot = Quaternion.CreateFromAxisAngle(axis, angle);
+                transform.Rotation = Quaternion.Normalize(deltaRot * _dragStartRotation);
             }
-            else if (_selectedAxis == GizmoAxis.Z)
-            {
-                // Rotate around Z axis (roll)
-                rotationDelta.Z = mouseDelta.X * sensitivity;
-            }
-
-            // Convert to radians
-            Vector3 radians = rotationDelta * (MathF.PI / 180.0f);
-
-            // Create rotation quaternions for each axis
-            Quaternion deltaRotation = Quaternion.Identity;
-
-            if (rotationDelta.X != 0)
-            {
-                deltaRotation *= Quaternion.CreateFromAxisAngle(Entity.Transform.Right, radians.X);
-            }
-
-            if (rotationDelta.Y != 0)
-            {
-                deltaRotation *= Quaternion.CreateFromAxisAngle(Entity.Transform.Up, radians.Y);
-            }
-
-            if (rotationDelta.Z != 0)
-            {
-                deltaRotation *= Quaternion.CreateFromAxisAngle(Entity.Transform.Forward, radians.Z);
-            }
-
-            // Apply the rotation
-            transform.Rotation = Quaternion.Normalize(_dragStartRotation * deltaRotation);
-
         }
 
-        private void UpdateScale(Vector2 mouseDelta, Camera camera, Entity selectedEntity)
+        private void UpdateScale(Ray startRay, Ray currentRay, Entity selectedEntity)
         {
             var transform = selectedEntity.Transform;
+            var gizmoTransform = Entity.Transform;
 
-            float sensitivity = 0.01f;
-            Vector3 scaleDelta = Vector3.Zero;
+            Vector3 axisDir = _selectedAxis switch
+            {
+                GizmoAxis.X => gizmoTransform.Right,
+                GizmoAxis.Y => gizmoTransform.Up,
+                GizmoAxis.Z => gizmoTransform.Forward,
+                _ => Vector3.Zero
+            };
 
             if (_selectedAxis == GizmoAxis.Uniform)
             {
-                // Uniform scaling
-                float uniformDelta = (mouseDelta.X + mouseDelta.Y) * sensitivity;
-                scaleDelta = new Vector3(uniformDelta);
-                transform.Scale = Vector3.Max(new Vector3(0.001f), _dragStartScale + scaleDelta);
+                // Uniform scale: use view plane
+                Vector3 planeNormal = _dragPlaneNormal; // camera forward
+                Vector3 planePoint = _dragStartWorldPos;
+
+                if (Ray.RayPlaneIntersection(currentRay, planePoint, planeNormal, out float tCurrent) &&
+                    Ray.RayPlaneIntersection(startRay, planePoint, planeNormal, out float tStart))
+                {
+                    Vector3 worldCurrent = currentRay.GetPoint(tCurrent);
+                    Vector3 worldStart = startRay.GetPoint(tStart);
+                    float delta = Vector3.Distance(worldCurrent, planePoint) - Vector3.Distance(worldStart, planePoint);
+                    float scaleFactor = 1.0f + delta * 0.5f; // sensitivity
+                    transform.Scale = _dragStartScale * Math.Max(0.001f, scaleFactor);
+                }
             }
             else
             {
-                // Non-uniform scaling based on selected axis
-                if (_selectedAxis == GizmoAxis.X)
-                {
-                    scaleDelta.X = mouseDelta.X * sensitivity;
-                }
-                else if (_selectedAxis == GizmoAxis.Y)
-                {
-                    scaleDelta.Y = mouseDelta.Y * sensitivity;
-                }
-                else if (_selectedAxis == GizmoAxis.Z)
-                {
-                    scaleDelta.Z = mouseDelta.Y * sensitivity; // Use Y for consistency
-                }
+                // Non-uniform: plane containing axis and camera right
+                Vector3 planeNormal = _dragPlaneNormal; // pre-calculated in SetupDragPlane
+                Vector3 planePoint = _dragStartWorldPos;
 
-                // Apply scaling in local space
-                transform.Scale = Vector3.Max(new Vector3(0.001f),
-                    new Vector3(
-                        _dragStartScale.X + scaleDelta.X,
-                        _dragStartScale.Y + scaleDelta.Y,
-                        _dragStartScale.Z + scaleDelta.Z
-                    ));
+                if (Ray.RayPlaneIntersection(currentRay, planePoint, planeNormal, out float tCurrent) &&
+                    Ray.RayPlaneIntersection(startRay, planePoint, planeNormal, out float tStart))
+                {
+                    Vector3 worldCurrent = currentRay.GetPoint(tCurrent);
+                    Vector3 worldStart = startRay.GetPoint(tStart);
+                    Vector3 delta = worldCurrent - worldStart;
+
+                    float axisDelta = Vector3.Dot(delta, axisDir);
+                    float scaleMultiplier = 1.0f + axisDelta * 0.5f;
+
+                    Vector3 newScale = _dragStartScale;
+                    if (_selectedAxis == GizmoAxis.X)
+                        newScale.X *= scaleMultiplier;
+                    else if (_selectedAxis == GizmoAxis.Y)
+                        newScale.Y *= scaleMultiplier;
+                    else if (_selectedAxis == GizmoAxis.Z)
+                        newScale.Z *= scaleMultiplier;
+
+                    transform.Scale = Vector3.Max(new Vector3(0.001f), newScale);
+                }
             }
         }
 
@@ -834,9 +877,9 @@ namespace RockEngine.Editor.EditorComponents
 
             public GizmoVertex(Vector3 position, Vector4 color, Vector3 normal, GizmoAxis axis)
             {
-                Position = new Vector4(position,0);
+                Position = new Vector4(position, 0);
                 Color = color;
-                Normal = new Vector4(normal,0);
+                Normal = new Vector4(normal, 0);
                 AxisMask = (uint)axis;
             }
 

@@ -60,8 +60,11 @@ namespace RockEngine.Core.Rendering.Managers
                 envMap.Image.TransitionImageLayout(batch, ImageLayout.Undefined, ImageLayout.General, baseMipLevel: 0, envMap.Image.MipLevels, 0, 6);
                 output.Image.TransitionImageLayout(batch, ImageLayout.Undefined, ImageLayout.General, baseMipLevel: 0, 1, 0, 6);
 
-                // Create material with required bindings – FIXED
+                // Create material with required bindings
+                Material material = new Material(nameof(GenerateIrradianceMap));
                 MaterialPass matPass = new MaterialPass(_irradiancePipeline);
+                material.AddPass("compute", matPass);
+
                 matPass.BindResource(new TextureBinding(
                     setLocation: 0,
                     bindingLocation: 0,
@@ -96,7 +99,7 @@ namespace RockEngine.Core.Rendering.Managers
                 // Dispatch compute
                 uint groupsX = (size + 31) / 32;
                 uint groupsY = (size + 31) / 32;
-                _bindingManager.BindResourcesForMaterial(0, matPass, batch, true);
+                _bindingManager.BindResourcesForMaterial(0, material, matPass, batch, true);
                 batch.BindPipeline(_irradiancePipeline, PipelineBindPoint.Compute);
                 batch.Dispatch(groupsX, groupsY, 6);
 
@@ -164,8 +167,10 @@ namespace RockEngine.Core.Rendering.Managers
                     );
 
                     // Create per-mip material – FIXED envMap binding
-                    var material = new MaterialPass(_prefilterPipeline);
-                    material.BindResource(new TextureBinding(
+                    var materialPass = new MaterialPass(_prefilterPipeline);
+                    Material material = new Material(nameof(GeneratePrefilterMap));
+                    material.AddPass("compute", materialPass);
+                    materialPass.BindResource(new TextureBinding(
                         setLocation: 0,
                         bindingLocation: 0,
                         baseMipLevel: 0,
@@ -175,7 +180,7 @@ namespace RockEngine.Core.Rendering.Managers
                         layerCount: envMap.Image.ArrayLayers,        // all 6 layers
                         envMap
                     ));
-                    material.BindResource(new StorageImageBinding(
+                    materialPass.BindResource(new StorageImageBinding(
                      texture: output,
                      setLocation: 0,
                      bindingLocation: 1,
@@ -187,16 +192,16 @@ namespace RockEngine.Core.Rendering.Managers
                  ));
 
                     // Set push constants
-                    material.PushConstant("pc", new PrefilterPushConstants()
+                    materialPass.PushConstant("pc", new PrefilterPushConstants()
                     {
                         OutputSize = new Vector2D<int>((int)mipSize),
                         MipLevel = mip,
                         Roughness = roughness
                     });
-                    material.CmdPushConstants(batch);
+                    materialPass.CmdPushConstants(batch);
 
                     // Bind and dispatch
-                    _bindingManager.BindResourcesForMaterial(0, material, batch, true);
+                    _bindingManager.BindResourcesForMaterial(0, material, materialPass, batch, true);
                     uint groups = (mipSize + 31) / 32;
                     _computeManager.Dispatch(batch, groups, groups, 6);
                 }
@@ -219,7 +224,7 @@ namespace RockEngine.Core.Rendering.Managers
         }
         public async Task<Texture> GenerateBRDFLUT(uint size = 512)
         {
-            Texture output = null;
+            Texture? output = null;
             var batch = _context.ComputeSubmitContext.CreateBatch();
             batch.LabelObject("BRDFLUT cmd");
             output = new Texture.Builder(_context)
@@ -234,11 +239,12 @@ namespace RockEngine.Core.Rendering.Managers
                 output.Image.TransitionImageLayout(batch, ImageLayout.Undefined, ImageLayout.General);
                 batch.BindPipeline(_brdfPipeline, PipelineBindPoint.Compute);
 
-                var material = new MaterialPass(_brdfPipeline);
-                material.BindResource(new StorageImageBinding(output, 0, 0, ImageLayout.General));
-
+                var materialPass = new MaterialPass(_brdfPipeline);
+                materialPass.BindResource(new StorageImageBinding(output, 0, 0, ImageLayout.General));
+                Material material = new Material(nameof(GenerateBRDFLUT));
+                material.AddPass("compute", materialPass);
                 // Ensure proper descriptor set binding
-                _bindingManager.BindResourcesForMaterial(0, material, batch, true);
+                _bindingManager.BindResourcesForMaterial(0, material, materialPass, batch, true);
 
                 uint groups = (size + 31) / 32;
                 _computeManager.Dispatch(batch, groups, groups, 1);

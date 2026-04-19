@@ -4,7 +4,6 @@ using RockEngine.Core.ECS.Components;
 using RockEngine.Core.Rendering.Managers;
 using RockEngine.Core.Rendering.Materials;
 using RockEngine.Core.Rendering.Objects;
-using RockEngine.Core.Rendering.Passes;
 using RockEngine.Core.Rendering.ResourceBindings;
 using RockEngine.Core.Rendering.Texturing;
 using RockEngine.Vulkan;
@@ -24,6 +23,7 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
         private MaterialPass _screenMaterialPass;
         protected Dictionary<Texture, TextureBinding> Bindings = new Dictionary<Texture, TextureBinding>();
         private RckPipeline _screenPipeline;
+        private Material _screenMaterial;
 
         public static uint Order => 0;
 
@@ -67,7 +67,7 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
                 batch.SetScissor(_renderer.SwapchainTarget.Scissor);
 
                 batch.BindPipeline(_screenPipeline, PipelineBindPoint.Graphics);
-                _bindingManager.BindResourcesForMaterial(renderer.FrameIndex, _screenMaterialPass, batch);
+                _bindingManager.BindResourcesForMaterial(renderer.FrameIndex, _screenMaterial, _screenMaterialPass, batch);
                 batch.Draw(3, 1, 0, 0);
             }
         }
@@ -99,16 +99,19 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
                 .WithSubpass(GetMetadata())
                 .WithPipelineLayout(pipelineLayout);
 
-            
+
             _screenPipeline = _pipelineManager.Create(pipelineBuilder);
+            _screenMaterial = new Material("ScreenMaterial");
+
             _screenMaterialPass = new MaterialPass(_screenPipeline);
+            _screenMaterial.AddPass(Name, _screenMaterialPass);
         }
 
         internal void SetInputTexture(Texture outputTexture)
         {
-            if(!Bindings.TryGetValue(outputTexture, out var binding))
+            if (!Bindings.TryGetValue(outputTexture, out var binding))
             {
-                binding = new TextureBinding(0, 0, 0,1, ImageLayout.ShaderReadOnlyOptimal, outputTexture);
+                binding = new TextureBinding(0, 0, 0, 1, ImageLayout.ShaderReadOnlyOptimal, outputTexture);
                 Bindings.Add(outputTexture, binding);
             }
             _screenMaterialPass.BindResource(binding);
@@ -161,6 +164,6 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
         {
         }
 
-      
+
     }
 }

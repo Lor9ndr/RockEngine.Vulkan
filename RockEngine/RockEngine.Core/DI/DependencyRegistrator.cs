@@ -1,9 +1,11 @@
-﻿using SimpleInjector;
+﻿using System.Diagnostics.CodeAnalysis;
+using SimpleInjector;
 
 namespace RockEngine.Core.DI
 {
     public static class DependencyRegistrator
     {
+        [RequiresUnreferencedCode("")]
         public static void RegisterModules(Container container)
         {
             // Get all loaded assemblies

@@ -20,7 +20,7 @@ namespace RockEngine.ShaderSyntax
             return Path.Combine(packageDir, "refs", "ShaderValidator.exe");
         }
 
-        public ITagger<T> CreateTagger<T>(ITextBuffer buffer) where T : ITag
+        public ITagger<T>? CreateTagger<T>(ITextBuffer buffer) where T : ITag
         {
             string validatorPath = GetValidatorPath();
             if (!File.Exists(validatorPath))

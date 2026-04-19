@@ -43,10 +43,10 @@ namespace RockEngine.Vulkan
         }
         public bool IsFeatureEnabled<T>() where T : DeviceFeature
         {
-             return _features
-                .AsValueEnumerable()
-                .OfType<T>()
-                .Where(f => _enabledFeatureNames.Contains(f.Name)).Any();
+            return _features
+               .AsValueEnumerable()
+               .OfType<T>()
+               .Where(f => _enabledFeatureNames.Contains(f.Name)).Any();
         }
 
         /// <summary>
@@ -70,7 +70,14 @@ namespace RockEngine.Vulkan
                 .SelectMany(f => f.GetPreprocessorDefines())
                 .Distinct();
         }
+        public IEnumerable<string> GetAllShaderExtensions()
+        {
+            return _features
+                .Where(f => _enabledFeatureNames.Contains(f.Name))
+                .SelectMany(f => f.GetShaderExtensionsToEnable())
+                .Distinct();
+        }
 
-       
+
     }
 }

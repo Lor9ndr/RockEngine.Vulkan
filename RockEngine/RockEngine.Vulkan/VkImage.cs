@@ -1,19 +1,15 @@
-﻿using NLog;
-
+﻿using System.Diagnostics;
+using NLog;
 using Silk.NET.Vulkan;
-
-using System.Diagnostics;
 
 namespace RockEngine.Vulkan
 {
-    public sealed class VkImage : VkObject<Image>
+    public sealed class VkImage : VkObject<Image>, IResourceTrackable
     {
         private readonly VulkanContext _context;
         private VkDeviceMemory _imageMemory;
         private ImageCreateInfo _createInfo;
-        private uint _currentQueueFamily;
         private readonly ImageAspectFlags _aspectFlags;
-        private readonly ImageLayout[,] _layerMipLayouts;
 
         public VkDeviceMemory ImageMemory => _imageMemory;
         public Format Format => _createInfo.Format;
@@ -21,14 +17,20 @@ namespace RockEngine.Vulkan
         public Extent3D Extent => _createInfo.Extent;
         public ImageAspectFlags AspectFlags => _aspectFlags;
         public uint ArrayLayers => _createInfo.ArrayLayers;
-        public ImageUsageFlags Usage=> _createInfo.Usage;
+        public ImageUsageFlags Usage => _createInfo.Usage;
 
         public ImageCreateInfo CreateInfo { get => _createInfo; private set => _createInfo = value; }
 
-        public event Action<VkImage>? OnImageResized;
         private readonly Dictionary<(ImageAspectFlags, uint, uint, uint, uint), VkImageView> _viewsCache = new();
-        private static uint _id = 0;
-        private readonly static Logger _logger = LogManager.GetCurrentClassLogger();
+
+        private static readonly Logger _logger = LogManager.GetCurrentClassLogger();
+
+        #region IResourceTrackable related things
+        private readonly ResourceTracker _tracker = new ResourceTracker();
+        public ulong ID => _tracker.ID;
+        public IDisposable Subscribe(IResourceObserver observer) => _tracker.Subscribe(observer);
+        #endregion
+
 
         public VkImage(
             VulkanContext context,
@@ -42,16 +44,8 @@ namespace RockEngine.Vulkan
             _imageMemory = memory;
             _createInfo = createInfo;
             _aspectFlags = aspectFlags;
-            _layerMipLayouts = new ImageLayout[createInfo.MipLevels, createInfo.ArrayLayers];
-            for (uint mip = 0; mip < createInfo.MipLevels; mip++)
-            {
-                for (uint layer = 0; layer < createInfo.ArrayLayers; layer++)
-                {
-                    _layerMipLayouts[mip, layer] = createInfo.InitialLayout;
-                }
-            }
-            LabelObject($"Image ({_id++})");
-            if(_imageMemory is not null)
+            LabelObject($"Image ({ID})");
+            if (_imageMemory is not null)
             {
                 VulkanAllocator.DeviceMemoryTracker.AssociateObject(
                  _imageMemory,
@@ -103,9 +97,8 @@ namespace RockEngine.Vulkan
                 SharingMode = SharingMode.Exclusive
             };
 
-            return Create(context, imageCreateInfo, memProperties,aspectFlags);
+            return Create(context, imageCreateInfo, memProperties, aspectFlags);
         }
-
         private static unsafe Image CreateImage(VulkanContext context, in ImageCreateInfo createInfo)
         {
             Image image;
@@ -122,7 +115,12 @@ namespace RockEngine.Vulkan
             VulkanContext.Vk.GetImageMemoryRequirements(context.Device, image, out var requirements);
             var memory = VkDeviceMemory.Allocate(context, requirements, memoryProperties);
             VulkanContext.Vk.BindImageMemory(context.Device, image, memory, 0);
+
             return memory;
+        }
+        private void NotifyResize()
+        {
+            _tracker.NotifyObservers(ResourceChangeType.Resized);
         }
 
         public void Resize(Extent3D newExtent, uint? newArrayLayers = null)
@@ -138,33 +136,43 @@ namespace RockEngine.Vulkan
             UpdateResources(newImage, newMemory);
             TransitionToDefaultLayout();
 
-            OnImageResized?.Invoke(this);
+            NotifyResize();
         }
 
         private void UpdateResources(Image newImage, VkDeviceMemory newMemory)
         {
             _vkObject = newImage;
+
             _imageMemory?.Dispose();
             _imageMemory = newMemory;
+            if (_imageMemory is not null)
+            {
+                VulkanAllocator.DeviceMemoryTracker.AssociateObject(
+                 _imageMemory,
+                 _vkObject.Handle,
+                 "Image",
+                 _imageMemory.Size,
+                 0, // offset
+                 _vkObject);
+            }
         }
 
         private void TransitionToDefaultLayout()
         {
             ImageLayout targetLayout;
-            if (_aspectFlags.HasFlag( ImageAspectFlags.DepthBit))
+            if (_aspectFlags.HasFlag(ImageAspectFlags.DepthBit))
             {
                 Debug.Write("Skipping TransitionToDefaultLayout for Depth texture, you have to manually transition that");
                 return;
             }
             else
             {
-                targetLayout = ImageLayout.ColorAttachmentOptimal ;
+                targetLayout = ImageLayout.ColorAttachmentOptimal;
             }
             var batch = _context.GraphicsSubmitContext.CreateBatch();
             batch.CommandBuffer.LabelObject("VKImage.TransitionToDefaultLayout cmd");
             TransitionImageLayout(batch, ImageLayout.Undefined, targetLayout);
             batch.Submit();
-
         }
 
         public VkImageView GetOrCreateView(
@@ -190,6 +198,7 @@ namespace RockEngine.Vulkan
             var key = (view.AspectFlags, view.BaseMipLevel, view.LevelCount, view.BaseArrayLayer, view.LayerCount);
             _viewsCache.Remove(key);
         }
+
         private VkImageView CreateView(
             ImageAspectFlags aspectFlags,
             uint baseMipLevel = 0,
@@ -205,8 +214,8 @@ namespace RockEngine.Vulkan
             // Determine the correct view type based on image properties and layer count
             if (_createInfo.Flags.HasFlag(ImageCreateFlags.CreateCubeCompatibleBit))
             {
-                
-                if(layerCount % 6 == 0 && layerCount >= 6)
+
+                if (layerCount % 6 == 0 && layerCount >= 6)
                 {
                     // Cube array (multiple cubes)
                     viewType = layerCount > 6 ? ImageViewType.TypeCubeArray : ImageViewType.TypeCube;
@@ -246,7 +255,7 @@ namespace RockEngine.Vulkan
               uint srcQueueFamilyIndex = Vk.QueueFamilyIgnored,
               uint dstQueueFamilyIndex = Vk.QueueFamilyIgnored)
         {
-            
+
             var barrier = new ImageMemoryBarrier2
             {
                 SType = StructureType.ImageMemoryBarrier2,
@@ -269,90 +278,8 @@ namespace RockEngine.Vulkan
             (barrier.SrcAccessMask, barrier.DstAccessMask) = GetAccessMasks(oldLayout, newLayout, srcQueueFamilyIndex, dstQueueFamilyIndex);
             (barrier.SrcStageMask, barrier.DstStageMask) = GetPipelineStages(oldLayout, newLayout, srcQueueFamilyIndex, dstQueueFamilyIndex);
 
-            batch.PipelineBarrier([],[], [barrier], DependencyFlags.ByRegionBit);
+            batch.PipelineBarrier([], [], [barrier], DependencyFlags.ByRegionBit);
         }
-        public void GetMemoryBarrier(
-              out ImageMemoryBarrier2 barrier,
-              ImageLayout oldLayout,
-              ImageLayout newLayout,
-              uint baseMipLevel = 0,
-              uint levelCount = 1,
-              uint baseArrayLayer = 0,
-              uint layerCount = 1,
-              uint srcQueueFamilyIndex = Vk.QueueFamilyIgnored,
-              uint dstQueueFamilyIndex = Vk.QueueFamilyIgnored)
-        {
-            barrier = new ImageMemoryBarrier2
-            {
-                SType = StructureType.ImageMemoryBarrier2,
-                OldLayout = oldLayout,
-                NewLayout = newLayout,
-                Image = _vkObject,
-                SubresourceRange = new ImageSubresourceRange
-                {
-                    AspectMask = AspectFlags,
-                    BaseMipLevel = baseMipLevel,
-                    LevelCount = levelCount,
-                    BaseArrayLayer = baseArrayLayer,
-                    LayerCount = layerCount
-                },
-                SrcQueueFamilyIndex = srcQueueFamilyIndex,
-                DstQueueFamilyIndex = dstQueueFamilyIndex
-
-            };
-
-            (barrier.SrcAccessMask, barrier.DstAccessMask) = GetAccessMasks(oldLayout, newLayout, srcQueueFamilyIndex, dstQueueFamilyIndex);
-            (barrier.SrcStageMask, barrier.DstStageMask) = GetPipelineStages(oldLayout, newLayout, srcQueueFamilyIndex, dstQueueFamilyIndex);
-        }
-
-        public void TransitionImageLayout(
-             UploadBatch batch,
-             ImageLayout newLayout,
-             uint baseMipLevel,
-             uint levelCount,
-             uint baseArrayLayer,
-             uint layerCount,
-             uint srcQueueFamilyIndex,
-             uint dstQueueFamilyIndex,
-             AccessFlags2 srcAccessMask,
-             AccessFlags2 dstAccessMask)
-        {
-
-            ImageLayout oldLayout = GetMipLayout(baseMipLevel, baseArrayLayer);
-            if (oldLayout == newLayout)
-            {
-                _logger.Warn("Attempt to transition to same layout as it was");
-                return;
-            }
-
-            var barrier = new ImageMemoryBarrier2
-            {
-                SType = StructureType.ImageMemoryBarrier2,
-                OldLayout = oldLayout,
-                NewLayout = newLayout,
-                Image = _vkObject,
-                SrcAccessMask = srcAccessMask,
-                DstAccessMask = dstAccessMask,
-                SrcQueueFamilyIndex = srcQueueFamilyIndex,
-                DstQueueFamilyIndex = dstQueueFamilyIndex,
-                SubresourceRange = new ImageSubresourceRange
-                {
-                    AspectMask = AspectFlags,
-                    BaseMipLevel = baseMipLevel,
-                    LevelCount = levelCount,
-                    BaseArrayLayer = baseArrayLayer,
-                    LayerCount = layerCount
-                }
-            };
-
-            unsafe
-            {
-                batch.PipelineBarrier([], [],[barrier]);
-            }
-
-
-        }
-
 
         public bool GenerateMipmaps(UploadBatch commandBuffer)
         {
@@ -361,7 +288,6 @@ namespace RockEngine.Vulkan
                 return false;
             }
 
-            // Get total layers (6 for cube maps)
             uint layerCount = _createInfo.ArrayLayers;
 
             for (uint layer = 0; layer < layerCount; layer++)
@@ -371,41 +297,43 @@ namespace RockEngine.Vulkan
 
                 for (uint i = 1; i < MipLevels; i++)
                 {
-                    // Transition destination mip (i) of current layer to TransferDstOptimal
-                    TransitionMipLevel(commandBuffer, i, ImageLayout.TransferDstOptimal, layer);
+                    // Destination mip: initially Undefined, becomes TransferDstOptimal
+                    TransitionMipLevel(commandBuffer, i, ImageLayout.Undefined, ImageLayout.TransferDstOptimal, layer);
 
-                    // Transition source mip (i-1) of current layer to TransferSrcOptimal
-                    TransitionMipLevel(commandBuffer, i - 1, ImageLayout.TransferSrcOptimal, layer);
+                    // Source mip: always TransferDstOptimal (from previous iteration or initial setup)
+                    TransitionMipLevel(commandBuffer, i - 1, ImageLayout.Undefined, ImageLayout.TransferSrcOptimal, layer);
 
-                    // Blit between mip levels for the current layer
+                    // Blit
                     var blit = CreateBlitInfo(i, ref mipWidth, ref mipHeight, layer);
                     BlitMipLevel(commandBuffer, blit);
 
-                    // Transition source mip (i-1) to ShaderReadOnlyOptimal
-                    TransitionMipLevel(commandBuffer, i - 1, ImageLayout.ShaderReadOnlyOptimal, layer);
+                    // Source mip now ready for shader read
+                    TransitionMipLevel(commandBuffer, i - 1, ImageLayout.TransferSrcOptimal, ImageLayout.ShaderReadOnlyOptimal, layer);
                 }
 
-                // Transition final mip level to ShaderReadOnlyOptimal
+                // Final mip: TransferDstOptimal → ShaderReadOnlyOptimal
                 TransitionMipLevel(
-                       commandBuffer,
-                       mipLevel: MipLevels - 1,
-                       newLayout: ImageLayout.ShaderReadOnlyOptimal,
-                       layer: layer);
+                    commandBuffer,
+                    mipLevel: MipLevels - 1,
+                    oldLayout: ImageLayout.TransferDstOptimal,
+                    newLayout: ImageLayout.ShaderReadOnlyOptimal,
+                    layer: layer);
             }
+
             return true;
         }
 
         private bool ValidateMipmapGeneration()
         {
             var formatProperties = _context.Device.PhysicalDevice.GetFormatProperties(Format);
-            bool result =  ((formatProperties.OptimalTilingFeatures & FormatFeatureFlags.BlitSrcBit) != 0 &&
+            bool result = ((formatProperties.OptimalTilingFeatures & FormatFeatureFlags.BlitSrcBit) != 0 &&
                 (formatProperties.OptimalTilingFeatures & FormatFeatureFlags.BlitDstBit) != 0);
             if (!result)
             {
                 _logger.Warn($"Format {Format}  doesn't support blitting!");
             }
             return result;
-           
+
         }
 
         private void BlitMipLevel(UploadBatch batch, in ImageBlit blit)
@@ -462,16 +390,10 @@ namespace RockEngine.Vulkan
         private void TransitionMipLevel(
             UploadBatch batch,
             uint mipLevel,
+            ImageLayout oldLayout,
             ImageLayout newLayout,
             uint layer)
         {
-            // Get current layout for THIS mip+layer
-            ImageLayout oldLayout = GetMipLayout(mipLevel, layer);
-            if (oldLayout == newLayout)
-            {
-                return;
-            }
-
             var (srcAccess, dstAccess) = GetAccessMasks(oldLayout, newLayout, Vk.QueueFamilyIgnored, Vk.QueueFamilyIgnored);
 
             var barrier = new ImageMemoryBarrier2
@@ -491,16 +413,10 @@ namespace RockEngine.Vulkan
                 SrcAccessMask = srcAccess,
                 DstAccessMask = dstAccess
             };
-            (barrier.SrcStageMask, barrier.DstStageMask) = GetPipelineStages(oldLayout, newLayout,Vk.QueueFamilyIgnored, Vk.QueueFamilyIgnored);
+            (barrier.SrcStageMask, barrier.DstStageMask) = GetPipelineStages(oldLayout, newLayout, Vk.QueueFamilyIgnored, Vk.QueueFamilyIgnored);
 
 
-            batch.PipelineBarrier([],[], [barrier]);
-            batch.AddDependency(new DeferredOperation(() =>
-            {
-                // Update tracked layout for THIS mip+layer
-                SetMipLayout(mipLevel, newLayout, layer);
-            }));
-          
+            batch.PipelineBarrier([], [], [barrier]);
         }
 
         protected override void Dispose(bool disposing)
@@ -516,6 +432,8 @@ namespace RockEngine.Vulkan
                 // MOST LIKELY WE ARE the swapchain image
                 return;
             }
+            _tracker.NotifyObservers(ResourceChangeType.Disposed);
+            _tracker.Clear();
             VulkanAllocator.DeviceMemoryTracker.DisassociateObject(_vkObject.Handle);
 
             VulkanContext.Vk.DestroyImage(_context.Device, _vkObject, in VulkanContext.CustomAllocator<VkImage>());
@@ -526,6 +444,7 @@ namespace RockEngine.Vulkan
         {
             if (_vkObject.Handle != default)
             {
+                VulkanAllocator.DeviceMemoryTracker.DisassociateObject(_vkObject.Handle);
                 VulkanContext.Vk.DestroyImage(_context.Device, _vkObject, in VulkanContext.CustomAllocator<VkImage>());
             }
             _imageMemory?.Dispose();
@@ -534,38 +453,19 @@ namespace RockEngine.Vulkan
             _imageMemory = null!;
         }
 
-        public ImageLayout GetMipLayout(uint mipLevel, uint layer = 0)
-        {
-            return _layerMipLayouts[mipLevel, layer];
-        }
 
-        internal void SetMipLayout(uint mipLevel, ImageLayout layout, uint layer = 0)
-            => _layerMipLayouts[mipLevel, layer] = layout;
+
+
 
 
         private (PipelineStageFlags2 oldStage, PipelineStageFlags2 newStage) GetPipelineStages(ImageLayout oldLayout, ImageLayout newLayout, uint srcQueueFamilyIndex, uint dstQueueFamilyIndex)
         {
-            // Handle queue family ownership transfers
             if (srcQueueFamilyIndex != dstQueueFamilyIndex)
             {
-                // Queue family ownership transfer
-                return (oldLayout, newLayout) switch
-                {
-                    // Release from source queue
-                    (ImageLayout.ShaderReadOnlyOptimal, ImageLayout.General)
-                        => (PipelineStageFlags2.BottomOfPipeBit, PipelineStageFlags2.TopOfPipeBit),
-                    // Acquire by destination queue
-                    (ImageLayout.General, ImageLayout.ShaderReadOnlyOptimal)
-                        => (PipelineStageFlags2.BottomOfPipeBit, PipelineStageFlags2.ComputeShaderBit),
-                    (ImageLayout.Undefined, ImageLayout.General) =>
-                        (PipelineStageFlags2.TopOfPipeBit, PipelineStageFlags2.ComputeShaderBit),
-                    // Add PresentSrcKhr transitions for queue family transfer
-                    (ImageLayout.PresentSrcKhr, ImageLayout.General)
-                        => (PipelineStageFlags2.BottomOfPipeBit, PipelineStageFlags2.TopOfPipeBit),
-                    (ImageLayout.General, ImageLayout.PresentSrcKhr)
-                        => (PipelineStageFlags2.BottomOfPipeBit, PipelineStageFlags2.TopOfPipeBit),
-                    _ => throw new NotSupportedException($"Unsupported queue family transition: {oldLayout} -> {newLayout}")
-                };
+                // For queue family ownership transfer, the layout transition is not for pipeline stages but for ownership.
+                // Vulkan requires BOTTOM_OF_PIPE for release and TOP_OF_PIPE for acquire.
+                // Access masks are already set to None in GetAccessMasks for this case.
+                return (PipelineStageFlags2.BottomOfPipeBit, PipelineStageFlags2.TopOfPipeBit);
             }
 
             return (oldLayout, newLayout) switch
@@ -827,6 +727,7 @@ namespace RockEngine.Vulkan
         public VkImageView GetView(uint baseMipLevel = 0, uint levelCount = 1,
                                    uint baseArrayLayer = 0, uint layerCount = 1)
         {
+            ObjectDisposedException.ThrowIf(_disposed, this);
             return GetOrCreateView(AspectFlags, baseMipLevel, levelCount, baseArrayLayer, layerCount);
         }
     }

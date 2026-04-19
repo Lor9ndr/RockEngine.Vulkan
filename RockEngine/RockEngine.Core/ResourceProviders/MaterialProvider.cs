@@ -1,6 +1,4 @@
 ﻿using MessagePack;
-
-using RockEngine.Assets;
 using RockEngine.Core.Assets;
 using RockEngine.Core.Rendering.Materials;
 
@@ -20,10 +18,10 @@ namespace RockEngine.Core.ResourceProviders
 
         // Helper properties for serialization
         [Key(2)]
-        public AssetReference<MaterialAsset> AssetReference => _source as AssetReference<MaterialAsset>;
+        public AssetReference<MaterialAsset>? AssetReference => _source as AssetReference<MaterialAsset>;
 
         [IgnoreMember]
-        public Material DirectMaterial => _source as Material;
+        public Material? DirectMaterial => _source as Material;
 
         // For assets
         public MaterialProvider(AssetReference<MaterialAsset> assetRef)

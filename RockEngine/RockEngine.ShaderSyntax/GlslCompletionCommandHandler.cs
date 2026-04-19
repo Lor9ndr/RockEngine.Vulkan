@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Runtime.InteropServices;
-using System.Threading;
 using Microsoft.VisualStudio;
 using Microsoft.VisualStudio.Language.Intellisense;
 using Microsoft.VisualStudio.OLE.Interop;
@@ -16,7 +15,7 @@ namespace RockEngine.ShaderSyntax
         private readonly ITextView _textView;
         private readonly GlslCompletionHandlerProvider _provider;
         private IOleCommandTarget _nextCommandHandler;
-        private ICompletionSession _session;
+        private ICompletionSession? _session;
 
         internal GlslCompletionCommandHandler(IVsTextView textViewAdapter, ITextView textView, GlslCompletionHandlerProvider provider)
         {
@@ -92,7 +91,10 @@ namespace RockEngine.ShaderSyntax
         {
             SnapshotPoint? caretPoint = _textView.Caret.Position.Point.GetPoint(
                 b => !b.ContentType.IsOfType("projection"), PositionAffinity.Predecessor);
-            if (!caretPoint.HasValue) return false;
+            if (!caretPoint.HasValue)
+            {
+                return false;
+            }
 
             _session = _provider.CompletionBroker.CreateCompletionSession(
                 _textView,

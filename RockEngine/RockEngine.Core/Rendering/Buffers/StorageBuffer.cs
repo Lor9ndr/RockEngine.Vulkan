@@ -1,8 +1,6 @@
-﻿using RockEngine.Vulkan;
-
+﻿using System.Runtime.CompilerServices;
+using RockEngine.Vulkan;
 using Silk.NET.Vulkan;
-
-using System.Runtime.CompilerServices;
 
 namespace RockEngine.Core.Rendering.Buffers
 {
@@ -17,6 +15,7 @@ namespace RockEngine.Core.Rendering.Buffers
         public ulong Capacity { get; private set; }
         public ulong Stride => _stride;
 
+        
         public StorageBuffer(VulkanContext context, ulong capacity,
             BufferUsageFlags bufferUsageFlags = BufferUsageFlags.StorageBufferBit |
             BufferUsageFlags.TransferDstBit | BufferUsageFlags.TransferSrcBit)
@@ -36,11 +35,13 @@ namespace RockEngine.Core.Rendering.Buffers
                 MemoryPropertyFlags.DeviceLocalBit);
         }
 
+        
         public void StageData(UploadBatch batch, T[] data, ulong startIndex = 0)
         {
             StageData(batch, data.AsSpan(), startIndex);
         }
 
+        
         public void StageData(UploadBatch batch, Span<T> data, ulong startIndex = 0)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
@@ -53,7 +54,7 @@ namespace RockEngine.Core.Rendering.Buffers
             var offset = startIndex * _stride;
 
             // Write to staging buffer
-            batch.StageToBuffer(data, _deviceBuffer, offset,size);
+            batch.StageToBuffer(data, _deviceBuffer, offset, size);
         }
 
         /// <summary>
@@ -62,10 +63,11 @@ namespace RockEngine.Core.Rendering.Buffers
         /// <param name="newCapacity">new capacity to change</param>
         /// <param name="batch">Graphics batch</param>
 
+        
         public void Resize(ulong newCapacity, UploadBatch batch)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
-            if(batch.SubmitContext.QueueFamily != _context.Device.GraphicsQueue.FamilyIndex)
+            if (batch.SubmitContext.QueueFamily != _context.Device.GraphicsQueue.FamilyIndex)
             {
                 throw new InvalidOperationException("Invalid batch sended, Pass the graphics batch");
             }
@@ -102,7 +104,7 @@ namespace RockEngine.Core.Rendering.Buffers
                     Offset = 0,
                     Size = copySize
                 };
-                
+
                 batch.PipelineBarrier(
                     bufferMemoryBarriers: [srcBarrier]
                 );

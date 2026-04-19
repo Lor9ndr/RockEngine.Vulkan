@@ -9,7 +9,7 @@ namespace RockEngine.Tests.Buffers
     [TestFixture]
     public class IndirectBufferTests : TestBase
     {
-        private VulkanContext _context;
+        private new VulkanContext? _context;
 
         [OneTimeSetUp]
         public void OneTimeSetUp()
@@ -18,6 +18,7 @@ namespace RockEngine.Tests.Buffers
         }
 
         [Test]
+        
         public async Task Create_ShouldSucceed()
         {
             ulong initialCapacity = 10;
@@ -32,6 +33,7 @@ namespace RockEngine.Tests.Buffers
         }
 
         [Test]
+        
         public async Task StageCommands_ShouldWriteData()
         {
             var commands = new[]
@@ -49,6 +51,7 @@ namespace RockEngine.Tests.Buffers
         }
 
         [Test]
+        
         public async Task StageCommands_ShouldExpandBufferIfNeeded()
         {
             ulong initialCapacity = 1;
@@ -69,6 +72,7 @@ namespace RockEngine.Tests.Buffers
         }
 
         [Test]
+        
         public async Task Resize_ShouldChangeCapacity()
         {
             ulong initialCapacity = 5;
@@ -85,6 +89,7 @@ namespace RockEngine.Tests.Buffers
         }
 
         [Test]
+        
         public async Task Dispose_ShouldReleaseResources()
         {
             var indirectBuffer = new IndirectBuffer(_context, 1);

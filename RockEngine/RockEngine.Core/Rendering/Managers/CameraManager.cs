@@ -6,12 +6,12 @@ namespace RockEngine.Core.Rendering.Managers
     public class CameraManager
     {
         private readonly List<Camera> _activeCameras = new List<Camera>();
-        
+
         public IReadOnlyList<Camera> RegisteredCameras => _activeCameras;
 
         public CameraManager()
         {
-           
+
         }
 
         public int Register(Camera camera, WorldRenderer renderer)

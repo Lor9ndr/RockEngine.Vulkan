@@ -53,8 +53,6 @@
     <ProjectReference Include="..\RockEngine.ShaderPreProcessor\RockEngine.ShaderPreProcessor.csproj" />
     <ProjectReference Include="..\RockEngine.Shading\RockEngine.Shading.csproj" />
     <ProjectReference Include="..\RockEngine.Vulkan\RockEngine.Vulkan.csproj" />
-    <ProjectReference Include="..\RockEngine.Analyzer\RockEngine.Analyzer\RockEngine.Analyzer.csproj" ReferenceOutputAssembly="false" OutputItemType="Analyzer" />
-    <ProjectReference Include="..\RockEngine.Analyzer\RockEngine.Analyzer\RockEngine.CodeFixes.csproj" ReferenceOutputAssembly="false" OutputItemType="Analyzer" />
   </ItemGroup>
 
   <ItemGroup>

@@ -2,7 +2,7 @@
 {
     public interface IAssetManager
     {
-        string BasePath { get;}
+        string BasePath { get; }
 
         Task<T> GetAssetAsync<T>(Guid assetId) where T : class, IAsset;
         Task<T> LoadAssetAsync<T>(string assetPath) where T : class, IAsset;

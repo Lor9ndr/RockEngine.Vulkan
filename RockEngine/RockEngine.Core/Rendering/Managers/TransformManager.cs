@@ -1,13 +1,10 @@
-﻿using NLog;
-
+﻿using System.Numerics;
+using NLog;
 using RockEngine.Core.Rendering.Buffers;
 using RockEngine.Core.Rendering.Materials;
 using RockEngine.Core.Rendering.ResourceBindings;
 using RockEngine.Vulkan;
-
 using Silk.NET.Vulkan;
-
-using System.Numerics;
 
 namespace RockEngine.Core.Rendering.Managers
 {
@@ -35,6 +32,7 @@ namespace RockEngine.Core.Rendering.Managers
 
         private static readonly Logger _logger = LogManager.GetCurrentClassLogger();
 
+        
         public TransformManager(VulkanContext context, uint maxFramesInFlight)
         {
             _context = context;
@@ -152,12 +150,17 @@ namespace RockEngine.Core.Rendering.Managers
         public bool AreMeshGroupIndicesConsecutive(Material material, IMesh mesh)
         {
             var indices = GetConsecutiveIndicesForMeshGroup(material, mesh);
-            if (indices.Count <= 1) return true;
+            if (indices.Count <= 1)
+            {
+                return true;
+            }
 
             for (int i = 1; i < indices.Count; i++)
             {
                 if (indices[i] != indices[i - 1] + 1)
+                {
                     return false;
+                }
             }
             return true;
         }
@@ -193,6 +196,7 @@ namespace RockEngine.Core.Rendering.Managers
         /// <summary>
         /// Updates GPU buffers only if changes exist for current frame
         /// </summary>
+        
         public async ValueTask UpdateAsync(uint currentFrameIndex)
         {
             int frameVersion = _frameVersions[currentFrameIndex];

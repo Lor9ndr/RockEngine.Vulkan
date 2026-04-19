@@ -23,7 +23,7 @@ namespace RockEngine.Editor.Layers
             }
             var cam = _world.CreateEntity();
             var debugCam = cam.AddComponent<DebugCamera>();
-            cam.Transform.Position = new System.Numerics.Vector3(0,10, 0);
+            cam.Transform.Position = new System.Numerics.Vector3(0, 10, 0);
             _isAttached = true;
 
             return Task.CompletedTask;

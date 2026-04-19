@@ -1,8 +1,6 @@
-﻿using RockEngine.Vulkan.Builders;
-
+﻿using System.Buffers;
+using RockEngine.Vulkan.Builders;
 using Silk.NET.Vulkan;
-
-using System.Buffers;
 
 namespace RockEngine.Core.Builders
 {
@@ -19,7 +17,7 @@ namespace RockEngine.Core.Builders
             _attributeDescription.AddRange(attributeDescription);
             return this;
         }
-        public VulkanPipelineVertexInputStateBuilder Add<T>() where T:IVertex
+        public VulkanPipelineVertexInputStateBuilder Add<T>() where T : IVertex
         {
             _vertexBindingDescriptions.Add(T.GetBindingDescription());
             _attributeDescription.AddRange(T.GetAttributeDescriptions());

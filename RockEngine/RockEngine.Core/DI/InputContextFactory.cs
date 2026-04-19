@@ -13,6 +13,6 @@ namespace RockEngine.Core.DI
         {
             _container = container;
         }
-        public IInputContext GetInputContext()=> _container.GetInstance<IWindow>().CreateInput();
+        public IInputContext GetInputContext() => _container.GetInstance<IWindow>().CreateInput();
     }
 }

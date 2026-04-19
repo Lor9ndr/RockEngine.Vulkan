@@ -24,7 +24,9 @@ namespace RockEngine.Vulkan
         public VkFence GetFence()
         {
             if (_disposed)
+            {
                 throw new ObjectDisposedException(nameof(FencePool));
+            }
 
             if (_availableFences.TryTake(out var fence))
             {
@@ -44,7 +46,9 @@ namespace RockEngine.Vulkan
         public void ReturnFence(VkFence fence)
         {
             if (fence == null)
+            {
                 throw new ArgumentNullException(nameof(fence));
+            }
 
             if (_disposed)
             {
@@ -59,7 +63,9 @@ namespace RockEngine.Vulkan
         public void Dispose()
         {
             if (_disposed)
+            {
                 return;
+            }
 
             _disposed = true;
             foreach (var fence in _availableFences)

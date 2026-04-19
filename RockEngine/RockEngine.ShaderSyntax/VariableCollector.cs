@@ -7,6 +7,10 @@ namespace RockEngine.ShaderSyntax
 {
     internal static class VariableCollector
     {
+        private static List<VariableInfo>? _cachedVariables;
+        private static int _lastVersion = -1;
+
+
         private static readonly HashSet<string> GlslTypes = new HashSet<string>
         {
             "void", "bool", "int", "uint", "float", "double",
@@ -56,7 +60,10 @@ namespace RockEngine.ShaderSyntax
                         variables.Add(new VariableInfo { Type = type, Name = name, Span = span });
                         pos += commaMatch.Length;
                     }
-                    else break;
+                    else
+                    {
+                        break;
+                    }
                 }
             }
             return variables;

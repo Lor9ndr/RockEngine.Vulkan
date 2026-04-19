@@ -45,7 +45,7 @@ namespace RockEngine.Assets
             }
         }
 
-        public bool TryGet(string path, out IAsset asset)
+        public bool TryGet(string path, out IAsset? asset)
         {
             var normalizedPath = AssetPathNormalizer.Normalize(path);
 
@@ -53,7 +53,9 @@ namespace RockEngine.Assets
             try
             {
                 if (_pathToId.TryGetValue(normalizedPath, out var id))
+                {
                     return _assetsById.TryGetValue(id, out asset);
+                }
 
                 asset = null;
                 return false;
@@ -70,8 +72,10 @@ namespace RockEngine.Assets
             try
             {
                 if (_assetsByType.TryGetValue(typeof(T), out var ids))
+                {
                     return ids.Select(id => _assetsById.TryGetValue(id, out var asset) ? asset : null)
                              .Where(asset => asset != null)!;
+                }
 
                 return Enumerable.Empty<IAsset>();
             }

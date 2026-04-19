@@ -1,4 +1,7 @@
-﻿using RockEngine.Core.Builders;
+﻿using System.Numerics;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using RockEngine.Core.Builders;
 using RockEngine.Core.DI;
 using RockEngine.Core.Diagnostics;
 using RockEngine.Core.ECS.Components;
@@ -8,13 +11,8 @@ using RockEngine.Core.Rendering.Managers;
 using RockEngine.Core.Rendering.Materials;
 using RockEngine.Core.Rendering.Objects;
 using RockEngine.Vulkan;
-
 using Silk.NET.Core;
 using Silk.NET.Vulkan;
-
-using System.Numerics;
-using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
 
 namespace RockEngine.Core.Rendering.Passes.SubPasses
 {
@@ -31,7 +29,7 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
 
         private RckPipeline _directionalShadowPipeline;
         private RckPipeline _pointShadowPipeline;
-        private RckPipeline _csmShadowPipeline; 
+        private RckPipeline _csmShadowPipeline;
         private Bool32 _supportsMultiDraw;
         private int _indirectCommandStride;
         private bool _disposed;
@@ -88,10 +86,10 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
             ConfigurePointPipeline(pointPipelineBuilder);
             _pointShadowPipeline = _pipelineManager.Create(pointPipelineBuilder);
 
-            // NEW: CSM pipeline for directional lights
-             var csmVertShader = VkShaderModule.Create(_context, shaderManager.GetShader("CSMShadow.vert"), ShaderStageFlags.VertexBit);
-             var csmGeomShader = VkShaderModule.Create(_context, shaderManager.GetShader("CSMShadow.geom"), ShaderStageFlags.GeometryBit);
-             var csmFragShader = VkShaderModule.Create(_context, shaderManager.GetShader("CSMShadow.frag"), ShaderStageFlags.FragmentBit);
+            // CSM pipeline for directional lights
+            var csmVertShader = VkShaderModule.Create(_context, shaderManager.GetShader("CSMShadow.vert"), ShaderStageFlags.VertexBit);
+            var csmGeomShader = VkShaderModule.Create(_context, shaderManager.GetShader("CSMShadow.geom"), ShaderStageFlags.GeometryBit);
+            var csmFragShader = VkShaderModule.Create(_context, shaderManager.GetShader("CSMShadow.frag"), ShaderStageFlags.FragmentBit);
 
             using var csmPipelineBuilder = GraphicsPipelineBuilder.CreateDefault<ShadowPassStrategy>(_context, "ShadowCSM", IoC.Container, [csmVertShader, csmGeomShader, csmFragShader]);
             ConfigureCSMPipeline(csmPipelineBuilder);
@@ -213,7 +211,7 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
 
                         ShadowPointPushConstants pushConstants = new ShadowPointPushConstants
                         {
-                            LightPosition = new Vector4(light.Entity.Transform.WorldPosition,0),
+                            LightPosition = new Vector4(light.Entity.Transform.WorldPosition, 0),
                             FarPlane = light.Radius,
                             ShadowIndex = (uint)lightData.ShadowParams.W
                         };
@@ -253,7 +251,7 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
             // Push constants based on light type
             materialPass.CmdPushConstants(batch);
             materialPass.BindResource(matrixBinding);
-            _bindingManager.BindResourcesForMaterial(frameIndex, materialPass, batch);
+            _bindingManager.BindResourcesForMaterial(frameIndex, material, materialPass, batch);
 
             // Render shadow-casting geometry
             var drawGroups = CollectionsMarshal.AsSpan(_indirectCommands.GetDrawGroups<GeometryPass>());
@@ -273,11 +271,11 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
                 {
                     for (uint j = 0; j < drawGroup.Count; j++)
                     {
-                            batch.DrawIndexedIndirect(
-                            indirectBuffer,
-                            1,
-                            drawGroup.ByteOffset + (ulong)(j * _indirectCommandStride),
-                            (uint)_indirectCommandStride);
+                        batch.DrawIndexedIndirect(
+                        indirectBuffer,
+                        1,
+                        drawGroup.ByteOffset + (ulong)(j * _indirectCommandStride),
+                        (uint)_indirectCommandStride);
                     }
                 }
             }
@@ -289,6 +287,8 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
             public System.Numerics.Vector4 LightPosition;      // Used for point lights
             public float FarPlane;             // Used for point lights
             public uint ShadowIndex;           // Index into shadow map array
+            private float _padding1;
+            private float _padding2;
         }
 
         [GLSLStruct(GLSLMemoryLayout.Std140)]
@@ -354,11 +354,14 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
 
         public void Dispose()
         {
-            if (_disposed) return;
+            if (_disposed)
+            {
+                return;
+            }
 
             _directionalShadowPipeline?.Dispose();
             _pointShadowPipeline?.Dispose();
-            _csmShadowPipeline?.Dispose(); 
+            _csmShadowPipeline?.Dispose();
             _disposed = true;
         }
     }

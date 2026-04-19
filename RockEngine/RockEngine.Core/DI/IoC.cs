@@ -33,9 +33,9 @@ namespace RockEngine.Core.DI
             DependencyRegistrator.RegisterModules(Container);
 
             // Verify container for configuration errors
-/*#if DEBUG
-            Container.Verify();
-#endif*/
+            /*#if DEBUG
+                        Container.Verify();
+            #endif*/
 
             _isInitialized = true;
         }

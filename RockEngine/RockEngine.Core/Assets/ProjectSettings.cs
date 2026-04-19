@@ -21,7 +21,7 @@ namespace RockEngine.Core.Assets
         public int MSAA { get; set; } = 4;
         [Key(6)]
         public int MaxTextureSize { get; set; } = 4096;
-        
+
         [Key(7)]
         // Build settings
         public bool DevelopmentBuild { get; set; } = true;

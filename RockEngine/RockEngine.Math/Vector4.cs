@@ -6,12 +6,18 @@
 
         public Vector4(float x, float y, float z, float w)
         {
-            X = x; Y = y; Z = z; W = w;
+            X = x;
+            Y = y;
+            Z = z;
+            W = w;
         }
 
         public Vector4(Vector3 xyz, float w)
         {
-            X = xyz.X; Y = xyz.Y; Z = xyz.Z; W = w;
+            X = xyz.X;
+            Y = xyz.Y;
+            Z = xyz.Z;
+            W = w;
         }
 
         public static Vector4 operator +(Vector4 a, Vector4 b)

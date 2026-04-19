@@ -1,7 +1,7 @@
 ﻿namespace RockEngine.Core.Assets
 {
     namespace RockEngine.Core.Assets.AssetData
-{
+    {
         /// <summary>
         /// Represents texture comparison functions (for depth textures)
         /// </summary>

@@ -20,7 +20,11 @@ namespace RockEngine.ShaderSyntax
                 foreach (var line in lines)
                 {
                     var trimmed = line.Trim().TrimEnd(',', ';');
-                    if (string.IsNullOrWhiteSpace(trimmed)) continue;
+                    if (string.IsNullOrWhiteSpace(trimmed))
+                    {
+                        continue;
+                    }
+
                     var parts = trimmed.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
                     if (parts.Length == 2)
                     {

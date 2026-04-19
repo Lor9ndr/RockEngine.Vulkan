@@ -1,12 +1,5 @@
-﻿using ImGuiNET;
-
-using System.Numerics;
-
+﻿using System.Numerics;
 using ImGuiNET;
-using System.Numerics;
-
-using ImGuiNET;
-using System.Numerics;
 
 namespace RockEngine.Editor.Extensions
 {
@@ -24,7 +17,7 @@ namespace RockEngine.Editor.Extensions
         /// <summary>
         /// Creates a button with a Font Awesome icon and optional tooltip
         /// </summary>
-        public static bool IconButton(string icon, string tooltip = null, Vector2? size = null)
+        public static bool IconButton(string icon, string? tooltip = null, Vector2? size = null)
         {
             bool result = ImGui.Button($"{icon}##{icon}_{tooltip}", size ?? Vector2.Zero);
 
@@ -39,7 +32,7 @@ namespace RockEngine.Editor.Extensions
         /// <summary>
         /// Creates a small icon button (for toolbars)
         /// </summary>
-        public static bool SmallIconButton(string icon, string tooltip = null)
+        public static bool SmallIconButton(string icon, string? tooltip = null)
         {
             ImGui.PushStyleVar(ImGuiStyleVar.FramePadding, new Vector2(4, 4));
             bool result = IconButton(icon, tooltip, new Vector2(ImGui.GetFrameHeight(), ImGui.GetFrameHeight()));

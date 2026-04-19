@@ -12,7 +12,7 @@ namespace RockEngine.Vulkan
         public nint PImmutableSamplers { get; internal set; }
 
 
-        public DescriptorSetLayoutBindingReflected(string? name, uint binding, DescriptorType descriptorType, uint descriptorCount, ShaderStageFlags stageFlags, nint pImmutableSamplers )
+        public DescriptorSetLayoutBindingReflected(string? name, uint binding, DescriptorType descriptorType, uint descriptorCount, ShaderStageFlags stageFlags, nint pImmutableSamplers)
         {
             Name = name;
             Binding = binding;
@@ -23,7 +23,7 @@ namespace RockEngine.Vulkan
         }
 
 
-             public DescriptorSetLayoutBindingReflected(string? name, uint binding, DescriptorType descriptorType, uint descriptorCount, ShaderStageFlags stageFlags)
+        public DescriptorSetLayoutBindingReflected(string? name, uint binding, DescriptorType descriptorType, uint descriptorCount, ShaderStageFlags stageFlags)
         {
             Name = name;
             Binding = binding;

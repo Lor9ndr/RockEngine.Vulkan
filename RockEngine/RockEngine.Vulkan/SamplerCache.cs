@@ -1,6 +1,5 @@
-﻿using Silk.NET.Vulkan;
-
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
+using Silk.NET.Vulkan;
 
 namespace RockEngine.Vulkan
 {
@@ -29,7 +28,7 @@ namespace RockEngine.Vulkan
             }
             return sampler;
         }
-        
+
 
         private readonly record struct SamplerKey(SamplerCreateInfo CreateInfo);
 

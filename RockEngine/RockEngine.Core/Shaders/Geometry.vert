@@ -1,5 +1,4 @@
 #version 460
-#extension GL_KHR_vulkan_glsl:enable
 #include "Include/common.glsl"
 
 layout(location = 0) in vec3 aPosition;

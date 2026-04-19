@@ -1,7 +1,6 @@
-﻿using RockEngine.Core.Rendering.RenderTargets;
-using RockEngine.Core.Rendering.Objects;
+﻿using RockEngine.Core.Rendering.Objects;
+using RockEngine.Core.Rendering.RenderTargets;
 using RockEngine.Vulkan;
-
 using Silk.NET.Vulkan;
 
 namespace RockEngine.Editor.Thumbnails

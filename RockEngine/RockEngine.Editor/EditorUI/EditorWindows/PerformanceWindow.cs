@@ -1,12 +1,10 @@
-﻿using ImGuiNET;
-
+﻿using System.Diagnostics;
+using System.Numerics;
+using System.Text.RegularExpressions;
+using ImGuiNET;
 using RockEngine.Core.Diagnostics;
 using RockEngine.Core.Helpers;
 using RockEngine.Vulkan;
-
-using System.Diagnostics;
-using System.Numerics;
-using System.Text.RegularExpressions;
 
 
 namespace RockEngine.Editor.EditorUI.EditorWindows
@@ -777,7 +775,9 @@ namespace RockEngine.Editor.EditorUI.EditorWindows
         private void DrawStackTraceWithFileButtons(string stackTrace, string uniqueId, string label = "View")
         {
             if (string.IsNullOrEmpty(stackTrace))
+            {
                 return;
+            }
 
             // View button
             if (ImGui.SmallButton($"{Icons.Eye} {label}##{uniqueId}"))
@@ -941,12 +941,18 @@ namespace RockEngine.Editor.EditorUI.EditorWindows
                 {
                     foreach (var (deviceMemory, objects) in allObjects)
                     {
-                        if (objects.Length == 0) continue;
+                        if (objects.Length == 0)
+                        {
+                            continue;
+                        }
 
                         var deviceInfo = VulkanAllocator.DeviceMemoryTracker.GetDeviceMemoryDetails()
                             .FirstOrDefault(info => info.DeviceMemory.Handle == deviceMemory.Handle);
 
-                        if (deviceInfo == null) continue;
+                        if (deviceInfo == null)
+                        {
+                            continue;
+                        }
 
                         if (ImGui.TreeNode($"{deviceInfo.TypeName}: {FormatSize((long)deviceInfo.AllocationSize)} ({objects.Length} objects)"))
                         {
@@ -1192,14 +1198,18 @@ namespace RockEngine.Editor.EditorUI.EditorWindows
         private (string FilePath, int LineNumber) ParseStackTraceForFileInfo(string stackTrace)
         {
             if (string.IsNullOrEmpty(stackTrace))
+            {
                 return (string.Empty, 0);
+            }
 
             var lines = stackTrace.Split('\n');
             foreach (var line in lines)
             {
                 var info = ParseStackTraceLineForFileInfo(line);
                 if (!string.IsNullOrEmpty(info.FilePath))
+                {
                     return info;
+                }
             }
 
             return (string.Empty, 0);
@@ -1210,7 +1220,9 @@ namespace RockEngine.Editor.EditorUI.EditorWindows
             var result = new List<(string, int)>();
 
             if (string.IsNullOrEmpty(stackTrace))
+            {
                 return result;
+            }
 
             var lines = stackTrace.Split('\n');
             foreach (var line in lines)
@@ -1228,17 +1240,23 @@ namespace RockEngine.Editor.EditorUI.EditorWindows
         private bool IsValidPath(string path)
         {
             if (string.IsNullOrWhiteSpace(path))
+            {
                 return false;
+            }
 
             try
             {
                 // Check for Windows path
                 if (WindowsPathRegex().IsMatch(path))
+                {
                     return true;
+                }
 
                 // Check for Unix path
                 if (UnixPathRegex().IsMatch(path))
+                {
                     return true;
+                }
 
                 // Check if path exists
                 return File.Exists(path) || Directory.Exists(path);
@@ -1357,11 +1375,13 @@ namespace RockEngine.Editor.EditorUI.EditorWindows
 
 
 
-        private string FindExecutable(string exeName)
+        private string? FindExecutable(string exeName)
         {
             // First try direct path
             if (File.Exists(exeName))
+            {
                 return Path.GetFullPath(exeName);
+            }
 
             // Check PATH environment variable
             string pathEnv = Environment.GetEnvironmentVariable("PATH");
@@ -1374,7 +1394,9 @@ namespace RockEngine.Editor.EditorUI.EditorWindows
                     {
                         string fullPath = Path.Combine(dir, exeName);
                         if (File.Exists(fullPath))
+                        {
                             return fullPath;
+                        }
                     }
                     catch
                     {
@@ -1462,11 +1484,15 @@ namespace RockEngine.Editor.EditorUI.EditorWindows
                 {
                     var slnFiles = Directory.GetFiles(dir, "*.sln");
                     if (slnFiles.Length > 0)
+                    {
                         return dir;
+                    }
 
                     var parent = Directory.GetParent(dir);
                     if (parent == null)
+                    {
                         break;
+                    }
 
                     dir = parent.FullName;
                 }
@@ -1570,7 +1596,10 @@ namespace RockEngine.Editor.EditorUI.EditorWindows
 
                     foreach (var stat in _currentStats.ByResourceType)
                     {
-                        if (stat.CurrentTotal == 0) continue;
+                        if (stat.CurrentTotal == 0)
+                        {
+                            continue;
+                        }
 
                         ImGui.TableNextRow();
 

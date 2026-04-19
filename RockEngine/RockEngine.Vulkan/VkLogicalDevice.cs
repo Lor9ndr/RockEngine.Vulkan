@@ -1,5 +1,4 @@
-﻿using System.Runtime.InteropServices;
-using Silk.NET.Core;
+﻿using Silk.NET.Core;
 using Silk.NET.Core.Native;
 using Silk.NET.Vulkan;
 using Silk.NET.Vulkan.Extensions.KHR;
@@ -18,7 +17,7 @@ namespace RockEngine.Vulkan
         private readonly VkQueue _presentQueue;
         private readonly VkQueue _graphicsQueue;
         private readonly VkQueue _computeQueue;
-        private readonly VkQueue _transferQueue; 
+        private readonly VkQueue _transferQueue;
         private readonly VkPhysicalDevice _physicalDevice;
         private readonly QueueFamilyIndices _queueFamilyIndices;
 
@@ -28,7 +27,7 @@ namespace RockEngine.Vulkan
 
         public VkQueue ComputeQueue => _computeQueue;
 
-        public VkQueue TransferQueue => _transferQueue; 
+        public VkQueue TransferQueue => _transferQueue;
 
         public VkPhysicalDevice PhysicalDevice => _physicalDevice;
 
@@ -45,7 +44,7 @@ namespace RockEngine.Vulkan
             _transferQueue = transferQueue;
             _queueFamilyIndices = indices;
             _physicalDevice = physicalDevice;
-           
+
         }
         internal void NameQueues()
         {
@@ -89,7 +88,9 @@ namespace RockEngine.Vulkan
             // Build extension list: base extensions + registry extensions
             var allExtensions = new HashSet<string>(extensions);
             foreach (var ext in registry.GetAllRequiredExtensions())
+            {
                 allExtensions.Add(ext);
+            }
 
             // Only require KHR_swapchain if we have a surface
             if (surface != null)
@@ -112,7 +113,10 @@ namespace RockEngine.Vulkan
             HashSet<uint> uniqueQueueFamilies = new HashSet<uint>();
             uniqueQueueFamilies.Add(indices.GraphicsFamily!.Value);
             if (indices.PresentFamily.HasValue)
+            {
                 uniqueQueueFamilies.Add(indices.PresentFamily.Value);
+            }
+
             uniqueQueueFamilies.Add(indices.ComputeFamily!.Value);
             uniqueQueueFamilies.Add(indices.TransferFamily!.Value);
 

@@ -20,7 +20,7 @@ namespace RockEngine.Core.Shaders
         [Out] public Vector2 vTexCoord;
 
         [ShaderMain]
-        public void  Main()
+        public void Main()
         {
             // This is actual C# code that gets converted to GLSL!
             Vector4 position = new Vector4(aPosition, 1.0f);

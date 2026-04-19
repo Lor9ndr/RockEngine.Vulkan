@@ -176,7 +176,10 @@ namespace RockEngine.Vulkan
 
                     sb.Append($"    - Type: {objType}, Handle: 0x{handle:X16}");
                     if (!string.IsNullOrEmpty(objName))
+                    {
                         sb.Append($", Name: \"{objName}\"");
+                    }
+
                     sb.AppendLine();
                 }
             }

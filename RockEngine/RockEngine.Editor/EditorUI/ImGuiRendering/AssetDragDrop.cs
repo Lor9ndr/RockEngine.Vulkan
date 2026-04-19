@@ -1,9 +1,7 @@
-﻿using ImGuiNET;
-
+﻿using System.Runtime.InteropServices;
+using ImGuiNET;
 using RockEngine.Assets;
 using RockEngine.Core.Assets;
-
-using System.Runtime.InteropServices;
 
 namespace RockEngine.Editor.EditorUI.ImGuiRendering
 {

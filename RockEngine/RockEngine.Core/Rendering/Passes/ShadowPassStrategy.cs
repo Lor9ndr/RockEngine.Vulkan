@@ -1,13 +1,11 @@
-﻿using RockEngine.Core.Diagnostics;
+﻿using System.Collections.Concurrent;
+using RockEngine.Core.Diagnostics;
 using RockEngine.Core.ECS.Components;
 using RockEngine.Core.Rendering.Managers;
 using RockEngine.Core.Rendering.Passes.SubPasses;
 using RockEngine.Core.Rendering.RenderTargets;
 using RockEngine.Vulkan;
-
 using Silk.NET.Vulkan;
-
-using System.Collections.Concurrent;
 
 namespace RockEngine.Core.Rendering.Passes
 {
@@ -16,7 +14,7 @@ namespace RockEngine.Core.Rendering.Passes
                                            ShadowManager shadowManager,
                                            GraphicsContext graphicsContext,
                                            CameraManager cameraManager,
-                                           IEnumerable<IRenderSubPass> subPasses) 
+                                           IEnumerable<IRenderSubPass> subPasses)
         : PassStrategyBase(context, subPasses), IDisposable
     {
         private readonly ConcurrentDictionary<Light, ShadowRenderTarget> _shadowTargets = new();
@@ -25,6 +23,7 @@ namespace RockEngine.Core.Rendering.Passes
         public override int Order => -10000;
         private static readonly float[] _shadowPassColors = [0.2f, 0.2f, 0.2f, 1.0f];
 
+        
         public override async ValueTask Execute(RenderContext renderContext, WorldRenderer renderer)
         {
             var shadowCastingLights = lightManager.GetShadowCastingLights();
@@ -41,7 +40,7 @@ namespace RockEngine.Core.Rendering.Passes
             for (int i = 0; i < lst.Count; i++)
             {
                 Light? light = lst[i];
-                await RenderShadowMap(primaryBatch, renderContext.GraphicsContext, light,renderer, i);
+                await RenderShadowMap(primaryBatch, renderContext.GraphicsContext, light, renderer, i);
             }
             primaryBatch.Submit();
 
@@ -105,7 +104,10 @@ namespace RockEngine.Core.Rendering.Passes
 
         public override void Dispose()
         {
-            if (_disposed) return;
+            if (_disposed)
+            {
+                return;
+            }
 
             foreach (var (_, target) in _shadowTargets)
             {

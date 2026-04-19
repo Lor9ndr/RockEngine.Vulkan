@@ -1,10 +1,8 @@
 ﻿using RockEngine.Core.Rendering.Objects;
 using RockEngine.Core.Rendering.ResourceBindings;
 using RockEngine.Vulkan;
-
 using Silk.NET.Vulkan;
-
-using System.Reflection;
+using static RockEngine.Vulkan.ShaderReflectionData;
 
 namespace RockEngine.Core.Rendering.Materials
 {
@@ -12,7 +10,7 @@ namespace RockEngine.Core.Rendering.Materials
     {
         public string SubpassName { get; }
         public string PipelineName { get; }
-        public ShaderReflectionData ReflectionData { get; }
+        public MergedShaderReflectionData ReflectionData { get; }
 
         private readonly List<ResourceBinding> _defaultBindings = new();
         private readonly Dictionary<string, object> _defaultPushConstants = new();
@@ -21,32 +19,63 @@ namespace RockEngine.Core.Rendering.Materials
         public IReadOnlyList<ResourceBinding> DefaultBindings => _defaultBindings.AsReadOnly();
         public IReadOnlyDictionary<string, object> DefaultPushConstants => _defaultPushConstants.AsReadOnly();
 
+        // Expose expected resources using reflection data types
+        public IReadOnlyDictionary<string, BindingInfo> ExpectedDescriptorBindings { get; private set; }
+        public IReadOnlyDictionary<string, PushConstantInfo> ExpectedPushConstants { get; private set; }
+
         public MaterialPassTemplate(
             string subpassName,
             string pipelineName,
-            ShaderReflectionData reflectionData,
-            ITypeBasedResourceProvider resourceProvider = null)
+            MergedShaderReflectionData reflectionData,
+            VulkanContext vulkanContext,
+            ITypeBasedResourceProvider? resourceProvider = null)
         {
             SubpassName = subpassName ?? throw new ArgumentNullException(nameof(subpassName));
             PipelineName = pipelineName ?? throw new ArgumentNullException(nameof(pipelineName));
             ReflectionData = reflectionData ?? throw new ArgumentNullException(nameof(reflectionData));
-            _resourceProvider = resourceProvider ?? new TypeBasedResourceProvider();
+            _resourceProvider = resourceProvider ?? new TypeBasedResourceProvider(vulkanContext);
 
             InitializeDefaultResources();
         }
 
         private void InitializeDefaultResources()
         {
+            InitializeExpectedResources();
             InitializeDefaultBindings();
             InitializeDefaultPushConstants();
         }
 
+        private void InitializeExpectedResources()
+        {
+            var descriptorBindings = new Dictionary<string, BindingInfo>();
+            foreach (var setInfo in ReflectionData.DescriptorSets.Values)
+            {
+                foreach (var binding in setInfo.Bindings.Values)
+                {
+                    if (string.IsNullOrEmpty(binding.Reflection.Name))
+                    {
+                        throw new Exception("NAME IS NULL FIX ME");
+                    }
+
+                    descriptorBindings[binding.Reflection.Name] = binding;
+                }
+            }
+            ExpectedDescriptorBindings = descriptorBindings.AsReadOnly();
+
+            var pushConstants = new Dictionary<string, PushConstantInfo>();
+            foreach (var pushConst in ReflectionData.PushConstants)
+            {
+                pushConstants[pushConst.Name] = pushConst;
+            }
+            ExpectedPushConstants = pushConstants.AsReadOnly();
+        }
+
         private void InitializeDefaultBindings()
         {
-            var context = VulkanContext.GetCurrent();
-            foreach (var setInfo in ReflectionData.DescriptorSets)
+            var context = VulkanContext.GetCurrent(); // Assumes static accessor exists
+            foreach (var setInfo in ReflectionData.DescriptorSets.Values)
             {
-                foreach (var binding in setInfo.Bindings)
+                foreach (var binding in setInfo.Bindings.Values)
                 {
                     var resourceBinding = CreateDefaultBinding(setInfo.Set, binding, context);
                     if (resourceBinding != null)
@@ -57,9 +86,9 @@ namespace RockEngine.Core.Rendering.Materials
             }
         }
 
-        private ResourceBinding? CreateDefaultBinding(uint set, DescriptorSetLayoutBindingReflected binding, VulkanContext context)
+        private ResourceBinding? CreateDefaultBinding(uint set, BindingInfo binding, VulkanContext context)
         {
-            return binding.DescriptorType switch
+            return binding.Reflection.DescriptorType switch
             {
                 DescriptorType.CombinedImageSampler => CreateTextureBinding(set, binding, context),
                 DescriptorType.SampledImage => CreateTextureBinding(set, binding, context),
@@ -72,15 +101,16 @@ namespace RockEngine.Core.Rendering.Materials
             };
         }
 
-        private ResourceBinding CreateTextureBinding(uint set, DescriptorSetLayoutBindingReflected binding, VulkanContext context)
+        private ResourceBinding CreateTextureBinding(uint set, BindingInfo binding, VulkanContext context)
         {
-            var texture = _resourceProvider.GetDefaultTexture(binding, context);
-            return new TextureBinding(set, binding.Binding, 0, binding.DescriptorCount, ImageLayout.ShaderReadOnlyOptimal, texture);
+            var texture = _resourceProvider.GetDefaultResource(binding);
+            return new TextureBinding(set, binding.Reflection.Binding, 0, Vk.RemainingMipLevels, ImageLayout.ShaderReadOnlyOptimal, textures: (Texturing.Texture)texture);
         }
 
-        private ResourceBinding CreateBufferBinding(uint set, DescriptorSetLayoutBindingReflected binding, VulkanContext context)
+        private ResourceBinding? CreateBufferBinding(uint set, BindingInfo binding, VulkanContext context)
         {
-            return null; // Implement buffer creation as needed
+            // TODO: Implement default buffer creation if needed
+            return null;
         }
 
         private void InitializeDefaultPushConstants()
@@ -98,45 +128,19 @@ namespace RockEngine.Core.Rendering.Materials
         public MaterialPass CreateMaterialPass(RckPipeline pipeline)
         {
             ArgumentNullException.ThrowIfNull(pipeline);
-
-            var pass = new MaterialPass(pipeline);
+            var pass = new MaterialPass(pipeline, ExpectedDescriptorBindings);
 
             foreach (var binding in _defaultBindings)
             {
-                pass.BindResource((ResourceBinding)binding.Clone()); 
+                pass.BindResource((ResourceBinding)binding.Clone());
             }
 
-            // Apply default push constants
             foreach (var (name, value) in _defaultPushConstants)
             {
-                SetPushConstant(pass, name, value);
+                pass.PushConstant(name, value);
             }
 
             return pass;
-        }
-
-        private static void SetPushConstant(MaterialPass pass, string name, object value)
-        {
-            if (value == null)
-            {
-                return;
-            }
-
-            var method = typeof(MaterialPass).GetMethod("PushConstant", BindingFlags.Public | BindingFlags.Instance);
-            if (method == null)
-            {
-                return;
-            }
-
-            try
-            {
-                var genericMethod = method.MakeGenericMethod(value.GetType());
-                genericMethod.Invoke(pass, new[] { name, value });
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"Failed to set push constant '{name}': {ex.Message}");
-            }
         }
     }
 }

@@ -14,10 +14,10 @@ namespace RockEngine.ShaderSyntax
     public class GlslCompletionSourceProvider : ICompletionSourceProvider
     {
         [ImportMany]
-        internal IEnumerable<IGlslCompletionContributor> Contributors { get; set; }
+        internal IEnumerable<IGlslCompletionContributor>? Contributors { get; set; }
 
         [Import]
-        internal ITextStructureNavigatorSelectorService NavigatorService { get; set; }
+        internal ITextStructureNavigatorSelectorService? NavigatorService { get; set; }
 
         public ICompletionSource TryCreateCompletionSource(ITextBuffer textBuffer)
         {

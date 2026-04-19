@@ -16,5 +16,5 @@ namespace RockEngine.Editor.EditorUI.EditorWindows
             _editorConsole.Draw();
         }
     }
-  
+
 }

@@ -1,9 +1,8 @@
-﻿using System.Text;
+﻿using System.Collections.Concurrent;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Options;
 using NLog;
 using RockEngine.Core.Assets;
-using System.Collections.Concurrent;
 
 namespace RockEngine.Assets
 {
@@ -21,7 +20,6 @@ namespace RockEngine.Assets
 
         private readonly MemoryCache _assetCache;
         private readonly ConcurrentDictionary<string, Task<IAsset>> _loadingTasks = new();
-        private readonly ConcurrentDictionary<Guid, HashSet<Guid>> _dependencyGraph = new();
         private readonly ConcurrentDictionary<Guid, string> _idToPathMap = new();
 
         private IProject? _currentProject;
@@ -71,11 +69,15 @@ namespace RockEngine.Assets
 
             // Check cache first
             if (_assetCache.TryGetValue<T>(normalizedPath, out var cachedAsset))
+            {
                 return cachedAsset;
+            }
 
             // Check if already loading
             if (_loadingTasks.TryGetValue(normalizedPath, out var loadingTask))
+            {
                 return (T)await loadingTask;
+            }
 
             // Create loading task
             var task = LoadAssetInternalAsync<T>(normalizedPath);
@@ -101,9 +103,8 @@ namespace RockEngine.Assets
                 // Check repository
                 if (_repository.TryGet(normalizedPath, out var existingAsset) && existingAsset is T typedAsset)
                 {
-                    if (!typedAsset.IsDataLoaded)
-                        await _loader.LoadAssetDataAsync(typedAsset, typedAsset.GetDataType());
-                   
+                    await _loader.LoadAssetDataAsync(typedAsset, typedAsset.GetDataType());
+
                     return typedAsset;
                 }
 
@@ -126,11 +127,15 @@ namespace RockEngine.Assets
         {
             // Check repository first
             if (_repository.TryGet(assetId, out var cachedAsset))
+            {
                 return cachedAsset;
+            }
 
             // Get path from our map
             if (!_idToPathMap.TryGetValue(assetId, out var path))
+            {
                 throw new FileNotFoundException($"Asset with ID {assetId} not found in index");
+            }
 
             return await LoadAssetAsync<IAsset>(path);
         }
@@ -161,14 +166,18 @@ namespace RockEngine.Assets
 
         #region IProjectManager Implementation
 
-        public async Task<T> CreateProjectAsync<T,TData>(string projectPath, string projectName) where T : class, IProject, IAsset<TData> where TData :class, new()
+        public async Task<T> CreateProjectAsync<T, TData>(string projectPath, string projectName) where T : class, IProject, IAsset<TData> where TData : class, new()
         {
             if (IsProjectLoaded)
+            {
                 UnloadProject();
+            }
 
             var projectDir = Path.Combine(projectPath, projectName);
             if (!Directory.Exists(projectDir))
+            {
                 Directory.CreateDirectory(projectDir);
+            }
 
             var projectAssetPath = new AssetPath(projectDir, projectName, AssetConstants.ProjectExtension);
             var project = _factory.Create<T>(projectAssetPath, projectName);
@@ -183,10 +192,14 @@ namespace RockEngine.Assets
         public async Task<T> LoadProjectAsync<T>(string projectFilePath) where T : class, IProject
         {
             if (IsProjectLoaded)
+            {
                 UnloadProject();
+            }
 
             if (!File.Exists(projectFilePath))
+            {
                 throw new FileNotFoundException($"Project file not found: {projectFilePath}");
+            }
 
             var project = await LoadAssetAsync<T>(projectFilePath);
             await SetCurrentProjectAsync(project);
@@ -196,13 +209,15 @@ namespace RockEngine.Assets
 
         public void UnloadProject()
         {
-            if (!IsProjectLoaded) return;
+            if (!IsProjectLoaded)
+            {
+                return;
+            }
 
             _logger.Info("Unloading project: {ProjectName}", _currentProject!.Name);
 
             _repository.Clear();
             _assetCache.Compact(100);
-            _dependencyGraph.Clear();
             _loadingTasks.Clear();
             _idToPathMap.Clear();
 
@@ -227,7 +242,10 @@ namespace RockEngine.Assets
 
         private void CacheAsset(IAsset asset)
         {
-            if (!_options.EnableAssetCaching) return;
+            if (!_options.EnableAssetCaching)
+            {
+                return;
+            }
 
             var options = new MemoryCacheEntryOptions
             {
@@ -243,7 +261,7 @@ namespace RockEngine.Assets
                 {
                     if (value is IAsset evictedAsset)
                     {
-                     //   evictedAsset.UnloadData();
+                        //   evictedAsset.UnloadData();
                     }
                 }
             });
@@ -255,7 +273,10 @@ namespace RockEngine.Assets
         private long EstimateAssetSize(IAsset asset)
         {
             var data = asset.GetData();
-            if (data == null) return 1;
+            if (data == null)
+            {
+                return 1;
+            }
 
             try
             {
@@ -277,9 +298,8 @@ namespace RockEngine.Assets
             {
                 Directory.CreateDirectory(directory);
             }
-
             using var stream = new FileStream(fullPath, FileMode.OpenOrCreate, FileAccess.Write,
-                FileShare.None, AssetConstants.OptimalBufferSize, FileOptions.Asynchronous);
+                FileShare.Read, AssetConstants.OptimalBufferSize, FileOptions.Asynchronous);
 
             await _serializer.SerializeAsync(asset, stream);
 
@@ -294,7 +314,10 @@ namespace RockEngine.Assets
 
         private void InitializeFileWatcher()
         {
-            if (string.IsNullOrEmpty(BasePath) || !Directory.Exists(BasePath)) return;
+            if (string.IsNullOrEmpty(BasePath) || !Directory.Exists(BasePath))
+            {
+                return;
+            }
 
             _fileWatcher = new FileSystemWatcher(BasePath)
             {
@@ -341,8 +364,8 @@ namespace RockEngine.Assets
         {
             try
             {
-                // Unload current data
-                asset.UnloadData();
+                /*// Unload current data
+                asset.UnloadData();*/
 
                 // Reload from disk
                 await _loader.LoadAssetDataAsync(asset, asset.GetDataType());
@@ -365,7 +388,7 @@ namespace RockEngine.Assets
                 var normalizedPath = AssetPathNormalizer.Normalize(e.FullPath);
 
                 // Load the asset header to get its ID
-                using var stream = new FileStream(e.FullPath, FileMode.Open, FileAccess.Read);
+                using var stream = new FileStream(e.FullPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
                 var header = await _serializer.DeserializeHeaderAsync(stream);
 
                 // Update our ID to path map
@@ -467,7 +490,7 @@ namespace RockEngine.Assets
         private async Task SetCurrentProjectAsync(IProject project)
         {
             _currentProject = project;
-            _loader.SetBasePath(BasePath);
+            await _loader.SetBasePathAsync(BasePath);
             InitializeFileWatcher();
             _repository.Add(project);
 
@@ -481,7 +504,9 @@ namespace RockEngine.Assets
         private async Task BuildIdToPathMapAsync()
         {
             if (string.IsNullOrEmpty(BasePath) || !Directory.Exists(BasePath))
+            {
                 return;
+            }
 
             var assetFiles = Directory.GetFiles(BasePath, "*" + AssetConstants.AssetExtension, SearchOption.AllDirectories);
 

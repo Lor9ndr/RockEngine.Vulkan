@@ -10,7 +10,7 @@ namespace RockEngine.Editor.EditorUI.Thumbnails
     {
         private readonly IThumbnailRenderer _renderer;
         private readonly IRegistry<Thumbnail, IAsset> _cache;
-        private static readonly Logger  _logger = LogManager.GetCurrentClassLogger();
+        private static readonly Logger _logger = LogManager.GetCurrentClassLogger();
 
         public ThumbnailService(IThumbnailRenderer renderer, IRegistry<Thumbnail, IAsset> cache)
         {

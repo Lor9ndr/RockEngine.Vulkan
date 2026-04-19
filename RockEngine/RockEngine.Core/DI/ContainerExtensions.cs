@@ -1,11 +1,8 @@
-﻿using RockEngine.Core.Rendering.Passes;
+﻿using System.Diagnostics.CodeAnalysis;
+using RockEngine.Core.Rendering.Passes;
 using RockEngine.Core.Rendering.Passes.SubPasses;
 
 using SimpleInjector;
-
-using System;
-using System.Collections.Generic;
-using System.Linq;
 
 namespace RockEngine.Core.DI
 {
@@ -62,6 +59,7 @@ namespace RockEngine.Core.DI
             }
         }
 
+        [RequiresDynamicCode("StrategySubPassCollection")]
         public static void BuildRenderPassSystem(this Container container)
         {
             var sortedStrategyTypes = GetSortedStrategies();

@@ -1,7 +1,6 @@
-﻿using Silk.NET.Core.Native;
+﻿using System.Runtime.InteropServices;
+using Silk.NET.Core.Native;
 using Silk.NET.Vulkan;
-
-using System.Runtime.InteropServices;
 
 namespace RockEngine.Vulkan
 {
@@ -41,7 +40,7 @@ namespace RockEngine.Vulkan
             return ptr != nint.Zero ? Marshal.GetDelegateForFunctionPointer<T>(ptr) : null;
         }
 
-        public unsafe void CmdBeginDebugUtilsLabel(CommandBuffer commandBuffer, string labelName, Span<float> color)
+        public void CmdBeginDebugUtilsLabel(CommandBuffer commandBuffer, string labelName, Span<float> color)
         {
             if (_cmdBeginDebugUtilsLabel != null)
             {
@@ -65,12 +64,12 @@ namespace RockEngine.Vulkan
             }
         }
 
-        public unsafe void CmdEndDebugUtilsLabel(CommandBuffer commandBuffer)
+        public void CmdEndDebugUtilsLabel(CommandBuffer commandBuffer)
         {
             _cmdEndDebugUtilsLabel?.Invoke(commandBuffer);
         }
 
-        public unsafe void SetDebugUtilsObjectName<T>(T handle, ObjectType objectType, string name) where T : unmanaged
+        public void SetDebugUtilsObjectName<T>(T handle, ObjectType objectType, string name) where T : unmanaged
         {
             if (_setDebugUtilsObjectName != null)
             {
@@ -80,7 +79,7 @@ namespace RockEngine.Vulkan
                     {
                         SType = StructureType.DebugUtilsObjectNameInfoExt,
                         ObjectType = objectType,
-                        ObjectHandle = (ulong)(*(nint*)&handle),
+                        ObjectHandle = (ulong)*(nint*)&handle,
                         PObjectName = (byte*)namePtr
                     };
                     _setDebugUtilsObjectName(_device, &nameInfo).VkAssertResult("Failed to setup a object name");

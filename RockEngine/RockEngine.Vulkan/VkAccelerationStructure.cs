@@ -19,7 +19,7 @@ namespace RockEngine.Vulkan
             _type = type;
         }
 
-      
+        
         public static VkAccelerationStructure CreateBLAS(
             VulkanContext context,
             VkBuffer vertexBuffer, ulong vertexOffset, uint vertexCount, uint vertexStride,
@@ -102,6 +102,7 @@ namespace RockEngine.Vulkan
             return new VkAccelerationStructure(context, accel, buffer, AccelerationStructureTypeKHR.BottomLevelKhr);
         }
 
+        
         public static VkAccelerationStructure CreateTLAS(
             VulkanContext context,
             VkBuffer instancesBuffer, uint instanceCount,
@@ -140,7 +141,8 @@ namespace RockEngine.Vulkan
                 PGeometries = &geometry
             };
 
-            var khrAccel = new KhrAccelerationStructure(VulkanContext.Vk.Context); ;
+            var khrAccel = new KhrAccelerationStructure(VulkanContext.Vk.Context);
+            ;
             khrAccel.GetAccelerationStructureBuildSizes(
                 device,
                  AccelerationStructureBuildTypeKHR.DeviceKhr,
@@ -282,7 +284,10 @@ namespace RockEngine.Vulkan
         // --------------------------------------------------------------------
         protected override void Dispose(bool disposing)
         {
-            if (_disposed) return;
+            if (_disposed)
+            {
+                return;
+            }
 
             if (disposing)
             {

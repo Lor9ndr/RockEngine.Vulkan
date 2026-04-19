@@ -1,7 +1,5 @@
-﻿using RockEngine.Core.Rendering.ResourceBindings;
-
-using System.Collections;
-
+﻿using System.Collections;
+using RockEngine.Core.Rendering.ResourceBindings;
 using ZLinq;
 
 namespace RockEngine.Core.Internal
@@ -41,7 +39,25 @@ namespace RockEngine.Core.Internal
 
         public void CheckForUpdates()
         {
-            _needToUpdate = _bindings.AsValueEnumerable().Any(s => s.Value.DescriptorSets.AsValueEnumerable().Any(s => s.Value.AsValueEnumerable().Any(s => s is null || s.IsDirty)));
+            ResourceBinding[] bindings;
+            lock (_bindings)   // assuming _bindings is a SortedList; use a dedicated lock if needed
+            {
+                bindings = _bindings.Values.ToArray();
+            }
+            foreach (var binding in bindings)
+            {
+                foreach (var descriptors in binding.DescriptorSets.Values)
+                {
+                    foreach (var descriptor in descriptors)
+                    {
+                        if (descriptor is null || descriptor.IsDirty)
+                        {
+                            _needToUpdate = true;
+                            return;
+                        }
+                    }
+                }
+            }
         }
 
         public void RemoveAll(Func<ResourceBinding, bool> predicate)
@@ -63,6 +79,18 @@ namespace RockEngine.Core.Internal
             CheckForUpdates();
         }
 
+        public ResourceBinding? GetBinding(uint bindingNumber)
+        {
+            foreach (var kv in _bindings)
+            {
+                if (kv.Key.Contains(bindingNumber))
+                {
+                    return kv.Value;
+                }
+            }
+            return null;
+        }
+
         public IEnumerator<ResourceBinding> GetEnumerator() => _bindings.Values.GetEnumerator();
 
         IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
@@ -71,5 +99,7 @@ namespace RockEngine.Core.Internal
         {
             _bindings.Clear();
         }
+
+
     }
 }

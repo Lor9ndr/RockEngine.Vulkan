@@ -1,7 +1,6 @@
 ﻿using ImGuiNET;
 
 using RockEngine.Assets;
-using RockEngine.Core.Assets;
 using RockEngine.Core.DI;
 using RockEngine.Core.ECS.Components;
 using RockEngine.Editor.EditorUI.ImGuiRendering;
@@ -54,7 +53,7 @@ namespace RockEngine.Editor.EditorUI.EditorWindows
 
             if (ImGui.BeginPopup("AddComponentPopup"))
             {
-                var registrations = IoC.Container.GetCurrentRegistrations().Where(s=>s.ImplementationType.GetInterface(nameof(IComponent)) is not null);
+                var registrations = IoC.Container.GetCurrentRegistrations().Where(s => s.ImplementationType.GetInterface(nameof(IComponent)) is not null);
 
                 foreach (var registration in registrations)
                 {
@@ -86,7 +85,7 @@ namespace RockEngine.Editor.EditorUI.EditorWindows
             if (isOpen)
             {
                 ImGui.Indent();
-                 _propertyDrawer.DrawComponentProperties(component);
+                _propertyDrawer.DrawComponentProperties(component);
                 ImGui.Unindent();
             }
         }

@@ -43,7 +43,8 @@ namespace RockEngine.Core.Rendering
                     return false;
                 }
 
-                var layerBit = (RenderLayerMask)(1UL << (int)(layer.ID)); ;
+                var layerBit = (RenderLayerMask)(1UL << (int)(layer.ID));
+                ;
                 return (mask & layerBit) != 0;
             }
             public RenderLayerMask Add(RenderLayer layer)

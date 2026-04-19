@@ -1,7 +1,6 @@
-﻿using RockEngine.Core.ECS;
+﻿using System.Numerics;
+using RockEngine.Core.ECS;
 using RockEngine.Core.ECS.Components;
-
-using System.Numerics;
 
 namespace RockEngine.Editor.EditorUI.UndoRedo.Commands
 {

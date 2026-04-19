@@ -8,19 +8,16 @@ namespace RockEngine.Assets
     /// </summary>
     public class MessagePackBinarySerializer : IBinarySerializer
     {
-       
+
         public MessagePackBinarySerializer()
         {
             StaticCompositeResolver.Instance.Register(
-   StandardResolver.Instance,
-   NativeGuidResolver.Instance,
-   PrimitiveObjectResolver.Instance,
-   DynamicObjectResolverAllowPrivate.Instance,
-   PolymorphicResolver.Instance
-   
-
-
-);
+                   StandardResolver.Instance,
+                   NativeGuidResolver.Instance,
+                   PrimitiveObjectResolver.Instance,
+                   DynamicObjectResolverAllowPrivate.Instance,
+                   PolymorphicResolver.Instance
+                );
 
             var options = MessagePackSerializerOptions.Standard.WithResolver(StaticCompositeResolver.Instance);
             MessagePackSerializer.DefaultOptions = options;

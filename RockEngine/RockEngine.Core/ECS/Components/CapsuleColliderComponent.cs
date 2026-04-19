@@ -1,6 +1,4 @@
-﻿using System.Numerics;
-
-using JoltPhysicsSharp;
+﻿using JoltPhysicsSharp;
 
 using MessagePack;
 

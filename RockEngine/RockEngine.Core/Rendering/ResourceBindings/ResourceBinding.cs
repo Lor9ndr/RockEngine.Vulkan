@@ -18,15 +18,18 @@ namespace RockEngine.Core.Rendering.ResourceBindings
         public abstract DescriptorType DescriptorType { get; }
         public IReadOnlyDictionary<VkDescriptorSetLayout, VkDescriptorSet[]> DescriptorSets => _descriptorSetsByLayout;
 
+        public virtual uint DescriptorCount => 1;
+
         public VkDescriptorSet GetDescriptorSetForLayout(VkDescriptorSetLayout layout, uint frameIndex)
         {
+
             if (!_descriptorSetsByLayout.TryGetValue(layout, out var sets))
             {
                 sets = new VkDescriptorSet[VulkanContext.GetCurrent().MaxFramesPerFlight];
                 _descriptorSetsByLayout[layout] = sets;
             }
-
             return sets[frameIndex];
+
         }
 
         public void SetDescriptorSetForLayout(VkDescriptorSetLayout layout, uint frameIndex, VkDescriptorSet set)
@@ -40,32 +43,6 @@ namespace RockEngine.Core.Rendering.ResourceBindings
             sets[frameIndex] = set;
         }
 
-        public void UpdateDescriptorSetForLayout(VulkanContext context, VkDescriptorSetLayout layout, uint frameIndex)
-        {
-            var set = GetDescriptorSetForLayout(layout, frameIndex);
-            if (set != null)
-            {
-                UpdateDescriptorSet(context, frameIndex, layout);
-            }
-        }
-
-        public void UpdateAllLayouts(VulkanContext context, uint frameIndex)
-        {
-            foreach (var (layout, sets) in _descriptorSetsByLayout)
-            {
-                if (sets[frameIndex] != null)
-                {
-                    UpdateDescriptorSet(context, frameIndex, layout);
-                }
-            }
-        }
-
-        public bool HasDescriptorSetForLayout(VkDescriptorSetLayout layout, uint frameIndex)
-        {
-            return _descriptorSetsByLayout.TryGetValue(layout, out var sets) && sets[frameIndex] != null;
-        }
-
-      
         public abstract object Clone();
 
         public abstract void UpdateDescriptorSet(VulkanContext context, uint frameIndex, VkDescriptorSetLayout layout);
@@ -79,7 +56,7 @@ namespace RockEngine.Core.Rendering.ResourceBindings
                     // TODO: освободить управляемое состояние (управляемые объекты)
                 }
 
-               _descriptorSetsByLayout.Clear();
+                _descriptorSetsByLayout.Clear();
                 _isDisposed = true;
             }
         }

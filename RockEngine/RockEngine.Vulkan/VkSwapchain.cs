@@ -1,7 +1,6 @@
-﻿using Silk.NET.Vulkan;
+﻿using System.Numerics;
+using Silk.NET.Vulkan;
 using Silk.NET.Vulkan.Extensions.KHR;
-
-using System.Numerics;
 
 
 namespace RockEngine.Vulkan
@@ -225,24 +224,24 @@ namespace RockEngine.Vulkan
 
             // Recreate depth resources
             CreateDepthResources();
-           /* if (_imageAvailableSemaphores != null)
-            {
-                foreach (var semaphore in _imageAvailableSemaphores)
-                {
-                    semaphore?.Dispose();
-                }
-            }
+            /* if (_imageAvailableSemaphores != null)
+             {
+                 foreach (var semaphore in _imageAvailableSemaphores)
+                 {
+                     semaphore?.Dispose();
+                 }
+             }
 
-            if (_renderCompleteSemaphores != null)
-            {
-                foreach (var semaphore in _renderCompleteSemaphores)
-                {
-                    semaphore?.Dispose();
-                }
-            }*/
+             if (_renderCompleteSemaphores != null)
+             {
+                 foreach (var semaphore in _renderCompleteSemaphores)
+                 {
+                     semaphore?.Dispose();
+                 }
+             }*/
 
             // Reinitialize with current frame count
-           
+
             _currentImageIndex = 0;
             // Notify listeners about the swapchain recreation
 
@@ -564,7 +563,7 @@ namespace RockEngine.Vulkan
         public unsafe void CreateDepthResources()
         {
             var batch = _context.GraphicsSubmitContext.CreateBatch();
-            
+
             var imageCi = new ImageCreateInfo
             {
                 SType = StructureType.ImageCreateInfo,
@@ -615,7 +614,7 @@ namespace RockEngine.Vulkan
             throw new InvalidOperationException("Failed to find supported format.");
         }
 
-       
+
         public override void LabelObject(string name) => _context.DebugUtils.SetDebugUtilsObjectName(_vkObject, ObjectType.SwapchainKhr, name);
 
         protected override unsafe void Dispose(bool disposing)
@@ -647,7 +646,9 @@ namespace RockEngine.Vulkan
 
 
             foreach (var resource in Resources)
+            {
                 resource.Dispose();
+            }
 
             InFlightFence?.Reset();
             Resources.Clear();
@@ -660,7 +661,9 @@ namespace RockEngine.Vulkan
             RenderFinished?.Dispose();
 
             foreach (var resource in Resources)
+            {
                 resource.Dispose();
+            }
         }
     }
 }

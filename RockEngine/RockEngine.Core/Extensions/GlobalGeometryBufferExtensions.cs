@@ -1,9 +1,6 @@
-﻿using RockEngine.Core.Builders;
+﻿using System.Runtime.CompilerServices;
 using RockEngine.Core.Rendering.Buffers;
-
 using Silk.NET.Vulkan;
-
-using System.Runtime.CompilerServices;
 
 namespace RockEngine.Core.Extensions
 {
@@ -16,7 +13,7 @@ namespace RockEngine.Core.Extensions
             return buffer;
         }
 
-      
+
 
         // Higher-order function for batch processing
         public static void ProcessMeshesByVertexType<TVertex>(

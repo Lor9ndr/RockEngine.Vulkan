@@ -1,9 +1,5 @@
-﻿
-using Microsoft.Win32;
-using NUnit.Framework;
+﻿using NUnit.Framework;
 using RockEngine.Core.DI;
-using RockEngine.Core.Rendering;
-using RockEngine.Core.Rendering.Buffers;
 using RockEngine.Vulkan;
 using RockEngine.Vulkan.DeviceFeatures;
 using SimpleInjector;
@@ -14,9 +10,9 @@ namespace RockEngine.Tests
     [SetUpFixture]
     public class GlobalTestSetup
     {
-        public static Container Container { get; private set; }
-        public static VulkanContext VulkanContext { get; private set; }
-        public static Scope Scope { get; private set; }
+        public static Container? Container { get; private set; }
+        public static VulkanContext? VulkanContext { get; private set; }
+        public static Scope? Scope { get; private set; }
 
         [OneTimeSetUp]
         public void OneTimeSetUp()
@@ -54,7 +50,7 @@ namespace RockEngine.Tests
 
             VulkanContext = new VulkanContext(null, settings, featureRegistry);
             Container.RegisterInstance(VulkanContext);
-            Scope = AsyncScopedLifestyle.BeginScope(GlobalTestSetup.Container);
+            Scope = AsyncScopedLifestyle.BeginScope(Container);
         }
 
         [OneTimeTearDown]

@@ -1,8 +1,6 @@
 ﻿using MessagePack;
 
 using NLog;
-
-using RockEngine.Assets;
 using RockEngine.Core.Assets;
 using RockEngine.Core.Attributes;
 using RockEngine.Core.DI;
@@ -18,25 +16,25 @@ namespace RockEngine.Core.ECS.Components
         private static readonly Logger _logger = LogManager.GetCurrentClassLogger();
 
         [Key(7)]
-        public MeshProvider MeshProvider
+        public MeshProvider? MeshProvider
         {
             get => _meshProvider;
             set => SetProviders(value, MaterialProvider);
         }
         [Key(8)]
-        public MaterialProvider MaterialProvider
+        public MaterialProvider? MaterialProvider
         {
             get => _materialProvider;
             set => SetProviders(_meshProvider, value);
         }
 
         [IgnoreMember]
-        public Material Material { get; private set; }
+        public Material? Material { get; private set; }
 
         [SerializeIgnore]
         [IgnoreMember]
 
-        public IMesh Mesh { get; private set; }
+        public IMesh? Mesh { get; private set; }
 
         [SerializeIgnore]
         [IgnoreMember]
@@ -62,24 +60,25 @@ namespace RockEngine.Core.ECS.Components
         private int _transformIndex = -1;
         [IgnoreMember]
 
-        private Action<Transform> _transformChangedHandler;
+        private Action<Transform>? _transformChangedHandler;
         [IgnoreMember]
 
         private bool _isRegistered = false;
         [IgnoreMember]
 
-        private MeshProvider _meshProvider;
+        private MeshProvider? _meshProvider;
         [IgnoreMember]
 
-        private MaterialProvider _materialProvider;
+        private MaterialProvider? _materialProvider;
 
         public MeshRenderer()
         {
         }
 
+        
         public void SetProviders(AssetReference<MeshAsset> meshAsset, AssetReference<MaterialAsset> materialAsset)
         {
-           
+
             CleanupExisting();
             _meshProvider = new MeshProvider(meshAsset);
             _materialProvider = new MaterialProvider(materialAsset);
@@ -124,6 +123,10 @@ namespace RockEngine.Core.ECS.Components
                 _logger.Warn("Attempt to start mesh renderer without asset or material, or already registered");
             }
         }
+        public override ValueTask Update(WorldRenderer renderer)
+        {
+            return ValueTask.CompletedTask;
+        }
 
         private void CleanupExisting()
         {
@@ -166,8 +169,8 @@ namespace RockEngine.Core.ECS.Components
 
             _transformIndex = -1;
 
-           /* MeshProvider?.Dispose();
-            MaterialProvider?.Dispose();*/
+            /* MeshProvider?.Dispose();
+             MaterialProvider?.Dispose();*/
 
             MeshProvider = null;
             MaterialProvider = null;

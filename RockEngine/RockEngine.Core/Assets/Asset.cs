@@ -5,11 +5,11 @@ using RockEngine.Core.DI;
 
 namespace RockEngine.Core.Assets
 {
-    [Union(0,typeof(MeshAsset))]
-    [Union(1,typeof(SceneAsset))]
-    [Union(2,typeof(ModelAsset))]
-    [Union(3,typeof(MaterialAsset))]
-    [Union(4,typeof(TextureAsset))]
+    [Union(0, typeof(MeshAsset))]
+    [Union(1, typeof(SceneAsset))]
+    [Union(2, typeof(ModelAsset))]
+    [Union(3, typeof(MaterialAsset))]
+    [Union(4, typeof(TextureAsset))]
     public abstract class Asset<T> : IAsset<T> where T : class, new()
     {
         [IgnoreMember]
@@ -46,7 +46,10 @@ namespace RockEngine.Core.Assets
 
         public virtual async Task LoadDataAsync()
         {
-            if (IsDataLoaded) return;
+            if (IsDataLoaded)
+            {
+                return;
+            }
 
             await _fileSemaphore.WaitAsync();
             try
@@ -75,9 +78,13 @@ namespace RockEngine.Core.Assets
         public virtual void SetData(object data)
         {
             if (data is T typedData)
+            {
                 Data = typedData;
+            }
             else
+            {
                 throw new ArgumentException($"Expected data of type {typeof(T)}, got {data?.GetType()}");
+            }
         }
 
         public Type GetDataType() => typeof(T);

@@ -35,29 +35,37 @@ public sealed class PolymorphicSerializableFormatter : IMessagePackFormatter<IPo
 
         var type = value.GetType();
         if (!PolymorphicTypeRegistry.Instance.TryGetId(type, out var id))
+        {
             throw new NotSupportedException($"Type {type} is not registered in polymorphic registry.");
+        }
 
         // Write header: [typeId, object]
         writer.WriteArrayHeader(2);
         writer.Write(id);
 
-       
+
         MessagePackSerializer.Serialize(type, ref writer, value, options);
     }
 
     public IPolymorphicSerializable? Deserialize(ref MessagePackReader reader, MessagePackSerializerOptions options)
     {
         if (reader.TryReadNil())
+        {
             return null;
+        }
 
         options.Security.DepthStep(ref reader);
         var count = reader.ReadArrayHeader();
         if (count != 2)
+        {
             throw new InvalidOperationException("Invalid polymorphic format.");
+        }
 
         var id = reader.ReadUInt64();
         if (!PolymorphicTypeRegistry.Instance.TryGetType(id, out var type))
+        {
             throw new NotSupportedException($"Unknown polymorphic type ID: {id}");
+        }
 
         var result = MessagePackSerializer.Deserialize(type, ref reader, options);
         reader.Depth--;

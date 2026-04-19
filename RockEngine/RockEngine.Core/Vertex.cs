@@ -1,11 +1,7 @@
-﻿using MessagePack;
-
-using RockEngine.Core.Attributes;
-
-using Silk.NET.Vulkan;
-
-using System.Numerics;
+﻿using System.Numerics;
 using System.Runtime.InteropServices;
+using MessagePack;
+using Silk.NET.Vulkan;
 
 namespace RockEngine.Core
 {
@@ -33,12 +29,12 @@ namespace RockEngine.Core
         }
         public Vertex(float xp, float yp, float zp, float xc, float yc, float zc, float xt, float yt)
         {
-            Position = new Vector4(xp, yp, zp,0);
+            Position = new Vector4(xp, yp, zp, 0);
             Normal = new Vector4(xc, yc, zc, 0);
             TexCoord = new Vector2(xt, yt);
         }
 
-        public Vertex() 
+        public Vertex()
         {
         }
 
@@ -70,7 +66,7 @@ namespace RockEngine.Core
 
         public PositionVertex(Vector3 position)
         {
-            Position = new Vector4(position,0);
+            Position = new Vector4(position, 0);
         }
 
 

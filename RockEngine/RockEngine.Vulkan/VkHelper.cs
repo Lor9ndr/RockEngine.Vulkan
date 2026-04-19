@@ -1,7 +1,6 @@
-﻿using Silk.NET.Vulkan;
-
-using System.Runtime.InteropServices;
+﻿using System.Runtime.InteropServices;
 using System.Text;
+using Silk.NET.Vulkan;
 
 
 namespace RockEngine.Vulkan
@@ -93,7 +92,7 @@ namespace RockEngine.Vulkan
             {
                 return result;
             }
-            throw new VulkanException(result,message );
+            throw new VulkanException(result, message);
         }
 
         public static bool HasStencilComponent(this Format format)

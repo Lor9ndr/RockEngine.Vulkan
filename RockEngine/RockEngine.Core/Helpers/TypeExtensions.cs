@@ -1,6 +1,5 @@
-﻿using Silk.NET.Vulkan;
-
-using System.Runtime.CompilerServices;
+﻿using System.Runtime.CompilerServices;
+using Silk.NET.Vulkan;
 
 namespace RockEngine.Core.Helpers
 {

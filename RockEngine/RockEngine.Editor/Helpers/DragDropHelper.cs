@@ -1,5 +1,5 @@
-﻿using ImGuiNET;
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
+using ImGuiNET;
 
 namespace RockEngine.Editor.Helpers
 {
@@ -12,8 +12,8 @@ namespace RockEngine.Editor.Helpers
     {
         private class DragData
         {
-            public object Data;
-            public string Type;
+            public required object Data;
+            public required string Type;
             public DateTime Timestamp;
         }
 
@@ -29,7 +29,7 @@ namespace RockEngine.Editor.Helpers
         /// <param name="data">The data to drag.</param>
         /// <param name="payloadType">Optional custom payload type string. If null, uses typeof(T).FullName.</param>
         /// <returns>True if a drag source was started, false otherwise.</returns>
-        public static unsafe bool BeginDragDropSource<T>(T data, string payloadType = null)
+        public static unsafe bool BeginDragDropSource<T>(T data, string? payloadType = null)
         {
             payloadType ??= typeof(T).FullName;
 
@@ -57,11 +57,13 @@ namespace RockEngine.Editor.Helpers
         /// <param name="result">The dropped data, if accepted.</param>
         /// <param name="payloadType">Optional custom payload type string. If null, uses typeof(T).FullName.</param>
         /// <returns>True if a payload of matching type was dropped and successfully retrieved.</returns>
-        public static unsafe bool AcceptDragDropPayload<T>(out T result, string payloadType = null)
+        public static unsafe bool AcceptDragDropPayload<T>(out T result, string? payloadType = null)
         {
             result = default;
             if (payloadType == null)
+            {
                 payloadType = typeof(T).FullName;
+            }
 
             ImGuiPayload* payload = ImGui.AcceptDragDropPayload(payloadType);
             if (payload != null && payload->Data != null)

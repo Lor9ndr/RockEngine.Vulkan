@@ -1,12 +1,10 @@
-﻿using NLog;
-
-using Silk.NET.Vulkan;
-
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
+using NLog;
+using Silk.NET.Vulkan;
 
 namespace RockEngine.Vulkan
 {
@@ -33,7 +31,7 @@ namespace RockEngine.Vulkan
         private static int _hostFreeCount;
         private static int _deviceFreeCount;
 
-        private static readonly bool _enableStackTrace =  false;//Debugger.IsAttached;
+        private static readonly bool _enableStackTrace = false;//Debugger.IsAttached;
 
         // Store actual device memory handles with detailed info
         private static readonly ConcurrentDictionary<DeviceMemory, DeviceMemoryInfo> _deviceMemoryObjects = new();
@@ -160,7 +158,11 @@ namespace RockEngine.Vulkan
 
                             _deviceToHostMappings.AddOrUpdate(memory,
                                 new List<HostAllocationReference> { hostRef },
-                                (key, existing) => { existing.Add(hostRef); return existing; });
+                                (key, existing) =>
+                                {
+                                    existing.Add(hostRef);
+                                    return existing;
+                                });
 
                             _hostToDeviceMappings[hostPtr] = memory;
                         }
@@ -193,7 +195,10 @@ namespace RockEngine.Vulkan
                     {
                         long prevPeak = Interlocked.CompareExchange(ref _peakDeviceAllocated, newDeviceTotal, currentDevicePeak);
                         if (prevPeak == currentDevicePeak)
+                        {
                             break;
+                        }
+
                         currentDevicePeak = prevPeak;
                     }
 
@@ -228,7 +233,11 @@ namespace RockEngine.Vulkan
                 // Add to device memory -> objects mapping
                 _deviceMemoryToObjects.AddOrUpdate(deviceMemory,
                     new List<VulkanObjectReference> { objRef },
-                    (key, existing) => { existing.Add(objRef); return existing; });
+                    (key, existing) =>
+                    {
+                        existing.Add(objRef);
+                        return existing;
+                    });
 
                 // Add to object -> device memory mapping
                 _objectToDeviceMemory[(IntPtr)objectHandle] = deviceMemory;
@@ -317,7 +326,10 @@ namespace RockEngine.Vulkan
             public static HostAllocationReference[] GetHostAllocationsForDeviceMemory(DeviceMemory deviceMemory)
             {
                 if (_deviceToHostMappings.TryGetValue(deviceMemory, out var hostRefs))
+                {
                     return hostRefs.ToArray();
+                }
+
                 return Array.Empty<HostAllocationReference>();
             }
 
@@ -379,11 +391,17 @@ namespace RockEngine.Vulkan
             /// </summary>
             public static string GetCallChain(int depth)
             {
-                if (!_enableStackTrace) return "Stack traces disabled";
+                if (!_enableStackTrace)
+                {
+                    return "Stack traces disabled";
+                }
 
                 var stackTrace = new StackTrace(3, true); // Skip 3 frames to get to the actual caller
                 var frames = stackTrace.GetFrames();
-                if (frames == null || frames.Length == 0) return "No call chain available";
+                if (frames == null || frames.Length == 0)
+                {
+                    return "No call chain available";
+                }
 
                 var sb = new StringBuilder();
                 int takeFrames = Math.Min(depth, frames.Length);
@@ -391,16 +409,22 @@ namespace RockEngine.Vulkan
                 for (int i = 0; i < takeFrames; i++)
                 {
                     var frame = frames[i];
-                ;
+                    ;
                     var method = DiagnosticMethodInfo.Create(frame);
                     if (method != null)
                     {
                         sb.Append($"{method.DeclaringTypeName}.{method.Name}");
-                        if (i < takeFrames - 1) sb.Append(" → ");
+                        if (i < takeFrames - 1)
+                        {
+                            sb.Append(" → ");
+                        }
                     }
                 }
 
-                if (frames.Length > takeFrames) sb.Append(" → ...");
+                if (frames.Length > takeFrames)
+                {
+                    sb.Append(" → ...");
+                }
 
                 return sb.ToString();
             }
@@ -422,7 +446,10 @@ namespace RockEngine.Vulkan
             public static VulkanObjectReference[] GetObjectsForDeviceMemory(DeviceMemory deviceMemory)
             {
                 if (_deviceMemoryToObjects.TryGetValue(deviceMemory, out var objects))
+                {
                     return [.. objects];
+                }
+
                 return [];
             }
 
@@ -549,7 +576,10 @@ namespace RockEngine.Vulkan
                 {
                     long prevPeak = Interlocked.CompareExchange(ref _peakHostAllocated, newHostTotal, currentHostPeak);
                     if (prevPeak == currentHostPeak)
+                    {
                         break;
+                    }
+
                     currentHostPeak = prevPeak;
                 }
 
@@ -572,7 +602,7 @@ namespace RockEngine.Vulkan
 
                 //_logger.Trace($"Allocated {FormatSize((long)size)} for {typeof(T).Name} (Host memory)");
                 // if (_enableStackTrace)
-                    //_logger.Trace($"  Call Chain: {callChain}");
+                //_logger.Trace($"  Call Chain: {callChain}");
 
                 return ptr;
             }
@@ -587,7 +617,9 @@ namespace RockEngine.Vulkan
         private static void* Reallocate<T>(void* pUserData, void* pOriginal, nuint size, nuint alignment, SystemAllocationScope allocationScope)
         {
             if (pOriginal == null)
+            {
                 return Allocate<T>(pUserData, size, alignment, allocationScope);
+            }
 
             try
             {
@@ -614,7 +646,10 @@ namespace RockEngine.Vulkan
                     {
                         long prevPeak = Interlocked.CompareExchange(ref _peakHostAllocated, newHostTotal, currentHostPeak);
                         if (prevPeak == currentHostPeak)
+                        {
                             break;
+                        }
+
                         currentHostPeak = prevPeak;
                     }
 
@@ -652,7 +687,9 @@ namespace RockEngine.Vulkan
         private static void Free<T>(void* pUserData, void* pMemory)
         {
             if (pMemory == null)
+            {
                 return;
+            }
 
             try
             {

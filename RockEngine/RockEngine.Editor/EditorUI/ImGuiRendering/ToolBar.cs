@@ -1,8 +1,6 @@
-﻿using ImGuiNET;
-
+﻿using System.Numerics;
+using ImGuiNET;
 using RockEngine.Core;
-
-using System.Numerics;
 
 namespace RockEngine.Editor.EditorUI.ImGuiRendering
 {

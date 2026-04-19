@@ -1,6 +1,5 @@
-﻿using RockEngine.Core.ECS;
-
-using System.Numerics;
+﻿using System.Numerics;
+using RockEngine.Core.ECS;
 
 namespace RockEngine.Editor.Selection
 {
@@ -39,7 +38,7 @@ namespace RockEngine.Editor.Selection
             return SelectedEntities.Contains(entity);
         }
 
-        public T GetAdditionalData<T>() where T : class
+        public T? GetAdditionalData<T>() where T : class
         {
             return AdditionalData as T;
         }

@@ -1,13 +1,9 @@
-﻿using MessagePack;
-
+﻿using System.Collections.Concurrent;
+using MessagePack;
 using NLog;
-
 using RockEngine.Core.ECS;
 using RockEngine.Core.ECS.Components;
 using RockEngine.Core.Rendering;
-
-using System.Collections.Concurrent;
-
 using ZLinq;
 
 namespace RockEngine.Core.Assets
@@ -30,7 +26,7 @@ namespace RockEngine.Core.Assets
             !e.Value.HasComponent<MeshRenderer>() ||
             e.Value.GetComponent<MeshRenderer>()?.Mesh == null);
 
-        public Entity CreateEntity(string name = null, Entity parent = null)
+        public Entity CreateEntity(string? name = null, Entity? parent = null)
         {
             var entity = World.GetCurrent().CreateEntity(name);
             Entities[entity.ID] = entity;
@@ -82,7 +78,10 @@ namespace RockEngine.Core.Assets
 
         public void Unload()
         {
-            if (!IsLoaded) return;
+            if (!IsLoaded)
+            {
+                return;
+            }
 
             try
             {
@@ -114,7 +113,10 @@ namespace RockEngine.Core.Assets
 
         public async Task InstantiateEntities(IProgress<int>? progress = null)
         {
-            if (Data == null || IsLoaded) return;
+            if (Data == null || IsLoaded)
+            {
+                return;
+            }
 
             try
             {

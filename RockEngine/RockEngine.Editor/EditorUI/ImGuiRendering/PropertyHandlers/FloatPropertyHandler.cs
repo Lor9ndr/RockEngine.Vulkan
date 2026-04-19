@@ -6,8 +6,6 @@ using RockEngine.Core.Helpers;
 using RockEngine.Editor.EditorUI.UndoRedo;
 using RockEngine.Editor.EditorUI.UndoRedo.Commands;
 
-using System.Collections.Generic;
-
 namespace RockEngine.Editor.EditorUI.ImGuiRendering.PropertyHandlers
 {
     [PropertyHandler(typeof(float))]
@@ -26,15 +24,23 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.PropertyHandlers
 
             // Draw control
             if (range != null)
+            {
                 ImGui.DragFloat(accessor.DisplayName, ref value, step, range.Min, range.Max);
+            }
             else
+            {
                 ImGui.DragFloat(accessor.DisplayName, ref value, step);
+            }
 
             if (ImGui.IsItemActivated())
+            {
                 _editingOldValues[controlId] = currentValue;
+            }
 
             if (ImGui.IsItemActive() && accessor.CanWrite)
+            {
                 accessor.SetValue(component, value);
+            }
 
             if (ImGui.IsItemDeactivatedAfterEdit())
             {

@@ -1,17 +1,17 @@
 ﻿using RockEngine.Core.Internal;
 using RockEngine.Core.Rendering.Texturing;
 using RockEngine.Vulkan;
-
 using Silk.NET.Vulkan;
 
 namespace RockEngine.Core.Rendering.ResourceBindings
 {
     public class TextureBinding : ResourceBinding, IDisposable
     {
-        private readonly uint _arrayLayer = 0;
-        private readonly uint _layerCount = Vk.RemainingArrayLayers;
+        private readonly uint _arrayLayer;
+        private readonly uint _layerCount;
+        private readonly List<IDisposable> _subscriptionTokens = new();
 
-        public Texture[] Textures { get; private set; }
+        public Texture?[] Textures { get; private set; }
         public uint BaseMipLevel { get; }
         public uint LevelCount { get; }
         public override DescriptorType DescriptorType => DescriptorType.CombinedImageSampler;
@@ -35,9 +35,15 @@ namespace RockEngine.Core.Rendering.ResourceBindings
             _arrayLayer = arrayLayer;
             _layerCount = layerCount;
 
-            foreach (var texture in textures)
+            // Подписываемся на каждую текстуру через новую систему
+            for (int i = 0; i < textures.Length; i++)
             {
-                texture?.OnTextureUpdated += MarkAsDirty;
+                if (textures[i] != null)
+                {
+                    var observer = new TextureObserver(this, i);
+                    var token = textures[i].Subscribe(observer);
+                    _subscriptionTokens.Add(token);
+                }
             }
         }
         public TextureBinding(
@@ -61,7 +67,8 @@ namespace RockEngine.Core.Rendering.ResourceBindings
         {
         }
 
-        private void MarkAsDirty(object? sender, TextureUpdate e)
+
+        private void MarkDirty()
         {
             foreach (var setList in _descriptorSetsByLayout.Values)
             {
@@ -72,60 +79,115 @@ namespace RockEngine.Core.Rendering.ResourceBindings
             }
         }
 
+        // Внутренний наблюдатель, реализующий IResourceObserver
+        private sealed class TextureObserver : IResourceObserver
+        {
+            private readonly TextureBinding _binding;
+            private readonly int _index;
+
+            public TextureObserver(TextureBinding binding, int index)
+            {
+                _binding = binding;
+                _index = index;
+            }
+
+            public void OnResourceChanged(ulong resourceId, ResourceChangeType changeType)
+            {
+                switch (changeType)
+                {
+                    case ResourceChangeType.DataUpdated:
+                    case ResourceChangeType.Resized:
+                        // Изменилось содержимое или размер – нужно перезаписать дескриптор
+                        _binding.MarkDirty();
+                        break;
+
+                    case ResourceChangeType.Disposed:
+                        // Текстура уничтожена – зануляем слот, чтобы не использовать её в дескрипторе
+                        if (_index < _binding.Textures.Length)
+                        {
+                            _binding.Textures[_index] = null;
+                        }
+
+                        _binding.MarkDirty();
+                        break;
+                }
+            }
+        }
+
         public override unsafe void UpdateDescriptorSet(VulkanContext context, uint frameIndex, VkDescriptorSetLayout descriptorSetLayout)
         {
             var descriptor = GetDescriptorSetForLayout(descriptorSetLayout, frameIndex);
-            WriteDescriptorSet* writes = stackalloc WriteDescriptorSet[Textures.Length];
-            DescriptorImageInfo* imageInfos = stackalloc DescriptorImageInfo[Textures.Length];
 
+            // Подсчитываем количество живых текстур (не null)
+            int validCount = 0;
+            for (int i = 0; i < Textures.Length; i++)
+            {
+                if (Textures[i] != null)
+                {
+                    validCount++;
+                }
+            }
+
+            if (validCount == 0)
+            {
+                return; // нечего обновлять
+            }
+
+            // Используем stackalloc, если массив небольшой, иначе можно пул
+            var writes = stackalloc WriteDescriptorSet[validCount];
+            var imageInfos = stackalloc DescriptorImageInfo[validCount];
+
+            int writeIdx = 0;
             for (int i = 0; i < Textures.Length; i++)
             {
                 var texture = Textures[i];
+                if (texture == null)
+                {
+                    continue;
+                }
 
-                // Obtain view for the required layer range and mip range
+                uint maxMip = Math.Min(texture.TotalMipLevels, BaseMipLevel + LevelCount);
                 var imageView = texture.Image.GetView(
                     baseMipLevel: BaseMipLevel,
                     levelCount: LevelCount,
-                    baseArrayLayer: _arrayLayer ,
+                    baseArrayLayer: _arrayLayer,
                     layerCount: _layerCount
                 );
 
-                imageInfos[i] = new DescriptorImageInfo
+                imageInfos[writeIdx] = new DescriptorImageInfo
                 {
                     ImageLayout = ImageLayout,
                     ImageView = imageView,
-                    Sampler = Texture.CreateSampler(context, BaseMipLevel) 
+                    Sampler = Texture.CreateSampler(context, maxMip)
                 };
 
-                writes[i] = new WriteDescriptorSet
+                writes[writeIdx] = new WriteDescriptorSet
                 {
                     SType = StructureType.WriteDescriptorSet,
                     DstSet = descriptor,
-                    DstBinding = (uint)(BindingLocation.Start + i),
+                    DstBinding = (uint)(BindingLocation.Start + i), // важно: используем исходный индекс связки, а не writeIdx
                     DstArrayElement = 0,
                     DescriptorType = DescriptorType,
                     DescriptorCount = 1,
-                    PImageInfo = &imageInfos[i]
+                    PImageInfo = &imageInfos[writeIdx]
                 };
+                writeIdx++;
             }
 
-            VulkanContext.Vk.UpdateDescriptorSets(context.Device, (uint)Textures.Length, writes, 0, null);
+            VulkanContext.Vk.UpdateDescriptorSets(context.Device, (uint)validCount, writes, 0, null);
         }
 
-        public void Dispose()
-        {
-            Dispose(true);
-            GC.SuppressFinalize(this);
-        }
-
-        protected virtual void Dispose(bool disposing)
+        protected override void Dispose(bool disposing)
         {
             if (disposing)
             {
-                foreach (var texture in Textures)
+                // Отписываемся от всех текстур через токены
+                foreach (var token in _subscriptionTokens)
                 {
-                    texture?.OnTextureUpdated -= MarkAsDirty;
+                    token.Dispose();
                 }
+
+                _subscriptionTokens.Clear();
                 Textures = Array.Empty<Texture>();
                 _descriptorSetsByLayout.Clear();
             }
@@ -133,6 +195,8 @@ namespace RockEngine.Core.Rendering.ResourceBindings
 
         public override TextureBinding Clone()
         {
+            // Клонируем массив текстур (поверхностно) – токены не копируются, их нужно будет создать заново
+            var clonedTextures = (Texture[])Textures.Clone();
             return new TextureBinding(
                 SetLocation,
                 BindingLocation.Start,
@@ -141,7 +205,7 @@ namespace RockEngine.Core.Rendering.ResourceBindings
                 ImageLayout,
                 _arrayLayer,
                 _layerCount,
-                (Texture[])Textures.Clone()
+                clonedTextures
             );
         }
 

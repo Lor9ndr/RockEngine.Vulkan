@@ -1,9 +1,6 @@
-﻿using RockEngine.Vulkan;
-
-using Silk.NET.Vulkan;
-
-using System.Runtime.InteropServices;
+﻿using System.Runtime.InteropServices;
 using System.Text;
+using Silk.NET.Vulkan;
 
 namespace RockEngine.Vulkan.Builders
 {
@@ -95,10 +92,10 @@ namespace RockEngine.Vulkan.Builders
                 instanceWrapper.DebugMessenger = messenger;
             }
 
-           /* if(instanceInfo.EnabledExtensionCount > 0)
-            {
-                Marshal.FreeHGlobal((nint)instanceInfo.PpEnabledExtensionNames);
-            }*/
+            /* if(instanceInfo.EnabledExtensionCount > 0)
+             {
+                 Marshal.FreeHGlobal((nint)instanceInfo.PpEnabledExtensionNames);
+             }*/
 
             return instanceWrapper;
         }

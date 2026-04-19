@@ -1,5 +1,4 @@
 #version 450 core
-#extension GL_KHR_vulkan_glsl : enable
 #include "Include/common.glsl"
 
 layout(set = 0, binding = 0) uniform GlobalUbo_Dynamic {

@@ -1,6 +1,5 @@
-﻿using Silk.NET.Vulkan;
-
-using System.Runtime.InteropServices;
+﻿using System.Runtime.InteropServices;
+using Silk.NET.Vulkan;
 
 namespace RockEngine.Vulkan
 {

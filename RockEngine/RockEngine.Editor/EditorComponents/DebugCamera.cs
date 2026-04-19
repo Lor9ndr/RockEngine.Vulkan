@@ -1,12 +1,10 @@
-﻿using RockEngine.Core;
+﻿using System.Numerics;
+using RockEngine.Core;
 using RockEngine.Core.ECS;
 using RockEngine.Core.ECS.Components;
 using RockEngine.Core.Rendering;
-
 using Silk.NET.Input;
 using Silk.NET.Input.Extensions;
-
-using System.Numerics;
 
 namespace RockEngine.Editor.EditorComponents
 {
@@ -18,7 +16,7 @@ namespace RockEngine.Editor.EditorComponents
         private Vector2 _lastMousePosition;
         private bool _firstMouse = true;
         public bool CanMove = false;
-        public override RenderLayerMask VisibleLayers { get;set; } = RenderLayerMask.All;
+        public override RenderLayerMask VisibleLayers { get; set; } = RenderLayerMask.All;
 
         public DebugCamera(InputManager inputManager)
         {
@@ -30,7 +28,7 @@ namespace RockEngine.Editor.EditorComponents
             {
                 mouse.MouseMove += OnMouseMove;
             }
-            _inputManager.OnInputActionChanged += (oldContext, newContext)=>
+            _inputManager.OnInputActionChanged += (oldContext, newContext) =>
             {
                 foreach (var mouse in oldContext.Mice)
                 {
@@ -44,7 +42,7 @@ namespace RockEngine.Editor.EditorComponents
             };
         }
 
-    
+
         public override ValueTask Update(WorldRenderer renderer)
         {
             HandleKeyboardInput();
@@ -106,7 +104,7 @@ namespace RockEngine.Editor.EditorComponents
 
         private void OnMouseMove(IMouse mouse, Vector2 position)
         {
-           
+
             if (_firstMouse)
             {
                 _lastMousePosition = position;

@@ -1,9 +1,7 @@
-﻿using RockEngine.Vulkan.Builders;
-
+﻿using System.Buffers;
+using RockEngine.Vulkan.Builders;
 using Silk.NET.Core;
 using Silk.NET.Vulkan;
-
-using System.Buffers;
 
 namespace RockEngine.Core.Builders
 {
@@ -94,6 +92,6 @@ namespace RockEngine.Core.Builders
             }]);
         }
 
-        
+
     }
 }

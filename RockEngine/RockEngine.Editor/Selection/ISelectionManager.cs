@@ -13,8 +13,8 @@ namespace RockEngine.Editor.Selection
         event Action<SelectionContext> SelectionContextChanged;
 
         void Select(SelectionContext context);
-        void SelectEntity(Entity entity, SelectionSource source = SelectionSource.Script, object additionalData = null);
-        void SelectEntities(IEnumerable<Entity> entities, SelectionSource source = SelectionSource.Script, object additionalData = null);
+        void SelectEntity(Entity entity, SelectionSource source = SelectionSource.Script, object? additionalData = null);
+        void SelectEntities(IEnumerable<Entity> entities, SelectionSource source = SelectionSource.Script, object? additionalData = null);
         void AddToSelection(Entity entity, SelectionSource source = SelectionSource.Script);
         void RemoveFromSelection(Entity entity, SelectionSource source = SelectionSource.Script);
         void ClearSelection(SelectionSource source = SelectionSource.Script);

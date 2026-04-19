@@ -6,8 +6,6 @@ using RockEngine.Core.Helpers;
 using RockEngine.Editor.EditorUI.UndoRedo;
 using RockEngine.Editor.EditorUI.UndoRedo.Commands;
 
-using System.Collections.Generic;
-
 namespace RockEngine.Editor.EditorUI.ImGuiRendering.PropertyHandlers
 {
     [PropertyHandler(typeof(int))]
@@ -26,10 +24,14 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.PropertyHandlers
             ImGui.DragInt(accessor.DisplayName, ref value, step);
 
             if (ImGui.IsItemActivated())
+            {
                 _editingOldValues[controlId] = currentValue;
+            }
 
             if (ImGui.IsItemActive() && accessor.CanWrite)
+            {
                 accessor.SetValue(component, value);
+            }
 
             if (ImGui.IsItemDeactivatedAfterEdit())
             {

@@ -1,4 +1,6 @@
-﻿using RockEngine.Core.Builders;
+﻿using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using RockEngine.Core.Builders;
 using RockEngine.Core.DI;
 using RockEngine.Core.Diagnostics;
 using RockEngine.Core.ECS.Components;
@@ -7,12 +9,9 @@ using RockEngine.Core.Rendering.Managers;
 using RockEngine.Core.Rendering.Materials;
 using RockEngine.Core.Rendering.Objects;
 using RockEngine.Vulkan;
-
+using RockEngine.Vulkan.DeviceFeatures;
 using Silk.NET.Core;
 using Silk.NET.Vulkan;
-
-using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
 
 namespace RockEngine.Core.Rendering.Passes.SubPasses
 {
@@ -26,8 +25,11 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
         private readonly GlobalUbo _globalUbo;
         private readonly GlobalGeometryBuffer _globalGeometryBuffer;
         private readonly PipelineManager _pipelineManager;
+        private readonly FeatureRegistry _featureRegistry;
+        private readonly GlobalTextureArray _globalTextureArray;
         private readonly Bool32 _supportsMultiDraw;
         private readonly int _indirectCommandStride;
+        private readonly bool _globalTexturesSupport;
         private RckPipeline _pipeline;
 
         public GeometryPass(
@@ -38,7 +40,9 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
             IndirectCommandManager indirectCommands,
             GlobalUbo globalUbo,
             GlobalGeometryBuffer globalGeometryBuffer,
-            PipelineManager pipelineManager)
+            PipelineManager pipelineManager,
+            FeatureRegistry featureRegistry,
+            GlobalTextureArray globalTextureArray)
         {
             _context = context;
             _graphicsEngine = graphicsEngine;
@@ -48,8 +52,11 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
             _globalUbo = globalUbo;
             _globalGeometryBuffer = globalGeometryBuffer;
             _pipelineManager = pipelineManager;
+            _featureRegistry = featureRegistry;
+            _globalTextureArray = globalTextureArray;
             _supportsMultiDraw = GetMultiDrawIndirectFeature();
             _indirectCommandStride = Marshal.SizeOf<DrawIndexedIndirectCommand>();
+            _globalTexturesSupport = featureRegistry.EnabledFeatures.Contains(new DescriptorIndexingFeature().Name);
         }
 
         public static uint Order => 0;
@@ -86,7 +93,7 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
 
                 // Track state
                 RenderState currentState = default;
-                Span<uint> skipSets = [matrixBinding.SetLocation, globalUboBinding.SetLocation];
+                Span<uint> skipSets = [matrixBinding.SetLocation, globalUboBinding.SetLocation, _globalTextureArray.GetBinding().SetLocation];
 
                 _globalGeometryBuffer.Bind(batch);
                 for (int i = 0; i < drawGroupsSpan.Length; i++)
@@ -96,21 +103,6 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
                     {
                         continue;
                     }
-
-
-                    // Material change
-                    if (!ReferenceEquals(currentState.MaterialPass, drawGroup.MaterialPass))
-                    {
-                        currentState.MaterialPass = drawGroup.MaterialPass;
-                        _bindingManager.BindResourcesForMaterial(
-                            frameIndex,
-                            currentState.MaterialPass,
-                            batch,
-                            false,
-                            skipSets
-                        );
-                        currentState.MaterialPass.CmdPushConstants(batch);
-                    }
                     // Pipeline state change
                     if (!ReferenceEquals(currentState.Pipeline, drawGroup.MaterialPass.Pipeline))
                     {
@@ -119,7 +111,24 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
 
                         _bindingManager.BindResource(frameIndex, globalUboBinding, batch, currentState.Pipeline.Layout);
                         _bindingManager.BindResource(frameIndex, matrixBinding, batch, currentState.Pipeline.Layout);
+                        _bindingManager.BindResource(frameIndex, _globalTextureArray.GetBinding(), batch, currentState.Pipeline.Layout);
                     }
+
+                    // Material change
+                    if (!ReferenceEquals(currentState.MaterialPass, drawGroup.MaterialPass))
+                    {
+                        currentState.MaterialPass = drawGroup.MaterialPass;
+                        _bindingManager.BindResourcesForMaterial(
+                            frameIndex,
+                                drawGroup.MeshRenderer.Material,
+                            currentState.MaterialPass,
+                            batch,
+                            false,
+                            skipSets
+                        );
+                        currentState.MaterialPass.CmdPushConstants(batch);
+                    }
+
 
                     // Issue draw command
                     if (_supportsMultiDraw)

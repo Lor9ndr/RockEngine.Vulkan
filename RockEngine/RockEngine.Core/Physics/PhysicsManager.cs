@@ -1,10 +1,10 @@
-﻿using JoltPhysicsSharp;
+﻿using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Numerics;
-using System.Collections.Concurrent;
+using JoltPhysicsSharp;
+using NLog;
 using RockEngine.Core.ECS;
 using RockEngine.Core.ECS.Components;
-using NLog;
-using System.Diagnostics;
 
 namespace RockEngine.Core.Physics
 {
@@ -82,7 +82,9 @@ namespace RockEngine.Core.Physics
         public void Initialize(PhysicsSettings? settings = null)
         {
             if (_isInitialized)
+            {
                 return;
+            }
 
             _settings = settings ?? new PhysicsSettings();
 
@@ -105,7 +107,7 @@ namespace RockEngine.Core.Physics
                 }
                 Foundation.SetAssertFailureHandler(d);
 #endif
-               
+
                 // Setup collision filtering
                 var systemSettings = SetupCollisionFiltering();
 
@@ -171,8 +173,10 @@ namespace RockEngine.Core.Physics
 
         public void Update(float deltaTime)
         {
-            if (!_isInitialized || _physicsSystem == null ||  _jobSystem == null)
+            if (!_isInitialized || _physicsSystem == null || _jobSystem == null)
+            {
                 return;
+            }
 
             try
             {
@@ -209,8 +213,10 @@ namespace RockEngine.Core.Physics
         {
             CheckPhysicsInitialized();
 
-            if ( !_entityToBodyMap.TryGetValue(update.EntityId, out var bodyId))
+            if (!_entityToBodyMap.TryGetValue(update.EntityId, out var bodyId))
+            {
                 return;
+            }
 
             try
             {
@@ -242,23 +248,29 @@ namespace RockEngine.Core.Physics
 
                     case PhysicsUpdateType.SetFriction:
                         if (update.Force.HasValue)
+                        {
                             _physicsSystem!.BodyInterface.SetFriction(bodyId, update.Force.Value.X);
+                        }
+
                         break;
 
                     case PhysicsUpdateType.SetRestitution:
                         if (update.Force.HasValue)
+                        {
                             _physicsSystem!.BodyInterface.SetRestitution(bodyId, update.Force.Value.Y);
+                        }
+
                         break;
 
-                   /* case PhysicsUpdateType.SetLinearDamping:
-                        if (update.Force.HasValue)
-                            _physicsSystem.BodyInterface.SetLinearDamping(bodyId, update.Force.Value.X);
-                        break;
+                        /* case PhysicsUpdateType.SetLinearDamping:
+                             if (update.Force.HasValue)
+                                 _physicsSystem.BodyInterface.SetLinearDamping(bodyId, update.Force.Value.X);
+                             break;
 
-                    case PhysicsUpdateType.SetAngularDamping:
-                        if (update.Force.HasValue)
-                            _physicsSystem.BodyInterface.SetAngularDamping(bodyId, update.Force.Value.Y);
-                        break;*/
+                         case PhysicsUpdateType.SetAngularDamping:
+                             if (update.Force.HasValue)
+                                 _physicsSystem.BodyInterface.SetAngularDamping(bodyId, update.Force.Value.Y);
+                             break;*/
                 }
             }
             catch (Exception ex)
@@ -278,7 +290,9 @@ namespace RockEngine.Core.Physics
                 {
                     var transform = entity.Transform;
                     if (transform == null)
+                    {
                         continue;
+                    }
 
                     // Get position and rotation from physics body
                     var position = _physicsSystem!.BodyInterface.GetPosition(bodyId);
@@ -292,15 +306,12 @@ namespace RockEngine.Core.Physics
 
         private void UpdateTransformWithoutDirty(Transform transform, Vector3 position, Quaternion rotation)
         {
-            // We need to update the transform without triggering the dirty flag
-            // This is a workaround - in a real implementation, you might want to 
-            // modify Transform class to support this properly
             var positionChanged = transform.Position != position;
             var rotationChanged = transform.Rotation != rotation;
 
             if (positionChanged || rotationChanged)
             {
-                // Use reflection to set private fields
+               /* // Use reflection to set private fields
                 var positionField = typeof(Transform).GetField("_position",
                     System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
                 var rotationField = typeof(Transform).GetField("_rotation",
@@ -308,7 +319,7 @@ namespace RockEngine.Core.Physics
                 var worldMatrixField = typeof(Transform).GetField("_worldMatrix",
                     System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
                 var isDirtyField = typeof(Transform).GetField("_isDirty",
-                    System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                    System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);*/
 
                 //positionField?.SetValue(transform, position);
                 //rotationField?.SetValue(transform, rotation);
@@ -339,7 +350,9 @@ namespace RockEngine.Core.Physics
                 || _physicsSystem.IsDisposed
                 || _physicsSystem.BodyInterface.IsNull
                 || !_entityToBodyMap.TryGetValue(entity.ID, out var bodyId))
+            {
                 return;
+            }
 
             _physicsSystem.BodyInterface.RemoveAndDestroyBody(bodyId);
 
@@ -357,7 +370,9 @@ namespace RockEngine.Core.Physics
         public RayCastResult RayCast(Vector3 origin, Vector3 direction, float maxDistance)
         {
             if (_physicsSystem == null)
+            {
                 return new RayCastResult();
+            }
 
             try
             {
@@ -370,7 +385,7 @@ namespace RockEngine.Core.Physics
                 var settings = new RayCastSettings();
                 var collector = CollisionCollectorType.ClosestHit;
                 var results = new JoltPhysicsSharp.RayCastResult[1];
-                
+
 
                 if (_physicsSystem.NarrowPhaseQuery.CastRay(ray, settings, collector, results))
                 {
@@ -405,7 +420,7 @@ namespace RockEngine.Core.Physics
             return bodyId;
         }
 
-      
+
 
         public BodyID CreateSphere(float radius, Vector3 position, Quaternion rotation,
             MotionType motionType, ObjectLayer layer, Activation activation = Activation.Activate)
@@ -506,7 +521,8 @@ namespace RockEngine.Core.Physics
                 _entityToBodyMap.Clear();
                 _bodyToEntityMap.Clear();
                 _ignoreDrawBodies.Clear();
-                while (_updateQueue.TryDequeue(out _)) { }
+                while (_updateQueue.TryDequeue(out _))
+                { }
 
                 // Dispose Jolt components
                 _jobSystem?.Dispose();

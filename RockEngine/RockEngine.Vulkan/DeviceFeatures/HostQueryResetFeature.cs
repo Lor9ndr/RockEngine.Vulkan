@@ -4,7 +4,7 @@ namespace RockEngine.Vulkan.DeviceFeatures
 {
     public class HostQueryResetFeature : DeviceFeature
     {
-        public HostQueryResetFeature() :base("Host Query Reset")
+        public HostQueryResetFeature() : base("Host Query Reset")
         {
 
         }

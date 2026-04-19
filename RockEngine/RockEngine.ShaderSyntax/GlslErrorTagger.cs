@@ -2,7 +2,6 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
-using System.Linq;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -26,19 +25,19 @@ namespace RockEngine.ShaderSyntax
 
         private class ErrorData
         {
-            public ITrackingSpan TrackingSpan { get; set; }
-            public string Level { get; set; }      // "error" or "warning"
-            public string Message { get; set; }
+            public ITrackingSpan? TrackingSpan { get; set; }
+            public string? Level { get; set; }      // "error" or "warning"
+            public string? Message { get; set; }
         }
 
         // Matches JSON from ShaderValidator.exe
         private class ValidationMessage
         {
-            public string File { get; set; }
+            public string? File { get; set; }
             public int Line { get; set; }
             public int Column { get; set; }
-            public string Level { get; set; }
-            public string Message { get; set; }
+            public string? Level { get; set; }
+            public string? Message { get; set; }
         }
 
         public GlslErrorTagger(ITextBuffer buffer, string validatorPath)
@@ -73,7 +72,7 @@ namespace RockEngine.ShaderSyntax
             string text = snapshot.GetText();
 
             // Get original file path if available
-            string originalFilePath = null;
+            string? originalFilePath = null;
             if (_buffer.Properties.TryGetProperty(typeof(ITextDocument), out ITextDocument doc))
             {
                 originalFilePath = doc.FilePath;
@@ -87,9 +86,14 @@ namespace RockEngine.ShaderSyntax
                 string defines = "";
                 var args = $"{tempFile} --compiler glslang";
                 if (!string.IsNullOrEmpty(originalFilePath))
+                {
                     args += $" --original-file {originalFilePath}";
+                }
+
                 if (!string.IsNullOrEmpty(defines))
+                {
                     args += $" --defines \"{defines}\"";
+                }
 
                 var startInfo = new ProcessStartInfo
                 {
@@ -107,7 +111,9 @@ namespace RockEngine.ShaderSyntax
                 await process.WaitForExitAsync(cancellationToken);
 
                 if (cancellationToken.IsCancellationRequested)
+                {
                     return;
+                }
 
                 var messages = JsonSerializer.Deserialize<ValidationMessage[]>(output) ?? Array.Empty<ValidationMessage>();
 
@@ -116,13 +122,17 @@ namespace RockEngine.ShaderSyntax
                 foreach (var msg in messages)
                 {
                     if (msg.Line < 0 || msg.Line >= snapshot.LineCount)
+                    {
                         continue;
+                    }
 
                     var line = snapshot.GetLineFromLineNumber(msg.Line);
                     int start = msg.Column >= 0 ? line.Start.Position + msg.Column : line.Start.Position;
                     int length = msg.Column >= 0 ? Math.Min(10, line.Length - msg.Column) : line.Length;
                     if (start + length > snapshot.Length)
+                    {
                         length = snapshot.Length - start;
+                    }
 
                     var span = new SnapshotSpan(snapshot, start, length);
                     var trackingSpan = snapshot.CreateTrackingSpan(span, SpanTrackingMode.EdgeInclusive);
@@ -149,21 +159,30 @@ namespace RockEngine.ShaderSyntax
             }
             finally
             {
-                try { File.Delete(tempFile); } catch { }
+                try
+                {
+                    File.Delete(tempFile);
+                }
+                catch { }
             }
         }
 
         private string GetFileExtension()
         {
             if (_buffer.Properties.TryGetProperty(typeof(ITextDocument), out ITextDocument doc))
+            {
                 return Path.GetExtension(doc.FilePath);
+            }
+
             return ".vert";
         }
 
         public IEnumerable<ITagSpan<IErrorTag>> GetTags(NormalizedSnapshotSpanCollection spans)
         {
             if (spans.Count == 0)
+            {
                 yield break;
+            }
 
             ITextSnapshot currentSnapshot = spans[0].Snapshot;
 

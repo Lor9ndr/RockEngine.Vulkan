@@ -58,6 +58,7 @@ namespace RockEngine.Core.Assets
             }
         }
 
+        
         public async ValueTask LoadGpuResourcesAsync()
         {
             if (GpuReady)
@@ -83,7 +84,7 @@ namespace RockEngine.Core.Assets
 
                 // Add mesh to global buffer
                 _allocation = await globalGeometryBuffer.AddMeshAsync(ID, Vertices!, Indices!);
-                IndicesCount = (uint)(Indices is null ? 0: Indices.Length);
+                IndicesCount = (uint)(Indices is null ? 0 : Indices.Length);
                 VerticesCount = (uint)Vertices!.Length;
             }
             finally
@@ -93,8 +94,7 @@ namespace RockEngine.Core.Assets
             UnloadData();
         }
 
-       
-
+        
         public void UnloadGpuResources()
         {
             lock (_gpuLock)
@@ -105,6 +105,7 @@ namespace RockEngine.Core.Assets
             }
         }
 
+        
         public void Dispose()
         {
             if (_disposed)
@@ -118,6 +119,7 @@ namespace RockEngine.Core.Assets
             _disposed = true;
         }
 
+        
         public async ValueTask<IMesh> GetAsync()
         {
             await LoadGpuResourcesAsync();

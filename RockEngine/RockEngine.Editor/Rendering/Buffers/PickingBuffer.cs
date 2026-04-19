@@ -1,9 +1,7 @@
-﻿using RockEngine.Core.Rendering.Texturing;
+﻿using System.Numerics;
+using RockEngine.Core.Rendering.Texturing;
 using RockEngine.Vulkan;
-
 using Silk.NET.Vulkan;
-
-using System.Numerics;
 
 namespace RockEngine.Editor.Rendering.Buffers
 {
@@ -13,6 +11,7 @@ namespace RockEngine.Editor.Rendering.Buffers
         private readonly VkBuffer _stagingBuffer;
         private bool _disposed;
 
+        
         public PickingBuffer(VulkanContext context)
         {
             _context = context;
@@ -118,7 +117,7 @@ namespace RockEngine.Editor.Rendering.Buffers
                 DstStageMask = PipelineStageFlags2.HostBit
             };
 
-            batch.PipelineBarrier([], 
+            batch.PipelineBarrier([],
                 [barrier], []);
             batch.SubmitContext.SubmitSingle(batch, VkFence.CreateNotSignaled(_context)).Wait();
 

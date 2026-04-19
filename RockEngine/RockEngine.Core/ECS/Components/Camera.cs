@@ -1,5 +1,5 @@
-﻿using MessagePack;
-
+﻿using System.Numerics;
+using MessagePack;
 using RockEngine.Core.Attributes;
 using RockEngine.Core.Helpers;
 using RockEngine.Core.Rendering;
@@ -7,14 +7,11 @@ using RockEngine.Core.Rendering.Materials;
 using RockEngine.Core.Rendering.Passes.SubPasses;
 using RockEngine.Core.Rendering.RenderTargets;
 using RockEngine.Core.Rendering.ResourceBindings;
-
-using System.Numerics;
-
 using static RockEngine.Core.Rendering.Managers.CameraManager;
 
 namespace RockEngine.Core.ECS.Components
 {
-    [MessagePackObject]
+    [MessagePackObject(AllowPrivate = true)]
     public partial class Camera : Component
     {
         public const int MAX_FOV = 120;
@@ -176,7 +173,7 @@ namespace RockEngine.Core.ECS.Components
         [Key(35)]
         public float EnvRotation { get; set; } = 0.0f;
 
-      
+
         [IgnoreMember]
         public RenderTarget RenderTarget { get; set; }
 
@@ -232,7 +229,7 @@ namespace RockEngine.Core.ECS.Components
         public override ValueTask OnStart(WorldRenderer renderer)
         {
             var camIndex = renderer.RegisterCamera(this);
-            if(RenderTarget is null)
+            if (RenderTarget is null)
             {
                 RenderTarget = new CameraRenderTarget(renderer.Context, renderer.GraphicsEngine, new Silk.NET.Vulkan.Extent2D(1280, 720));
                 RenderTarget.Initialize(renderer.RenderPass ?? throw new Exception("Renderer Renderpass was not created"));
@@ -240,7 +237,7 @@ namespace RockEngine.Core.ECS.Components
             }
             return default;
         }
-        private void InitializeGBuffer(GBuffer gbuffer, WorldRenderer renderer,int cameraIndex)
+        private void InitializeGBuffer(GBuffer gbuffer, WorldRenderer renderer, int cameraIndex)
         {
 
             var pipeline = renderer.PipelineManager.GetPipelineByName("DeferredLighting");
@@ -251,13 +248,13 @@ namespace RockEngine.Core.ECS.Components
             _attachmentBinding = new InputAttachmentBinding(
                 setLocation: 2,
                 bindingLocation: 0,
-                [..gbuffer.ColorAttachments]  // Position + Normal + Albedo
+                [.. gbuffer.ColorAttachments]  // Position + Normal + Albedo
             );
             material.BindResource(_attachmentBinding);
             material.BindResource(renderer.GlobalUbo.GetBinding((uint)cameraIndex));
 
             material.BindResource(new UniformBufferBinding(renderer.LightManager.CountLightUbo, 1, 1));
-            material.PushConstant("iblParams", new IBLParams()
+            material.SetPushConstant("iblParams", new IBLParams()
             {
                 Exposure = Exposure,
                 EnvIntensity = EnvIntensity,
@@ -272,7 +269,7 @@ namespace RockEngine.Core.ECS.Components
         public override ValueTask Update(WorldRenderer renderer)
         {
             UpdateVectors();
-            RenderTarget?.Material?.PushConstant("iblParams", new IBLParams()
+            RenderTarget?.Material?.SetPushConstant("iblParams", new IBLParams()
             {
                 Exposure = Exposure,
                 EnvIntensity = EnvIntensity,
@@ -289,7 +286,7 @@ namespace RockEngine.Core.ECS.Components
         }
         public override void SetActive(bool isActive = true)
         {
-            if(isActive == IsActive)
+            if (isActive == IsActive)
             {
                 return;
             }

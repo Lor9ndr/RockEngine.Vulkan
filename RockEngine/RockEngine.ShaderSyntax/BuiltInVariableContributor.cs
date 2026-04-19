@@ -9,19 +9,27 @@ internal class BuiltInVariableContributor : IGlslCompletionContributor
 {
     public IEnumerable<Completion> GetCompletions(ITextSnapshot snapshot, SnapshotPoint triggerPoint)
     {
-        // Show built‑in variables only when in a context where a variable is expected
-        if (!IsVariableContext(snapshot, triggerPoint))
-            yield break;
+        // Determine context
+        bool isDeclarationContext = VariableCompletionContributor.IsDeclarationContext(snapshot, triggerPoint);
+        bool isExpressionContext = VariableCompletionContributor.IsExpressionContext(snapshot, triggerPoint);
 
-        foreach (var varName in GlslBuiltIns.BuiltInVariables)
+        // Show built‑ins in both contexts (though in declaration context they may be less useful)
+        if (!isDeclarationContext && !isExpressionContext)
+        {
+            yield break;
+        }
+
+        // Get shader stage from the text buffer
+        var stage = ShaderStageHelper.GetStage(snapshot.TextBuffer);
+        var builtIns = new HashSet<string>(GlslStageBuiltIns.CommonVariables);
+        if (GlslStageBuiltIns.StageVariables.TryGetValue(stage, out var stageVars))
+        {
+            builtIns.UnionWith(stageVars);
+        }
+
+        foreach (var varName in builtIns)
         {
             yield return new Completion(varName, varName, "GLSL built‑in variable", null, null);
         }
-    }
-
-    private bool IsVariableContext(ITextSnapshot snapshot, SnapshotPoint triggerPoint)
-    {
-        // Reuse the same logic as in VariableCompletionContributor (or extract to a helper)
-        return VariableCompletionContributor.IsVariableContext(snapshot, triggerPoint);
     }
 }

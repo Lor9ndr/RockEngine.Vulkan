@@ -5,7 +5,7 @@ using Silk.NET.Vulkan;
 
 namespace RockEngine.Core.Rendering.ResourceBindings
 {
-    public class StorageBufferBinding<T> : ResourceBinding where T:unmanaged
+    public class StorageBufferBinding<T> : ResourceBinding where T : unmanaged
     {
         public StorageBuffer<T> Buffer { get; }
         public ulong Offset { get; }

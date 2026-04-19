@@ -115,17 +115,29 @@ namespace RockEngine.Assets
             while ((line = await reader.ReadLineAsync()) != null)
             {
                 if (line.StartsWith("# ID: "))
+                {
                     header.AssetId = Guid.Parse(line.AsSpan("# ID: ".Length));
+                }
                 else if (line.StartsWith("# Type: "))
+                {
                     header.AssetTypeName = line["# Type: ".Length..];
+                }
                 else if (line.StartsWith("# Name: "))
+                {
                     header.Name = line["# Name: ".Length..];
+                }
                 else if (line.StartsWith("# Created: "))
+                {
                     header.Created = DateTime.Parse(line.Substring("# Created: ".Length));
+                }
                 else if (line.StartsWith("# Modified: "))
+                {
                     header.Modified = DateTime.Parse(line.Substring("# Modified: ".Length));
+                }
                 else if (line == "---")
+                {
                     break; // End of header
+                }
             }
 
             return header;
@@ -139,25 +151,20 @@ namespace RockEngine.Assets
             // Check magic number
             var magic = reader.ReadInt32();
             if (magic != 0x524F434B) // "ROCK"
+            {
                 throw new InvalidDataException("Invalid binary asset format");
+            }
 
-            var header = new AssetHeader { Format = "binary" };
-
-            // Read header fields
-            header.Version = reader.ReadInt32();
-            header.AssetId = new Guid(reader.ReadBytes(16));
-
-            var typeNameLength = reader.ReadInt32();
-            header.AssetTypeName = Encoding.UTF8.GetString(reader.ReadBytes(typeNameLength));
-
-            var nameLength = reader.ReadInt32();
-            header.Name = Encoding.UTF8.GetString(reader.ReadBytes(nameLength));
-
-            var createdTicks = reader.ReadInt64();
-            header.Created = new DateTime(createdTicks, DateTimeKind.Utc);
-
-            var modifiedTicks = reader.ReadInt64();
-            header.Modified = new DateTime(modifiedTicks, DateTimeKind.Utc);
+            var header = new AssetHeader
+            {
+                Format = "binary",             // Read header fields
+                Version = reader.ReadInt32(),
+                AssetId = new Guid(reader.ReadBytes(16)),
+                AssetTypeName = Encoding.UTF8.GetString(reader.ReadBytes(reader.ReadInt32())),
+                Name = Encoding.UTF8.GetString(reader.ReadBytes(reader.ReadInt32())),
+                Created = new DateTime(reader.ReadInt64(), DateTimeKind.Utc),
+                Modified = new DateTime(reader.ReadInt64(), DateTimeKind.Utc)
+            };
 
             return header;
         }
@@ -169,7 +176,9 @@ namespace RockEngine.Assets
             foreach (var strategy in _strategies)
             {
                 if (strategy.CanHandle(assetType))
+                {
                     return strategy;
+                }
             }
 
             return _strategies.First();

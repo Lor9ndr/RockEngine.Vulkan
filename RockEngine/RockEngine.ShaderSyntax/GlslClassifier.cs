@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
 using Microsoft.VisualStudio.Text;
 using Microsoft.VisualStudio.Text.Classification;
 
@@ -92,14 +91,24 @@ namespace RockEngine.ShaderSyntax
 
             while (pos < len)
             {
-                while (pos < len && char.IsWhiteSpace(line[pos])) pos++;
-                if (pos >= len) break;
+                while (pos < len && char.IsWhiteSpace(line[pos]))
+                {
+                    pos++;
+                }
+
+                if (pos >= len)
+                {
+                    break;
+                }
 
                 if (line[pos] == '#')
                 {
                     int start = pos;
                     while (pos < len && !char.IsWhiteSpace(line[pos]) && line[pos] != '\r' && line[pos] != '\n')
+                    {
                         pos++;
+                    }
+
                     var span = new SnapshotSpan(snapshot, lineStartPos + start, pos - start);
                     classifications.Add(new ClassificationSpan(span, _preprocessorType));
                     continue;
@@ -117,7 +126,10 @@ namespace RockEngine.ShaderSyntax
                 {
                     int start = pos;
                     while (pos < len && (char.IsLetterOrDigit(line[pos]) || line[pos] == '_'))
+                    {
                         pos++;
+                    }
+
                     string word = line.Substring(start, pos - start);
 
                     IClassificationType type = GetClassificationForWord(word);
@@ -134,23 +146,33 @@ namespace RockEngine.ShaderSyntax
             }
         }
 
-        private IClassificationType GetClassificationForWord(string word)
+        private IClassificationType? GetClassificationForWord(string word)
         {
             if (Keywords.Contains(word))
+            {
                 return _keywordType;
+            }
 
             if (Types.Contains(word))
+            {
                 return _typeType;
+            }
 
             if (BuiltInVariables.Contains(word))
+            {
                 return _builtInVariableType;
+            }
 
             if (BuiltInFunctions.Contains(word))
+            {
                 return _builtInFunctionType;
+            }
 
             // Check user-defined functions
             if (_userFunctions != null && _userFunctions.Contains(word))
+            {
                 return _userFunctionType;
+            }
 
             return null;
         }

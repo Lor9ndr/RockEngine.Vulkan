@@ -4,7 +4,7 @@ using MessagePack;
 using RockEngine.Assets;
 using RockEngine.Core.ECS.Components.Physics;
 using RockEngine.Core.Rendering;
-    
+
 namespace RockEngine.Core.ECS.Components
 {
     [Union(0, typeof(MeshRenderer))]
@@ -16,7 +16,7 @@ namespace RockEngine.Core.ECS.Components
     [Union(6, typeof(BoxColliderComponent))]
     [Union(7, typeof(CapsuleColliderComponent))]
     [Union(8, typeof(Skybox))]
-    public interface IComponent: IPolymorphicSerializable
+    public interface IComponent : IPolymorphicSerializable
     {
         public bool IsActive { get; }
         public Entity Entity { get; }

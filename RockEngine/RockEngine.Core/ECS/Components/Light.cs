@@ -1,11 +1,9 @@
-﻿using MessagePack;
-
+﻿using System.Numerics;
+using System.Runtime.InteropServices;
+using MessagePack;
 using RockEngine.Core.Attributes;
 using RockEngine.Core.Helpers;
 using RockEngine.Core.Rendering;
-
-using System.Numerics;
-using System.Runtime.InteropServices;
 
 namespace RockEngine.Core.ECS.Components
 {
@@ -50,7 +48,7 @@ namespace RockEngine.Core.ECS.Components
         [Key(8)]
         public Vector3 Color { get; set; } = Vector3.One;
 
-        [Range(0,1000)]
+        [Range(0, 1000)]
         [Key(9)]
         public float Intensity { get; set; } = 1.0f;
 
@@ -139,7 +137,7 @@ namespace RockEngine.Core.ECS.Components
         public Vector2 ShadowOrthoSize { get; set; } = new Vector2(200, 200);
 
 
-        [Range(1,4)]
+        [Range(1, 4)]
         [Key(23)]
         public int CascadeCount { get; set; } = 4;
         [Key(24)]
@@ -160,7 +158,7 @@ namespace RockEngine.Core.ECS.Components
         public delegate Matrix4x4[] CalculateShadowMatrixStrategy();
 
         [IgnoreMember]
-        public CalculateShadowMatrixStrategy GetShadowMatrix { get; set; }
+        public CalculateShadowMatrixStrategy? GetShadowMatrix { get; set; }
 
         [IgnoreMember]
 
@@ -181,7 +179,7 @@ namespace RockEngine.Core.ECS.Components
         {
             if (CastShadows)
             {
-                GetShadowMatrix.Invoke();
+                GetShadowMatrix?.Invoke();
             }
 
             _lightData = new LightData
@@ -227,7 +225,9 @@ namespace RockEngine.Core.ECS.Components
 
             Vector3 up = Vector3.UnitY;
             if (Math.Abs(Vector3.Dot(lightDir, Vector3.UnitY)) > 0.99f)
+            {
                 up = Vector3.UnitZ;
+            }
 
             var target = lightPos + lightDir;
 
@@ -242,15 +242,15 @@ namespace RockEngine.Core.ECS.Components
                 0.1f,
                 ShadowDistance);
 
-           projection.M22 *= -1;
+            projection.M22 *= -1;
 
             // Flip Y-axis for Vulkan viewport
-           /* if (Matrix4x4.Invert(projection, out var invProj))
-            {
-                var vulkanProjection = projection;
-                vulkanProjection.M22 *= -1; // Flip Y axis for Vulkan
-                projection = vulkanProjection;
-            }*/
+            /* if (Matrix4x4.Invert(projection, out var invProj))
+             {
+                 var vulkanProjection = projection;
+                 vulkanProjection.M22 *= -1; // Flip Y axis for Vulkan
+                 projection = vulkanProjection;
+             }*/
 
             return [view * projection];
         }
@@ -259,7 +259,9 @@ namespace RockEngine.Core.ECS.Components
         private Matrix4x4[] GetPointShadowMatrices()
         {
             if (Type != LightType.Point)
+            {
                 return [Matrix4x4.Identity];
+            }
 
             var matrices = new Matrix4x4[6];
             var position = Entity.Transform.WorldPosition;
@@ -335,8 +337,10 @@ namespace RockEngine.Core.ECS.Components
             float worldUnitsPerTexel = (maxX - minX) / ShadowMapSize;
             float padding = worldUnitsPerTexel * 2.0f; // 2 texels padding
 
-            minX -= padding; maxX += padding;
-            minY -= padding; maxY += padding;
+            minX -= padding;
+            maxX += padding;
+            minY -= padding;
+            maxY += padding;
 
             float minZ = -frustumRadius * 3.0f;
             float maxZ = frustumRadius * 3.0f;
@@ -400,9 +404,12 @@ namespace RockEngine.Core.ECS.Components
         private void CalculateFrustumBoundsInLightSpace(Vector3[] corners, Matrix4x4 lightView,
             out float minX, out float maxX, out float minY, out float maxY, out float minZ, out float maxZ)
         {
-            minX = float.MaxValue; maxX = float.MinValue;
-            minY = float.MaxValue; maxY = float.MinValue;
-            minZ = float.MaxValue; maxZ = float.MinValue;
+            minX = float.MaxValue;
+            maxX = float.MinValue;
+            minY = float.MaxValue;
+            maxY = float.MinValue;
+            minZ = float.MaxValue;
+            maxZ = float.MinValue;
 
             foreach (var corner in corners)
             {
@@ -454,7 +461,9 @@ namespace RockEngine.Core.ECS.Components
 
                         // Perspective divide
                         if (Math.Abs(worldSpacePos.W) > float.Epsilon)
+                        {
                             worldSpacePos /= worldSpacePos.W;
+                        }
 
                         corners[index++] = new Vector3(worldSpacePos.X, worldSpacePos.Y, worldSpacePos.Z);
                     }
@@ -493,7 +502,7 @@ namespace RockEngine.Core.ECS.Components
             return matrices;
         }
 
-        
+
     }
 
     [GLSLStruct(GLSLMemoryLayout.Scalar)]

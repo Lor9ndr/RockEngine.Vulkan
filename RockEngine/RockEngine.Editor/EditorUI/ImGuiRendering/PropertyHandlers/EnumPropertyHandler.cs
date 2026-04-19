@@ -1,11 +1,10 @@
-﻿using ImGuiNET;
+﻿using System.Diagnostics.CodeAnalysis;
+using ImGuiNET;
 
 using RockEngine.Core.ECS.Components;
 using RockEngine.Core.Helpers;
 using RockEngine.Editor.EditorUI.UndoRedo;
 using RockEngine.Editor.EditorUI.UndoRedo.Commands;
-
-using System.Collections.Generic;
 
 namespace RockEngine.Editor.EditorUI.ImGuiRendering.PropertyHandlers
 {
@@ -16,6 +15,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.PropertyHandlers
 
         public bool CanHandle(Type propertyType) => propertyType.IsEnum;
 
+        [RequiresDynamicCode("Calls Enum.GetValues")]
         public void Draw(IComponent component, UIPropertyAccessor accessor, object value, PropertyDrawer drawer)
         {
             Enum enumValue = (Enum)value;
@@ -25,7 +25,9 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.PropertyHandlers
             {
                 // When the combo opens, store the current value
                 if (ImGui.IsWindowAppearing())
+                {
                     _editingOldValues[controlId] = enumValue;
+                }
 
                 foreach (Enum enumVal in Enum.GetValues(accessor.PropertyType))
                 {
@@ -44,7 +46,9 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.PropertyHandlers
                         }
                     }
                     if (isSelected)
+                    {
                         ImGui.SetItemDefaultFocus();
+                    }
                 }
                 ImGui.EndCombo();
             }

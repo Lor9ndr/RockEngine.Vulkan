@@ -1,6 +1,4 @@
 ﻿using MessagePack;
-
-using RockEngine.Assets;
 using RockEngine.Core.DI;
 using RockEngine.Core.Rendering;
 using RockEngine.Core.Rendering.Texturing;
@@ -58,7 +56,10 @@ namespace RockEngine.Core.Assets
 
         private async Task LoadImageDataAsync()
         {
-            if (Data == null || Data.FilePaths.Count == 0) return;
+            if (Data == null || Data.FilePaths.Count == 0)
+            {
+                return;
+            }
 
             try
             {
@@ -113,12 +114,18 @@ namespace RockEngine.Core.Assets
 
         public async ValueTask LoadGpuResourcesAsync()
         {
-            if (GpuReady) return;
+            if (GpuReady)
+            {
+                return;
+            }
 
             await _gpuSemaphore.WaitAsync();
             try
             {
-                if (GpuReady) return;
+                if (GpuReady)
+                {
+                    return;
+                }
 
                 if (!IsDataLoaded)
                 {
@@ -177,7 +184,10 @@ namespace RockEngine.Core.Assets
 
         public void Dispose()
         {
-            if (_disposed) return;
+            if (_disposed)
+            {
+                return;
+            }
 
             UnloadGpuResources();
             _gpuSemaphore.Dispose();
@@ -190,6 +200,6 @@ namespace RockEngine.Core.Assets
             UnloadGpuResources();
         }
 
-       
+
     }
 }

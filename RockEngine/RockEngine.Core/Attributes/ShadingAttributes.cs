@@ -21,7 +21,7 @@ namespace RockEngine.Core.Attributes
     {
         public string Name { get; }
 
-        public UniformAttribute(string name = null)
+        public UniformAttribute(string? name = null)
         {
             Name = name;
         }
@@ -32,7 +32,7 @@ namespace RockEngine.Core.Attributes
     {
         public string Name { get; }
 
-        public InAttribute(string name = null)
+        public InAttribute(string? name = null)
         {
             Name = name;
         }
@@ -43,7 +43,7 @@ namespace RockEngine.Core.Attributes
     {
         public string Name { get; }
 
-        public OutAttribute(string name = null)
+        public OutAttribute(string? name = null)
         {
             Name = name;
         }

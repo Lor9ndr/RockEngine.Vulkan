@@ -1,7 +1,5 @@
-﻿using Silk.NET.Vulkan;
-
-using System;
-using System.Runtime.CompilerServices;
+﻿using System.Runtime.CompilerServices;
+using Silk.NET.Vulkan;
 
 namespace RockEngine.Vulkan
 {
@@ -79,7 +77,7 @@ namespace RockEngine.Vulkan
                     queryPool: _vkObject,
                     firstQuery: firstQuery,
                     queryCount: queryCount,
-                    dataSize: (queryCount * stride), 
+                    dataSize: (queryCount * stride),
                     pData: ptr,
                     stride: stride,
                     flags: flags

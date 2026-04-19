@@ -6,7 +6,7 @@ namespace RockEngine.Editor.EditorUI.UndoRedo.Commands
     {
         private readonly World _world;
         private readonly Entity _parent;
-        private Entity _createdEntity;
+        private Entity? _createdEntity;
         private readonly string? _initialName;
 
         public CreateChildEntityCommand(World world, Entity parent, string? initialName = null)

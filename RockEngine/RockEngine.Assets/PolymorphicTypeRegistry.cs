@@ -13,10 +13,14 @@ public sealed class PolymorphicTypeRegistry
     public void Register(Type type)
     {
         if (!typeof(IPolymorphicSerializable).IsAssignableFrom(type))
+        {
             throw new ArgumentException($"Type {type} does not implement IPolymorphicSerializable");
+        }
 
         if (type.IsAbstract || type.IsInterface)
+        {
             return; // Only concrete types are registered
+        }
 
         ulong id = GetId(type);
         _typeToId[type] = id;

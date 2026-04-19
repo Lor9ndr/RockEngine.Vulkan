@@ -9,7 +9,7 @@ namespace RockEngine.Core.Rendering.Materials
         public void RegisterDependencies(Container container)
         {
             container.Register<IShaderReflectionProvider, PipelineReflectionProvider>();
-            container.Register<IMaterialTemplateFactory,MaterialTemplateFactory>();
+            container.Register<IMaterialTemplateFactory, MaterialTemplateFactory>();
             container.Register<ITypeBasedResourceProvider, TypeBasedResourceProvider>();
             container.Register<MaterialTemplateManager>();
         }

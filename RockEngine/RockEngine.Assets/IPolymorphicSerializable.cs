@@ -1,6 +1,4 @@
-﻿using MessagePack;
-
-using System.Text;
+﻿using System.Text;
 
 namespace RockEngine.Assets;
 

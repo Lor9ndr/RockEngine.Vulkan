@@ -15,18 +15,21 @@ namespace RockEngine.ShaderSyntax
     internal class GlslSignatureHelpCommandProvider : IVsTextViewCreationListener
     {
         [Import]
-        internal IVsEditorAdaptersFactoryService AdapterService { get; set; }
+        internal IVsEditorAdaptersFactoryService? AdapterService { get; set; }
 
         [Import]
-        internal ITextStructureNavigatorSelectorService NavigatorService { get; set; }
+        internal ITextStructureNavigatorSelectorService? NavigatorService { get; set; }
 
         [Import]
-        internal ISignatureHelpBroker SignatureHelpBroker { get; set; }
+        internal ISignatureHelpBroker? SignatureHelpBroker { get; set; }
 
         public void VsTextViewCreated(IVsTextView textViewAdapter)
         {
             ITextView textView = AdapterService.GetWpfTextView(textViewAdapter);
-            if (textView == null) return;
+            if (textView == null)
+            {
+                return;
+            }
 
             textView.Properties.GetOrCreateSingletonProperty(() =>
                 new GlslSignatureHelpCommandHandler(

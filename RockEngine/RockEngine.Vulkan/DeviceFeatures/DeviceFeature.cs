@@ -5,7 +5,7 @@ namespace RockEngine.Vulkan.DeviceFeatures
     public abstract class DeviceFeature
     {
         public string Name { get; }
-        public virtual bool IsRequired { get; init;  }
+        public virtual bool IsRequired { get; init; }
 
         public DeviceFeature(string name)
         {
@@ -37,5 +37,7 @@ namespace RockEngine.Vulkan.DeviceFeatures
         /// Returns preprocessor defines to pass to shader compiler when feature is enabled.
         /// </summary>
         public abstract IEnumerable<string> GetPreprocessorDefines();
+
+        public virtual IEnumerable<string> GetShaderExtensionsToEnable() => [];
     }
 }

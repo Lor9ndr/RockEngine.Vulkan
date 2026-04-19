@@ -1,8 +1,6 @@
-﻿using JoltPhysicsSharp;
-
+﻿using System.Numerics;
+using JoltPhysicsSharp;
 using RockEngine.Core.Rendering.Buffers;
-
-using System.Numerics;
 
 namespace RockEngine.Core.Physics
 {

@@ -5,10 +5,6 @@ using RockEngine.Core.DI;
 
 using SimpleInjector;
 
-using System.Text;
-
-using YamlDotNet.Serialization;
-
 namespace RockEngine.Core.Assets
 {
     public class AssetModule : IDependencyModule
@@ -65,11 +61,11 @@ namespace RockEngine.Core.Assets
             container.Register<IProjectManager>(() =>
                 container.GetInstance<AssetManager>(), Lifestyle.Scoped);
 
-             container.Register<TextureAsset>(Lifestyle.Transient);
-             container.Register<MaterialAsset>(Lifestyle.Transient);
-             container.Register<MeshAsset>(Lifestyle.Transient);
-             container.Register<ModelAsset>(Lifestyle.Transient);
-             container.Register<ProjectAsset>(Lifestyle.Transient);
+            container.Register<TextureAsset>(Lifestyle.Transient);
+            container.Register<MaterialAsset>(Lifestyle.Transient);
+            container.Register<MeshAsset>(Lifestyle.Transient);
+            container.Register<ModelAsset>(Lifestyle.Transient);
+            container.Register<ProjectAsset>(Lifestyle.Transient);
         }
     }
 }

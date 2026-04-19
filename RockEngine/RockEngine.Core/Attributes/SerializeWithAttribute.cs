@@ -1,6 +1,4 @@
-﻿using RockEngine.Core.Assets.Converters;
-
-namespace RockEngine.Core.Attributes
+﻿namespace RockEngine.Core.Attributes
 {
     /// <summary>
     /// Specifies a custom converter for serialization (both JSON and binary)

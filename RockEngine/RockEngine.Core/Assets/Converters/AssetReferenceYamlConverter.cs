@@ -1,4 +1,5 @@
-﻿using YamlDotNet.Core;
+﻿using System.Diagnostics.CodeAnalysis;
+using YamlDotNet.Core;
 
 using YamlDotNet.Serialization;
 
@@ -23,7 +24,7 @@ namespace RockEngine.Core.Assets.Converters
             return null;
         }
 
-        public void WriteYaml(IEmitter emitter, object? value, Type type, ObjectSerializer serializer)
+        public void WriteYaml(IEmitter emitter, object? value, [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties)] Type type, ObjectSerializer serializer)
         {
             var idProperty = type.GetProperty("AssetID");
             var guid = (Guid)idProperty.GetValue(value);

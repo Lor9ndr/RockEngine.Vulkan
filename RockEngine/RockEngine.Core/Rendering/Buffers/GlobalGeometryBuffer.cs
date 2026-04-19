@@ -1,10 +1,7 @@
-﻿using NLog;
-
+﻿using System.Runtime.CompilerServices;
+using NLog;
 using RockEngine.Vulkan;
-
 using Silk.NET.Vulkan;
-
-using System.Runtime.CompilerServices;
 
 namespace RockEngine.Core.Rendering.Buffers
 {
@@ -24,7 +21,7 @@ namespace RockEngine.Core.Rendering.Buffers
         private readonly Dictionary<Guid, Type> _vertexTypes = new();
         private readonly Dictionary<Guid, uint> _vertexStrides = new();
         private readonly Lock _allocationLock = new();
-        private readonly SemaphoreSlim _defragmentSemaphore = new SemaphoreSlim(1,1);
+        private readonly SemaphoreSlim _defragmentSemaphore = new SemaphoreSlim(1, 1);
 
         // Defragmentation tracking
         private ulong _vertexFragmentationScore;
@@ -33,6 +30,7 @@ namespace RockEngine.Core.Rendering.Buffers
         private const ulong FRAGMENTATION_THRESHOLD = 1024 * 1024; // 1MB
         private static readonly Logger _logger = LogManager.GetCurrentClassLogger();
 
+        
         public GlobalGeometryBuffer(VulkanContext context, ulong initialVertexSize = 64 * 1024 * 1024,
                                    ulong initialIndexSize = 16 * 1024 * 1024)
         {
@@ -63,6 +61,7 @@ namespace RockEngine.Core.Rendering.Buffers
             _indexBuffer.LabelObject("GlobalGeometryIndexBuffer");
         }
 
+        
         public async ValueTask<MeshAllocation> AddMeshAsync<T>(Guid meshID, T[] vertices, uint[] indices) where T : unmanaged, IVertex
         {
             uint vertexStride = (uint)Unsafe.SizeOf<T>();
@@ -97,7 +96,7 @@ namespace RockEngine.Core.Rendering.Buffers
                 {
                     throw new InvalidOperationException($"Critical: Allocated vertex block at {vertexAllocation.Offset} is not aligned to stride {vertexStride}");
                 }
-             
+
 
                 // Find and allocate index block
                 var indexResult = FindAndAllocateBlock(_indexFreeList, indexSize);
@@ -154,7 +153,7 @@ namespace RockEngine.Core.Rendering.Buffers
             }
         }
 
-
+        
         private async ValueTask<MeshAllocation> UploadMeshData<T>(Guid meshID, T[] vertices, uint[] indices,
              ulong vertexSize, ulong indexSize, ulong vertexOffset, ulong indexOffset) where T : unmanaged, IVertex
         {
@@ -164,7 +163,7 @@ namespace RockEngine.Core.Rendering.Buffers
             // Copy vertex data to staging buffer
             transferBatch.StageToBuffer<T>(vertices, _vertexBuffer, vertexOffset, vertexSize);
             transferBatch.StageToBuffer<uint>(indices, _indexBuffer, indexOffset, indexSize);
-            transferBatch.PipelineBarrier( [
+            transferBatch.PipelineBarrier([
                 new BufferMemoryBarrier2() {
                     SType = StructureType.BufferMemoryBarrier2,
                     Buffer = _vertexBuffer,
@@ -208,6 +207,7 @@ namespace RockEngine.Core.Rendering.Buffers
             });
         }
 
+        
         public void RemoveMesh(Guid meshID)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
@@ -303,6 +303,8 @@ namespace RockEngine.Core.Rendering.Buffers
                 }
             }
         }
+
+        
         public async ValueTask DefragmentAsync()
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
@@ -508,14 +510,14 @@ namespace RockEngine.Core.Rendering.Buffers
             {
                 _defragmentSemaphore.Release();
             }
-            
+
         }
 
         private void AddToFreeList(LinkedList<FreeBlock> freeList, ulong offset, ulong size)
         {
             var newBlock = new FreeBlock(offset, size);
             var currentNode = freeList.First;
-            LinkedListNode<FreeBlock> insertBefore = null;
+            LinkedListNode<FreeBlock>? insertBefore = null;
 
             while (currentNode != null && currentNode.Value.Offset < offset)
             {
@@ -638,6 +640,7 @@ namespace RockEngine.Core.Rendering.Buffers
             return null;
         }
 
+        
         private void ExpandVertexBuffer(ulong additionalSize)
         {
             var newSize = _vertexBufferSize * 2;
@@ -665,6 +668,7 @@ namespace RockEngine.Core.Rendering.Buffers
             _vertexBuffer.LabelObject("GlobalGeometryVertexBuffer");
         }
 
+        
         private void ExpandIndexBuffer(ulong additionalSize)
         {
 
@@ -704,7 +708,7 @@ namespace RockEngine.Core.Rendering.Buffers
 
         public MeshAllocation GetMeshAllocation(Guid meshId)
         {
-            ObjectDisposedException.ThrowIf(_disposed,this);
+            ObjectDisposedException.ThrowIf(_disposed, this);
             lock (_allocationLock)
             {
                 return _meshAllocations[meshId];
@@ -719,7 +723,7 @@ namespace RockEngine.Core.Rendering.Buffers
         }
 
         public readonly record struct FreeBlock(ulong Offset, ulong Size);
-        
+
 
         public readonly record struct MeshAllocation(
             Guid MeshID,

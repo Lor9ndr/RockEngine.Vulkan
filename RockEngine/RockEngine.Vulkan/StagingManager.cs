@@ -1,6 +1,5 @@
-﻿using Silk.NET.Vulkan;
-
-using System.Runtime.CompilerServices;
+﻿using System.Runtime.CompilerServices;
+using Silk.NET.Vulkan;
 
 namespace RockEngine.Vulkan
 {
@@ -24,7 +23,8 @@ namespace RockEngine.Vulkan
 
         public VkBuffer StagingBuffer => _stagingBuffer;
 
-        public StagingManager(VulkanContext context,  ulong initialSize = 1 * 1024) 
+        
+        public StagingManager(VulkanContext context, ulong initialSize = 1 * 1024)
         {
             _context = context;
             _bufferSize = initialSize;
@@ -93,20 +93,20 @@ namespace RockEngine.Vulkan
 
 
                 // Create memory barrier
-             /*   var bufferBarrier = new BufferMemoryBarrier2
-                {
-                    SType = StructureType.BufferMemoryBarrier2,
-                    SrcAccessMask = AccessFlags2.HostWriteBit,
-                    DstAccessMask = AccessFlags2.TransferReadBit,
-                    Buffer = _stagingBuffer,
-                    Offset = alignedOffset,
-                    Size = size,
-                    SrcStageMask = PipelineStageFlags2.HostBit,
-                    DstStageMask = PipelineStageFlags2.TransferBit
-                };
+                /*   var bufferBarrier = new BufferMemoryBarrier2
+                   {
+                       SType = StructureType.BufferMemoryBarrier2,
+                       SrcAccessMask = AccessFlags2.HostWriteBit,
+                       DstAccessMask = AccessFlags2.TransferReadBit,
+                       Buffer = _stagingBuffer,
+                       Offset = alignedOffset,
+                       Size = size,
+                       SrcStageMask = PipelineStageFlags2.HostBit,
+                       DstStageMask = PipelineStageFlags2.TransferBit
+                   };
 
-                // Add to command batch
-                batch.PipelineBarrier([],[ bufferBarrier], []);*/
+                   // Add to command batch
+                   batch.PipelineBarrier([],[ bufferBarrier], []);*/
 
                 // Update state
                 offset = alignedOffset;
@@ -117,6 +117,7 @@ namespace RockEngine.Vulkan
             }
         }
 
+        
         private void ResizeBuffer(UploadBatch batch, ulong newSize)
         {
             // Create new buffer

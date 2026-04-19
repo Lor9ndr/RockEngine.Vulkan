@@ -10,7 +10,7 @@ namespace RockEngine.ShaderSyntax
     public class GlslClassifierProvider : IClassifierProvider
     {
         [Import]
-        internal IClassificationTypeRegistryService ClassificationRegistry = null;
+        internal IClassificationTypeRegistryService? ClassificationRegistry = null;
 
         public IClassifier GetClassifier(ITextBuffer buffer)
         {

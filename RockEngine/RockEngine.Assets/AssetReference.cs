@@ -8,5 +8,5 @@
         bool IsResolved { get; }
     }
 
-    
+
 }

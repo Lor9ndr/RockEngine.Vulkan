@@ -1,20 +1,15 @@
-﻿using Microsoft.Extensions.ObjectPool;
-
+﻿using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using Microsoft.Extensions.ObjectPool;
 using NLog;
-
 using RockEngine.Core.ECS.Components;
 using RockEngine.Core.Rendering.Buffers;
 using RockEngine.Core.Rendering.Commands;
 using RockEngine.Core.Rendering.Materials;
 using RockEngine.Core.Rendering.Passes.SubPasses;
 using RockEngine.Vulkan;
-
 using Silk.NET.Core;
 using Silk.NET.Vulkan;
-
-using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
-
 using static RockEngine.Core.Rendering.Buffers.GlobalGeometryBuffer;
 
 namespace RockEngine.Core.Rendering.Managers
@@ -40,6 +35,7 @@ namespace RockEngine.Core.Rendering.Managers
         private readonly Logger _logger = LogManager.GetCurrentClassLogger();
         private readonly ObjectPool<List<DrawGroup>> _drawGroupsPool;
 
+        
         public IndirectCommandManager(VulkanContext context, uint transformBufferCapacity, TransformManager transformManager, GlobalGeometryBuffer globalGeometryBuffer)
         {
             _context = context;
@@ -51,7 +47,7 @@ namespace RockEngine.Core.Rendering.Managers
             DefaultObjectPoolProvider poolProvider = new DefaultObjectPoolProvider();
             _drawGroupsPool = poolProvider.Create(new ListPolicy<DrawGroup>());
         }
-      
+
 
         public void AddMesh(MeshRenderer mesh, uint transformIndex)
         {
@@ -78,12 +74,13 @@ namespace RockEngine.Core.Rendering.Managers
         /// <returns>transform index</returns>
         public uint RemoveMesh(MeshRenderer meshRenderer)
         {
-            var command = _commands.First(s=>s.Mesh == meshRenderer);
+            var command = _commands.First(s => s.Mesh == meshRenderer);
             _commands.RemoveAll(s => s.Mesh == meshRenderer);
             _isDirty = true;
             return command.TransformIndex;
         }
 
+        
         public async ValueTask UpdateAsync()
         {
             if (!_isDirty)
@@ -101,7 +98,7 @@ namespace RockEngine.Core.Rendering.Managers
             }
 
             _indirectCommandsList.Clear();
-             _drawGroupsBySubpass.Clear(); 
+            _drawGroupsBySubpass.Clear();
 
             _indirectCommandsList.Capacity = Math.Max(_indirectCommandsList.Capacity, commandsSpan.Length);
 
@@ -146,7 +143,10 @@ namespace RockEngine.Core.Rendering.Managers
         private bool IsNewGroup(in MeshRenderCommand a, in MeshRenderCommand b)
         {
             // Fast path: check subpass first
-            if (a.SubpassName != b.SubpassName) return true;
+            if (a.SubpassName != b.SubpassName)
+            {
+                return true;
+            }
 
             // Then check if materials have the same pipeline for this subpass
             var aPass = a.Mesh.Material.GetPass(a.SubpassName);

@@ -24,12 +24,13 @@ namespace RockEngine.Core.DI
 {
     public class CoreModule : IDependencyModule
     {
+        
         public void RegisterDependencies(Container container)
         {
             container.Options.AllowOverridingRegistrations = true;
             // Core systems
-            container.Register<World>(Lifestyle.Scoped);
-            container.Register<ILayerStack,LayerStack>(Lifestyle.Scoped);
+            container.Register<World>(Lifestyle.Singleton);
+            container.Register<ILayerStack, LayerStack>(Lifestyle.Scoped);
 
             // Singleton services
 
@@ -49,14 +50,14 @@ namespace RockEngine.Core.DI
 
             // Factory for IWindow
             SdlWindowing.Use();
-            container.RegisterInstance<IWindow>(Window.Create(WindowOptions.DefaultVulkan  with
+            container.RegisterInstance<IWindow>(Window.Create(WindowOptions.DefaultVulkan with
             {
-                 VSync = false,
-                 FramesPerSecond = 0,
-                 UpdatesPerSecond = 0,
+                VSync = false,
+                FramesPerSecond = 0,
+                UpdatesPerSecond = 0,
             }
             ));
-           
+
             container.RegisterInitializer<InputManager>(s =>
             {
                 var window = container.GetInstance<IWindow>();
@@ -119,12 +120,12 @@ namespace RockEngine.Core.DI
             }, Lifestyle.Scoped);
 
             container.Register<CameraManager>(Lifestyle.Scoped);
-            container.Register<IndirectCommandManager>(()=>
+            container.Register<IndirectCommandManager>(() =>
             {
                 var vkContext = container.GetInstance<VulkanContext>();
-                
+
                 return new IndirectCommandManager(vkContext, TransformManager.INITIAL_CAPACITY, container.GetInstance<TransformManager>(), container.GetInstance<GlobalGeometryBuffer>());
-            },Lifestyle.Scoped);
+            }, Lifestyle.Scoped);
 
             container.Register<IRegistry<RckPipeline, string>, PipelineRegistry>(Lifestyle.Scoped);
             container.Register<IRegistry<RckRenderPass, Type>, RenderPassRegistry>(Lifestyle.Scoped);
@@ -150,6 +151,7 @@ namespace RockEngine.Core.DI
             registry.RequestFeature(new HostQueryResetFeature() { IsRequired = true });
             registry.RequestFeature(new ScalarBlockLayoutFeature() { IsRequired = true });
             registry.RequestFeature(new Synchronization2Feature() { IsRequired = true });
+            registry.RequestFeature(new DescriptorIndexingFeature());
         }
     }
 }

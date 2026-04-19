@@ -42,6 +42,7 @@ namespace RockEngine.Editor.Layers
         {
         }
 
+        
         public void OnUpdate()
         {
             _controller.Update(_renderer);

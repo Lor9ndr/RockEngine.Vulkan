@@ -1,14 +1,11 @@
-﻿using ImGuiNET;
-
+﻿using System.Numerics;
+using ImGuiNET;
 using RockEngine.Core.Rendering;
 using RockEngine.Core.Rendering.Texturing;
 using RockEngine.Vulkan;
-
 using Silk.NET.Input;
 using Silk.NET.Maths;
 using Silk.NET.Windowing;
-
-using System.Numerics;
 
 namespace RockEngine.Editor.Layers
 {
@@ -50,12 +47,12 @@ namespace RockEngine.Editor.Layers
                     }
                 }
 
-            if (_isDragging)
+                if (_isDragging)
                 {
                     return;
                 }
 
-                if (e == MouseButton.Left )
+                if (e == MouseButton.Left)
                 {
                     if (!_isResizing && IsOnResizeArea(mousePos))
                     {
@@ -64,7 +61,7 @@ namespace RockEngine.Editor.Layers
                         _resizeStartSize = _window.Size;
                     }
                 }
-                
+
 
                 if (_isResizing)
                 {
@@ -109,7 +106,7 @@ namespace RockEngine.Editor.Layers
                 _dragStartWindowPos = _window.Position;
             }
         }
-      
+
 
         public void OnUpdate()
         {
@@ -131,7 +128,7 @@ namespace RockEngine.Editor.Layers
             );
         }
 
-     
+
 
         private void HandleResizing(IMouse mouse, Vector2D<float> screenMousePos)
         {
@@ -215,7 +212,7 @@ namespace RockEngine.Editor.Layers
             ImGui.SetNextWindowPos(new Vector2(0, 0));
             ImGui.SetNextWindowSize(new Vector2(_window.Size.X, 40));
             ImGui.PushStyleVar(ImGuiStyleVar.WindowRounding, 4f);
-            if( ImGui.Begin("TitleBar",
+            if (ImGui.Begin("TitleBar",
                 ImGuiWindowFlags.NoDecoration |
                 ImGuiWindowFlags.NoMove |
                 ImGuiWindowFlags.NoSavedSettings))
@@ -238,7 +235,7 @@ namespace RockEngine.Editor.Layers
 
                 if (ImGui.Button("_"))
                 {
-                    _window.WindowState =  WindowState.Minimized;
+                    _window.WindowState = WindowState.Minimized;
 
                 }
                 _isHoveringButton = ImGui.IsItemHovered();
@@ -333,49 +330,49 @@ namespace RockEngine.Editor.Layers
             }
             return workArea.Center;
         }
-       /* private Vector2D<int> CalculateSnappedPosition(Vector2D<float> screenMousePos)
-        {
-            // Gets current monitor
-            var currentMonitor = _window.Monitor;
+        /* private Vector2D<int> CalculateSnappedPosition(Vector2D<float> screenMousePos)
+         {
+             // Gets current monitor
+             var currentMonitor = _window.Monitor;
 
-            var workArea = currentMonitor.Bounds;
-            var snapThreshold = 20;
+             var workArea = currentMonitor.Bounds;
+             var snapThreshold = 20;
 
-            // Top snap (maximize)
-            if (screenMousePos.Y <= workArea.Position.Y + snapThreshold)
-            {
-                return HandleTopSnap(workArea);
-            }
+             // Top snap (maximize)
+             if (screenMousePos.Y <= workArea.Position.Y + snapThreshold)
+             {
+                 return HandleTopSnap(workArea);
+             }
 
-            // Left snap
-            if (screenMousePos.X <= workArea.Position.X + snapThreshold)
-            {
-                return new Vector2D<int>(
-                    workArea.Position.X,
-                    workArea.Position.Y
-                );
-            }
+             // Left snap
+             if (screenMousePos.X <= workArea.Position.X + snapThreshold)
+             {
+                 return new Vector2D<int>(
+                     workArea.Position.X,
+                     workArea.Position.Y
+                 );
+             }
 
-            // Right snap
-            if (screenMousePos.X >= workArea.Position.X + workArea.Size.X - snapThreshold)
-            {
-                return new Vector2D<int>(
-                    workArea.Position.X + workArea.Size.X / 2,
-                    workArea.Position.Y
-                );
-            }
+             // Right snap
+             if (screenMousePos.X >= workArea.Position.X + workArea.Size.X - snapThreshold)
+             {
+                 return new Vector2D<int>(
+                     workArea.Position.X + workArea.Size.X / 2,
+                     workArea.Position.Y
+                 );
+             }
 
-            // Bottom restore
-            if (_wasMaximized && screenMousePos.Y >= workArea.Position.Y + workArea.Size.Y - snapThreshold)
-            {
-                _window.WindowState = WindowState.Normal;
-                _window.Position = _restorePosition;
-                _window.Size = _restoreSize;
-                _wasMaximized = false;
-            }
+             // Bottom restore
+             if (_wasMaximized && screenMousePos.Y >= workArea.Position.Y + workArea.Size.Y - snapThreshold)
+             {
+                 _window.WindowState = WindowState.Normal;
+                 _window.Position = _restorePosition;
+                 _window.Size = _restoreSize;
+                 _wasMaximized = false;
+             }
 
-            return _window.Position;
-        }*/
+             return _window.Position;
+         }*/
 
         public void OnRender(UploadBatch vkCommandBuffer)
         {

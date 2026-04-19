@@ -21,11 +21,13 @@ namespace RockEngine.Core.ResourceProviders
 
         // Helper properties for serialization
         [Key(2)]
-        public AssetReference<MeshAsset> AssetReference => _source as AssetReference<MeshAsset>;
+        public AssetReference<MeshAsset>? AssetReference => _source as AssetReference<MeshAsset>;
 
         [SerializeIgnore]
         [IgnoreMember]
-        public virtual IMesh DirectMesh => _source as IMesh;
+        public virtual IMesh? DirectMesh => _source as IMesh;
+
+        
         public MeshProvider(AssetReference<MeshAsset> assetRef)
         {
             _source = assetRef;
@@ -47,7 +49,7 @@ namespace RockEngine.Core.ResourceProviders
         {
             _source = source;
         }
-      
+
 
         public async ValueTask<IMesh> GetAsync()
         {
@@ -55,19 +57,21 @@ namespace RockEngine.Core.ResourceProviders
             return result;
         }
 
-       
-      
+
+
     }
 
     public class MeshProvider<TVertex> : MeshProvider, IDisposable where TVertex : unmanaged, IVertex
     {
         protected IMesh? _loadedMesh;
-        public Guid ID { get;} = Guid.NewGuid();
-        public MeshProvider(MeshData<TVertex> meshData) :base(meshData)
+        public Guid ID { get; } = Guid.NewGuid();
+
+        
+        public MeshProvider(MeshData<TVertex> meshData) : base(meshData)
         {
             _getter = async () =>
             {
-                if(_loadedMesh != null)
+                if (_loadedMesh != null)
                 {
                     return _loadedMesh;
                 }
@@ -80,6 +84,7 @@ namespace RockEngine.Core.ResourceProviders
             };
         }
 
+        
         public void Dispose()
         {
             var globalGeometryBuffer = IoC.Container.GetInstance<GlobalGeometryBuffer>();
@@ -87,6 +92,7 @@ namespace RockEngine.Core.ResourceProviders
             GC.SuppressFinalize(this);
         }
 
+        
         ~MeshProvider()
         {
             Dispose();

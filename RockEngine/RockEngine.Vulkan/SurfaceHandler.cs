@@ -1,11 +1,9 @@
-﻿using Silk.NET.Core.Contexts;
+﻿using System.Numerics;
+using Silk.NET.Core.Contexts;
 using Silk.NET.Maths;
 using Silk.NET.Vulkan;
 using Silk.NET.Vulkan.Extensions.KHR;
 using Silk.NET.Windowing;
-
-using System.Numerics;
-
 using static RockEngine.Vulkan.ISurfaceHandler;
 
 namespace RockEngine.Vulkan

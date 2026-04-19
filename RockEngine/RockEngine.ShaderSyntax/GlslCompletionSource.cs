@@ -21,10 +21,16 @@ namespace RockEngine.ShaderSyntax
 
         public void AugmentCompletionSession(ICompletionSession session, IList<CompletionSet> completionSets)
         {
-            if (_disposed) return;
+            if (_disposed)
+            {
+                return;
+            }
 
             var triggerPoint = session.GetTriggerPoint(_buffer.CurrentSnapshot);
-            if (!triggerPoint.HasValue) return;
+            if (!triggerPoint.HasValue)
+            {
+                return;
+            }
 
             var snapshot = _buffer.CurrentSnapshot;
             var line = snapshot.GetLineFromPosition(triggerPoint.Value.Position);
@@ -33,10 +39,15 @@ namespace RockEngine.ShaderSyntax
 
             int start = posInLine;
             while (start > 0 && (char.IsLetterOrDigit(lineText[start - 1]) || lineText[start - 1] == '_'))
+            {
                 start--;
+            }
+
             int end = posInLine;
             while (end < lineText.Length && (char.IsLetterOrDigit(lineText[end]) || lineText[end] == '_'))
+            {
                 end++;
+            }
 
             var applicableTo = snapshot.CreateTrackingSpan(
                 line.Start + start,

@@ -1,11 +1,9 @@
-﻿using RockEngine.Assets.Converters;
-using RockEngine.Core.Attributes;
-
-using System.Diagnostics.CodeAnalysis;
+﻿using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Reflection;
 using System.Text;
-
+using RockEngine.Assets.Converters;
+using RockEngine.Core.Attributes;
 using YamlDotNet.Core;
 using YamlDotNet.Core.Events;
 using YamlDotNet.Serialization;
@@ -111,11 +109,15 @@ namespace RockEngine.Assets
                 string.Equals(p.Name, name, comparison));
 
             if (descriptor != null)
+            {
                 return descriptor;
+            }
 
             // Если свойство не найдено и не нужно игнорировать, выбрасываем исключение
             if (!ignoreUnmatched)
+            {
                 throw new InvalidOperationException($"Property '{name}' not found on type '{type.Name}'");
+            }
 
             // Возвращаем null, если свойство не найдено и нужно игнорировать
             return null;
@@ -124,17 +126,23 @@ namespace RockEngine.Assets
         public string GetEnumName(Type enumType, string name)
         {
             if (string.IsNullOrEmpty(name))
+            {
                 return "0";
+            }
 
             try
             {
                 // Проверяем, существует ли такое значение в перечислении
                 if (Enum.IsDefined(enumType, name))
+                {
                     return name;
+                }
 
                 // Пробуем найти по числовому значению
                 if (int.TryParse(name, out int intValue) && Enum.IsDefined(enumType, intValue))
+                {
                     return Enum.GetName(enumType, intValue);
+                }
 
                 return "0";
             }
@@ -147,7 +155,9 @@ namespace RockEngine.Assets
         public string GetEnumValue(object value)
         {
             if (value is null)
+            {
                 return "0";
+            }
 
             try
             {

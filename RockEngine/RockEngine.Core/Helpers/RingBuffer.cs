@@ -10,9 +10,12 @@
         {
             _buffer[_index] = item;
             _index = (_index + 1) % _buffer.Length;
-            if (_count < _buffer.Length) _count++;
+            if (_count < _buffer.Length)
+            {
+                _count++;
+            }
         }
-        public T Get()=> _buffer[_index];
+        public T Get() => _buffer[_index];
 
         public T Last() => _buffer[(_index - 1 + _buffer.Length) % _buffer.Length];
         public int Count => _count;
@@ -40,7 +43,10 @@
         public float Average()
         {
             var list = ToArray();
-            if (list.Length == 0) return 0;
+            if (list.Length == 0)
+            {
+                return 0;
+            }
 
             double sum = 0;
             foreach (var item in list)

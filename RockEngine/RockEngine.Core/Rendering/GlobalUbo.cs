@@ -1,11 +1,10 @@
-﻿using RockEngine.Core.Extensions;
+﻿using System.Numerics;
+using System.Runtime.InteropServices;
+using RockEngine.Core.Extensions;
 using RockEngine.Core.Helpers;
 using RockEngine.Core.Rendering.Buffers;
 using RockEngine.Core.Rendering.ResourceBindings;
 using RockEngine.Vulkan;
-
-using System.Numerics;
-using System.Runtime.InteropServices;
 
 namespace RockEngine.Core.Rendering
 {
@@ -16,6 +15,7 @@ namespace RockEngine.Core.Rendering
         private readonly uint _maxCameras;
         private readonly UniformBufferBinding[] _bindings;
 
+        
         public GlobalUbo(VulkanContext context, AppSettings appSettings)
             : base(CalculateTotalSize(appSettings.MaxCamerasSupported), true)
         {

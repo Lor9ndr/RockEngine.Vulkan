@@ -1,8 +1,6 @@
-﻿using RockEngine.Vulkan;
+﻿using System.Runtime.CompilerServices;
+using RockEngine.Vulkan;
 using Silk.NET.Vulkan;
-using System;
-using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
 
 namespace RockEngine.Core.Rendering.Buffers
 {
@@ -17,6 +15,7 @@ namespace RockEngine.Core.Rendering.Buffers
         public ulong Capacity => _capacity;
         public ulong Stride { get; }
 
+        
         public IndirectBuffer(VulkanContext context, ulong initialCapacity)
         {
             _context = context;
@@ -25,6 +24,7 @@ namespace RockEngine.Core.Rendering.Buffers
             CreateDeviceBuffer();
         }
 
+        
         private void CreateDeviceBuffer()
         {
             _deviceBuffer = VkBuffer.Create(
@@ -40,11 +40,14 @@ namespace RockEngine.Core.Rendering.Buffers
         /// </summary>
         /// <param name="batch">The batch to add the copy operation to.</param>
         /// <param name="newCapacity">New capacity in number of commands.</param>
+        
         public void Resize(UploadBatch batch, ulong newCapacity)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
             if (newCapacity == _capacity)
+            {
                 return;
+            }
 
             var oldBuffer = _deviceBuffer;
             var oldSize = _capacity * Stride;
@@ -66,16 +69,21 @@ namespace RockEngine.Core.Rendering.Buffers
         /// Adds commands to the batch, copying from staging to the device buffer.
         /// Assumes the buffer has enough capacity (offset + commands size ≤ capacity).
         /// </summary>
+        
         public void StageCommands(UploadBatch batch, ReadOnlySpan<DrawIndexedIndirectCommand> commands, ulong offset = 0)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
 
             ulong requiredSize = (ulong)(Unsafe.SizeOf<DrawIndexedIndirectCommand>() * commands.Length);
             if (offset + requiredSize > _capacity * Stride)
+            {
                 throw new InvalidOperationException("Indirect buffer does not have enough capacity for the commands. Resize first.");
+            }
 
             if (!batch.StagingManager.TryStage<DrawIndexedIndirectCommand>(batch, commands, out var stageOffset, out var stagedSize))
+            {
                 throw new InvalidOperationException("Failed to stage indirect commands");
+            }
 
             batch.CopyBuffer(batch.StagingManager.StagingBuffer, _deviceBuffer, stageOffset, offset, requiredSize);
         }

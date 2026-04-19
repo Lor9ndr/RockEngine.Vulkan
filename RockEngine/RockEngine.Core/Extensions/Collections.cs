@@ -2,7 +2,7 @@
 {
     public static class Collections
     {
-        extension<TKey, TValue>(Dictionary<TKey, TValue> dict) where TKey :notnull
+        extension<TKey, TValue>(Dictionary<TKey, TValue> dict) where TKey : notnull
         {
             public TValue GetOrAdd(TKey key, Func<TKey, TValue> valueFactory)
             {
@@ -18,8 +18,8 @@
                 {
                     return value;
                 }
-                var result =  valueFactory(key);
-                dict.Add(key,result);
+                var result = valueFactory(key);
+                dict.Add(key, result);
                 return result;
 
             }

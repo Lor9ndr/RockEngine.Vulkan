@@ -52,7 +52,9 @@ namespace RockEngine.Assets
 
             // Skip the header (first 7 lines)
             for (int i = 0; i < 7; i++)
+            {
                 await reader.ReadLineAsync();
+            }
 
             // Читаем остаток YAML
             var yamlContent = await reader.ReadToEndAsync();
@@ -106,7 +108,7 @@ namespace RockEngine.Assets
 
             // Write asset data
             var data = asset.GetData();
-            await _binarySerializer.SerializeAsync(data,asset.GetDataType(), stream);
+            await _binarySerializer.SerializeAsync(data, asset.GetDataType(), stream);
         }
 
         public async Task DeserializeDataAsync(IAsset asset, Stream stream)
@@ -119,7 +121,9 @@ namespace RockEngine.Assets
                 // Читаем и проверяем магическое число
                 var magic = reader.ReadInt32();
                 if (magic != 0x524F434B)
+                {
                     throw new InvalidDataException("Invalid binary asset format");
+                }
 
                 // Пропускаем остальные поля заголовка
                 reader.ReadInt32(); // Version

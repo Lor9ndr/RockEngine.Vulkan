@@ -1,4 +1,5 @@
-﻿using RockEngine.Core.Builders;
+﻿using System.Runtime.InteropServices;
+using RockEngine.Core.Builders;
 using RockEngine.Core.Diagnostics;
 using RockEngine.Core.ECS.Components;
 using RockEngine.Core.Rendering.Buffers;
@@ -6,11 +7,8 @@ using RockEngine.Core.Rendering.Managers;
 using RockEngine.Core.Rendering.Materials;
 using RockEngine.Core.Rendering.Objects;
 using RockEngine.Vulkan;
-
 using Silk.NET.Core;
 using Silk.NET.Vulkan;
-
-using System.Runtime.InteropServices;
 
 namespace RockEngine.Core.Rendering.Passes.SubPasses
 {
@@ -111,6 +109,7 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
                     {
                         _bindingManager.BindResourcesForMaterial(
                             frameIndex,
+                                drawGroup.MeshRenderer.Material,
                             drawGroup.MaterialPass,
                             batch,
                             false,
@@ -119,7 +118,7 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
                         lastMaterialPass = drawGroup.MaterialPass;
                         lastMaterialPass.CmdPushConstants(batch);
                     }
-                    
+
 
                     // Issue draw command
                     if (drawGroup.IsMultiDraw && _supportsMultiDraw)
@@ -187,6 +186,6 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
         {
         }
 
-       
+
     }
 }

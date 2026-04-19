@@ -1,7 +1,6 @@
 ﻿using NLog;
 
 using RockEngine.Core.Builders;
-using RockEngine.Core.Rendering.Managers;
 using RockEngine.Core.Rendering.Objects;
 using RockEngine.Core.Rendering.Passes.SubPasses;
 using RockEngine.Vulkan;
@@ -10,7 +9,7 @@ using Silk.NET.Vulkan;
 
 namespace RockEngine.Core.Rendering.Passes
 {
-    public abstract class PassStrategyBase:IRenderPassStrategy
+    public abstract class PassStrategyBase : IRenderPassStrategy
     {
         protected readonly IRenderSubPass[] _subPasses;
         protected readonly VulkanContext _context;
@@ -62,7 +61,7 @@ namespace RockEngine.Core.Rendering.Passes
             {
                 _subPasses[i].SetupDependencies(builder, i);
             }
-           
+
             _renderPass = new RckRenderPass(builder.Build(), _subPasses);
             _renderPass.RenderPass.LabelObject(GetType().Name);
             return _renderPass;

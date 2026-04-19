@@ -7,10 +7,10 @@ namespace RockEngine.Editor.EditorUI.UndoRedo.Commands
     public class CreateEntityCommand : IUndoRedoCommand
     {
         private readonly World _world;
-        private Entity _createdEntity;
+        private Entity? _createdEntity;
         private readonly string _initialName;
 
-        public CreateEntityCommand(World world, string initialName = null)
+        public CreateEntityCommand(World world, string? initialName = null)
         {
             _world = world;
             _initialName = initialName;

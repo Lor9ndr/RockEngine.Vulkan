@@ -1,12 +1,10 @@
-﻿using System.Numerics;
-
-using JoltPhysicsSharp;
+﻿using JoltPhysicsSharp;
 
 using MessagePack;
 
 namespace RockEngine.Core.ECS.Components
 {
-    [MessagePackObject]
+    [MessagePackObject(AllowPrivate = true)]
     public partial class SphereColliderComponent : ColliderComponent
     {
         [IgnoreMember]

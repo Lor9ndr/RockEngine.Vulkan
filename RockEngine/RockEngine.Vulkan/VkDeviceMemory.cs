@@ -1,7 +1,5 @@
 ﻿using Silk.NET.Vulkan;
 
-using System.Drawing;
-
 namespace RockEngine.Vulkan
 {
     public class VkDeviceMemory : VkObject<DeviceMemory>

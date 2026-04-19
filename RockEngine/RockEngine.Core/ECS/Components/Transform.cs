@@ -1,10 +1,8 @@
-﻿using MessagePack;
-
+﻿using System.Numerics;
+using MessagePack;
 using RockEngine.Core.Attributes;
 using RockEngine.Core.Extensions;
 using RockEngine.Core.Rendering;
-
-using System.Numerics;
 
 namespace RockEngine.Core.ECS.Components
 {
@@ -31,11 +29,15 @@ namespace RockEngine.Core.ECS.Components
         public Vector3 Position
         {
             get => _position;
-            set { _position = value; SetDirty(); }
+            set
+            {
+                _position = value;
+                SetDirty();
+            }
         }
 
 
-        [Key(15),UIEditable("Rotation")]
+        [Key(15), UIEditable("Rotation")]
         public Vector3 EulerAngles
         {
             get => _rotation.QuaternionToEuler();
@@ -46,32 +48,48 @@ namespace RockEngine.Core.ECS.Components
             }
         }
 
-        [Key(16),SerializeIgnore]
+        [Key(16), SerializeIgnore]
         public Quaternion Rotation
         {
             get => _rotation;
-            set { _rotation = value; SetDirty(); }
+            set
+            {
+                _rotation = value;
+                SetDirty();
+            }
         }
 
         [Key(17), SerializeIgnore]
         public Quaternion LocalRotation
         {
             get => _rotation;
-            set { _rotation = value; SetDirty(); }
+            set
+            {
+                _rotation = value;
+                SetDirty();
+            }
         }
 
         [Key(18)]
         public Vector3 Scale
         {
             get => _scale;
-            set { _scale = value; SetDirty(); }
+            set
+            {
+                _scale = value;
+                SetDirty();
+            }
         }
 
         [Key(19), SerializeIgnore]
         public Vector3 LocalScale
         {
             get => _scale;
-            set { _scale = value; SetDirty(); }
+            set
+            {
+                _scale = value;
+                SetDirty();
+            }
         }
 
         [IgnoreMember, SerializeIgnore]

@@ -9,12 +9,13 @@ namespace RockEngine.Vulkan
         {
         }
 
-        public required string Name { get;set; }
+        public required string Name { get; set; }
         public Vector2D<int> LoadSize { get; set; }
         public int MaxFramesPerFlight { get; set; } = 3;
-        public bool EnableValidationLayers { get;set; }
+        public bool EnableValidationLayers { get; set; }
         public uint MaxCamerasSupported { get; set; }
         public ulong InitialVertexSize { get; set; }
         public ulong InitialIndexSize { get; set; }
+        public uint MaxBindlessTextures { get; set; } = 4096;
     }
 }

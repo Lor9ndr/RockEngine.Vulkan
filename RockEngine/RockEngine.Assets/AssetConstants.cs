@@ -7,6 +7,6 @@
 
         public const string ProjectExtension = ".rckProj";
 
-        public const string MetaExtension  = ".meta";
+        public const string MetaExtension = ".meta";
     }
 }

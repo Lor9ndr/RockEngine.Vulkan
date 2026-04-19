@@ -1,7 +1,6 @@
-﻿using Silk.NET.Windowing;
-
-using System.Reflection;
+﻿using System.Reflection;
 using System.Runtime.InteropServices;
+using Silk.NET.Windowing;
 
 namespace RockEngine.Editor
 {
@@ -11,7 +10,7 @@ namespace RockEngine.Editor
         private RENDERDOC_API_1_4_2 _api;
         private bool _initialized;
 
-        #pragma warning disable
+#pragma warning disable
         // Define RenderDoc API structure (based on renderdoc_app.h)
         [StructLayout(LayoutKind.Sequential)]
         private struct RENDERDOC_API_1_4_2
@@ -42,7 +41,7 @@ namespace RockEngine.Editor
             public IntPtr SetCaptureFileComments;
             public IntPtr DiscardFrameCapture;
         }
-        #pragma warning enable
+#pragma warning enable
 
         // Delegate definitions for RenderDoc functions
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
@@ -88,7 +87,8 @@ namespace RockEngine.Editor
         {
             lock (_syncLock)
             {
-                if (_initialized) return;
+                if (_initialized)
+                    return;
 
                 try
                 {
@@ -168,7 +168,8 @@ namespace RockEngine.Editor
 
         private void SetActiveWindow()
         {
-            if (!_initialized || _api.SetActiveWindow == IntPtr.Zero) return;
+            if (!_initialized || _api.SetActiveWindow == IntPtr.Zero)
+                return;
 
             try
             {
@@ -186,7 +187,8 @@ namespace RockEngine.Editor
 
         private void SetCaptureOptions()
         {
-            if (!_initialized) return;
+            if (!_initialized)
+                return;
 
             try
             {
@@ -232,7 +234,8 @@ namespace RockEngine.Editor
 
         public void StartFrameCapture()
         {
-            if (!_initialized || _api.StartFrameCapture == IntPtr.Zero) return;
+            if (!_initialized || _api.StartFrameCapture == IntPtr.Zero)
+                return;
 
             lock (_syncLock)
             {
@@ -261,7 +264,8 @@ namespace RockEngine.Editor
 
         public void EndFrameCapture()
         {
-            if (!_initialized || !IsFrameCapturing || _api.EndFrameCapture == IntPtr.Zero) return;
+            if (!_initialized || !IsFrameCapturing || _api.EndFrameCapture == IntPtr.Zero)
+                return;
 
             lock (_syncLock)
             {
@@ -296,7 +300,8 @@ namespace RockEngine.Editor
 
         public void TriggerCapture()
         {
-            if (!_initialized || _api.TriggerCapture == IntPtr.Zero) return;
+            if (!_initialized || _api.TriggerCapture == IntPtr.Zero)
+                return;
 
             try
             {
@@ -314,7 +319,8 @@ namespace RockEngine.Editor
 
         private void LaunchReplayUI()
         {
-            if (!_initialized || _api.LaunchReplayUI == IntPtr.Zero) return;
+            if (!_initialized || _api.LaunchReplayUI == IntPtr.Zero)
+                return;
 
             try
             {

@@ -1,4 +1,5 @@
-﻿using RockEngine.Core.Rendering.Objects;
+﻿using System.Diagnostics;
+using RockEngine.Core.Rendering.Objects;
 using RockEngine.Core.Rendering.Texturing;
 using RockEngine.Vulkan;
 
@@ -72,7 +73,7 @@ namespace RockEngine.Core.Rendering.RenderTargets
         {
             foreach (var fb in Framebuffers)
             {
-                if(fb is not null)
+                if (fb is not null)
                 {
                     _context.GraphicsSubmitContext.AddDependency(fb);
                 }
@@ -80,10 +81,13 @@ namespace RockEngine.Core.Rendering.RenderTargets
 
             Framebuffers = new VkFrameBuffer[_context.MaxFramesPerFlight];
 
+            var attachments = _gBuffer.ColorAttachments.Concat([_gBuffer.DepthAttachment, OutputTexture.Image.GetMipView(0)]).ToArray();
+            Debug.Assert(attachments.All(a => a.Image.Extent.Width == Size.Width &&
+                                     a.Image.Extent.Height == Size.Height),
+                "Attachment size mismatch before framebuffer creation");
             for (int i = 0; i < Framebuffers.Length; i++)
             {
-                var attachments = _gBuffer.ColorAttachments.Concat([_gBuffer.DepthAttachment, OutputTexture.Image.GetMipView(0)]).ToArray();
-
+                Console.WriteLine(attachments[0].VkObjectNative);
                 Framebuffers[i] = VkFrameBuffer.Create(
                     _context,
                     RenderPass.RenderPass,
@@ -117,23 +121,20 @@ namespace RockEngine.Core.Rendering.RenderTargets
             {
                 return;
             }
-           //_context.GraphicsSubmitContext.AddDependency(new DeferredOperation(() =>
-            {
-                _context.Device.GraphicsQueue.WaitIdle();
 
-                base.Resize(newSize);
-                _gBuffer.Recreate(Size);
-                CreateTexture();
-                CreateFramebuffers();
-            }//));
-           
+            _context.Device.GraphicsQueue.WaitIdle();
 
+            base.Resize(newSize);
+            OutputTexture.Image.Resize(new(Size.Width, Size.Height, 1));
+            _gBuffer.Recreate(Size);
+            CreateFramebuffers();
         }
+
         protected override void DisposeResources()
         {
-            _context.GraphicsSubmitContext.AddDependency(OutputTexture);
+            //_context.GraphicsSubmitContext.AddDependency(OutputTexture);
         }
 
-        
+
     }
 }

@@ -1,66 +1,49 @@
-﻿using RockEngine.Core.Helpers;
-using RockEngine.Vulkan;
-
+﻿using RockEngine.Vulkan;
 using Silk.NET.Vulkan;
-
 using SkiaSharp;
 
 namespace RockEngine.Core.Rendering.Texturing
 {
-    public class TextureUpdate : EventArgs
+    public abstract partial class Texture : IDisposable, IDescriptorInfoProvider<DescriptorImageInfo>, IResourceTrackable
     {
-        public Texture Texture { get; private set;}
-        public TextureUpdate(Texture texture)
-        {
-            Texture = texture;
-        }
-    }
-    /// <summary>
-    /// Represents a Vulkan texture resource, managing image, image view, and sampler lifecycle.
-    /// Handles 2D textures, cubemaps, and provides texture creation utilities.
-    /// </summary>
-    // Texture base class
-    public abstract partial class Texture : IDisposable
-    {
-        // Vulkan context for resource management
         protected readonly VulkanContext _context;
-
-        // Vulkan image resources
         protected VkImage _image;
         protected VkSampler _sampler;
         protected VkSemaphore _completionSemaphore;
 
-        // Resource management flags
         private bool _disposed;
         private uint _loadedMipLevels;
 
-        /// <summary>
-        /// Vulkan image resource
-        /// </summary>
         public VkImage Image => _image;
-
-        /// <summary>
-        /// Number of loaded mipmap levels
-        /// </summary>
         public uint LoadedMipLevels { get => _loadedMipLevels; protected set => _loadedMipLevels = value; }
 
-        /// <summary>
-        /// Total available mipmap levels
-        /// </summary>
+        private ImageObserver _imageObserver;
+
         public uint TotalMipLevels => _image.MipLevels;
         public string? SourcePath { get; }
         public bool IsDisposed => _disposed;
-
         public bool IsFullyLoaded => LoadedMipLevels >= TotalMipLevels;
-
-        public event  EventHandler<TextureUpdate> OnTextureUpdated
-        {
-            add => _onTextureUpdated.AddHandler(value);
-            remove=> _onTextureUpdated.RemoveHandler(value);
-        }
-        private readonly WeakEvent<TextureUpdate> _onTextureUpdated = new WeakEvent<TextureUpdate>();
-
         public VkSemaphore CompletionSemaphore => _completionSemaphore;
+
+        private readonly ResourceTracker _tracker = new ResourceTracker();
+        public ulong ID => _tracker.ID;
+        public IDisposable Subscribe(IResourceObserver observer) => _tracker.Subscribe(observer);
+
+        protected void NotifyObservers(ResourceChangeType type) => _tracker.NotifyObservers(type);
+        protected void OnDataUpdated() => NotifyObservers(ResourceChangeType.DataUpdated);
+        protected void OnResized() => NotifyObservers(ResourceChangeType.Resized);
+
+        // Внутренний наблюдатель за изменениями VkImage (ресайз)
+        private class ImageObserver(Texture texture) : IResourceObserver
+        {
+            public void OnResourceChanged(ulong resourceId, ResourceChangeType changeType)
+            {
+                if (changeType == ResourceChangeType.Resized)
+                {
+                    texture.OnResized();
+                }
+            }
+        }
 
         protected Texture(VulkanContext context, VkImage image, VkSampler sampler)
         {
@@ -68,14 +51,13 @@ namespace RockEngine.Core.Rendering.Texturing
             _image = image;
             _sampler = sampler;
             LoadedMipLevels = 1;
-            Image.OnImageResized += (img) => NotifyTextureUpdated();
-            _completionSemaphore = VkSemaphore.Create(context);  // binary, initially unsignaled
-            _completionSemaphore.LabelObject($"CompletionSemaphore of Image {image.VkObjectNative}");
-        }
 
-        protected void NotifyTextureUpdated()
-        {
-            _onTextureUpdated?.Raise(this,new TextureUpdate(this));
+            // Подписка на изменения изображения (ресайз) через новый механизм
+            _imageObserver = new ImageObserver(this);
+            _image.Subscribe(_imageObserver);
+
+            _completionSemaphore = VkSemaphore.Create(context);
+            _completionSemaphore.LabelObject($"CompletionSemaphore of Image {image.VkObjectNative}");
         }
 
         public void PrepareForComputeShader(UploadBatch batch)
@@ -108,8 +90,8 @@ namespace RockEngine.Core.Rendering.Texturing
             {
                 SType = StructureType.SamplerCreateInfo,
                 MagFilter = Filter.Linear,
-                MinFilter = Filter.Linear, // Use linear for minification with mipmaps
-                MipmapMode = SamplerMipmapMode.Linear, // Linear interpolation between mip levels
+                MinFilter = Filter.Linear,
+                MipmapMode = SamplerMipmapMode.Linear,
                 AddressModeU = SamplerAddressMode.Repeat,
                 AddressModeV = SamplerAddressMode.Repeat,
                 AddressModeW = SamplerAddressMode.Repeat,
@@ -119,11 +101,10 @@ namespace RockEngine.Core.Rendering.Texturing
                 CompareEnable = Vk.False,
                 CompareOp = CompareOp.Always,
                 MinLod = 0.0f,
-                MaxLod = mipLevels - 1, // Important: Set to actual available mip levels
+                MaxLod = mipLevels - 1,
                 BorderColor = BorderColor.IntOpaqueBlack,
                 UnnormalizedCoordinates = Vk.False
             };
-
             return context.SamplerCache.GetSampler(samplerCreateInfo);
         }
 
@@ -135,7 +116,6 @@ namespace RockEngine.Core.Rendering.Texturing
         protected static Format GetVulkanFormat(SKColorType colorType, VulkanContext context)
         {
             var features = context.Device.PhysicalDevice.GetPhysicalDeviceFeatures();
-
             if (features.TextureCompressionBC && colorType == SKColorType.Rgba8888)
             {
                 return Format.BC3UnormBlock;
@@ -155,11 +135,22 @@ namespace RockEngine.Core.Rendering.Texturing
         {
             if (!_disposed)
             {
-                // can be still used in gpu. late dispose
+                // Уведомление об удалении должно быть обёрнуто в DeferredOperation
+                _context.GraphicsSubmitContext.AddDependency(new DeferredOperation(() =>
+                {
+                    NotifyObservers(ResourceChangeType.Disposed);
+                    _tracker.Clear(); // чистим подписчиков
+                }));
+
                 _context.GraphicsSubmitContext.AddDependency(_completionSemaphore);
                 _context.GraphicsSubmitContext.AddDependency(_image);
                 _context.GraphicsSubmitContext.AddDependency(new DeferredOperation(() => _disposed = true));
             }
+        }
+
+        public DescriptorImageInfo GetDescriptorInfo()
+        {
+            return new DescriptorImageInfo(CreateSampler(_context, TotalMipLevels), Image.GetView());
         }
     }
 }

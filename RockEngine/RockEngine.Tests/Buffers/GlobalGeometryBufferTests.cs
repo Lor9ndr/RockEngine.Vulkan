@@ -12,8 +12,8 @@ namespace RockEngine.Tests.Buffers
     [TestFixture]
     public class GlobalGeometryBufferTests : TestBase
     {
-        private VulkanContext _context;
-        private GlobalGeometryBuffer _geometryBuffer;
+        private new VulkanContext? _context;
+        private GlobalGeometryBuffer? _geometryBuffer;
 
         private struct SimpleVertex : IVertex
         {
@@ -68,6 +68,7 @@ namespace RockEngine.Tests.Buffers
         }
 
         [SetUp]
+        
         public void SetUp()
         {
             // Create a fresh buffer for each test
@@ -85,6 +86,7 @@ namespace RockEngine.Tests.Buffers
         private SubmitOperation WaitForIdle(SubmitContext submitContext) => submitContext.Submit();
 
         [Test]
+        
         public async Task AddMesh_ShouldAllocateSpace()
         {
             var vertices = new SimpleVertex[]
@@ -116,6 +118,7 @@ namespace RockEngine.Tests.Buffers
         }
 
         [Test]
+        
         public async Task RemoveMesh_ShouldFreeSpace()
         {
             var vertices = new SimpleVertex[] { new SimpleVertex(Vector3.Zero, Vector3.UnitZ, Vector2.Zero) };
@@ -138,6 +141,7 @@ namespace RockEngine.Tests.Buffers
         }
 
         [Test]
+        
         public async Task ForEachMesh_ShouldIterate()
         {
             var meshIds = new List<Guid>();
@@ -162,6 +166,7 @@ namespace RockEngine.Tests.Buffers
         }
 
         [Test]
+        
         public async Task WithMeshFormat_ShouldExecuteAction()
         {
             var meshId = Guid.NewGuid();
@@ -183,6 +188,7 @@ namespace RockEngine.Tests.Buffers
         }
 
         [Test]
+        
         public async Task Defragment_ShouldCompactData()
         {
             var vertices = new SimpleVertex[]
@@ -227,7 +233,7 @@ namespace RockEngine.Tests.Buffers
 
             // The new mesh should be placed exactly at the end of the used area (due to uniform stride/size).
             Assert.That(newAllocation.VertexOffset, Is.EqualTo(totalUsedVertexSize));
-            
+
         }
 
         [Test]
@@ -242,6 +248,7 @@ namespace RockEngine.Tests.Buffers
         }
 
         [Test]
+        
         public async Task Dispose_ShouldReleaseResources()
         {
             var localBuffer = new GlobalGeometryBuffer(_context, 1024, 1024);

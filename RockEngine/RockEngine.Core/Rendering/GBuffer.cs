@@ -1,8 +1,4 @@
-﻿using RockEngine.Core.Rendering.Materials;
-using RockEngine.Core.Rendering.Objects;
-using RockEngine.Core.Rendering.Passes.SubPasses;
-using RockEngine.Core.Rendering.ResourceBindings;
-using RockEngine.Core.Rendering.Texturing;
+﻿using RockEngine.Core.Rendering.Texturing;
 using RockEngine.Vulkan;
 
 using Silk.NET.Vulkan;
@@ -20,7 +16,7 @@ namespace RockEngine.Core.Rendering
         public Texture[] ColorTextures { get; private set; }
 
         public static readonly Format[] ColorAttachmentFormats =
-        [ 
+        [
             Format.R16G16B16A16Sfloat,   // Position (View Space)
             Format.A2R10G10B10UnormPack32,     // Normal (Octahedral encoded) + Depth
             Format.R8G8B8A8Srgb,         // Albedo + Specular
@@ -34,7 +30,7 @@ namespace RockEngine.Core.Rendering
             _context = context;
             _size = size;
             _depthFormat = depthFormat;
-            
+
             // Create separate samplers for different texture types
             var positionSampler = CreateSampler(Filter.Nearest);  // Position benefits from nearest
             var normalSampler = CreateSampler(Filter.Nearest);
@@ -43,15 +39,15 @@ namespace RockEngine.Core.Rendering
             Samplers = new[] { positionSampler, normalSampler, albedoSampler, albedoSampler /*, albedoSampler*/ };
             CreateAttachments();
             CreateTextures();
-           
+
         }
 
-       
+
 
         private void CreateAttachments()
         {
             ColorAttachments = new VkImageView[ColorAttachmentFormats.Length];
-            ReadOnlySpan<string> debugNames =  ["GPosition", "GNormal", "GAlbedo", "GMRA", "GEmissive"];
+            ReadOnlySpan<string> debugNames = ["GPosition", "GNormal", "GAlbedo", "GMRA", "GEmissive"];
             for (int i = 0; i < ColorAttachments.Length; i++)
             {
                 ColorAttachments[i] = CreateColorAttachment(ColorAttachmentFormats[i]);
@@ -71,7 +67,7 @@ namespace RockEngine.Core.Rendering
                 format,
                 ImageTiling.Optimal,
                 ImageUsageFlags.ColorAttachmentBit |
-                    ImageUsageFlags.InputAttachmentBit ,
+                    ImageUsageFlags.InputAttachmentBit,
                 MemoryPropertyFlags.DeviceLocalBit, aspectFlags: ImageAspectFlags.ColorBit);
 
             return image.GetOrCreateView(ImageAspectFlags.ColorBit);
@@ -84,14 +80,14 @@ namespace RockEngine.Core.Rendering
                 _size.Height,
                 _depthFormat,
                 ImageTiling.Optimal,
-                ImageUsageFlags.DepthStencilAttachmentBit| ImageUsageFlags.InputAttachmentBit,
+                ImageUsageFlags.DepthStencilAttachmentBit | ImageUsageFlags.InputAttachmentBit,
                 MemoryPropertyFlags.DeviceLocalBit,
                 initialLayout: ImageLayout.Undefined,
                 aspectFlags: ImageAspectFlags.DepthBit);
 
             return image.GetOrCreateView(ImageAspectFlags.DepthBit);
         }
-       
+
 
         private VkSampler CreateSampler(Filter filter)
         {
@@ -134,23 +130,14 @@ namespace RockEngine.Core.Rendering
 
         public void Recreate(Extent2D size)
         {
-            //_context.Device.GraphicsQueue.WaitIdle();
+            _size = size;
 
-            // Cleanup old resources
-            
-                foreach (var attachment in ColorAttachments)
-                {
-                    attachment.Image.Resize(new Extent3D(size.Width, size.Height, 1));
-                }
+            foreach (var attachment in ColorAttachments)
+            {
+                attachment.Image.Resize(new Extent3D(size.Width, size.Height, 1));
+            }
 
-                DepthAttachment.Image.Resize(new Extent3D(size.Width, size.Height, 1));
-
-                _size = size;
-          
-            
-
-            /*CreateAttachments();
-            CreateTextures();*/
+            DepthAttachment.Image.Resize(new Extent3D(size.Width, size.Height, 1));
         }
 
         public void Dispose()

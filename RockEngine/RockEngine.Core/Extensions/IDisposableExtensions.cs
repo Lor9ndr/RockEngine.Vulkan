@@ -12,7 +12,7 @@
             /// <returns>merged disposable where first disposed will be left and the last disposable will be right</returns>
             public static IDisposable operator |(IDisposable left, IDisposable right)
             {
-                return new MergedDisposable(left,right);
+                return new MergedDisposable(left, right);
             }
         }
         public struct MergedDisposable(IDisposable left, IDisposable right) : IDisposable

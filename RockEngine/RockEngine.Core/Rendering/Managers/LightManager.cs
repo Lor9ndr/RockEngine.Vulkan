@@ -1,8 +1,6 @@
 ﻿using RockEngine.Core.ECS.Components;
 using RockEngine.Core.Rendering.Buffers;
-using RockEngine.Core.Rendering.RenderTargets;
 using RockEngine.Core.Rendering.ResourceBindings;
-using RockEngine.Core.Rendering.Texturing;
 using RockEngine.Vulkan;
 
 using ZLinq;
@@ -20,6 +18,7 @@ namespace RockEngine.Core.Rendering.Managers
 
         public UniformBuffer CountLightUbo => _countLightUbo;
 
+        
         public LightManager(VulkanContext context, uint maxFramesInFlight, ulong maxLights)
         {
             _context = context;
@@ -44,6 +43,7 @@ namespace RockEngine.Core.Rendering.Managers
         public void RegisterLight(Light light) => _activeLights.Add(light);
         public void UnregisterLight(Light light) => _activeLights.Remove(light);
 
+        
         public ValueTask UpdateAsync(uint frameIndex)
         {
             var frameBuffer = _lightBuffers[frameIndex];

@@ -51,6 +51,7 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
             return new(Order, Name);
         }
 
+        
         public void Initilize()
         {
             var shaderManager = IoC.Container.GetInstance<IShaderManager>();
@@ -127,7 +128,7 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
                         csm.SetLocation = 5;
                         materialPass.BindResource(csm);
                     }
-                   
+
 
                     if (_iblBinding != null)
                     {
@@ -136,7 +137,7 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
                     //camera.RenderTarget.GBuffer.Material.Bind(_binding);
 
                     materialPass.CmdPushConstants(cmd);
-                    _bindingManager.BindResourcesForMaterial(frameIndex, materialPass, cmd);
+                    _bindingManager.BindResourcesForMaterial(frameIndex, cameraRenderTarget.Material, materialPass, cmd);
                     cmd.Draw(3, 1, 0, 0);
                 }
             }
@@ -144,7 +145,7 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
 
         internal void SetIBLTextures(Texture irradiance, Texture prefilter, Texture brdfLUT)
         {
-            _iblBinding =  new TextureBinding(3, 0,  0, 1, ImageLayout.ShaderReadOnlyOptimal,irradiance, prefilter, brdfLUT);
+            _iblBinding = new TextureBinding(3, 0, 0, 1, ImageLayout.ShaderReadOnlyOptimal, irradiance, prefilter, brdfLUT);
         }
 
         public void SetupAttachmentDescriptions(RenderPassBuilder builder)
@@ -202,6 +203,6 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
         {
         }
 
-       
+
     }
 }

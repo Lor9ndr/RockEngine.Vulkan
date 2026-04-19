@@ -1,6 +1,5 @@
 ﻿using System.Collections;
 using System.Collections.Concurrent;
-using System.Collections.Generic;
 using System.Diagnostics;
 
 namespace RockEngine.Core.Coroutines
@@ -28,7 +27,7 @@ namespace RockEngine.Core.Coroutines
         public event Action<Coroutine> OnCompleted;
         public event Action<Coroutine, Exception> OnError;
 
-        public Coroutine(IEnumerator enumerator, string name = null)
+        public Coroutine(IEnumerator enumerator, string? name = null)
         {
             _enumerator = enumerator;
             Name = name ?? enumerator.GetType().Name;
@@ -37,10 +36,14 @@ namespace RockEngine.Core.Coroutines
         public bool MoveNext()
         {
             if (_status != CoroutineStatus.Running)
+            {
                 return false;
+            }
 
             if (!_timer.IsRunning)
+            {
                 _timer.Start();
+            }
 
             try
             {
@@ -149,7 +152,7 @@ namespace RockEngine.Core.Coroutines
         private readonly ConcurrentQueue<Coroutine> _readyCoroutines = new ConcurrentQueue<Coroutine>();
         private bool _isUpdating;
 
-        public Coroutine StartCoroutine(IEnumerator routine, string name = null)
+        public Coroutine StartCoroutine(IEnumerator routine, string? name = null)
         {
             var coroutine = new Coroutine(routine, name);
 
@@ -167,7 +170,10 @@ namespace RockEngine.Core.Coroutines
 
         public void StopCoroutine(Coroutine coroutine)
         {
-            if (coroutine == null) return;
+            if (coroutine == null)
+            {
+                return;
+            }
 
             if (_isUpdating)
             {

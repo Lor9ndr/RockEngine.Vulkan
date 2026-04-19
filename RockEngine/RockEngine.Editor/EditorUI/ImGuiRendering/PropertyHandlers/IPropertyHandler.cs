@@ -28,7 +28,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.PropertyHandlers
         {
             if (value is T typedValue)
             {
-                 DrawProperty(component, accessor, typedValue, drawer);
+                DrawProperty(component, accessor, typedValue, drawer);
             }
         }
 

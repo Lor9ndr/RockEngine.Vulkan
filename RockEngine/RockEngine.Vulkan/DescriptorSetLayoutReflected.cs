@@ -4,6 +4,6 @@
     {
         public uint Set;
 
-        public DescriptorSetLayoutBindingReflected[] Bindings;
+        public required DescriptorSetLayoutBindingReflected[] Bindings;
     }
 }

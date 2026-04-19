@@ -117,7 +117,11 @@ namespace ShaderValidator
 
             Console.WriteLine(JsonSerializer.Serialize(messages));
 
-            try { File.Delete(tempPreprocessed); } catch { }
+            try
+            {
+                File.Delete(tempPreprocessed);
+            }
+            catch { }
 
             return messages.Any(m => m.Level == "error") ? 1 : 0;
         }

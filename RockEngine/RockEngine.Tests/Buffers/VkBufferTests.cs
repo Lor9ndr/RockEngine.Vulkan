@@ -7,7 +7,7 @@ using Silk.NET.Vulkan;
 namespace RockEngine.Tests.Buffers
 {
     [TestFixture]
-    public class VkBufferTests:TestBase
+    public class VkBufferTests : TestBase
     {
         private struct TestStruct
         {
@@ -18,6 +18,7 @@ namespace RockEngine.Tests.Buffers
 
 
         [Test]
+        
         public void Create_ShouldSucceed()
         {
             ulong size = 1024;
@@ -32,6 +33,7 @@ namespace RockEngine.Tests.Buffers
         }
 
         [Test]
+        
         public void Create_WithHostVisible_ShouldBeMapped()
         {
             ulong size = 256;
@@ -45,6 +47,7 @@ namespace RockEngine.Tests.Buffers
         }
 
         [Test]
+        
         public void WriteToBuffer_ShouldWriteData()
         {
             ulong size = 256;
@@ -65,6 +68,7 @@ namespace RockEngine.Tests.Buffers
         }
 
         [Test]
+        
         public void WriteToBuffer_WithOffset_ShouldWriteAtOffset()
         {
             ulong size = 256;
@@ -86,6 +90,7 @@ namespace RockEngine.Tests.Buffers
         }
 
         [Test]
+        
         public void WriteToBuffer_WithSize_ShouldWritePartial()
         {
             ulong size = 32;
@@ -107,6 +112,7 @@ namespace RockEngine.Tests.Buffers
         }
 
         [Test]
+        
         public void WriteToBuffer_WithExceedingSize_ShouldThrow()
         {
             ulong requestedSize = 16;
@@ -120,6 +126,7 @@ namespace RockEngine.Tests.Buffers
         }
 
         [Test]
+        
         public async Task WriteToBufferAsync_ShouldWriteData()
         {
             ulong size = 256;
@@ -138,6 +145,7 @@ namespace RockEngine.Tests.Buffers
         }
 
         [Test]
+        
         public void MapMemory_ShouldReturnValidSpan()
         {
             ulong size = 256;
@@ -161,6 +169,7 @@ namespace RockEngine.Tests.Buffers
         }
 
         [Test]
+        
         public void MappedMemory_Flush_ShouldNotThrow()
         {
             ulong size = 256;
@@ -176,6 +185,7 @@ namespace RockEngine.Tests.Buffers
         }
 
         [Test]
+        
         public void MappedMemory_Dispose_ShouldUnmap()
         {
             ulong size = 256;
@@ -200,6 +210,7 @@ namespace RockEngine.Tests.Buffers
         }
 
         [Test]
+        
         public async Task CopyTo_ShouldCopyData()
         {
             ulong size = 256;
@@ -231,6 +242,7 @@ namespace RockEngine.Tests.Buffers
         }
 
         [Test]
+        
         public void Dispose_ShouldReleaseResources()
         {
             var buffer = VkBuffer.Create(_context, 1024, BufferUsageFlags.TransferSrcBit, MemoryPropertyFlags.HostVisibleBit);
@@ -243,6 +255,7 @@ namespace RockEngine.Tests.Buffers
         }
 
         [Test]
+        
         public void CreateAndCopyToStagingBuffer_ShouldWork()
         {
             var testData = new TestStruct { A = 42, B = 3.14f, C = new Vector3(1, 2, 3) };
@@ -257,6 +270,7 @@ namespace RockEngine.Tests.Buffers
         }
 
         [Test]
+        
         public async Task CreateAndCopyToStagingBuffer_Generic_ShouldWork()
         {
             var testData = new TestStruct { A = 42, B = 3.14f, C = new Vector3(1, 2, 3) };
@@ -268,6 +282,7 @@ namespace RockEngine.Tests.Buffers
         }
 
         [Test]
+        
         public void Flush_OnHostCoherent_ShouldNotThrow()
         {
             ulong size = 256;
