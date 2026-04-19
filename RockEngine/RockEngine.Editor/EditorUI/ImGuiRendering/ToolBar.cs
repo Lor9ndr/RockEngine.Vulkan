@@ -14,9 +14,9 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
         private const string ICON_STOP = "\uf04d";
         private const string ICON_STEP = "\uf051";
 
-        public Toolbar()
+        public Toolbar(EditorStateManager editorStateManager)
         {
-            _stateManager = new EditorStateManager();
+            _stateManager = editorStateManager;
         }
 
         public void Draw()

@@ -63,7 +63,9 @@ namespace RockEngine.Editor.Layers
             ISelectionManager selectionManager,
             IAssetRepository assetRepository,
             IAssetFactory assetFactory,
-            IProjectManager projectManager, IThumbnailService thumbnailService)
+            IProjectManager projectManager, 
+            IThumbnailService thumbnailService,
+            EditorStateManager editorStateManager)
         {
             _world = world;
             _context = context;
@@ -79,7 +81,7 @@ namespace RockEngine.Editor.Layers
             // Initialize UI components
             _dockSpace = new EditorDockSpace();
             _mainMenuBar = new MainMenuBar();
-            _toolbar = new Toolbar();
+            _toolbar = new Toolbar(editorStateManager);
             _sceneHierarchy = new SceneHierarchyWindow(world, _selectionManager);
             _inspector = new InspectorWindow(assetManager, imGuiController, _selectionManager, thumbnailService);
             _sceneViewport = new ViewportWindow("Scene View", world, _inputManager, imGuiController, _selectionManager);

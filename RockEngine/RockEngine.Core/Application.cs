@@ -4,7 +4,6 @@ using RockEngine.Core.Coroutines;
 using RockEngine.Core.DI;
 using RockEngine.Core.Diagnostics;
 using RockEngine.Core.ECS;
-using RockEngine.Core.Extensions;
 using RockEngine.Core.Physics;
 using RockEngine.Core.Rendering;
 using RockEngine.Core.Rendering.Managers;
@@ -19,26 +18,25 @@ namespace RockEngine.Core
 {
     public abstract class Application : IDisposable
     {
+        private IApplicationContext _context;
         private readonly Scope _applicationScope;
         private readonly Logger _logger = LogManager.GetCurrentClassLogger();
 
         // Core components
         protected IWindow _window;
-        protected VulkanContext _context;
-        protected GraphicsContext _graphicsEngine;
-        private CoroutineScheduler _coroutineSheduler;
+        protected VulkanContext _vulkanContext;
+        protected GraphicsContext _graphicsContext;
         protected WorldRenderer _renderer;
-        protected LayerStack _layerStack;
         protected World _world;
-        private PhysicsManager _physicsManager;
+        protected CoroutineScheduler _coroutineScheduler;
+        protected PhysicsManager _physicsManager;
 
-        // Synchronization
         private readonly CancellationTokenSource _appCts = new();
-        private readonly ManualResetEventSlim _initialized = new(false);
+        private readonly TaskCompletionSource _initializedTcs = new();
         private bool _isInitialized;
-        private bool _isMinimized;
 
-        
+        protected abstract Type GetContextType();
+
         protected Application()
         {
             IoC.Initialize(this);
@@ -46,7 +44,7 @@ namespace RockEngine.Core
             ConfigureWindow();
         }
 
-        
+
         private void ConfigureWindow()
         {
             var settings = IoC.Container.GetInstance<AppSettings>();
@@ -58,7 +56,6 @@ namespace RockEngine.Core
             {
                 OnWindowLoad().GetAwaiter().GetResult();
             };
-            _window.UpdatesPerSecond = 0;
             _window.Update += (delta) => OnWindowUpdate(delta).GetAwaiter().GetResult();
             _window.Render += (delta) => OnWindowRender(delta).GetAwaiter().GetResult();
             _window.Initialize();
@@ -74,49 +71,46 @@ namespace RockEngine.Core
         {
             try
             {
-                _logger.Info("Initializing application...");
+                _logger.Info("Initializing core systems...");
 
-                // Initialize on window thread (required for Vulkan)
-                _context = IoC.Container.GetInstance<VulkanContext>();
-                _graphicsEngine = IoC.Container.GetInstance<GraphicsContext>();
-                _coroutineSheduler = IoC.Container.GetInstance<CoroutineScheduler>();
-                PerformanceTracer.Initialize(_context);
-                var surface = SurfaceHandler.CreateSurface(_window, _context);
-                var swapchain = VkSwapchain.Create(_context, surface);
+                _vulkanContext = IoC.Container.GetInstance<VulkanContext>();
+                _graphicsContext = IoC.Container.GetInstance<GraphicsContext>();
+                _coroutineScheduler = IoC.Container.GetInstance<CoroutineScheduler>();
+                PerformanceTracer.Initialize(_vulkanContext);
 
-                _graphicsEngine.AddSwapchain(swapchain);
+                var surface = SurfaceHandler.CreateSurface(_window, _vulkanContext);
+                var swapchain = VkSwapchain.Create(_vulkanContext, surface);
+                _graphicsContext.AddSwapchain(swapchain);
+
                 _renderer = IoC.Container.GetInstance<WorldRenderer>();
-                _layerStack = IoC.Container.GetInstance<LayerStack>();
                 _world = IoC.Container.GetInstance<World>();
                 _physicsManager = IoC.Container.GetInstance<PhysicsManager>();
-                // Initialize shaders
+
                 var shaderManager = IoC.Container.GetInstance<IShaderManager>();
                 await shaderManager.CompileAllShadersAsync();
 
-
-                // Initialize renderer
                 await _renderer.InitializeAsync();
                 await _world.Start(_renderer);
                 _physicsManager.Initialize();
 
-                // Load application content
-                await Load();
+                // Resolve context after container is fully ready
+                _context = (IApplicationContext)IoC.Container.GetInstance(GetContextType());
+                await _context.InitializeAsync(_graphicsContext, _renderer, _world);
 
                 _isInitialized = true;
-                _initialized.Set();
-
-                _logger.Info("Application initialized successfully");
+                _initializedTcs.SetResult();
+                _logger.Info("Application initialized successfully.");
             }
             catch (Exception ex)
             {
-                _logger.Error(ex, "Failed to initialize application");
+                _logger.Error(ex, "Initialization failed.");
+                _initializedTcs.SetException(ex);
                 _window.Close();
-                throw;
             }
         }
 
-        
-        private async Task OnWindowUpdate(double _)
+
+        private async Task OnWindowUpdate(double delta)
         {
             if (!_isInitialized || _appCts.IsCancellationRequested)
             {
@@ -125,80 +119,56 @@ namespace RockEngine.Core
 
             try
             {
-                // Update time system
                 Time.Update(_window.Time);
 
-                // Update layers
-                _layerStack.Update();
+                // Let context do its own update logic
+                await _context.UpdateAsync();
 
-                // Update world
-                await _world.Update(_renderer);
-                _physicsManager.Update(Time.DeltaTime);
-
-
-                // Update renderer frame data
-                await _renderer.UpdateFrameData();
-                _coroutineSheduler.Update();
+           
+                _coroutineScheduler.Update();
             }
             catch (Exception ex)
             {
-                _logger.Error(ex, "Update failed");
+                _logger.Error(ex, "Update failed.");
             }
-
         }
 
-        private async Task OnWindowRender(double deltaTime)
+        private async Task OnWindowRender(double delta)
         {
             if (!_isInitialized || _appCts.IsCancellationRequested)
             {
                 return;
             }
 
-            PerformanceTracer.ProcessQueries(_context, _graphicsEngine.FrameIndex);
-            PerformanceTracer.BeginFrame(_graphicsEngine.FrameIndex);
+            PerformanceTracer.ProcessQueries(_vulkanContext, _graphicsContext.FrameIndex);
+            PerformanceTracer.BeginFrame(_graphicsContext.FrameIndex);
 
-            // Begin frame
-            _graphicsEngine.BeginFrame();
+            _graphicsContext.BeginFrame();
 
             try
             {
-                RenderContext renderContext = new RenderContext(
-                    _graphicsEngine.FrameIndex,
-                    _context.GraphicsSubmitContext,
-                    _context.TransferSubmitContext,
-                    _context.ComputeSubmitContext,
+                var renderContext = new RenderContext(
+                    _graphicsContext.FrameIndex,
+                    _vulkanContext.GraphicsSubmitContext,
+                    _vulkanContext.TransferSubmitContext,
+                    _vulkanContext.ComputeSubmitContext,
                     _renderer);
 
-                // Render ImGui
-                RenderImGui(renderContext);
+                // Delegate to context for rendering
+                await _context.RenderAsync(renderContext);
 
-                // Render layers
-                RenderLayers(renderContext);
-
-                // Render world
-                await RenderWorld(renderContext);
-
-                // Submit and present
-
-                _graphicsEngine.SubmitAndPresent();
-
+                _graphicsContext.SubmitAndPresent();
             }
-            //catch (VulkanException ex) 
-            //{
-            //    _logger.Error(ex, "Render failed");
-            //
-            //}
             catch (Exception ex)
             {
-                _logger.Error(ex, "Render failed");
+                _logger.Error(ex, "Render failed.");
             }
-
         }
 
 
-        private void RenderImGui(RenderContext renderContext)
+       /* private void RenderImGui(RenderContext renderContext)
         {
-            var batch = _context.GraphicsSubmitContext.CreateBatch();
+            var batch = _vulkanContext.GraphicsSubmitContext.CreateBatch();
             using (PerformanceTracer.BeginSection("ImGui Render"))
             {
                 using (batch.BeginSection("ImGui", _graphicsEngine.FrameIndex))
@@ -211,7 +181,7 @@ namespace RockEngine.Core
 
         private void RenderLayers(RenderContext renderContext)
         {
-            var batch = _context.GraphicsSubmitContext.CreateBatch();
+            var batch = _vulkanContext.GraphicsSubmitContext.CreateBatch();
             using (PerformanceTracer.BeginSection("Layer Render"))
             {
                 using (batch.BeginSection("Layers", _graphicsEngine.FrameIndex))
@@ -220,15 +190,15 @@ namespace RockEngine.Core
                 }
             }
             batch.Submit();
-        }
+        }*/
 
-        private async Task RenderWorld(RenderContext renderContext)
+      /*  private async Task RenderWorld(RenderContext renderContext)
         {
             using (PerformanceTracer.BeginSection("World Render"))
             {
                 await _renderer.Render(renderContext);
             }
-        }
+        }*/
 
         public void Run()
         {
@@ -247,16 +217,6 @@ namespace RockEngine.Core
             _window?.Close();
         }
 
-        protected virtual async Task Load()
-        {
-            var layers = IoC.Container.GetAllInstances<ILayer>();
-            foreach (var item in layers)
-            {
-                await _layerStack.PushLayer(item);
-            }
-        }
-
-
         public virtual void Dispose()
         {
             if (_appCts.IsCancellationRequested)
@@ -268,28 +228,27 @@ namespace RockEngine.Core
 
             try
             {
-                _initialized.Wait(TimeSpan.FromSeconds(5));
+                _initializedTcs.Task.Wait(TimeSpan.FromSeconds(5));
+                _logger.Info("Shutting down...");
 
-                _logger.Info("Shutting down application...");
-                _context?.Device?.WaitIdle();
+                _context.ShutdownAsync().GetAwaiter().GetResult();
+                _vulkanContext?.Device?.WaitIdle();
+
                 _world?.Dispose();
-                _layerStack?.Dispose();
                 _renderer?.Dispose();
-                _graphicsEngine?.Dispose();
-                _context?.Dispose();
-
+                _graphicsContext?.Dispose();
+                _vulkanContext?.Dispose();
                 _applicationScope?.Dispose();
 
-                _logger.Info("Application shutdown complete");
+                _logger.Info("Shutdown complete.");
             }
             catch (Exception ex)
             {
-                _logger.Error(ex, "Error during shutdown");
+                _logger.Error(ex, "Error during shutdown.");
             }
             finally
             {
                 _appCts.Dispose();
-                _initialized.Dispose();
                 GC.SuppressFinalize(this);
             }
         }

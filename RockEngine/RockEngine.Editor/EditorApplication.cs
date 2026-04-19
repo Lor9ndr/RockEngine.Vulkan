@@ -9,28 +9,23 @@ namespace RockEngine.Editor
 {
     public class EditorApplication : Application
     {
-        private readonly RenderDocIntegration _renderDoc;
+        protected override Type GetContextType() => typeof(EditorContext);
 
-        public EditorApplication() : base()
+        public EditorApplication()
+        {
+            // Container is already initialized here (base ctor called first)
+            // You can safely do additional setup like logging configuration
+            ConfigureLogging();
+        }
+
+        private void ConfigureLogging()
         {
             var config = new NLog.Config.LoggingConfiguration();
             var consoleTarget = new EditorConsoleTarget(IoC.Container.GetInstance<EditorConsole>());
-            consoleTarget.Layout = "${shortdate}|${level:uppercase=true}|${logger}|${message}${onexception:${newline}${exception:format=tostring:maxInnerExceptionLevel=10}}"; // Custom layout
+            consoleTarget.Layout = "${shortdate}|${level:uppercase=true}|${logger}|${message}${onexception:${newline}${exception:format=tostring:maxInnerExceptionLevel=10}}";
             config.AddTarget("EditorConsole", consoleTarget);
             config.AddRuleForAllLevels(consoleTarget);
             LogManager.Configuration = config;
-
-            //_renderDoc = IoC.Container.GetInstance<RenderDocIntegration>();
         }
-
-        protected override async Task Load()
-        {
-            //await base.Load();
-            var projectLayer = IoC.Container.GetInstance<ProjectSelectionLayer>();
-            var imGuiLayer = IoC.Container.GetInstance<ImGuiLayer>();
-            await _layerStack.PushLayer(imGuiLayer).ConfigureAwait(false);
-            await _layerStack.PushLayer(projectLayer).ConfigureAwait(false);
-        }
-
     }
 }

@@ -40,6 +40,7 @@ namespace RockEngine.Editor.Modules
             container.Register<IThumbnailRenderer, ThumbnailRenderer>();
             container.Register<IThumbnailService, ThumbnailService>();
             container.Register<IRegistry<Thumbnail, IAsset>, ThumbnailCache>();
+            container.Register<EditorContext>(Lifestyle.Scoped);
 
             //container.Collection.Append<ILayer, TitleBarLayer>();
 

@@ -10,7 +10,7 @@ using RockEngine.Vulkan;
 
 namespace RockEngine.Editor.Layers
 {
-    internal class ImGuiLayer : ILayer
+    public class ImGuiLayer : ILayer
     {
         private readonly ImGuiController _controller;
         private readonly WorldRenderer _renderer;
