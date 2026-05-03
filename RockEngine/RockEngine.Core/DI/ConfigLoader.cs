@@ -11,7 +11,7 @@ namespace RockEngine.Core.DI
         {
             using var file = File.OpenRead(Directory.GetCurrentDirectory() + "\\appsettings.yaml");
             var serializer = serviceProvider.GetRequiredService<IYamlSerializer>();
-            return (AppSettings)await serializer.DeserializeAsync(file, typeof(AppSettings));
+            return (AppSettings)await serializer.DeserializeAsync(file, typeof(AppSettings)).ConfigureAwait(false);
         }
     }
 }

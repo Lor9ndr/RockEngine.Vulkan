@@ -51,19 +51,19 @@ namespace RockEngine.Core.Assets
                 {
                     if (renderer!.Mesh != null)
                     {
-                        var model = await renderer.MeshProvider.GetAsync();
+                        var model = await renderer.MeshProvider.GetAsync().ConfigureAwait(false);
                         if (model is IGpuResource gpuModel)
                         {
-                            await gpuModel.LoadGpuResourcesAsync();
+                            await gpuModel.LoadGpuResourcesAsync().ConfigureAwait(false);
                         }
                     }
 
                     if (renderer.Material != null)
                     {
-                        var material = await renderer.MaterialProvider.GetAsync();
+                        var material = await renderer.MaterialProvider.GetAsync().ConfigureAwait(false);
                         if (material is IGpuResource gpuMaterial)
                         {
-                            await gpuMaterial.LoadGpuResourcesAsync();
+                            await gpuMaterial.LoadGpuResourcesAsync().ConfigureAwait(false);
                         }
                     }
                 }
@@ -156,13 +156,13 @@ namespace RockEngine.Core.Assets
                             // Ensure materials are loaded
                             if (meshRenderer.Material != null)
                             {
-                                await meshRenderer.MaterialProvider.GetAsync();
+                                await meshRenderer.MaterialProvider.GetAsync().ConfigureAwait(false);
                             }
 
                             // Ensure model is loaded
                             if (meshRenderer.Mesh != null)
                             {
-                                await meshRenderer.MeshProvider.GetAsync();
+                                await meshRenderer.MeshProvider.GetAsync().ConfigureAwait(false);
                             }
                         }
                     }

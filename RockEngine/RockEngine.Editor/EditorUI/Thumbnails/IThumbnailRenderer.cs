@@ -37,11 +37,11 @@ namespace RockEngine.Editor.EditorUI.Thumbnails
             {
                 if (textureAsset.Texture is null)
                 {
-                    await textureAsset.LoadGpuResourcesAsync();
+                    await textureAsset.LoadGpuResourcesAsync().ConfigureAwait(false);
                 }
                 if (textureAsset.Texture is Texture2D texture2D)
                 {
-                    var texture = await CreateTextureThumbnail(texture2D, _pipelineManager, _bindingManager);
+                    var texture = await CreateTextureThumbnail(texture2D, _pipelineManager, _bindingManager).ConfigureAwait(false);
                     var thumbnail = new Thumbnail(asset, size, size, texture);
                     return thumbnail;
                 }

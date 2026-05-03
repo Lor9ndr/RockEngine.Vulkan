@@ -36,8 +36,8 @@ namespace RockEngine.Core.Rendering.Texturing
 
             return textureData.Dimension switch
             {
-                TextureDimension.Texture2D => await Create2DAsync(context, textureData, cancellationToken),
-                TextureDimension.TextureCube => await CreateCubeAsync(context, textureData, cancellationToken),
+                TextureDimension.Texture2D => await Create2DAsync(context, textureData, cancellationToken).ConfigureAwait(false),
+                TextureDimension.TextureCube => await CreateCubeAsync(context, textureData, cancellationToken).ConfigureAwait(false),
                 /* TextureDimension.TextureArray => await CreateArrayAsync(context, textureData, cancellationToken),
                  TextureDimension.TextureCubeArray => await CreateCubeArrayAsync(context, textureData, cancellationToken),*/
                 _ => throw new NotSupportedException($"Texture dimension {textureData.Dimension} not supported")
@@ -50,7 +50,7 @@ namespace RockEngine.Core.Rendering.Texturing
         {
             if (textureData.FilePaths.Count > 0)
             {
-                return await CreateFromFileAsync(context, textureData, cancellationToken);
+                return await CreateFromFileAsync(context, textureData, cancellationToken).ConfigureAwait(false);
             }
             else
             {
@@ -67,7 +67,7 @@ namespace RockEngine.Core.Rendering.Texturing
                 throw new ArgumentException("Cube map requires exactly 6 file paths");
             }
 
-            return await CreateCubeFromFilesAsync(context, textureData, cancellationToken);
+            return await CreateCubeFromFilesAsync(context, textureData, cancellationToken).ConfigureAwait(false);
         }
 
         /*// Create array texture
@@ -99,7 +99,7 @@ namespace RockEngine.Core.Rendering.Texturing
                 GenerateMipmaps = generateMipmaps
             };
 
-            return await CreateAsync(context, textureData, cancellationToken);
+            return await CreateAsync(context, textureData, cancellationToken).ConfigureAwait(false);
         }
 
 
@@ -111,7 +111,7 @@ namespace RockEngine.Core.Rendering.Texturing
             textureData.Width = (uint)bitmap.Width;
             textureData.Height = (uint)bitmap.Height;
             textureData.Format = TextureData.FromSKFormat(bitmap.ColorType, textureData.ConvertToSrgb); // also set format if missing
-            return await CreateFromSkBitmapAsync(context, bitmap, textureData, cancellationToken);
+            return await CreateFromSkBitmapAsync(context, bitmap, textureData, cancellationToken).ConfigureAwait(false);
         }
 
         // Create from bytes with TextureData
@@ -260,17 +260,17 @@ namespace RockEngine.Core.Rendering.Texturing
             await Parallel.ForAsync(0, 6, async (i, ct) =>
             {
 
-                var bytes = await File.ReadAllBytesAsync(textureData.FilePaths[i], cancellationToken);
+                var bytes = await File.ReadAllBytesAsync(textureData.FilePaths[i], cancellationToken).ConfigureAwait(false);
                 faceBitmaps[i] = SKBitmap.Decode(bytes);
 
                 if (textureData.FlipVertically)
                 {
                     faceBitmaps[i] = FlipBitmapVertically(faceBitmaps[i]);
                 }
-            });
+            }).ConfigureAwait(false);
 
 
-            return await CreateCubeFromBitmapsAsync(context, faceBitmaps, textureData, cancellationToken);
+            return await CreateCubeFromBitmapsAsync(context, faceBitmaps, textureData, cancellationToken).ConfigureAwait(false);
         }
 
         // Create cube from bitmaps

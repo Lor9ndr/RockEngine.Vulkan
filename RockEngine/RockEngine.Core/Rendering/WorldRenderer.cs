@@ -117,7 +117,7 @@ namespace RockEngine.Core.Rendering
             SwapchainTarget.Initialize(_renderPassManager.GetRenderPass<SwapchainPassStrategy>());
 
             _skyboxPipeline = CreateSkyboxPipeline();
-            await iblManagerInitalizeTask;
+            await iblManagerInitalizeTask.ConfigureAwait(false);
             //await PhysicsManager.InitializeAsync();
         }
 
@@ -129,16 +129,13 @@ namespace RockEngine.Core.Rendering
             {
                 foreach (IRenderPassStrategy? item in _renderPassStrategies)
                 {
-                    await item.Execute(renderContext, this)
-                        .ConfigureAwait(false);
+                    await item.Execute(renderContext, this).ConfigureAwait(false);
                 }
             }
         }
         
         public async ValueTask UpdateFrameData()
         {
-
-
             // Get shadow-casting lights before updates
             var shadowCastingLights = _lightManager.GetShadowCastingLights().ToList();
 

@@ -58,7 +58,7 @@ namespace RockEngine.Vulkan
                      case Result.Success:
                          return;
                      case Result.NotReady:
-                         await Task.Delay(1, cancellationToken).ConfigureAwait(false);
+                         await Task.Delay(1, cancellationToken);
                          continue;
                      case Result.Timeout:
                          throw new VulkanException(result, "Failed to wait fence, timeout");

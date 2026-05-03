@@ -73,7 +73,7 @@ namespace RockEngine.Core.ECS
             // Process existing entities
             foreach (var entity in _entities)
             {
-                await ProcessEntityComponents(entity, renderer);
+                await ProcessEntityComponents(entity, renderer).ConfigureAwait(false);
             }
 
             lock (_stateLock)
@@ -81,7 +81,7 @@ namespace RockEngine.Core.ECS
                 _state = WorldState.Started;
             }
 
-            await ProcessPendingStarts(renderer);
+            await ProcessPendingStarts(renderer).ConfigureAwait(false);
         }
         internal void AddEntity(Entity entity)
         {
@@ -92,7 +92,7 @@ namespace RockEngine.Core.ECS
         {
             foreach (var component in entity.Components)
             {
-                await component.OnStart(renderer);
+                await component.OnStart(renderer).ConfigureAwait(false);
             }
         }
 
@@ -104,7 +104,7 @@ namespace RockEngine.Core.ECS
                 {
                     continue;
                 }
-                await component.OnStart(renderer);
+                await component.OnStart(renderer).ConfigureAwait(false);
             }
         }
 
@@ -121,10 +121,10 @@ namespace RockEngine.Core.ECS
 
         public async ValueTask Update(WorldRenderer renderer)
         {
-            await ProcessPendingStarts(renderer);
+            await ProcessPendingStarts(renderer).ConfigureAwait(false);
             foreach (var entity in _entities.ToArray())
             {
-                await entity.Update(renderer);
+                await entity.Update(renderer).ConfigureAwait(false);
             }
         }
 

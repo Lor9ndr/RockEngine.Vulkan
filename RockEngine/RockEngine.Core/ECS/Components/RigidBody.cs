@@ -166,7 +166,7 @@ namespace RockEngine.Core.ECS.Components.Physics
                 return;
             }
 
-            await base.OnStart(renderer);
+            await base.OnStart(renderer).ConfigureAwait(false);
 
             // Найти все коллайдеры и подписаться на их изменения
             FindAndSubscribeToColliders();
@@ -357,7 +357,7 @@ namespace RockEngine.Core.ECS.Components.Physics
                 }
             }
 
-            await base.Update(renderer);
+            await base.Update(renderer).ConfigureAwait(false);
         }
 
         private void UpdateFriction()

@@ -316,7 +316,6 @@ float calculateSpotShadow(vec3 fragPos, vec3 normal, vec3 lightDir, LightData li
     return shadow * light.shadowParams.y;
 }
 
-// FIXED: Optimized point shadow with proper cube map sampling
 float calculatePointShadow(vec3 fragPos, vec3 normal, vec3 lightPos, LightData light) {
     if (light.shadowParams.z < 0.5) return 0.0;
     
@@ -459,7 +458,7 @@ vec3 calculateIBL(vec3 N, vec3 V, vec3 F0, float roughness, float metallic, floa
     float NdotV = clamp(dot(N, V), 0.001, 1.0);
     
     // Apply environment rotation
-    mat3 rotMatrix = rotationMatrix(vec3(0.0, 1.0, 0.0), iblParams.envRotation);
+    mat3 rotMatrix = rotationMatrix(vec3(0.0, 0.0, 0.0), iblParams.envRotation);
     vec3 N_rot = rotMatrix * N;
     vec3 R_rot = rotMatrix * reflect(-V, N);
     

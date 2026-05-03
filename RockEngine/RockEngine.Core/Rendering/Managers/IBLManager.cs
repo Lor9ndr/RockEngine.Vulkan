@@ -37,20 +37,20 @@ namespace RockEngine.Core.Rendering.Managers
             // Create all compute pipelines
             _irradiancePipeline = await _computeManager.CreateComputePipelineAsync(
                 "Shaders/irradiance.comp.spv",
-                "IrradianceGen");
+                "IrradianceGen").ConfigureAwait(false);
 
             _prefilterPipeline = await _computeManager.CreateComputePipelineAsync(
                 "Shaders/prefilter.comp.spv",
-                "PrefilterGen");
+                "PrefilterGen").ConfigureAwait(false);
 
             _brdfPipeline = await _computeManager.CreateComputePipelineAsync(
                 "Shaders/brdf.comp.spv",
-                "BRDFGen");
+                "BRDFGen").ConfigureAwait(false);
         }
 
         public async Task<Texture> GenerateIrradianceMap(Texture envMap, uint size = 128)
         {
-            var output = await CreateCubeTexture(size, Format.R16G16B16A16Sfloat, "Irradiance");
+            var output = await CreateCubeTexture(size, Format.R16G16B16A16Sfloat, "Irradiance").ConfigureAwait(false);
 
             var batch = _context.ComputeSubmitContext.CreateBatch();
             using (batch.BeginSection("GenerateIrradianceMap", 0))
@@ -114,7 +114,7 @@ namespace RockEngine.Core.Rendering.Managers
 
         public async Task<Texture> GeneratePrefilterMap(Texture envMap, uint size = 512)
         {
-            Texture output = await CreateCubeTexture(size, Format.R16G16B16A16Sfloat, "PreFilter", true);
+            Texture output = await CreateCubeTexture(size, Format.R16G16B16A16Sfloat, "PreFilter", true).ConfigureAwait(false);
 
             uint mipLevels = output.Image.MipLevels;
             var batch = _context.ComputeSubmitContext.CreateBatch();

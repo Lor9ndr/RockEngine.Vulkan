@@ -46,11 +46,11 @@ namespace RockEngine.Core.Assets
 
         public override async Task LoadDataAsync()
         {
-            await base.LoadDataAsync();
+            await base.LoadDataAsync().ConfigureAwait(false);
 
             if (Data != null && Data.FilePaths.Count > 0)
             {
-                await LoadImageDataAsync();
+                await LoadImageDataAsync().ConfigureAwait(false);
             }
         }
 
@@ -63,7 +63,7 @@ namespace RockEngine.Core.Assets
 
             try
             {
-                _bitmaps = await LoadBitmapsAsync(Data);
+                _bitmaps = await LoadBitmapsAsync(Data).ConfigureAwait(false);
 
                 // Update dimensions from loaded bitmaps
                 if (_bitmaps.Length > 0)
@@ -90,7 +90,7 @@ namespace RockEngine.Core.Assets
                     throw new FileNotFoundException($"Texture file not found: {filePath}");
                 }
 
-                var bytes = await File.ReadAllBytesAsync(filePath);
+                var bytes = await File.ReadAllBytesAsync(filePath).ConfigureAwait(false);
                 var bitmap = SKBitmap.Decode(bytes) ?? throw new InvalidOperationException($"Failed to decode texture: {filePath}");
                 if (data.FlipVertically)
                 {
@@ -119,7 +119,7 @@ namespace RockEngine.Core.Assets
                 return;
             }
 
-            await _gpuSemaphore.WaitAsync();
+            await _gpuSemaphore.WaitAsync().ConfigureAwait(false);
             try
             {
                 if (GpuReady)
@@ -129,7 +129,7 @@ namespace RockEngine.Core.Assets
 
                 if (!IsDataLoaded)
                 {
-                    await LoadDataAsync();
+                    await LoadDataAsync().ConfigureAwait(false);
                 }
 
                 if (Data == null)
@@ -140,7 +140,7 @@ namespace RockEngine.Core.Assets
                 var context = IoC.Container.GetInstance<VulkanContext>();
 
                 // Use the new unified creation method
-                _texture = await Texture2D.CreateAsync(context, Data, default);
+                _texture = await Texture2D.CreateAsync(context, Data, default).ConfigureAwait(false);
 
                 // Clean up CPU-side bitmaps
                 if (_bitmaps != null)

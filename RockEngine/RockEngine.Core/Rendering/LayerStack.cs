@@ -1,5 +1,6 @@
 ﻿using System.Buffers;
 using System.Collections.Concurrent;
+using RockEngine.Core.Synchronization;
 using RockEngine.Vulkan;
 
 namespace RockEngine.Core.Rendering
@@ -53,7 +54,7 @@ namespace RockEngine.Core.Rendering
             else
             {
                 // Wait for attachment to complete before adding to active layers
-                await attachTask;
+                await attachTask.ConfigureAwait(false);
                 AddLayerInternal(layer);
             }
         }
@@ -117,14 +118,31 @@ namespace RockEngine.Core.Rendering
 
             ProcessPendingOperations();
 
-            // Use a stack-allocated span for iteration (no heap allocation)
 
-            Span<ILayer> layersToRender = _activeLayers.AsSpan(0, _activeLayerCount);
 
-            for (int i = 0; i < layersToRender.Length; i++)
+            if(MainThreadSynchronizationContext.Current is not null)
             {
-                layersToRender[i].OnImGuiRender(batch);
+                MainThreadSynchronizationContext.Current.RunOnMainThread(() =>
+                {
+                    Span<ILayer> layersToRender = _activeLayers.AsSpan(0, _activeLayerCount);
+
+                    for (int i = 0; i < layersToRender.Length; i++)
+                    {
+                        layersToRender[i].OnImGuiRender(batch);
+                    }
+                });
             }
+            else
+            {
+                Span<ILayer> layersToRender = _activeLayers.AsSpan(0, _activeLayerCount);
+
+                for (int i = 0; i < layersToRender.Length; i++)
+                {
+                    layersToRender[i].OnImGuiRender(batch);
+                }
+            }
+           
+
         }
 
         private void AddLayerInternal(ILayer layer)
@@ -243,7 +261,7 @@ namespace RockEngine.Core.Rendering
             {
                 if (_pendingAttachmentTasks.TryPeek(out var task))
                 {
-                    await task;
+                    await task.ConfigureAwait(false);
                     _pendingAttachmentTasks.TryDequeue(out _);
                 }
             }

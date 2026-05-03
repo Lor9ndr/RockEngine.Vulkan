@@ -23,7 +23,7 @@ namespace RockEngine.Core.Rendering.Managers
                 _context,
                 shaderPath,
                 ShaderStageFlags.ComputeBit
-            );
+            ).ConfigureAwait(false);
 
             return _pipelineManager.Create(new ComputePipelineBuilder(_context, pipelineName)
                 .WithShaderModule(shader));

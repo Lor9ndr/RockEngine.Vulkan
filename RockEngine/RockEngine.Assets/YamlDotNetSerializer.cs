@@ -41,13 +41,13 @@ namespace RockEngine.Assets
         {
             using var writer = new StreamWriter(stream, Encoding.UTF8, leaveOpen: true);
             _serializer.Serialize(writer, data);
-            await writer.FlushAsync();
+            await writer.FlushAsync().ConfigureAwait(false);
         }
 
         public async Task<object> DeserializeAsync(Stream stream, Type type)
         {
             using var reader = new StreamReader(stream, Encoding.UTF8, leaveOpen: true);
-            var content = await reader.ReadToEndAsync();
+            var content = await reader.ReadToEndAsync().ConfigureAwait(false);
             return _deserializer.Deserialize(content, type);
         }
 

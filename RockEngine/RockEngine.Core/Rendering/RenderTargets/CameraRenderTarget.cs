@@ -87,7 +87,6 @@ namespace RockEngine.Core.Rendering.RenderTargets
                 "Attachment size mismatch before framebuffer creation");
             for (int i = 0; i < Framebuffers.Length; i++)
             {
-                Console.WriteLine(attachments[0].VkObjectNative);
                 Framebuffers[i] = VkFrameBuffer.Create(
                     _context,
                     RenderPass.RenderPass,

@@ -42,7 +42,7 @@ namespace RockEngine.Editor.EditorUI
                 }
 
                 // Load project using AssetManager
-                var project = await _projectManager.LoadProjectAsync<ProjectAsset>(path);
+                var project = await _projectManager.LoadProjectAsync<ProjectAsset>(path).ConfigureAwait(false);
 
                 // Add to recent projects
                 AddToRecentProjects(new ProjectInfo
@@ -53,7 +53,7 @@ namespace RockEngine.Editor.EditorUI
                 });
 
                 // Initialize the engine with this project
-                await InitializeEngineWithProjectAsync(project, excludeLayers);
+                await InitializeEngineWithProjectAsync(project, excludeLayers).ConfigureAwait(false);
 
                 _logger.Info($"Project opened: {project.Name}");
                 return true;
@@ -70,7 +70,7 @@ namespace RockEngine.Editor.EditorUI
             try
             {
                 // Create project using AssetManager
-                var project = await _projectManager.CreateProjectAsync<ProjectAsset, ProjectData>(path, name);
+                var project = await _projectManager.CreateProjectAsync<ProjectAsset, ProjectData>(path, name).ConfigureAwait(false);
 
                 // Add to recent projects
                 AddToRecentProjects(new ProjectInfo
@@ -79,7 +79,7 @@ namespace RockEngine.Editor.EditorUI
                     Path = path,
                     LastOpened = DateTime.Now
                 });
-                await _assetManager.SaveAsync(project);
+                await _assetManager.SaveAsync(project).ConfigureAwait(false);
 
                 _logger.Info($"Project created: {name}");
                 return true;
@@ -105,7 +105,7 @@ namespace RockEngine.Editor.EditorUI
 
             foreach (var layer in allLayers.Except(excludeLayers))
             {
-                await layerStack.PushLayer(layer);
+                await layerStack.PushLayer(layer).ConfigureAwait(false);
             }
         }
 

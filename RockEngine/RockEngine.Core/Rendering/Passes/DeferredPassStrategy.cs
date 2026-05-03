@@ -37,9 +37,9 @@ namespace RockEngine.Core.Rendering.Passes
                 }
                 if (camera.IsActive)
                 {
-                    await ExecuteCameraPass(renderContext.GraphicsContext, camera, renderer, (uint)i, frameIndex);
+                    await ExecuteCameraPass(renderContext.GraphicsContext, camera, renderer, (uint)i, frameIndex).ConfigureAwait(false);
                 }
-            });
+            }).ConfigureAwait(false);
         }
 
         private async ValueTask ExecuteCameraPass(SubmitContext submitContext, Camera camera, WorldRenderer renderer, uint cameraIndex, uint frameIndex)

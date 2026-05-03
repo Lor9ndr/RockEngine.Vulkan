@@ -13,12 +13,12 @@ namespace RockEngine.Assets
             using var mmf = MemoryMappedFile.CreateFromFile(filePath, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
             using var stream = mmf.CreateViewStream(0, fileInfo.Length, MemoryMappedFileAccess.Read);
 
-            return await serializer.DeserializeHeaderAsync(stream);
+            return await serializer.DeserializeHeaderAsync(stream).ConfigureAwait(false);
         }
 
         public async Task LoadDataAsync<T>(IAsset<T> asset, string filePath, IAssetSerializer serializer) where T : class
         {
-            await LoadDataAsync(asset, typeof(T), filePath, serializer);
+            await LoadDataAsync(asset, typeof(T), filePath, serializer).ConfigureAwait(false);
         }
 
         public async Task LoadDataAsync(IAsset asset, Type dataType, string filePath, IAssetSerializer serializer)
@@ -27,7 +27,7 @@ namespace RockEngine.Assets
             using var mmf = MemoryMappedFile.CreateFromFile(filePath, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
             using var stream = mmf.CreateViewStream(0, fileInfo.Length, MemoryMappedFileAccess.Read);
 
-            var data = await serializer.DeserializeDataAsync(stream, dataType);
+            var data = await serializer.DeserializeDataAsync(stream, dataType).ConfigureAwait(false);
             asset.SetData(data);
         }
 
@@ -38,7 +38,7 @@ namespace RockEngine.Assets
             using var stream = mmf.CreateViewStream(0, fileInfo.Length, MemoryMappedFileAccess.Read);
 
             var path = new AssetPath(filePath);
-            return await serializer.DeserializeAssetAsync(stream, path);
+            return await serializer.DeserializeAssetAsync(stream, path).ConfigureAwait(false);
         }
     }
 }

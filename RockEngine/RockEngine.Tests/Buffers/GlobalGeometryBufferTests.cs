@@ -97,7 +97,7 @@ namespace RockEngine.Tests.Buffers
             var indices = new uint[] { 0, 1 };
             var meshId = Guid.NewGuid();
 
-            var allocation = await _geometryBuffer.AddMeshAsync(meshId, vertices, indices);
+            var allocation = await _geometryBuffer.AddMeshAsync(meshId, vertices, indices).ConfigureAwait(false);
 
             Assert.That(allocation.MeshID, Is.EqualTo(meshId));
             Assert.That(allocation.VertexCount, Is.EqualTo(vertices.Length));
@@ -125,7 +125,7 @@ namespace RockEngine.Tests.Buffers
             var indices = new uint[] { 0 };
             var meshId = Guid.NewGuid();
 
-            var allocation = await _geometryBuffer.AddMeshAsync(meshId, vertices, indices);
+            var allocation = await _geometryBuffer.AddMeshAsync(meshId, vertices, indices).ConfigureAwait(false);
             var initialAllocation = allocation;
 
             _geometryBuffer.RemoveMesh(meshId);
@@ -134,7 +134,7 @@ namespace RockEngine.Tests.Buffers
 
             // Add another mesh and verify it uses the freed space (approximate)
             var meshId2 = Guid.NewGuid();
-            var allocation2 = await _geometryBuffer.AddMeshAsync(meshId2, vertices, indices);
+            var allocation2 = await _geometryBuffer.AddMeshAsync(meshId2, vertices, indices).ConfigureAwait(false);
             Assert.That(allocation2.VertexOffset, Is.EqualTo(initialAllocation.VertexOffset));
 
             _geometryBuffer.RemoveMesh(meshId2);
@@ -151,7 +151,7 @@ namespace RockEngine.Tests.Buffers
                 meshIds.Add(id);
                 await _geometryBuffer.AddMeshAsync(id,
                     new SimpleVertex[] { new SimpleVertex(Vector3.Zero, Vector3.UnitZ, Vector2.Zero) },
-                    new uint[] { 0 });
+                    new uint[] { 0 }).ConfigureAwait(false);
             }
 
             var processedIds = new List<Guid>();
@@ -172,7 +172,7 @@ namespace RockEngine.Tests.Buffers
             var meshId = Guid.NewGuid();
             await _geometryBuffer.AddMeshAsync(meshId,
                 new SimpleVertex[] { new SimpleVertex(Vector3.Zero, Vector3.UnitZ, Vector2.Zero) },
-                new uint[] { 0 });
+                new uint[] { 0 }).ConfigureAwait(false);
 
             bool called = false;
             _geometryBuffer.WithMeshFormat(meshId, (binding, attributes) =>
@@ -204,7 +204,7 @@ namespace RockEngine.Tests.Buffers
             {
                 var id = Guid.NewGuid();
                 meshIds.Add(id);
-                await _geometryBuffer.AddMeshAsync(id, vertices, indices);
+                await _geometryBuffer.AddMeshAsync(id, vertices, indices).ConfigureAwait(false);
             }
 
             // Remove every other mesh to create fragmentation
@@ -213,13 +213,13 @@ namespace RockEngine.Tests.Buffers
                 _geometryBuffer.RemoveMesh(meshIds[i]);
             }
 
-            await _geometryBuffer.DefragmentAsync();
+            await _geometryBuffer.DefragmentAsync().ConfigureAwait(false);
             await WaitForIdle(_context.TransferSubmitContext);
             await WaitForIdle(_context.GraphicsSubmitContext);
 
             // Add a new mesh
             var newMeshId = Guid.NewGuid();
-            var newAllocation = await _geometryBuffer.AddMeshAsync(newMeshId, vertices, indices);
+            var newAllocation = await _geometryBuffer.AddMeshAsync(newMeshId, vertices, indices).ConfigureAwait(false);
 
             // After defragmentation, all remaining meshes are compacted to the start.
             // Compute the total used vertex size (sum of vertex sizes of remaining meshes).
@@ -255,7 +255,7 @@ namespace RockEngine.Tests.Buffers
             var meshId = Guid.NewGuid();
             await localBuffer.AddMeshAsync(meshId,
                 new SimpleVertex[] { new SimpleVertex(Vector3.Zero, Vector3.UnitZ, Vector2.Zero) },
-                new uint[] { 0 });
+                new uint[] { 0 }).ConfigureAwait(false);
 
             localBuffer.Dispose();
 

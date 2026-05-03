@@ -168,6 +168,9 @@ namespace RockEngine.Core.ECS.Components
         [IgnoreMember]
         private uint _layerStart;
 
+        [IgnoreMember]
+        private Matrix4x4[] _cachedDirectionalMatrices = Array.Empty<Matrix4x4>();
+
         public override ValueTask OnStart(WorldRenderer renderer)
         {
             renderer.LightManager.RegisterLight(this);
@@ -185,12 +188,15 @@ namespace RockEngine.Core.ECS.Components
             _lightData = new LightData
             {
                 PositionAndType = new Vector4(Entity.Transform.WorldPosition, (float)Type),
-                // FIX: Use Forward vector, not Euler angles!
                 DirectionAndRadius = new Vector4(Entity.Transform.Forward, Radius),
                 ColorAndIntensity = new Vector4(Color, Intensity),
                 Cutoffs = new Vector2(InnerCutoff, OuterCutoff),
                 ShadowParams = new Vector4(ShadowBias, ShadowStrength, CastShadows ? 1.0f : 0.0f, _layerStart),
-                ShadowMatrix = GetShadowMatrix()[0],
+                // For directional we use the externally supplied first cascade matrix;
+                // for point/spot the delegate returns the correct single matrix.
+                ShadowMatrix = Type == LightType.Directional
+                    ? (_cachedDirectionalMatrices.Length > 0 ? _cachedDirectionalMatrices[0] : Matrix4x4.Identity)
+                    : GetShadowMatrix is null ? Matrix4x4.Identity : GetShadowMatrix()[0],
             };
 
             return ValueTask.CompletedTask;
@@ -202,8 +208,6 @@ namespace RockEngine.Core.ECS.Components
         {
             return ref _lightData;
         }
-
-
 
         public void SetShadowIndices(uint layerStart)
         {
@@ -293,186 +297,7 @@ namespace RockEngine.Core.ECS.Components
 
             return matrices;
         }
-        public Matrix4x4[] CalculateCSMMatrices(Camera camera, Vector3 lightDirection)
-        {
-            var matrices = new Matrix4x4[CascadeCount];
-
-            // Update cascade splits based on current camera
-            UpdateCascadeSplits(camera.FarClip);
-
-            float cameraNear = camera.NearClip;
-
-            for (int i = 0; i < CascadeCount; i++)
-            {
-                float cascadeNear = (i == 0) ? cameraNear : CascadeSplits[i - 1];
-                float cascadeFar = CascadeSplits[i];
-
-                matrices[i] = GetDirectionalLightSpaceMatrix(camera, lightDirection, cascadeNear, cascadeFar);
-            }
-
-            return matrices;
-        }
-
-        private Matrix4x4 GetDirectionalLightSpaceMatrix(Camera camera, Vector3 lightDirection, float nearPlane, float farPlane)
-        {
-            // Get camera frustum corners for this cascade
-            var corners = GetFrustumCornersWorldSpace(camera, nearPlane, farPlane);
-
-            // Calculate the bounding sphere of the frustum
-            Vector3 frustumCenter = CalculateFrustumCenter(corners);
-            float frustumRadius = CalculateFrustumRadius(corners, frustumCenter);
-
-            Vector3 up = Math.Abs(Vector3.Dot(lightDirection, Vector3.UnitY)) > 0.99f
-                ? Vector3.UnitZ
-                : Vector3.UnitY;
-
-            var lightView = CreateStabilizedLightView(frustumCenter, lightDirection, up, frustumRadius);
-
-            // Calculate bounds in light space
-            CalculateFrustumBoundsInLightSpace(corners, lightView,
-                out float minX, out float maxX,
-                out float minY, out float maxY,
-                out _, out _);
-
-            float worldUnitsPerTexel = (maxX - minX) / ShadowMapSize;
-            float padding = worldUnitsPerTexel * 2.0f; // 2 texels padding
-
-            minX -= padding;
-            maxX += padding;
-            minY -= padding;
-            maxY += padding;
-
-            float minZ = -frustumRadius * 3.0f;
-            float maxZ = frustumRadius * 3.0f;
-
-            var lightProjection = Matrix4x4.CreateOrthographicOffCenter(minX, maxX, minY, maxY, minZ, maxZ);
-
-            return lightView * lightProjection;
-        }
-        private Matrix4x4 CreateStabilizedLightView(Vector3 frustumCenter, Vector3 lightDirection, Vector3 up, float frustumRadius)
-        {
-            if (StabilizeCascades)
-            {
-                float worldUnitsPerTexel = (frustumRadius * 2.0f) / ShadowMapSize;
-
-                // Snap the frustum center to the nearest texel in light space
-                Vector3 lightSpaceCenter = Vector3.Transform(frustumCenter,
-                    Matrix4x4.CreateLookAt(Vector3.Zero, lightDirection, up));
-
-                lightSpaceCenter.X = MathF.Floor(lightSpaceCenter.X / worldUnitsPerTexel) * worldUnitsPerTexel;
-                lightSpaceCenter.Y = MathF.Floor(lightSpaceCenter.Y / worldUnitsPerTexel) * worldUnitsPerTexel;
-                lightSpaceCenter.Z = 0; // Don't snap in Z direction
-
-                // Transform back to world space
-                if (Matrix4x4.Invert(Matrix4x4.CreateLookAt(Vector3.Zero, lightDirection, up), out Matrix4x4 inverseLightView))
-                {
-                    frustumCenter = Vector3.Transform(lightSpaceCenter, inverseLightView);
-                }
-            }
-
-            // Position light far enough back to see entire frustum
-            Vector3 lightPosition = frustumCenter - lightDirection * (frustumRadius * 2.0f);
-
-            return Matrix4x4.CreateLookAt(lightPosition, frustumCenter, up);
-        }
-
-        private Vector3 CalculateFrustumCenter(Vector3[] corners)
-        {
-            Vector3 min = new Vector3(float.MaxValue);
-            Vector3 max = new Vector3(float.MinValue);
-
-            foreach (var corner in corners)
-            {
-                min = Vector3.Min(min, corner);
-                max = Vector3.Max(max, corner);
-            }
-
-            return (min + max) * 0.5f;
-        }
-
-        private float CalculateFrustumRadius(Vector3[] corners, Vector3 center)
-        {
-            float maxDistance = 0;
-            foreach (var corner in corners)
-            {
-                float distance = Vector3.Distance(corner, center);
-                maxDistance = Math.Max(maxDistance, distance);
-            }
-            return maxDistance;
-        }
-
-        private void CalculateFrustumBoundsInLightSpace(Vector3[] corners, Matrix4x4 lightView,
-            out float minX, out float maxX, out float minY, out float maxY, out float minZ, out float maxZ)
-        {
-            minX = float.MaxValue;
-            maxX = float.MinValue;
-            minY = float.MaxValue;
-            maxY = float.MinValue;
-            minZ = float.MaxValue;
-            maxZ = float.MinValue;
-
-            foreach (var corner in corners)
-            {
-                var lightSpacePos = Vector4.Transform(new Vector4(corner, 1.0f), lightView);
-                minX = Math.Min(minX, lightSpacePos.X);
-                maxX = Math.Max(maxX, lightSpacePos.X);
-                minY = Math.Min(minY, lightSpacePos.Y);
-                maxY = Math.Max(maxY, lightSpacePos.Y);
-                minZ = Math.Min(minZ, lightSpacePos.Z);
-                maxZ = Math.Max(maxZ, lightSpacePos.Z);
-            }
-        }
-        private Vector3[] GetFrustumCornersWorldSpace(Camera camera, float nearPlane, float farPlane)
-        {
-            var projection = Matrix4x4.CreatePerspectiveFieldOfView(
-                MathHelper.DegreesToRadians(camera.Fov),
-                camera.AspectRatio,
-                nearPlane,
-                farPlane);
-
-            // Combine with camera view matrix
-            var viewProjection = camera.ViewMatrix * projection;
-
-            // Invert to get from clip space to world space
-            if (!Matrix4x4.Invert(viewProjection, out Matrix4x4 inverse))
-            {
-                inverse = Matrix4x4.Identity;
-            }
-
-            var corners = new Vector3[8];
-            int index = 0;
-
-            // Generate all 8 corners of the frustum
-            for (int x = 0; x < 2; x++)
-            {
-                for (int y = 0; y < 2; y++)
-                {
-                    for (int z = 0; z < 2; z++)
-                    {
-                        // Clip space coordinates (-1 to 1)
-                        Vector4 clipSpacePos = new Vector4(
-                            x * 2.0f - 1.0f,
-                            y * 2.0f - 1.0f,
-                            z * 2.0f - 1.0f,
-                            1.0f);
-
-                        // Transform to world space
-                        Vector4 worldSpacePos = Vector4.Transform(clipSpacePos, inverse);
-
-                        // Perspective divide
-                        if (Math.Abs(worldSpacePos.W) > float.Epsilon)
-                        {
-                            worldSpacePos /= worldSpacePos.W;
-                        }
-
-                        corners[index++] = new Vector3(worldSpacePos.X, worldSpacePos.Y, worldSpacePos.Z);
-                    }
-                }
-            }
-
-            return corners;
-        }
-
+       
         public void UpdateCascadeSplits(float cameraFarPlane)
         {
             float near = 0.1f;
@@ -491,15 +316,15 @@ namespace RockEngine.Core.ECS.Components
             }
         }
 
+        /// <summary>Sets the pre‑computed directional shadow matrices from the Camera/ShadowManager.</summary>
+        public void SetDirectionalShadowMatrices(Matrix4x4[] matrices)
+        {
+            _cachedDirectionalMatrices = matrices;
+        }
+
         private Matrix4x4[] GetDirectionalShadowMatrices()
         {
-            // This will be updated by ShadowManager with proper camera context
-            var matrices = new Matrix4x4[CascadeCount];
-            for (int i = 0; i < CascadeCount; i++)
-            {
-                matrices[i] = Matrix4x4.Identity;
-            }
-            return matrices;
+            return _cachedDirectionalMatrices;
         }
 
 

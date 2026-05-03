@@ -336,21 +336,19 @@ namespace RockEngine.Vulkan
             }
         }
 
-        public void RecreateSwapchain()
+        public bool RecreateSwapchain()
         {
-            // Wait for device idle
-            _context.Device.GraphicsQueue.WaitIdle();
-            _context.Device.PresentQueue.WaitIdle();
-
             // Check if window is valid and has non-zero size
             if (_surface.Window.WindowState == Silk.NET.Windowing.WindowState.Minimized ||
                 _surface.Window.Size.X <= 0 || _surface.Window.Size.Y <= 0)
             {
                 // Don't recreate swapchain for minimized or zero-sized windows
-                Console.WriteLine($"Window is minimized or has zero size: {_surface.Window.Size}");
-                return;
+                //Console.WriteLine($"Window is minimized or has zero size: {_surface.Window.Size}");
+                return false;
             }
-
+            // Wait for device idle
+            _context.Device.GraphicsQueue.WaitIdle();
+            _context.Device.PresentQueue.WaitIdle();
             // Dispose of old resources
             DisposeImagesAndViews();
 
@@ -366,7 +364,7 @@ namespace RockEngine.Vulkan
                     swapChainSupport.Capabilities.MaxImageExtent.Height == 0)
                 {
                     Console.WriteLine("Surface has invalid capabilities, cannot recreate swapchain");
-                    return;
+                    return false;
                 }
 
                 var surfaceFormat = ChooseSwapSurfaceFormat(swapChainSupport.Formats);
@@ -382,7 +380,7 @@ namespace RockEngine.Vulkan
                 if (extent.Width == 0 || extent.Height == 0)
                 {
                     Console.WriteLine($"Invalid swapchain extent: {extent.Width}x{extent.Height}");
-                    return;
+                    return false;
                 }
 
                 uint imageCount = swapChainSupport.Capabilities.MinImageCount + 1;
@@ -464,7 +462,7 @@ namespace RockEngine.Vulkan
                     if (result == Result.ErrorSurfaceLostKhr || result == Result.ErrorOutOfDateKhr)
                     {
                         Console.WriteLine("Attempting to recreate surface...");
-                        return;
+                        return false;
                     }
 
                     throw new VulkanException(result, $"Failed to create swapchain: {result}");
@@ -484,7 +482,7 @@ namespace RockEngine.Vulkan
                 if (imagesCount == 0)
                 {
                     Console.WriteLine("No images in swapchain!");
-                    return;
+                    return false;
                 }
 
                 var images = new Span<Image>(new Image[imagesCount]);
@@ -513,6 +511,7 @@ namespace RockEngine.Vulkan
                 OnSwapchainRecreate?.Invoke(this);
 
             }
+            return true;
         }
 
         private void TransitionSwapchainImagesToPresentLayout()

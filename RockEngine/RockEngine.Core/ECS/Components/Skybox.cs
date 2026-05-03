@@ -32,9 +32,9 @@ namespace RockEngine.Core.ECS.Components
             var tmpAsset = assetFactory.Create<MeshAsset>(new AssetPath("tmp", "tmpMesh"));
             var tmpMatAsset = assetFactory.Create<MaterialAsset>(new AssetPath("tmp", "tmpMeshMat"));
 
-            var texAsset = await Cubemap.GetAssetAsync();
-            await texAsset.LoadDataAsync();
-            await assetManager.SaveAsync(texAsset);
+            var texAsset = await Cubemap.GetAssetAsync().ConfigureAwait(false);
+            await texAsset.LoadDataAsync().ConfigureAwait(false);
+            await assetManager.SaveAsync(texAsset).ConfigureAwait(false);
             tmpMatAsset.SetData(new MaterialData()
             {
                 PipelineName = "Skybox",
@@ -56,9 +56,9 @@ namespace RockEngine.Core.ECS.Components
             }
             await Cubemap.Asset.LoadGpuResourcesAsync().ConfigureAwait(false);
             // Ожидаем генерацию всех IBL текстур
-            var irradiance = await renderer.IBLManager.GenerateIrradianceMap(Cubemap.Asset.Texture, 128);
-            var prefilter = await renderer.IBLManager.GeneratePrefilterMap(Cubemap.Asset.Texture, 512);
-            var brdfLUT = await renderer.IBLManager.GenerateBRDFLUT(512);
+            var irradiance = await renderer.IBLManager.GenerateIrradianceMap(Cubemap.Asset.Texture, 128).ConfigureAwait(false);
+            var prefilter = await renderer.IBLManager.GeneratePrefilterMap(Cubemap.Asset.Texture, 512).ConfigureAwait(false);
+            var brdfLUT = await renderer.IBLManager.GenerateBRDFLUT(512).ConfigureAwait(false);
 
             irradiance.Image.LabelObject("Irradiance");
             prefilter.Image.LabelObject("Prefilter");

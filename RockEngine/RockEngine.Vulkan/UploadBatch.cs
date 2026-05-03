@@ -60,7 +60,6 @@ namespace RockEngine.Vulkan
             {
                 SType = StructureType.CommandBufferBeginInfo,
             };
-
             if (_level == CommandBufferLevel.Secondary)
             {
                 if (!_inheritanceInfo.HasValue)

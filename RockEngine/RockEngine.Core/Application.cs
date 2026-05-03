@@ -1,4 +1,5 @@
-﻿using NLog;
+﻿using System.Diagnostics;
+using NLog;
 
 using RockEngine.Core.Coroutines;
 using RockEngine.Core.DI;
@@ -7,6 +8,7 @@ using RockEngine.Core.ECS;
 using RockEngine.Core.Physics;
 using RockEngine.Core.Rendering;
 using RockEngine.Core.Rendering.Managers;
+using RockEngine.Core.Synchronization;
 using RockEngine.Vulkan;
 
 using Silk.NET.Windowing;
@@ -35,6 +37,7 @@ namespace RockEngine.Core
         private readonly TaskCompletionSource _initializedTcs = new();
         private bool _isInitialized;
 
+        private MainThreadSynchronizationContext? _mainSyncCtx;
         protected abstract Type GetContextType();
 
         protected Application()
@@ -52,20 +55,29 @@ namespace RockEngine.Core
             _window = IoC.Container.GetInstance<IWindow>();
 
             // Setup event handlers
+            // In ConfigureWindow()
+            _mainSyncCtx = MainThreadSynchronizationContext.Install();
+
             _window.Load += () =>
             {
-                OnWindowLoad().GetAwaiter().GetResult();
+                MainThreadSynchronizationContext.WaitOnMainThread(OnWindowLoad());
+                _mainSyncCtx?.ProcessAllQueuedWork(); 
             };
-            _window.Update += (delta) => OnWindowUpdate(delta).GetAwaiter().GetResult();
-            _window.Render += (delta) => OnWindowRender(delta).GetAwaiter().GetResult();
+
+            // Update – stays synchronous, but pumps the queue while waiting
+            _window.Update += (delta) =>
+            {
+                MainThreadSynchronizationContext.WaitOnMainThread(OnWindowUpdate(delta));
+                _mainSyncCtx?.ProcessAllQueuedWork(); // drain any pending work from other threads
+
+            };
+
+            // Render – also synchronous with pumping
+            _window.Render += OnWindowRender;
             _window.Initialize();
-            _window.StateChanged += _window_StateChanged;
+           
         }
 
-        private void _window_StateChanged(WindowState obj)
-        {
-
-        }
 
         private async Task OnWindowLoad()
         {
@@ -87,15 +99,15 @@ namespace RockEngine.Core
                 _physicsManager = IoC.Container.GetInstance<PhysicsManager>();
 
                 var shaderManager = IoC.Container.GetInstance<IShaderManager>();
-                await shaderManager.CompileAllShadersAsync();
+                await shaderManager.CompileAllShadersAsync().ConfigureAwait(true);
 
-                await _renderer.InitializeAsync();
-                await _world.Start(_renderer);
+                await _renderer.InitializeAsync().ConfigureAwait(true);
+                await _world.Start(_renderer).ConfigureAwait(true);
                 _physicsManager.Initialize();
 
                 // Resolve context after container is fully ready
                 _context = (IApplicationContext)IoC.Container.GetInstance(GetContextType());
-                await _context.InitializeAsync(_graphicsContext, _renderer, _world);
+                await _context.InitializeAsync(_graphicsContext, _renderer, _world).ConfigureAwait(true);
 
                 _isInitialized = true;
                 _initializedTcs.SetResult();
@@ -121,10 +133,10 @@ namespace RockEngine.Core
             {
                 Time.Update(_window.Time);
 
-                // Let context do its own update logic
-                await _context.UpdateAsync();
 
-           
+                await _context.UpdateAsync().ConfigureAwait(true);
+                _mainSyncCtx?.ProcessUpdateWork();
+
                 _coroutineScheduler.Update();
             }
             catch (Exception ex)
@@ -133,9 +145,9 @@ namespace RockEngine.Core
             }
         }
 
-        private async Task OnWindowRender(double delta)
+        private void OnWindowRender(double delta)
         {
-            if (!_isInitialized || _appCts.IsCancellationRequested)
+            if (!_isInitialized || _appCts.IsCancellationRequested )
             {
                 return;
             }
@@ -155,50 +167,31 @@ namespace RockEngine.Core
                     _renderer);
 
                 // Delegate to context for rendering
-                await _context.RenderAsync(renderContext);
+                MainThreadSynchronizationContext.WaitOnMainThread(_context.RenderAsync(renderContext));
 
-                _graphicsContext.SubmitAndPresent();
+                // All work scheduled with RunOnRender() will be executed here
+                _mainSyncCtx?.ProcessRenderWork();
+                _mainSyncCtx?.ProcessAllQueuedWork();
+
+
             }
             catch (Exception ex)
             {
                 _logger.Error(ex, "Render failed.");
             }
-        }
-
-
-       /* private void RenderImGui(RenderContext renderContext)
-        {
-            var batch = _vulkanContext.GraphicsSubmitContext.CreateBatch();
-            using (PerformanceTracer.BeginSection("ImGui Render"))
+            finally
             {
-                using (batch.BeginSection("ImGui", _graphicsEngine.FrameIndex))
+                try
                 {
-                    _layerStack.RenderImGui(batch);
+                    _graphicsContext.SubmitAndPresent();
+                }
+                catch (Exception ex)
+                {
+                    _logger.Error(ex, "Render failed.");
                 }
             }
-            batch.Submit();
+
         }
-
-        private void RenderLayers(RenderContext renderContext)
-        {
-            var batch = _vulkanContext.GraphicsSubmitContext.CreateBatch();
-            using (PerformanceTracer.BeginSection("Layer Render"))
-            {
-                using (batch.BeginSection("Layers", _graphicsEngine.FrameIndex))
-                {
-                    _layerStack.Render(batch);
-                }
-            }
-            batch.Submit();
-        }*/
-
-      /*  private async Task RenderWorld(RenderContext renderContext)
-        {
-            using (PerformanceTracer.BeginSection("World Render"))
-            {
-                await _renderer.Render(renderContext);
-            }
-        }*/
 
         public void Run()
         {

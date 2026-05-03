@@ -16,17 +16,17 @@ namespace RockEngine.Assets
             using var fileStream = new FileStream(filePath, FileMode.Open, FileAccess.Read,
                 FileShare.Read, OptimalBufferSize, FileOptions.SequentialScan);
 
-            return await serializer.DeserializeHeaderAsync(fileStream);
+            return await serializer.DeserializeHeaderAsync(fileStream).ConfigureAwait(false);
         }
 
         public async Task LoadDataAsync<T>(IAsset<T> asset, string filePath, IAssetSerializer serializer) where T : class
         {
-            await LoadDataAsync(asset, typeof(T), filePath, serializer);
+            await LoadDataAsync(asset, typeof(T), filePath, serializer).ConfigureAwait(false);
         }
 
         private static async Task LoadDataForAssetAsync(IAsset asset, Type dataType, Stream stream, IAssetSerializer serializer)
         {
-            var data = await serializer.DeserializeDataAsync(stream, dataType);
+            var data = await serializer.DeserializeDataAsync(stream, dataType).ConfigureAwait(false);
             asset.SetData(data);
         }
 
@@ -36,12 +36,12 @@ namespace RockEngine.Assets
             using (var fileStream = new FileStream(filePath, FileMode.Open, FileAccess.Read,
                 FileShare.Read, OptimalBufferSize, FileOptions.SequentialScan))
             {
-                await fileStream.CopyToAsync(memoryStream);
+                await fileStream.CopyToAsync(memoryStream).ConfigureAwait(false);
             }
 
             memoryStream.Position = 0;
 
-            await LoadDataForAssetAsync(asset, dataType, memoryStream, serializer);
+            await LoadDataForAssetAsync(asset, dataType, memoryStream, serializer).ConfigureAwait(false);
 
         }
 
@@ -52,12 +52,12 @@ namespace RockEngine.Assets
             using (var fileStream = new FileStream(filePath, FileMode.Open, FileAccess.Read,
                 FileShare.Read, OptimalBufferSize, FileOptions.SequentialScan))
             {
-                await fileStream.CopyToAsync(memoryStream);
+                await fileStream.CopyToAsync(memoryStream).ConfigureAwait(false);
             }
 
             memoryStream.Position = 0;
             var path = new AssetPath(filePath);
-            return await serializer.DeserializeAssetAsync(memoryStream, path);
+            return await serializer.DeserializeAssetAsync(memoryStream, path).ConfigureAwait(false);
         }
     }
 }

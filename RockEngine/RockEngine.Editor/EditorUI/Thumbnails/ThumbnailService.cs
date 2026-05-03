@@ -28,7 +28,7 @@ namespace RockEngine.Editor.EditorUI.Thumbnails
 
             try
             {
-                var thumbnail = await _renderer.RenderThumbnailAsync(asset, cancellationToken: cancellationToken);
+                var thumbnail = await _renderer.RenderThumbnailAsync(asset, cancellationToken: cancellationToken).ConfigureAwait(false);
                 _cache.Register(asset, thumbnail);
                 return thumbnail;
             }

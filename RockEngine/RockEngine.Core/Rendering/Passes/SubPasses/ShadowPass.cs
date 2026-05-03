@@ -207,7 +207,7 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
                         pipeline = _pointShadowPipeline;
                         var pass = new MaterialPass(_pointShadowPipeline);
                         material.AddPass(Name, pass);
-                        pass.BindResource(_shadowManager.GetShadowMatricesBinding());
+                        pass.BindResource(_shadowManager.GetShadowMatricesBinding() );
 
                         ShadowPointPushConstants pushConstants = new ShadowPointPushConstants
                         {

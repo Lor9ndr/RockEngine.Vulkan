@@ -57,7 +57,7 @@ namespace RockEngine.Core.Rendering.Managers
                 shaderName = shaderName[..^4]; // Remove ".spv"
 
                 var shaderNameWithoutExt = Path.GetFileNameWithoutExtension(shaderName);
-                var shaderBytes = await File.ReadAllBytesAsync(file);
+                var shaderBytes = await File.ReadAllBytesAsync(file).ConfigureAwait(false);
 
                 _compiledShaders[shaderName] = shaderBytes;
                 if (!_compiledShaders.ContainsKey(shaderNameWithoutExt))
@@ -90,10 +90,10 @@ namespace RockEngine.Core.Rendering.Managers
 
             try
             {
-                await File.WriteAllTextAsync(tempFile, code);
+                await File.WriteAllTextAsync(tempFile, code).ConfigureAwait(false);
 
                 var defines = _featureRegistry?.GetAllPreprocessorDefines().ToList() ?? new List<string>();
-                return await CompileShaderAsync(tempFile, defines);
+                return await CompileShaderAsync(tempFile, defines).ConfigureAwait(false);
             }
             finally
             {
@@ -117,8 +117,8 @@ namespace RockEngine.Core.Rendering.Managers
 
             try
             {
-                var processedSource = await PreprocessShader(path);
-                await File.WriteAllTextAsync(tempFile, processedSource);
+                var processedSource = await PreprocessShader(path).ConfigureAwait(false);
+                await File.WriteAllTextAsync(tempFile, processedSource).ConfigureAwait(false);
 
                 var args = BuildCompilerArgs(compiledPath, tempFile, extension, defines);
 
@@ -157,7 +157,7 @@ namespace RockEngine.Core.Rendering.Managers
                 process.Start();
                 process.BeginOutputReadLine();
                 process.BeginErrorReadLine();
-                await process.WaitForExitAsync();
+                await process.WaitForExitAsync().ConfigureAwait(false);
 
                 if (process.ExitCode != 0)
                 {
@@ -216,12 +216,12 @@ namespace RockEngine.Core.Rendering.Managers
                 throw new FileNotFoundException($"Shader file not found: {path}");
             }
 
-            var source = await File.ReadAllTextAsync(path);
+            var source = await File.ReadAllTextAsync(path).ConfigureAwait(false);
             var defines = _featureRegistry?.GetAllPreprocessorDefines().ToList() ?? new List<string>();
             var extensions = _featureRegistry?.GetAllShaderExtensions().ToList() ?? new List<string>();
 
             // Let the preprocessor handle includes, material annotations, and defines
-            var result = await _shaderPreProcessor.PreprocessAsync(source, path, defines, extensions);
+            var result = await _shaderPreProcessor.PreprocessAsync(source, path, defines, extensions).ConfigureAwait(false);
 
             return result.ProcessedSource;
         }

@@ -117,7 +117,7 @@ namespace RockEngine.Vulkan
         {
             if (!_completed)
             {
-                await WaitAsync();
+                await WaitAsync().ConfigureAwait(false);
             }
 
             GC.SuppressFinalize(this);

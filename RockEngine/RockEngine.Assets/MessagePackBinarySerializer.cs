@@ -26,17 +26,17 @@ namespace RockEngine.Assets
 
         public async Task SerializeAsync<T>(T data, Stream stream)
         {
-            await MessagePackSerializer.SerializeAsync(stream, data);
+            await MessagePackSerializer.SerializeAsync(stream, data).ConfigureAwait(false);
         }
 
         public async Task<object> DeserializeAsync(Stream stream, Type type)
         {
-            return await MessagePackSerializer.DeserializeAsync(type, stream);
+            return await MessagePackSerializer.DeserializeAsync(type, stream).ConfigureAwait(false);
         }
 
         public async Task SerializeAsync(object data, Type type, Stream stream)
         {
-            await MessagePackSerializer.SerializeAsync(type, stream, data);
+            await MessagePackSerializer.SerializeAsync(type, stream, data).ConfigureAwait(false);
         }
     }
 }

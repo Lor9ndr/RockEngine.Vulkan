@@ -85,7 +85,7 @@ namespace RockEngine.Core
                     vertices[iv] = vertex;
                     return ValueTask.CompletedTask;
                 });
-                await loadVerticesTask;
+                await loadVerticesTask.ConfigureAwait(false);
                 // Currently order of loading textures are important
                 List<TextureSlot> textures = new List<TextureSlot>();
                 var material = scene.Materials[mesh.MaterialIndex];

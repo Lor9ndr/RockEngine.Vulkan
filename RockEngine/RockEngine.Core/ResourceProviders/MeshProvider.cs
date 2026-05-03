@@ -33,8 +33,8 @@ namespace RockEngine.Core.ResourceProviders
             _source = assetRef;
             _getter = async () =>
             {
-                var asset = await assetRef.GetAssetAsync();
-                return await asset.GetAsync();
+                var asset = await assetRef.GetAssetAsync().ConfigureAwait(false);
+                return await asset.GetAsync().ConfigureAwait(false);
             };
         }
 
@@ -53,7 +53,7 @@ namespace RockEngine.Core.ResourceProviders
 
         public async ValueTask<IMesh> GetAsync()
         {
-            var result = await _getter();
+            var result = await _getter().ConfigureAwait(false);
             return result;
         }
 
@@ -78,7 +78,7 @@ namespace RockEngine.Core.ResourceProviders
                 var globalGeometryBuffer = IoC.Container.GetInstance<GlobalGeometryBuffer>();
 
                 // Add mesh to global buffer
-                await globalGeometryBuffer.AddMeshAsync(ID, meshData.Vertices!, meshData.Indices!);
+                await globalGeometryBuffer.AddMeshAsync(ID, meshData.Vertices!, meshData.Indices!).ConfigureAwait(false);
                 _loadedMesh = new Mesh(ID, (uint)meshData.Indices.Length, (uint)meshData.Vertices.Length);
                 return _loadedMesh;
             };

@@ -1,4 +1,5 @@
 ﻿using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using MessagePack;
 using RockEngine.Core.DI;
 using RockEngine.Core.ECS.Components;
@@ -185,10 +186,10 @@ namespace RockEngine.Core.ECS
             return _components.AsValueEnumerable().OfType<T>().Any();
         }
 
-        public bool TryGetComponent<T>(out T? component)
+        public bool TryGetComponent<T>([NotNullWhen(true)] out T component)
         {
             component = _components.AsValueEnumerable().OfType<T>().FirstOrDefault();
-            return component != null;
+            return component is not null;
         }
     }
 }

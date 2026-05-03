@@ -128,7 +128,7 @@ namespace RockEngine.Core.Rendering.Buffers
             }
 
             return await UploadMeshData(meshID, vertices, indices, vertexSize, indexSize,
-                                      vertexAllocation.Offset, indexAllocation.Offset);
+                                      vertexAllocation.Offset, indexAllocation.Offset).ConfigureAwait(false);
         }
 
 
@@ -204,7 +204,7 @@ namespace RockEngine.Core.Rendering.Buffers
                 new FreeBlock(vertexOffset, vertexSize),
                 new FreeBlock(indexOffset, indexSize),
                 (uint)vertices.Length, (uint)indices.Length);
-            });
+            }).ConfigureAwait(false);
         }
 
         
@@ -311,7 +311,7 @@ namespace RockEngine.Core.Rendering.Buffers
             List<MeshAllocation> allocationsSnapshot;
             Dictionary<Guid, uint> stridesSnapshot;
             Dictionary<Guid, VertexFormat> formatsSnapshot;
-            await _defragmentSemaphore.WaitAsync();
+            await _defragmentSemaphore.WaitAsync().ConfigureAwait(false);
             try
             {
                 lock (_allocationLock)

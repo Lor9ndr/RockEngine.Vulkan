@@ -47,7 +47,7 @@ public static class Program
         _cts?.Cancel();
 
         // Give the application time to shut down gracefully
-        await Task.Delay(100);
+        await Task.Delay(100).ConfigureAwait(false);
 
         // Explicit disposal
         _app?.Dispose();

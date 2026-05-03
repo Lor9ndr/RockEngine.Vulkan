@@ -9,7 +9,6 @@
     <InvariantGlobalization>true</InvariantGlobalization>
     <IlcGenerateStackTraceData>false</IlcGenerateStackTraceData>
     <InvariantGlobalization>true</InvariantGlobalization>
-    <GenerateDocumentationFile>True</GenerateDocumentationFile>
     <SignAssembly>True</SignAssembly>
     <ShadersOutputPath>bin\$(Configuration)\$(TargetFramework)\Shaders\</ShadersOutputPath>
     <ResourcesOutputPath>bin\$(Configuration)\$(TargetFramework)\Resources\</ResourcesOutputPath>

@@ -136,7 +136,7 @@ namespace RockEngine.Tests.Buffers
             using var buffer = VkBuffer.Create(_context, size, usage, properties);
             var testData = new TestStruct { A = 42, B = 3.14f, C = new Vector3(1, 2, 3) };
 
-            await buffer.WriteToBufferAsync(testData); // synchronous in implementation
+            await buffer.WriteToBufferAsync(testData).ConfigureAwait(false); // synchronous in implementation
 
             using var mapped = buffer.MapMemory();
             var readData = mapped.GetSpan<TestStruct>()[0];
@@ -275,7 +275,7 @@ namespace RockEngine.Tests.Buffers
         {
             var testData = new TestStruct { A = 42, B = 3.14f, C = new Vector3(1, 2, 3) };
             var dataArray = new[] { testData };
-            using var stagingBuffer = await VkBuffer.CreateAndCopyToStagingBuffer(_context, dataArray, (ulong)Unsafe.SizeOf<TestStruct>());
+            using var stagingBuffer = await VkBuffer.CreateAndCopyToStagingBuffer(_context, dataArray, (ulong)Unsafe.SizeOf<TestStruct>()).ConfigureAwait(false);
             using var mapped = stagingBuffer.MapMemory();
             var readData = mapped.GetSpan<TestStruct>()[0];
             Assert.That(readData.A, Is.EqualTo(testData.A));

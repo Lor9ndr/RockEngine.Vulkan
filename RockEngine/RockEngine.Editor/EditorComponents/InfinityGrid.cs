@@ -61,7 +61,7 @@ namespace RockEngine.Editor.EditorComponents
         
         public override async ValueTask OnStart(WorldRenderer renderer)
         {
-            await InitializeGrid(renderer);
+            await InitializeGrid(renderer).ConfigureAwait(false);
             Entity.Layer = IoC.Container.GetInstance<RenderLayerSystem>().Debug;
             _isInitialized = true;
         }
@@ -110,8 +110,8 @@ namespace RockEngine.Editor.EditorComponents
             _material = new Material("InfinityGrid");
 
             // Create grid material
-            var vertShader = await VkShaderModule.CreateAsync(renderer.Context, "Shaders/Grid.vert.spv", ShaderStageFlags.VertexBit);
-            var fragShader = await VkShaderModule.CreateAsync(renderer.Context, "Shaders/Grid.frag.spv", ShaderStageFlags.FragmentBit);
+            var vertShader = await VkShaderModule.CreateAsync(renderer.Context, "Shaders/Grid.vert.spv", ShaderStageFlags.VertexBit).ConfigureAwait(false);
+            var fragShader = await VkShaderModule.CreateAsync(renderer.Context, "Shaders/Grid.frag.spv", ShaderStageFlags.FragmentBit).ConfigureAwait(false);
 
             var pipeline = CreateGridPipeline(renderer, vertShader, fragShader);
             _material.AddPass(PostLightPass.Name, new MaterialPass(pipeline));

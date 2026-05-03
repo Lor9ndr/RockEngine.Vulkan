@@ -47,7 +47,7 @@ namespace RockEngine.Vulkan
 
         public uint QueueFamily => _targetQueue.FamilyIndex;
 
-        public SubmitContext(VulkanContext context, VkQueue targetQueue, bool useIndividualResets = false)
+        public SubmitContext(VulkanContext context, VkQueue targetQueue, bool useIndividualResets = true)
         {
             _context = context;
             _targetQueue = targetQueue;

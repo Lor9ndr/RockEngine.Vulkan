@@ -21,7 +21,7 @@ namespace RockEngine.Assets
         public async Task SerializeAsync(IAsset asset, Stream stream)
         {
             var strategy = GetStrategyForAsset(asset);
-            await strategy.SerializeAsync(asset, stream);
+            await strategy.SerializeAsync(asset, stream).ConfigureAwait(false);
         }
 
         public async Task<AssetHeader> DeserializeHeaderAsync(Stream stream)
@@ -33,17 +33,17 @@ namespace RockEngine.Assets
                 // Try to read as YAML first
                 stream.Position = 0;
                 using var reader = new StreamReader(stream, Encoding.UTF8, leaveOpen: true);
-                var firstLine = await reader.ReadLineAsync();
+                var firstLine = await reader.ReadLineAsync().ConfigureAwait(false);
 
                 if (firstLine != null && firstLine.StartsWith("# ROCK Asset"))
                 {
                     // YAML format with comments header
-                    return await DeserializeYamlHeaderAsync(stream);
+                    return await DeserializeYamlHeaderAsync(stream).ConfigureAwait(false);
                 }
                 else
                 {
                     // Try binary format
-                    return await DeserializeBinaryHeaderAsync(stream);
+                    return await DeserializeBinaryHeaderAsync(stream).ConfigureAwait(false);
                 }
             }
             finally
@@ -54,7 +54,7 @@ namespace RockEngine.Assets
 
         public async Task<object> DeserializeDataAsync(Stream stream, Type dataType)
         {
-            var header = await DeserializeHeaderAsync(stream);
+            var header = await DeserializeHeaderAsync(stream).ConfigureAwait(false);
             stream.Position = 0; // Reset stream
 
             var strategy = GetStrategyByFormat(header.Format);
@@ -71,13 +71,13 @@ namespace RockEngine.Assets
             asset.Modified = header.Modified;
 
             // Deserialize data
-            await strategy.DeserializeDataAsync(asset, stream);
+            await strategy.DeserializeDataAsync(asset, stream).ConfigureAwait(false);
             return asset.GetData();
         }
 
         public async Task<IAsset> DeserializeAssetAsync(Stream stream, AssetPath path)
         {
-            var header = await DeserializeHeaderAsync(stream);
+            var header = await DeserializeHeaderAsync(stream).ConfigureAwait(false);
             stream.Position = 0; // Reset stream
 
             var strategy = GetStrategyByFormat(header.Format);
@@ -93,13 +93,13 @@ namespace RockEngine.Assets
             asset.Modified = header.Modified;
 
             // Deserialize the full asset
-            await strategy.DeserializeDataAsync(asset, stream);
+            await strategy.DeserializeDataAsync(asset, stream).ConfigureAwait(false);
             return asset;
         }
 
         public async Task<Type> GetAssetTypeAsync(Stream stream)
         {
-            var header = await DeserializeHeaderAsync(stream);
+            var header = await DeserializeHeaderAsync(stream).ConfigureAwait(false);
             return Type.GetType(header.AssetTypeName) ??
                 throw new TypeLoadException($"Cannot load asset type: {header.AssetTypeName}");
         }
@@ -112,7 +112,7 @@ namespace RockEngine.Assets
             var header = new AssetHeader { Format = "yaml" };
             string line;
 
-            while ((line = await reader.ReadLineAsync()) != null)
+            while ((line = await reader.ReadLineAsync().ConfigureAwait(false)) != null)
             {
                 if (line.StartsWith("# ID: "))
                 {

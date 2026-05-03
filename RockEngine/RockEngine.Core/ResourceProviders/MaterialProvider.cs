@@ -29,8 +29,8 @@ namespace RockEngine.Core.ResourceProviders
             _source = assetRef;
             _getter = async () =>
             {
-                var asset = await assetRef.GetAssetAsync();
-                return await asset.GetAsync();
+                var asset = await assetRef.GetAssetAsync().ConfigureAwait(false);
+                return await asset.GetAsync().ConfigureAwait(false);
             };
         }
 
@@ -43,7 +43,7 @@ namespace RockEngine.Core.ResourceProviders
 
         public async ValueTask<Material> GetAsync()
         {
-            var result = await _getter();
+            var result = await _getter().ConfigureAwait(false);
             return result;
         }
 

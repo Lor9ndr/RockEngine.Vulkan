@@ -4,7 +4,6 @@ using RockEngine.Core.Extensions;
 using RockEngine.Core.Physics;
 using RockEngine.Core.Rendering;
 using RockEngine.Editor.Layers;
-using Silk.NET.SDL;
 
 namespace RockEngine.Editor
 {
@@ -30,17 +29,19 @@ namespace RockEngine.Editor
             _worldRenderer = worldRenderer;
         }
 
+        /// <inheritdoc/>
         public override async Task InitializeAsync(GraphicsContext graphics, WorldRenderer renderer, World world)
         {
-            await _layerStack.PushLayer(_imGuiLayer);
-            await _layerStack.PushLayer(_projectLayer);
+            await _layerStack.PushLayer(_imGuiLayer).ConfigureAwait(false);
+            await _layerStack.PushLayer(_projectLayer).ConfigureAwait(false);
         }
 
+        /// <inheritdoc/>
         public override async Task UpdateAsync()
         {
             _layerStack.Update();
-            await _world.Update(_worldRenderer);
-            await _worldRenderer.UpdateFrameData();
+            await _world.Update(_worldRenderer).ConfigureAwait(false);
+            await _worldRenderer.UpdateFrameData().ConfigureAwait(false);
 
             if (_stateManager.State == EditorState.Play)
             {
@@ -48,6 +49,7 @@ namespace RockEngine.Editor
             }
         }
 
+        /// <inheritdoc/>
         public override async Task RenderAsync(RenderContext renderContext)
         {
             var batch = renderContext.GraphicsContext.CreateBatch();
@@ -63,7 +65,7 @@ namespace RockEngine.Editor
 
                 batch.Submit();
             }
-            await renderContext.WorldRenderer.Render(renderContext);
+            await renderContext.WorldRenderer.Render(renderContext).ConfigureAwait(false);
         }
     }
 }

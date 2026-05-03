@@ -107,8 +107,8 @@ namespace RockEngine.Core.ECS.Components
             {
                 try
                 {
-                    Mesh = await MeshProvider.GetAsync();
-                    Material = await MaterialProvider.GetAsync();
+                    Mesh = await MeshProvider.GetAsync().ConfigureAwait(false);
+                    Material = await MaterialProvider.GetAsync().ConfigureAwait(false);
                     renderer.Draw(this);
                     _isRegistered = true;
                 }

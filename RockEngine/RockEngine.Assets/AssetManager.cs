@@ -59,7 +59,7 @@ namespace RockEngine.Assets
 
         public async Task<T> GetAssetAsync<T>(Guid assetId) where T : class, IAsset
         {
-            var asset = await LoadAssetAsync(assetId);
+            var asset = await LoadAssetAsync(assetId).ConfigureAwait(false);
             return asset as T ?? throw new InvalidCastException($"Asset {assetId} is not of type {typeof(T).Name}");
         }
 
@@ -76,7 +76,7 @@ namespace RockEngine.Assets
             // Check if already loading
             if (_loadingTasks.TryGetValue(normalizedPath, out var loadingTask))
             {
-                return (T)await loadingTask;
+                return (T)await loadingTask.ConfigureAwait(false);
             }
 
             // Create loading task
@@ -85,7 +85,7 @@ namespace RockEngine.Assets
 
             try
             {
-                var asset = await task;
+                var asset = await task.ConfigureAwait(false);
                 CacheAsset(asset);
                 return (T)asset;
             }
@@ -97,19 +97,19 @@ namespace RockEngine.Assets
 
         private async Task<IAsset> LoadAssetInternalAsync<T>(string normalizedPath) where T : class, IAsset
         {
-            await _loadSemaphore.WaitAsync();
+            await _loadSemaphore.WaitAsync().ConfigureAwait(false);
             try
             {
                 // Check repository
                 if (_repository.TryGet(normalizedPath, out var existingAsset) && existingAsset is T typedAsset)
                 {
-                    await _loader.LoadAssetDataAsync(typedAsset, typedAsset.GetDataType());
+                    await _loader.LoadAssetDataAsync(typedAsset, typedAsset.GetDataType()).ConfigureAwait(false);
 
                     return typedAsset;
                 }
 
                 // Load from disk
-                var asset = await _loader.LoadAssetAsync<T>(normalizedPath);
+                var asset = await _loader.LoadAssetAsync<T>(normalizedPath).ConfigureAwait(false);
                 _repository.Add(asset);
 
                 // Update the ID to path map
@@ -137,27 +137,27 @@ namespace RockEngine.Assets
                 throw new FileNotFoundException($"Asset with ID {assetId} not found in index");
             }
 
-            return await LoadAssetAsync<IAsset>(path);
+            return await LoadAssetAsync<IAsset>(path).ConfigureAwait(false);
         }
 
         public async Task<IAsset> LoadAssetAsync(string assetPath)
         {
-            return await LoadAssetAsync<IAsset>(assetPath);
+            return await LoadAssetAsync<IAsset>(assetPath).ConfigureAwait(false);
         }
 
         public async Task LoadAssetDataAsync(IAsset asset)
         {
-            await _loader.LoadAssetDataAsync(asset, asset.GetDataType());
+            await _loader.LoadAssetDataAsync(asset, asset.GetDataType()).ConfigureAwait(false);
         }
 
         public async Task SaveAsync(IAsset asset)
         {
             asset.BeforeSaving();
-            await SaveAssetToDiskAsync(asset);
+            await SaveAssetToDiskAsync(asset).ConfigureAwait(false);
             asset.AfterSaving();
             foreach (var item in asset.Dependencies)
             {
-                await SaveAsync(item);
+                await SaveAsync(item).ConfigureAwait(false);
             }
             CacheAsset(asset);
         }
@@ -183,8 +183,8 @@ namespace RockEngine.Assets
             var project = _factory.Create<T>(projectAssetPath, projectName);
             project.SetData(new TData());
 
-            await SetCurrentProjectAsync(project);
-            await SaveAsync(project);
+            await SetCurrentProjectAsync(project).ConfigureAwait(false);
+            await SaveAsync(project).ConfigureAwait(false);
 
             return project;
         }
@@ -201,8 +201,8 @@ namespace RockEngine.Assets
                 throw new FileNotFoundException($"Project file not found: {projectFilePath}");
             }
 
-            var project = await LoadAssetAsync<T>(projectFilePath);
-            await SetCurrentProjectAsync(project);
+            var project = await LoadAssetAsync<T>(projectFilePath).ConfigureAwait(false);
+            await SetCurrentProjectAsync(project).ConfigureAwait(false);
 
             return project;
         }
@@ -301,7 +301,7 @@ namespace RockEngine.Assets
             using var stream = new FileStream(fullPath, FileMode.OpenOrCreate, FileAccess.Write,
                 FileShare.Read, AssetConstants.OptimalBufferSize, FileOptions.Asynchronous);
 
-            await _serializer.SerializeAsync(asset, stream);
+            await _serializer.SerializeAsync(asset, stream).ConfigureAwait(false);
 
             // Update our ID to path map
             var relativePath = Path.GetRelativePath(BasePath, fullPath);
@@ -326,10 +326,10 @@ namespace RockEngine.Assets
                 Filter = "*" + AssetConstants.AssetExtension
             };
 
-            _fileWatcher.Changed += async (sender, e) => await HandleFileChanged(e);
-            _fileWatcher.Created += async (sender, e) => await HandleFileCreated(e);
-            _fileWatcher.Deleted += async (sender, e) => await HandleFileDeleted(e);
-            _fileWatcher.Renamed += async (sender, e) => await HandleFileRenamed(e);
+            _fileWatcher.Changed += async (sender, e) => await HandleFileChanged(e).ConfigureAwait(false);
+            _fileWatcher.Created += async (sender, e) => await HandleFileCreated(e).ConfigureAwait(false);
+            _fileWatcher.Deleted += async (sender, e) => await HandleFileDeleted(e).ConfigureAwait(false);
+            _fileWatcher.Renamed += async (sender, e) => await HandleFileRenamed(e).ConfigureAwait(false);
 
             _fileWatcher.EnableRaisingEvents = true;
         }
@@ -341,11 +341,11 @@ namespace RockEngine.Assets
                 var normalizedPath = AssetPathNormalizer.Normalize(e.FullPath);
 
                 // Debounce rapid changes
-                await Task.Delay(100);
+                await Task.Delay(100).ConfigureAwait(false);
 
                 if (_repository.TryGet(normalizedPath, out var asset))
                 {
-                    await ReloadAssetAsync(asset);
+                    await ReloadAssetAsync(asset).ConfigureAwait(false);
                     OnAssetChanged?.Invoke(new AssetChangedEventArgs
                     {
                         Asset = asset,
@@ -368,7 +368,7 @@ namespace RockEngine.Assets
                 asset.UnloadData();*/
 
                 // Reload from disk
-                await _loader.LoadAssetDataAsync(asset, asset.GetDataType());
+                await _loader.LoadAssetDataAsync(asset, asset.GetDataType()).ConfigureAwait(false);
 
                 // Update cache
                 CacheAsset(asset);
@@ -389,14 +389,14 @@ namespace RockEngine.Assets
 
                 // Load the asset header to get its ID
                 using var stream = new FileStream(e.FullPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-                var header = await _serializer.DeserializeHeaderAsync(stream);
+                var header = await _serializer.DeserializeHeaderAsync(stream).ConfigureAwait(false);
 
                 // Update our ID to path map
                 var relativePath = Path.GetRelativePath(BasePath, e.FullPath);
                 _idToPathMap[header.AssetId] = relativePath;
 
                 // Load the full asset
-                var asset = await _loader.LoadAssetAsync<IAsset>(relativePath);
+                var asset = await _loader.LoadAssetAsync<IAsset>(relativePath).ConfigureAwait(false);
                 _repository.Add(asset);
                 CacheAsset(asset);
 
@@ -465,7 +465,7 @@ namespace RockEngine.Assets
                     var newAssetPath = new AssetPath(newPath);
 
                     // We need to reload the asset with the new path
-                    var newAsset = await _loader.LoadAssetAsync<IAsset>(Path.GetRelativePath(BasePath, e.FullPath));
+                    var newAsset = await _loader.LoadAssetAsync<IAsset>(Path.GetRelativePath(BasePath, e.FullPath)).ConfigureAwait(false);
                     _repository.Add(newAsset);
                     CacheAsset(newAsset);
 
@@ -490,12 +490,12 @@ namespace RockEngine.Assets
         private async Task SetCurrentProjectAsync(IProject project)
         {
             _currentProject = project;
-            await _loader.SetBasePathAsync(BasePath);
+            await _loader.SetBasePathAsync(BasePath).ConfigureAwait(false);
             InitializeFileWatcher();
             _repository.Add(project);
 
             // Build initial ID to path map
-            await BuildIdToPathMapAsync();
+            await BuildIdToPathMapAsync().ConfigureAwait(false);
 
             _logger.Info("Project loaded: {ProjectName} at {BasePath}", project.Name, BasePath);
             OnProjectLoaded?.Invoke(project);
@@ -515,7 +515,7 @@ namespace RockEngine.Assets
                 try
                 {
                     using var stream = File.OpenRead(file);
-                    var header = await _serializer.DeserializeHeaderAsync(stream);
+                    var header = await _serializer.DeserializeHeaderAsync(stream).ConfigureAwait(false);
                     var relativePath = Path.GetRelativePath(BasePath, file);
                     _idToPathMap[header.AssetId] = relativePath;
                 }
@@ -525,7 +525,7 @@ namespace RockEngine.Assets
                 }
             });
 
-            await Task.WhenAll(tasks);
+            await Task.WhenAll(tasks).ConfigureAwait(false);
         }
 
         #endregion

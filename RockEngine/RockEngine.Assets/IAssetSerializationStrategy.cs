@@ -38,11 +38,11 @@ namespace RockEngine.Assets
                         $"---\n";
 
             var headerBytes = Encoding.UTF8.GetBytes(header);
-            await stream.WriteAsync(headerBytes);
+            await stream.WriteAsync(headerBytes).ConfigureAwait(false);
 
             // Write asset data
             var data = asset.GetData();
-            await _yamlSerializer.SerializeAsync(data, stream);
+            await _yamlSerializer.SerializeAsync(data, stream).ConfigureAwait(false);
         }
 
         public async Task DeserializeDataAsync(IAsset asset, Stream stream)
@@ -53,18 +53,18 @@ namespace RockEngine.Assets
             // Skip the header (first 7 lines)
             for (int i = 0; i < 7; i++)
             {
-                await reader.ReadLineAsync();
+                await reader.ReadLineAsync().ConfigureAwait(false);
             }
 
             // Читаем остаток YAML
-            var yamlContent = await reader.ReadToEndAsync();
+            var yamlContent = await reader.ReadToEndAsync().ConfigureAwait(false);
 
             // Десериализуем из строки
             var dataType = asset.GetDataType();
 
 
             using var memoryStream = new MemoryStream(Encoding.UTF8.GetBytes(yamlContent));
-            var data = await _yamlSerializer.DeserializeAsync(memoryStream, dataType);
+            var data = await _yamlSerializer.DeserializeAsync(memoryStream, dataType).ConfigureAwait(false);
             asset.SetData(data);
         }
     }
@@ -108,7 +108,7 @@ namespace RockEngine.Assets
 
             // Write asset data
             var data = asset.GetData();
-            await _binarySerializer.SerializeAsync(data, asset.GetDataType(), stream);
+            await _binarySerializer.SerializeAsync(data, asset.GetDataType(), stream).ConfigureAwait(false);
         }
 
         public async Task DeserializeDataAsync(IAsset asset, Stream stream)
@@ -141,7 +141,7 @@ namespace RockEngine.Assets
 
             // Теперь поток находится в позиции после заголовка
             var dataType = asset.GetDataType();
-            var data = await _binarySerializer.DeserializeAsync(stream, dataType);
+            var data = await _binarySerializer.DeserializeAsync(stream, dataType).ConfigureAwait(false);
             asset.SetData(data);
         }
     }

@@ -108,12 +108,12 @@ namespace RockEngine.Core.Assets
 
             if (_loadingTask is not null && _loadingTask.TryGetTarget(out var task) && task is not null)
             {
-                return await task;
+                return await task.ConfigureAwait(false);
             }
 
             var assetManager = IoC.Container.GetInstance<IAssetManager>();
             var loadingTask = assetManager.GetAssetAsync<T>(_assetId);
-            _asset = await loadingTask;
+            _asset = await loadingTask.ConfigureAwait(false);
             loadingTask.Dispose();
             _isResolved = true;
             return _asset;

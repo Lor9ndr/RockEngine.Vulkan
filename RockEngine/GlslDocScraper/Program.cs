@@ -43,7 +43,7 @@ namespace GlslDocScraper
             foreach (var url in urls)
             {
                 var fullUrl = baseUrl + url;
-                var document = await context.OpenAsync(fullUrl);
+                var document = await context.OpenAsync(fullUrl).ConfigureAwait(false);
 
                 if (url.Contains("variables"))
                 {

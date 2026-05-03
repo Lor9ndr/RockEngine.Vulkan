@@ -1,6 +1,5 @@
 ﻿using System.Numerics;
 using System.Runtime.InteropServices;
-using ImGuiNET;
 using RockEngine.Core;
 using RockEngine.Core.Assets;
 using RockEngine.Core.Builders;
@@ -21,42 +20,72 @@ using Silk.NET.Vulkan;
 
 namespace RockEngine.Editor.EditorComponents
 {
+    /// <summary>
+    /// Defines the current operation mode of the transform gizmo.
+    /// </summary>
     public enum GizmoType : uint
     {
+        /// <summary>Translation mode (move).</summary>
         Translate = 0,
+        /// <summary>Rotation mode.</summary>
         Rotate = 1,
+        /// <summary>Scale mode.</summary>
         Scale = 2
     }
 
+    /// <summary>
+    /// Flags identifying which part of the gizmo is selected or hovered.
+    /// </summary>
+    [Flags]
     public enum GizmoAxis : uint
     {
+        /// <summary>No axis is selected.</summary>
         None = 0,
+        /// <summary>X axis (red).</summary>
         X = 1,
+        /// <summary>Y axis (green).</summary>
         Y = 2,
+        /// <summary>Z axis (blue).</summary>
         Z = 4,
+        /// <summary>Uniform operation (center cube/sphere).</summary>
         Uniform = 8,
+        /// <summary>View‑aligned operation (e.g., view plane).</summary>
         View = 16
     }
 
+    /// <summary>
+    /// Push constants for the gizmo vertex shader.
+    /// </summary>
     [GLSLStruct]
     public struct GizmoPushConstants
     {
+        /// <summary>Base color of the gizmo.</summary>
         public Vector4 GizmoColor;
+        /// <summary>Current gizmo type (translate/rotate/scale).</summary>
         public uint GizmoType;
         private float _padding1;
         private float _padding2;
         private float _padding3;
     }
 
+    /// <summary>
+    /// Push constants for the gizmo fragment shader (used for picking).
+    /// </summary>
     [GLSLStruct]
     public struct GizmoPushFragConstants
     {
+        /// <summary>Current gizmo type.</summary>
         public uint GizmoType;
+        /// <summary>Mask of the selected axis.</summary>
         public uint AxisMask;
         private float _padding1;
         private float _padding2;
     }
 
+    /// <summary>
+    /// An editor‑only component that renders a transform gizmo (translate, rotate, scale)
+    /// and handles interactive manipulation of the attached entity.
+    /// </summary>
     public partial class TransformGizmo : Component
     {
         private GizmoType _currentMode = GizmoType.Translate;
@@ -68,14 +97,16 @@ namespace RockEngine.Editor.EditorComponents
         private Quaternion _dragStartRotation;
         private Vector3 _dragStartScale;
 
-        private Material? _gizmoMaterial;
+        private Material _gizmoMaterial;
         private MeshRenderer? _meshRenderer;
         private Vector2 _viewportSize;
         private Vector2 _currentImageMin;
         private Vector2 _currentImageMax;
+
+        // Drag plane data
         private Vector3 _dragPlanePoint;
-        private Vector3 _dragAxisDirection;
         private Vector3 _dragPlaneNormal;
+        private Vector3 _dragAxisDirection;
 
         // Colors for different axes
         private readonly Vector4 _colorX = new Vector4(0.9f, 0.2f, 0.2f, 1.0f);
@@ -85,7 +116,10 @@ namespace RockEngine.Editor.EditorComponents
         private readonly Vector4 _colorHover = new Vector4(1.0f, 0.9f, 0.2f, 1.0f);
         private readonly Vector4 _colorCenter = new Vector4(0.8f, 0.8f, 0.8f, 0.8f);
 
-        
+        /// <summary>
+        /// Gets or sets the current gizmo mode (translate, rotate, scale).
+        /// Changing the mode regenerates the gizmo geometry.
+        /// </summary>
         internal GizmoType CurrentMode
         {
             get => _currentMode;
@@ -96,21 +130,24 @@ namespace RockEngine.Editor.EditorComponents
             }
         }
 
-        
+        /// <inheritdoc />
         public override async ValueTask OnStart(WorldRenderer renderer)
         {
-            await InitializeGizmo(renderer);
+            await InitializeGizmo(renderer).ConfigureAwait(false);
             Entity.Layer = IoC.Container.GetInstance<RenderLayerSystem>().Debug;
         }
 
-        
+        /// <summary>
+        /// Creates the material and mesh renderer for the gizmo.
+        /// </summary>
         private async ValueTask InitializeGizmo(WorldRenderer renderer)
         {
-            _gizmoMaterial = await CreateGizmoMaterial(renderer);
+            _gizmoMaterial = await CreateGizmoMaterial(renderer).ConfigureAwait(false);
             _meshRenderer = Entity.AddComponent<MeshRenderer>();
             UpdateGizmoGeometry();
         }
 
+        /// <inheritdoc />
         public override ValueTask Update(WorldRenderer renderer)
         {
             var pushConstants = new GizmoPushConstants
@@ -121,7 +158,6 @@ namespace RockEngine.Editor.EditorComponents
 
             _gizmoMaterial.SetPushConstant("push", pushConstants);
 
-            // Also push fragment constants for picking
             var fragConstants = new GizmoPushFragConstants
             {
                 GizmoType = (uint)_currentMode,
@@ -133,9 +169,11 @@ namespace RockEngine.Editor.EditorComponents
             return ValueTask.CompletedTask;
         }
 
+        /// <summary>
+        /// Determines the color used to render the gizmo based on selection/hover state.
+        /// </summary>
         private Vector4 GetCurrentGizmoColor()
         {
-
             if (_selectedAxis != GizmoAxis.None)
             {
                 return _selectedAxis switch
@@ -164,7 +202,9 @@ namespace RockEngine.Editor.EditorComponents
             return new Vector4(1, 1, 1, 1);
         }
 
-        
+        /// <summary>
+        /// Rebuilds the gizmo mesh based on the current mode.
+        /// </summary>
         private void UpdateGizmoGeometry()
         {
             var (vertices, indices) = GenerateGizmoGeometry(_currentMode);
@@ -172,6 +212,9 @@ namespace RockEngine.Editor.EditorComponents
             _meshRenderer.SetProviders(meshProvider, new MaterialProvider(_gizmoMaterial));
         }
 
+        /// <summary>
+        /// Dispatches geometry generation to the appropriate method for the current mode.
+        /// </summary>
         private (GizmoVertex[] vertices, uint[] indices) GenerateGizmoGeometry(GizmoType mode)
         {
             return mode switch
@@ -183,6 +226,9 @@ namespace RockEngine.Editor.EditorComponents
             };
         }
 
+        /// <summary>
+        /// Generates a translation gizmo: three coloured arrows and a centre cube.
+        /// </summary>
         private (GizmoVertex[] vertices, uint[] indices) GenerateTranslateGizmo()
         {
             var vertices = new List<GizmoVertex>();
@@ -194,22 +240,17 @@ namespace RockEngine.Editor.EditorComponents
             float shaftRadius = 0.02f;
             float centerSize = 0.08f;
 
-
-            // X Axis (Red) - Use GizmoAxis.X for picking
             GenerateArrow(vertices, indices, Vector3.UnitX, _colorX, axisLength, arrowHeadSize, shaftRadius, ref currentIndex, GizmoAxis.X);
-
-            // Y Axis (Green) - Use GizmoAxis.Y for picking  
             GenerateArrow(vertices, indices, Vector3.UnitY, _colorY, axisLength, arrowHeadSize, shaftRadius, ref currentIndex, GizmoAxis.Y);
-
-            // Z Axis (Blue) - Use GizmoAxis.Z for picking
             GenerateArrow(vertices, indices, Vector3.UnitZ, _colorZ, axisLength, arrowHeadSize, shaftRadius, ref currentIndex, GizmoAxis.Z);
-
-            // Center cube for view-plane movement - Use GizmoAxis.Uniform for picking
             GenerateCube(vertices, indices, Vector3.Zero, _colorCenter, centerSize, ref currentIndex, GizmoAxis.Uniform);
+
             return (vertices.ToArray(), indices.ToArray());
         }
 
-
+        /// <summary>
+        /// Generates a rotation gizmo: three coloured rings and a centre sphere.
+        /// </summary>
         private (GizmoVertex[] vertices, uint[] indices) GenerateRotateGizmo()
         {
             var vertices = new List<GizmoVertex>();
@@ -217,24 +258,20 @@ namespace RockEngine.Editor.EditorComponents
             uint currentIndex = 0;
 
             float radius = 1.0f;
-            float thickness = 0.03f;
+            float thickness = 0.5f;
             int segments = 48;
 
-            // X Rotation Ring (Red) - Use GizmoAxis.X
             GenerateRing(vertices, indices, Vector3.UnitX, _colorX, radius, thickness, segments, ref currentIndex, GizmoAxis.X);
-
-            // Y Rotation Ring (Green) - Use GizmoAxis.Y
             GenerateRing(vertices, indices, Vector3.UnitY, _colorY, radius, thickness, segments, ref currentIndex, GizmoAxis.Y);
-
-            // Z Rotation Ring (Blue) - Use GizmoAxis.Z
             GenerateRing(vertices, indices, Vector3.UnitZ, _colorZ, radius, thickness, segments, ref currentIndex, GizmoAxis.Z);
-
-            // Center sphere - Use GizmoAxis.Uniform
             GenerateSphere(vertices, indices, Vector3.Zero, _colorCenter, 0.1f, 3, ref currentIndex, GizmoAxis.Uniform);
 
             return (vertices.ToArray(), indices.ToArray());
         }
 
+        /// <summary>
+        /// Generates a scale gizmo: three coloured lines with end cubes and a centre cube.
+        /// </summary>
         private (GizmoVertex[] vertices, uint[] indices) GenerateScaleGizmo()
         {
             var vertices = new List<GizmoVertex>();
@@ -246,24 +283,17 @@ namespace RockEngine.Editor.EditorComponents
             float shaftRadius = 0.015f;
             float centerSize = 0.08f;
 
-            // X Axis (Red) - Use GizmoAxis.X
             GenerateScaleHandle(vertices, indices, Vector3.UnitX, _colorX, axisLength, cubeSize, shaftRadius, ref currentIndex, GizmoAxis.X);
-
-            // Y Axis (Green) - Use GizmoAxis.Y
             GenerateScaleHandle(vertices, indices, Vector3.UnitY, _colorY, axisLength, cubeSize, shaftRadius, ref currentIndex, GizmoAxis.Y);
-
-            // Z Axis (Blue) - Use GizmoAxis.Z
             GenerateScaleHandle(vertices, indices, Vector3.UnitZ, _colorZ, axisLength, cubeSize, shaftRadius, ref currentIndex, GizmoAxis.Z);
-
-            // Center cube for uniform scaling - Use GizmoAxis.Uniform
             GenerateCube(vertices, indices, Vector3.Zero, _colorUniform, centerSize, ref currentIndex, GizmoAxis.Uniform);
 
             return (vertices.ToArray(), indices.ToArray());
         }
 
+        // --- Geometry helpers (unchanged) ---
         private void GenerateArrow(List<GizmoVertex> vertices, List<uint> indices, Vector3 direction, Vector4 color, float length, float headSize, float shaftRadius, ref uint currentIndex, GizmoAxis axis)
         {
-            // Ensure we're using single axis flags
             if (axis == GizmoAxis.None || axis == GizmoAxis.Uniform)
             {
                 return;
@@ -274,13 +304,9 @@ namespace RockEngine.Editor.EditorComponents
             Vector3 headBase = shaftEnd;
             Vector3 headTip = direction * length;
 
-            // Arrow shaft (cylinder)
             GenerateCylinder(vertices, indices, start, shaftEnd, shaftRadius, 8, color, ref currentIndex, axis);
-
-            // Arrow head (cone)
             GenerateCone(vertices, indices, headBase, headTip, headSize * 0.6f, 8, color, ref currentIndex, axis);
         }
-
 
         private void GenerateScaleHandle(List<GizmoVertex> vertices, List<uint> indices, Vector3 direction, Vector4 color, float length, float cubeSize, float shaftRadius, ref uint currentIndex, GizmoAxis axis)
         {
@@ -288,17 +314,13 @@ namespace RockEngine.Editor.EditorComponents
             Vector3 shaftEnd = direction * (length - cubeSize * 0.5f);
             Vector3 cubePos = direction * length;
 
-            // Shaft (cylinder)
             GenerateCylinder(vertices, indices, start, shaftEnd, shaftRadius, 6, color, ref currentIndex, axis);
-
-            // Cube at end
             GenerateCube(vertices, indices, cubePos, color, cubeSize, ref currentIndex, axis);
         }
 
         private void GenerateRing(List<GizmoVertex> vertices, List<uint> indices, Vector3 normal, Vector4 color, float radius, float thickness, int segments, ref uint currentIndex, GizmoAxis axis)
         {
             Vector3 right, up;
-
             if (normal == Vector3.UnitX)
             {
                 right = Vector3.UnitY;
@@ -309,29 +331,26 @@ namespace RockEngine.Editor.EditorComponents
                 right = Vector3.UnitX;
                 up = Vector3.UnitZ;
             }
-            else // Z axis
+            else
             {
                 right = Vector3.UnitX;
                 up = Vector3.UnitY;
             }
 
             uint baseIndex = currentIndex;
-
-            // Generate ring vertices (tube cross-section)
             for (int i = 0; i <= segments; i++)
             {
                 float angle = (float)i / segments * MathF.PI * 2;
                 Vector3 outerPoint = right * MathF.Cos(angle) * (radius + thickness * 0.5f) +
-                                   up * MathF.Sin(angle) * (radius + thickness * 0.5f);
+                                     up * MathF.Sin(angle) * (radius + thickness * 0.5f);
                 Vector3 innerPoint = right * MathF.Cos(angle) * (radius - thickness * 0.5f) +
-                                   up * MathF.Sin(angle) * (radius - thickness * 0.5f);
+                                     up * MathF.Sin(angle) * (radius - thickness * 0.5f);
 
                 vertices.Add(new GizmoVertex(outerPoint, color, normal, axis));
                 vertices.Add(new GizmoVertex(innerPoint, color, normal, axis));
                 currentIndex += 2;
             }
 
-            // Generate ring indices (quads)
             for (int i = 0; i < segments; i++)
             {
                 uint currentOuter = baseIndex + (uint)(i * 2);
@@ -339,12 +358,10 @@ namespace RockEngine.Editor.EditorComponents
                 uint nextOuter = baseIndex + (uint)((i + 1) * 2);
                 uint nextInner = nextOuter + 1;
 
-                // First triangle
                 indices.Add(currentOuter);
                 indices.Add(nextOuter);
                 indices.Add(currentInner);
 
-                // Second triangle
                 indices.Add(currentInner);
                 indices.Add(nextOuter);
                 indices.Add(nextInner);
@@ -356,7 +373,6 @@ namespace RockEngine.Editor.EditorComponents
             Vector3 direction = Vector3.Normalize(end - start);
             float length = Vector3.Distance(start, end);
 
-            // Find perpendicular vectors
             Vector3 perp1, perp2;
             if (MathF.Abs(Vector3.Dot(direction, Vector3.UnitY)) > 0.9f)
             {
@@ -366,11 +382,10 @@ namespace RockEngine.Editor.EditorComponents
             {
                 perp1 = Vector3.Normalize(Vector3.Cross(direction, Vector3.UnitY));
             }
+
             perp2 = Vector3.Normalize(Vector3.Cross(direction, perp1));
 
             uint baseIndex = currentIndex;
-
-            // Generate vertices for both ends
             for (int i = 0; i <= sides; i++)
             {
                 float angle = (float)i / sides * MathF.PI * 2;
@@ -382,7 +397,6 @@ namespace RockEngine.Editor.EditorComponents
                 currentIndex += 2;
             }
 
-            // Generate side triangles
             for (int i = 0; i < sides; i++)
             {
                 uint currentBottom = baseIndex + (uint)(i * 2);
@@ -390,12 +404,10 @@ namespace RockEngine.Editor.EditorComponents
                 uint nextBottom = baseIndex + (uint)((i + 1) * 2);
                 uint nextTop = nextBottom + 1;
 
-                // First triangle
                 indices.Add(currentBottom);
                 indices.Add(nextBottom);
                 indices.Add(currentTop);
 
-                // Second triangle
                 indices.Add(currentTop);
                 indices.Add(nextBottom);
                 indices.Add(nextTop);
@@ -406,7 +418,6 @@ namespace RockEngine.Editor.EditorComponents
         {
             Vector3 direction = Vector3.Normalize(tip - baseCenter);
 
-            // Find perpendicular vectors
             Vector3 perp1, perp2;
             if (MathF.Abs(Vector3.Dot(direction, Vector3.UnitY)) > 0.9f)
             {
@@ -416,11 +427,10 @@ namespace RockEngine.Editor.EditorComponents
             {
                 perp1 = Vector3.Normalize(Vector3.Cross(direction, Vector3.UnitY));
             }
+
             perp2 = Vector3.Normalize(Vector3.Cross(direction, perp1));
 
             uint baseIndex = currentIndex;
-
-            // Generate base vertices
             for (int i = 0; i <= sides; i++)
             {
                 float angle = (float)i / sides * MathF.PI * 2;
@@ -431,12 +441,10 @@ namespace RockEngine.Editor.EditorComponents
                 currentIndex++;
             }
 
-            // Add tip vertex
             vertices.Add(new GizmoVertex(tip, color, direction, axis));
             uint tipIndex = currentIndex;
             currentIndex++;
 
-            // Generate side triangles
             for (int i = 0; i < sides; i++)
             {
                 uint currentBase = baseIndex + (uint)i;
@@ -453,38 +461,33 @@ namespace RockEngine.Editor.EditorComponents
             float halfSize = size * 0.5f;
             Vector3[] corners = new Vector3[]
             {
-                new Vector3(-halfSize, -halfSize, -halfSize),
-                new Vector3( halfSize, -halfSize, -halfSize),
-                new Vector3( halfSize,  halfSize, -halfSize),
-                new Vector3(-halfSize,  halfSize, -halfSize),
-                new Vector3(-halfSize, -halfSize,  halfSize),
-                new Vector3( halfSize, -halfSize,  halfSize),
-                new Vector3( halfSize,  halfSize,  halfSize),
-                new Vector3(-halfSize,  halfSize,  halfSize)
+                new Vector3(-halfSize, -halfSize, -halfSize), new Vector3( halfSize, -halfSize, -halfSize),
+                new Vector3( halfSize,  halfSize, -halfSize), new Vector3(-halfSize,  halfSize, -halfSize),
+                new Vector3(-halfSize, -halfSize,  halfSize), new Vector3( halfSize, -halfSize,  halfSize),
+                new Vector3( halfSize,  halfSize,  halfSize), new Vector3(-halfSize,  halfSize,  halfSize)
             };
 
             Vector3[] normals = new Vector3[]
             {
-                Vector3.UnitZ, Vector3.UnitZ, Vector3.UnitZ, Vector3.UnitZ, // front
-                -Vector3.UnitZ, -Vector3.UnitZ, -Vector3.UnitZ, -Vector3.UnitZ, // back
-                -Vector3.UnitX, -Vector3.UnitX, -Vector3.UnitX, -Vector3.UnitX, // left
-                Vector3.UnitX, Vector3.UnitX, Vector3.UnitX, Vector3.UnitX, // right
-                Vector3.UnitY, Vector3.UnitY, Vector3.UnitY, Vector3.UnitY, // top
-                -Vector3.UnitY, -Vector3.UnitY, -Vector3.UnitY, -Vector3.UnitY  // bottom
+                Vector3.UnitZ, Vector3.UnitZ, Vector3.UnitZ, Vector3.UnitZ,
+                -Vector3.UnitZ, -Vector3.UnitZ, -Vector3.UnitZ, -Vector3.UnitZ,
+                -Vector3.UnitX, -Vector3.UnitX, -Vector3.UnitX, -Vector3.UnitX,
+                Vector3.UnitX, Vector3.UnitX, Vector3.UnitX, Vector3.UnitX,
+                Vector3.UnitY, Vector3.UnitY, Vector3.UnitY, Vector3.UnitY,
+                -Vector3.UnitY, -Vector3.UnitY, -Vector3.UnitY, -Vector3.UnitY
             };
 
             uint baseIndex = currentIndex;
             uint[][] faceIndices =
             [
-                  [0, 1, 2, 2, 3, 0], // front
-                  [5, 4, 7, 7, 6, 5], // back
-                  [4, 0, 3, 3, 7, 4], // left
-                  [1, 5, 6, 6, 2, 1], // right
-                  [3, 2, 6, 6, 7, 3], // top
-                  [4, 5, 1, 1, 0, 4]  // bottom
+                [0, 1, 2, 2, 3, 0], // front
+                [5, 4, 7, 7, 6, 5], // back
+                [4, 0, 3, 3, 7, 4], // left
+                [1, 5, 6, 6, 2, 1], // right
+                [3, 2, 6, 6, 7, 3], // top
+                [4, 5, 1, 1, 0, 4]  // bottom
             ];
 
-            // Add vertices for each face
             for (int face = 0; face < 6; face++)
             {
                 foreach (var cornerIndex in faceIndices[face])
@@ -493,7 +496,6 @@ namespace RockEngine.Editor.EditorComponents
                 }
             }
 
-            // Add indices
             for (uint i = 0; i < 36; i++)
             {
                 indices.Add(baseIndex + i);
@@ -504,7 +506,6 @@ namespace RockEngine.Editor.EditorComponents
 
         private void GenerateSphere(List<GizmoVertex> vertices, List<uint> indices, Vector3 center, Vector4 color, float radius, int subdivisions, ref uint currentIndex, GizmoAxis axis)
         {
-            // Simple icosahedron-based sphere approximation
             float t = (1.0f + MathF.Sqrt(5.0f)) / 2.0f;
 
             Vector3[] baseVertices = new Vector3[]
@@ -523,8 +524,6 @@ namespace RockEngine.Editor.EditorComponents
             };
 
             uint baseIndex = currentIndex;
-
-            // Add normalized vertices
             foreach (var vertex in baseVertices)
             {
                 Vector3 normalized = Vector3.Normalize(vertex);
@@ -532,7 +531,6 @@ namespace RockEngine.Editor.EditorComponents
                 currentIndex++;
             }
 
-            // Add base indices
             foreach (var index in baseIndices)
             {
                 indices.Add(baseIndex + index);
@@ -542,14 +540,14 @@ namespace RockEngine.Editor.EditorComponents
         private async Task<Material> CreateGizmoMaterial(WorldRenderer renderer)
         {
             var material = new Material("Gizmo");
-            var vertShader = await VkShaderModule.CreateAsync(renderer.Context, "Shaders/Gizmo.vert.spv", ShaderStageFlags.VertexBit);
-            var fragShader = await VkShaderModule.CreateAsync(renderer.Context, "Shaders/Gizmo.frag.spv", ShaderStageFlags.FragmentBit);
+            var vertShader = await VkShaderModule.CreateAsync(renderer.Context, "Shaders/Gizmo.vert.spv", ShaderStageFlags.VertexBit).ConfigureAwait(false);
+            var fragShader = await VkShaderModule.CreateAsync(renderer.Context, "Shaders/Gizmo.frag.spv", ShaderStageFlags.FragmentBit).ConfigureAwait(false);
 
             var pipeline = CreateGizmoPipeline<PostLightPass>(renderer, renderer.RenderPass, vertShader, fragShader, "Gizmo");
             material.AddPass(PostLightPass.Name, new MaterialPass(pipeline));
 
-            var vertPickingShader = await VkShaderModule.CreateAsync(renderer.Context, "Shaders/Gizmo.vert.spv", ShaderStageFlags.VertexBit);
-            var fragPickingShader = await VkShaderModule.CreateAsync(renderer.Context, "Shaders/GizmoPicking.frag.spv", ShaderStageFlags.FragmentBit);
+            var vertPickingShader = await VkShaderModule.CreateAsync(renderer.Context, "Shaders/Gizmo.vert.spv", ShaderStageFlags.VertexBit).ConfigureAwait(false);
+            var fragPickingShader = await VkShaderModule.CreateAsync(renderer.Context, "Shaders/GizmoPicking.frag.spv", ShaderStageFlags.FragmentBit).ConfigureAwait(false);
 
             var pickingRenderPass = IoC.Container.GetInstance<PickingPassStrategy>().RenderPass;
             if (pickingRenderPass is not null)
@@ -558,12 +556,11 @@ namespace RockEngine.Editor.EditorComponents
                 material.AddPass(PickingSubPass.Name, new MaterialPass(pickingPipeline));
             }
 
-
             return material;
         }
 
         private RckPipeline CreateGizmoPipeline<T>(WorldRenderer renderer, RckRenderPass renderPass,
-       VkShaderModule vertShader, VkShaderModule fragShader, string name) where T : IRenderSubPass
+            VkShaderModule vertShader, VkShaderModule fragShader, string name) where T : IRenderSubPass
         {
             using var pipelineBuilder = GraphicsPipelineBuilder.CreateDefault(
                 VulkanContext.GetCurrent(),
@@ -579,8 +576,8 @@ namespace RockEngine.Editor.EditorComponents
                 {
                     SType = StructureType.PipelineDepthStencilStateCreateInfo,
                     DepthTestEnable = true,
-                    DepthWriteEnable = false, // Don't write depth to prevent occluding other objects
-                    DepthCompareOp = CompareOp.Always, // Render on top (reverse depth if using reversed Z)
+                    DepthWriteEnable = false,
+                    DepthCompareOp = CompareOp.Always,
                     DepthBoundsTestEnable = false,
                     StencilTestEnable = false,
                 })
@@ -589,9 +586,9 @@ namespace RockEngine.Editor.EditorComponents
                     .CullFace(CullModeFlags.None)
                     .FrontFace(FrontFace.Clockwise)
                     .DepthBiasEnabe(true)
-                    .DepthBiasConstantFactor(-1.0f) // Negative bias to bring forward
+                    .DepthBiasConstantFactor(-1.0f)
                     .DepthBiasClamp(0.0f)
-                    .DepthBiasSlopeFactor(-1.0f)) // Negative slope factor
+                    .DepthBiasSlopeFactor(-1.0f))
                 .WithInputAssembly(new VulkanInputAssemblyBuilder()
                     .Configure(topology: PrimitiveTopology.TriangleList))
                 .WithColorBlendState(new VulkanColorBlendStateBuilder()
@@ -605,12 +602,20 @@ namespace RockEngine.Editor.EditorComponents
                         DstAlphaBlendFactor = BlendFactor.OneMinusSrcAlpha,
                         AlphaBlendOp = BlendOp.Add,
                         ColorWriteMask = ColorComponentFlags.RBit | ColorComponentFlags.GBit |
-                                       ColorComponentFlags.BBit | ColorComponentFlags.ABit
+                                         ColorComponentFlags.BBit | ColorComponentFlags.ABit
                     }));
 
             return renderer.PipelineManager.Create(pipelineBuilder);
         }
 
+        /// <summary>
+        /// Begins a drag operation. Sets up the drag plane based on the selected axis and camera view.
+        /// </summary>
+        /// <param name="mousePosition">Current mouse position in screen coordinates.</param>
+        /// <param name="camera">Active camera.</param>
+        /// <param name="imageMin">Top‑left corner of the viewport image.</param>
+        /// <param name="imageMax">Bottom‑right corner of the viewport image.</param>
+        /// <param name="viewportSize">Total size of the viewport.</param>
         public void StartDrag(Vector2 mousePosition, Camera camera, Vector2 imageMin, Vector2 imageMax, Vector2 viewportSize)
         {
             if (_selectedAxis == GizmoAxis.None)
@@ -620,56 +625,70 @@ namespace RockEngine.Editor.EditorComponents
 
             _isDragging = true;
             _dragStartPosition = mousePosition;
+            _currentImageMin = imageMin;
+            _currentImageMax = imageMax;
+            _viewportSize = viewportSize;
 
-            // Store the initial world state of the selected entity (set by caller)
-            // We'll receive the selected entity in UpdateDrag, so we capture start values there.
-            // For plane setup we need the gizmo's current position.
             var gizmoPos = Entity.Transform.Position;
-
-            // Pre-calculate the drag plane based on selected axis and camera
             SetupDragPlane(camera, gizmoPos);
         }
+
+        /// <summary>
+        /// Constructs the plane used for dragging based on the selected axis.
+        /// For single axes, the plane contains the axis and faces the camera.
+        /// For uniform/centre handles, the plane is perpendicular to the camera forward direction.
+        /// </summary>
         private void SetupDragPlane(Camera camera, Vector3 planePoint)
         {
             _dragPlanePoint = planePoint;
             var gizmoTransform = Entity.Transform;
 
-            if (_selectedAxis == GizmoAxis.X || _selectedAxis == GizmoAxis.Y || _selectedAxis == GizmoAxis.Z)
+            // Determine axis direction for the selected handle
+            _dragAxisDirection = _selectedAxis switch
             {
-                _dragAxisDirection = _selectedAxis switch
-                {
-                    GizmoAxis.X => gizmoTransform.Right,
-                    GizmoAxis.Y => gizmoTransform.Up,
-                    GizmoAxis.Z => gizmoTransform.Forward,
-                    _ => Vector3.Zero
-                };
+                GizmoAxis.X => gizmoTransform.Right,
+                GizmoAxis.Y => gizmoTransform.Up,
+                GizmoAxis.Z => gizmoTransform.Forward,
+                _ => Vector3.Zero
+            };
 
-                // Plane that contains the axis AND is parallel to the camera's view direction.
-                // Normal = cross(axis, cameraForward). This makes the axis appear as a line on screen.
-                Vector3 cameraForward = camera.Entity.Transform.Forward;
-                _dragPlaneNormal = Vector3.Normalize(Vector3.Cross(_dragAxisDirection, cameraForward));
+            Vector3 cameraForward = camera.Entity.Transform.Forward;
 
-                // If axis is parallel to camera forward, use camera up instead.
-                if (_dragPlaneNormal.LengthSquared() < 0.1f)
+            if (_selectedAxis == GizmoAxis.Uniform || _selectedAxis == GizmoAxis.None)
+            {
+                // Uniform translation: use the view plane (perpendicular to camera forward)
+                _dragPlaneNormal = cameraForward;
+            }
+            else
+            {
+                // For a single axis, create a plane that contains the axis and faces the camera.
+                // The plane normal is the cross product of the axis direction and camera forward.
+                // If the axis is nearly parallel to the view direction, use an alternative up vector.
+                Vector3 normal = Vector3.Cross(_dragAxisDirection, cameraForward);
+                if (normal.LengthSquared() < 1e-6f)
                 {
-                    _dragPlaneNormal = Vector3.Normalize(Vector3.Cross(_dragAxisDirection, camera.Entity.Transform.Up));
+                    // Axis is parallel to view direction; fallback to a plane using world up.
+                    normal = Vector3.Cross(_dragAxisDirection, Vector3.UnitY);
+                    if (normal.LengthSquared() < 1e-6f)
+                    {
+                        normal = Vector3.Cross(_dragAxisDirection, Vector3.UnitX);
+                    }
                 }
-            }
-            else if (_selectedAxis == GizmoAxis.Uniform)
-            {
-                _dragAxisDirection = Vector3.Zero;
-                // View plane (parallel to camera near/far)
-                _dragPlaneNormal = camera.Entity.Transform.Forward;
-            }
-            else // None or View
-            {
-                _dragAxisDirection = Vector3.Zero;
-                _dragPlaneNormal = camera.Entity.Transform.Forward;
+                _dragPlaneNormal = Vector3.Normalize(normal);
             }
         }
 
+        /// <summary>
+        /// Updates the selected entity's transform during a drag operation.
+        /// </summary>
+        /// <param name="currentMousePos">Current mouse position.</param>
+        /// <param name="camera">Active camera.</param>
+        /// <param name="selectedEntity">The entity being manipulated.</param>
+        /// <param name="imageMin">Viewport image top‑left.</param>
+        /// <param name="imageMax">Viewport image bottom‑right.</param>
+        /// <param name="viewportSize">Total viewport size.</param>
         public void UpdateDrag(Vector2 currentMousePos, Camera camera, Entity selectedEntity,
-                       Vector2 imageMin, Vector2 imageMax, Vector2 viewportSize)
+                               Vector2 imageMin, Vector2 imageMax, Vector2 viewportSize)
         {
             if (!_isDragging || selectedEntity == null)
             {
@@ -684,7 +703,6 @@ namespace RockEngine.Editor.EditorComponents
                 _dragStartScale = selectedEntity.Transform.Scale;
             }
 
-            // Build rays from the start and current mouse positions
             Ray startRay = GetMouseRay(_dragStartPosition, camera, imageMin, imageMax, viewportSize);
             Ray currentRay = GetMouseRay(currentMousePos, camera, imageMin, imageMax, viewportSize);
 
@@ -702,7 +720,9 @@ namespace RockEngine.Editor.EditorComponents
             }
         }
 
-
+        /// <summary>
+        /// Ends the current drag operation and clears temporary state.
+        /// </summary>
         public void EndDrag()
         {
             _isDragging = false;
@@ -711,14 +731,15 @@ namespace RockEngine.Editor.EditorComponents
             _dragStartScale = Vector3.Zero;
         }
 
+        /// <summary>
+        /// Converts a screen‑space mouse position into a world‑space ray.
+        /// </summary>
         private Ray GetMouseRay(Vector2 mouseScreenPos, Camera camera,
-                          Vector2 imageMin, Vector2 imageMax, Vector2 viewportSize)
+                                Vector2 imageMin, Vector2 imageMax, Vector2 viewportSize)
         {
-            // Convert to normalized image coordinates [0..1] within the actual drawn image
             Vector2 imagePos = (mouseScreenPos - imageMin) / (imageMax - imageMin);
             imagePos = Vector2.Clamp(imagePos, Vector2.Zero, Vector2.One);
 
-            // NDC [-1..1] with Y flipped (ImGui top-left origin)
             Vector2 ndc = new Vector2(
                 imagePos.X * 2.0f - 1.0f,
                 1.0f - imagePos.Y * 2.0f
@@ -738,38 +759,49 @@ namespace RockEngine.Editor.EditorComponents
             return new Ray(worldNear, Vector3.Normalize(worldFar - worldNear));
         }
 
+        /// <summary>
+        /// Updates the entity's position based on the selected translation axis.
+        /// Uses a plane containing the axis for single axes, or the view plane for uniform dragging.
+        /// </summary>
         private void UpdateTranslation(Ray startRay, Ray currentRay, Entity selectedEntity)
         {
             var transform = selectedEntity.Transform;
-            Vector3 movement = Vector3.Zero;
 
-            if (Ray.RayPlaneIntersection(currentRay, _dragPlanePoint, _dragPlaneNormal, out float tCurrent) &&
-                Ray.RayPlaneIntersection(startRay, _dragPlanePoint, _dragPlaneNormal, out float tStart))
+            if (!RayPlaneIntersection(startRay, _dragPlanePoint, _dragPlaneNormal, out float tStart) ||
+                !RayPlaneIntersection(currentRay, _dragPlanePoint, _dragPlaneNormal, out float tCurrent))
             {
-                Vector3 worldCurrent = currentRay.GetPoint(tCurrent);
-                Vector3 worldStart = startRay.GetPoint(tStart);
-                Vector3 delta = worldCurrent - worldStart;
-
-                if (_selectedAxis == GizmoAxis.Uniform)
-                {
-                    movement = delta;
-                }
-                else
-                {
-                    // Project delta onto the movement axis
-                    movement = Vector3.Dot(delta, _dragAxisDirection) * _dragAxisDirection;
-                }
+                return;
             }
 
-            transform.Position = _dragStartWorldPos + movement;
+            Vector3 worldStart = startRay.GetPoint(tStart);
+            Vector3 worldCurrent = currentRay.GetPoint(tCurrent);
+
+            if (_selectedAxis == GizmoAxis.Uniform)
+            {
+                // Uniform translation: move freely on the plane
+                Vector3 delta = worldCurrent - worldStart;
+                transform.Position = _dragStartWorldPos + delta;
+            }
+            else
+            {
+                // Single‑axis translation: project the intersection points onto the axis line
+                float distStart = Vector3.Dot(worldStart - _dragPlanePoint, _dragAxisDirection);
+                float distCurrent = Vector3.Dot(worldCurrent - _dragPlanePoint, _dragAxisDirection);
+                float delta = distCurrent - distStart;
+
+                transform.Position = _dragStartWorldPos + _dragAxisDirection * delta;
+            }
         }
 
+        /// <summary>
+        /// Updates the entity's rotation around the selected axis.
+        /// The angle is computed by projecting mouse rays onto the plane perpendicular to the axis.
+        /// </summary>
         private void UpdateRotation(Ray startRay, Ray currentRay, Entity selectedEntity)
         {
             var transform = selectedEntity.Transform;
             var gizmoTransform = Entity.Transform;
 
-            // Plane perpendicular to rotation axis, passing through gizmo center
             Vector3 axis = _selectedAxis switch
             {
                 GizmoAxis.X => gizmoTransform.Right,
@@ -777,104 +809,150 @@ namespace RockEngine.Editor.EditorComponents
                 GizmoAxis.Z => gizmoTransform.Forward,
                 _ => Vector3.Zero
             };
-            Vector3 planeNormal = axis;
-            Vector3 planePoint = _dragStartWorldPos; // gizmo is at selected entity's position
 
-            if (Ray.RayPlaneIntersection(currentRay, planePoint, planeNormal, out float tCurrent) &&
-                Ray.RayPlaneIntersection(startRay, planePoint, planeNormal, out float tStart))
+            Vector3 pivot = _dragStartWorldPos;
+
+            if (!ProjectRayToPlane(startRay, pivot, axis, out Vector3 projStart) ||
+                !ProjectRayToPlane(currentRay, pivot, axis, out Vector3 projCurrent))
             {
-                Vector3 pCurrent = currentRay.GetPoint(tCurrent);
-                Vector3 pStart = startRay.GetPoint(tStart);
-
-                Vector3 vStart = Vector3.Normalize(pStart - planePoint);
-                Vector3 vCurrent = Vector3.Normalize(pCurrent - planePoint);
-
-                float angle = MathF.Atan2(
-                    Vector3.Dot(Vector3.Cross(vStart, vCurrent), axis),
-                    Vector3.Dot(vStart, vCurrent)
-                );
-
-                Quaternion deltaRot = Quaternion.CreateFromAxisAngle(axis, angle);
-                transform.Rotation = Quaternion.Normalize(deltaRot * _dragStartRotation);
+                return;
             }
+
+            Vector3 vStart = projStart - pivot;
+            Vector3 vCurrent = projCurrent - pivot;
+
+            if (vStart.LengthSquared() < 0.0001f || vCurrent.LengthSquared() < 0.0001f)
+            {
+                return;
+            }
+
+            vStart = Vector3.Normalize(vStart);
+            vCurrent = Vector3.Normalize(vCurrent);
+
+            float dot = Vector3.Dot(vStart, vCurrent);
+            Vector3 cross = Vector3.Cross(vStart, vCurrent);
+            float angle = MathF.Atan2(Vector3.Dot(cross, axis), dot);
+
+            Quaternion deltaRot = Quaternion.CreateFromAxisAngle(axis, angle);
+            transform.Rotation = Quaternion.Normalize(deltaRot * _dragStartRotation);
         }
 
+        /// <summary>
+        /// Updates the entity's scale. For single axes, the scaling factor is derived from the
+        /// projected distance along the axis on the drag plane. Uniform scaling uses the view plane.
+        /// </summary>
         private void UpdateScale(Ray startRay, Ray currentRay, Entity selectedEntity)
         {
             var transform = selectedEntity.Transform;
-            var gizmoTransform = Entity.Transform;
 
-            Vector3 axisDir = _selectedAxis switch
+            if (!RayPlaneIntersection(startRay, _dragPlanePoint, _dragPlaneNormal, out float tStart) ||
+                !RayPlaneIntersection(currentRay, _dragPlanePoint, _dragPlaneNormal, out float tCurrent))
             {
-                GizmoAxis.X => gizmoTransform.Right,
-                GizmoAxis.Y => gizmoTransform.Up,
-                GizmoAxis.Z => gizmoTransform.Forward,
-                _ => Vector3.Zero
-            };
+                return;
+            }
+
+            Vector3 worldStart = startRay.GetPoint(tStart);
+            Vector3 worldCurrent = currentRay.GetPoint(tCurrent);
 
             if (_selectedAxis == GizmoAxis.Uniform)
             {
-                // Uniform scale: use view plane
-                Vector3 planeNormal = _dragPlaneNormal; // camera forward
-                Vector3 planePoint = _dragStartWorldPos;
-
-                if (Ray.RayPlaneIntersection(currentRay, planePoint, planeNormal, out float tCurrent) &&
-                    Ray.RayPlaneIntersection(startRay, planePoint, planeNormal, out float tStart))
-                {
-                    Vector3 worldCurrent = currentRay.GetPoint(tCurrent);
-                    Vector3 worldStart = startRay.GetPoint(tStart);
-                    float delta = Vector3.Distance(worldCurrent, planePoint) - Vector3.Distance(worldStart, planePoint);
-                    float scaleFactor = 1.0f + delta * 0.5f; // sensitivity
-                    transform.Scale = _dragStartScale * Math.Max(0.001f, scaleFactor);
-                }
+                float distStart = Vector3.Distance(worldStart, _dragPlanePoint);
+                float distCurrent = Vector3.Distance(worldCurrent, _dragPlanePoint);
+                float factor = distCurrent / MathF.Max(distStart, 0.001f);
+                transform.Scale = _dragStartScale * factor;
             }
             else
             {
-                // Non-uniform: plane containing axis and camera right
-                Vector3 planeNormal = _dragPlaneNormal; // pre-calculated in SetupDragPlane
-                Vector3 planePoint = _dragStartWorldPos;
+                float distStart = Vector3.Dot(worldStart - _dragPlanePoint, _dragAxisDirection);
+                float distCurrent = Vector3.Dot(worldCurrent - _dragPlanePoint, _dragAxisDirection);
 
-                if (Ray.RayPlaneIntersection(currentRay, planePoint, planeNormal, out float tCurrent) &&
-                    Ray.RayPlaneIntersection(startRay, planePoint, planeNormal, out float tStart))
+                // Compute scale factor relative to start distance
+                float startLen = MathF.Abs(distStart);
+                if (startLen < 0.001f)
                 {
-                    Vector3 worldCurrent = currentRay.GetPoint(tCurrent);
-                    Vector3 worldStart = startRay.GetPoint(tStart);
-                    Vector3 delta = worldCurrent - worldStart;
-
-                    float axisDelta = Vector3.Dot(delta, axisDir);
-                    float scaleMultiplier = 1.0f + axisDelta * 0.5f;
-
-                    Vector3 newScale = _dragStartScale;
-                    if (_selectedAxis == GizmoAxis.X)
-                        newScale.X *= scaleMultiplier;
-                    else if (_selectedAxis == GizmoAxis.Y)
-                        newScale.Y *= scaleMultiplier;
-                    else if (_selectedAxis == GizmoAxis.Z)
-                        newScale.Z *= scaleMultiplier;
-
-                    transform.Scale = Vector3.Max(new Vector3(0.001f), newScale);
+                    startLen = 0.001f;
                 }
+
+                float factor = distCurrent / startLen;
+
+                Vector3 newScale = _dragStartScale;
+                if (_selectedAxis == GizmoAxis.X)
+                {
+                    newScale.X *= factor;
+                }
+                else if (_selectedAxis == GizmoAxis.Y)
+                {
+                    newScale.Y *= factor;
+                }
+                else if (_selectedAxis == GizmoAxis.Z)
+                {
+                    newScale.Z *= factor;
+                }
+
+                // Prevent zero or negative scale
+                newScale = Vector3.Max(new Vector3(0.001f), newScale);
+                transform.Scale = newScale;
             }
         }
 
-        public void SetSelectedAxis(GizmoAxis axis)
+        /// <summary>
+        /// Helper: ray‑plane intersection.
+        /// </summary>
+        private static bool RayPlaneIntersection(Ray ray, Vector3 planePoint, Vector3 planeNormal, out float t)
         {
-            _selectedAxis = axis;
+            float denom = Vector3.Dot(ray.Direction, planeNormal);
+            if (MathF.Abs(denom) < 1e-6f)
+            {
+                t = 0;
+                return false;
+            }
+            t = Vector3.Dot(planePoint - ray.Origin, planeNormal) / denom;
+            return t >= 0;
         }
 
-        public void SetHoveredAxis(GizmoAxis axis)
+        /// <summary>
+        /// Helper: projects a ray onto a plane defined by a point and normal.
+        /// </summary>
+        private static bool ProjectRayToPlane(Ray ray, Vector3 planePoint, Vector3 planeNormal, out Vector3 point)
         {
-            _hoveredAxis = axis;
+            point = Vector3.Zero;
+            if (!RayPlaneIntersection(ray, planePoint, planeNormal, out float t))
+            {
+                return false;
+            }
+
+            point = ray.GetPoint(t);
+            return true;
         }
 
+        /// <summary>
+        /// Sets the currently selected axis (used by picking).
+        /// </summary>
+        public void SetSelectedAxis(GizmoAxis axis) => _selectedAxis = axis;
+
+        /// <summary>
+        /// Sets the currently hovered axis (used for visual feedback).
+        /// </summary>
+        public void SetHoveredAxis(GizmoAxis axis) => _hoveredAxis = axis;
+
+        /// <summary>
+        /// Vertex structure for the gizmo mesh, containing position, normal, color, and axis mask.
+        /// </summary>
         [StructLayout(LayoutKind.Sequential, Pack = 16)]
         public struct GizmoVertex : IVertex
         {
+            /// <summary>World position (w unused).</summary>
             public System.Numerics.Vector4 Position;
+            /// <summary>Normal vector (w unused).</summary>
             public System.Numerics.Vector4 Normal;
+            /// <summary>Vertex color.</summary>
             public Vector4 Color;
+            /// <summary>Mask indicating which gizmo axis this vertex belongs to.</summary>
             public uint AxisMask;
 
+            /// <summary>
+            /// Constructs a new gizmo vertex.
+            /// </summary>
             public GizmoVertex(Vector3 position, Vector4 color, Vector3 normal, GizmoAxis axis)
             {
                 Position = new Vector4(position, 0);
@@ -883,6 +961,7 @@ namespace RockEngine.Editor.EditorComponents
                 AxisMask = (uint)axis;
             }
 
+            /// <inheritdoc />
             public static VertexInputBindingDescription GetBindingDescription() => new()
             {
                 Binding = 0,
@@ -890,46 +969,40 @@ namespace RockEngine.Editor.EditorComponents
                 InputRate = VertexInputRate.Vertex
             };
 
+            /// <inheritdoc />
             public static VertexInputAttributeDescription[] GetAttributeDescriptions()
             {
                 return new[]
                 {
-            new VertexInputAttributeDescription
-            {
-                Binding = 0,
-                Location = 0,
-                Format = Format.R32G32B32Sfloat,
-                Offset = 0
-            },
-            new VertexInputAttributeDescription
-            {
-                Binding = 0,
-                Location = 1,
-                Format = Format.R32G32B32Sfloat,
-                Offset = (uint)Marshal.OffsetOf<GizmoVertex>(nameof(Normal))
-            },
-            new VertexInputAttributeDescription
-            {
-                Binding = 0,
-                Location = 2,
-                Format = Format.R32G32B32A32Sfloat,
-                Offset = (uint)Marshal.OffsetOf<GizmoVertex>(nameof(Color))
-            },
-            new VertexInputAttributeDescription
-            {
-                Binding = 0,
-                Location = 3,
-                Format = Format.R32Uint,
-                Offset = (uint)Marshal.OffsetOf<GizmoVertex>(nameof(AxisMask))
-            }
-        };
-            }
-        }
-        public static class MathHelper
-        {
-            public static float DegreesToRadians(float degrees)
-            {
-                return degrees * (MathF.PI / 180.0f);
+                    new VertexInputAttributeDescription
+                    {
+                        Binding = 0,
+                        Location = 0,
+                        Format = Format.R32G32B32Sfloat,
+                        Offset = 0
+                    },
+                    new VertexInputAttributeDescription
+                    {
+                        Binding = 0,
+                        Location = 1,
+                        Format = Format.R32G32B32Sfloat,
+                        Offset = (uint)Marshal.OffsetOf<GizmoVertex>(nameof(Normal))
+                    },
+                    new VertexInputAttributeDescription
+                    {
+                        Binding = 0,
+                        Location = 2,
+                        Format = Format.R32G32B32A32Sfloat,
+                        Offset = (uint)Marshal.OffsetOf<GizmoVertex>(nameof(Color))
+                    },
+                    new VertexInputAttributeDescription
+                    {
+                        Binding = 0,
+                        Location = 3,
+                        Format = Format.R32Uint,
+                        Offset = (uint)Marshal.OffsetOf<GizmoVertex>(nameof(AxisMask))
+                    }
+                };
             }
         }
     }

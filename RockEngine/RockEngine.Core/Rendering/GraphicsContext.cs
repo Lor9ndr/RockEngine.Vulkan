@@ -313,13 +313,13 @@ namespace RockEngine.Core.Rendering
             {
                 RecreateInvalidSwapchains();
             }
-            if (frame.AcquiredSwapchainCount == 0)
-            {
-                // return null;
-            }
+            
             // Create upload batch
             frame.CurrentBatch = _context.GraphicsSubmitContext.CreateBatch();
-
+           /* if (frame.AcquiredSwapchainCount == 0)
+            {
+                return null;
+            }*/
 
             // Add wait semaphores for all acquired swapchains
             for (int i = 0; i < frame.AcquiredSwapchainCount; i++)
@@ -349,7 +349,7 @@ namespace RockEngine.Core.Rendering
 
             var frame = _frames[_currentFrameIndex];
 
-            if (frame.CurrentBatch == null || frame.AcquiredSwapchainCount == 0)
+            if (frame.CurrentBatch == null)
             {
                 return false;
             }
@@ -464,12 +464,12 @@ namespace RockEngine.Core.Rendering
                     }
                 }
             }
-            foreach (int frameIdx in framesToWait)
+            for (int i = 0; i < _frameCount; i++)
             {
-                _frames[frameIdx].FlushOperation?.Wait();
+                _frames[i].FlushOperation?.Wait();
             }
 
-            for (int i = 0; i < _activeSwapchainCount; i++)
+                for (int i = 0; i < _activeSwapchainCount; i++)
             {
                 ref var entry = ref _swapchains[i];
                 if (!entry.NeedsRecreation || entry.Swapchain == null)
@@ -498,8 +498,13 @@ namespace RockEngine.Core.Rendering
 
 
                     // Recreate swapchain
-                    entry.Swapchain.RecreateSwapchain();
-                    entry.NeedsRecreation = false;
+                    entry.NeedsRecreation = !entry.Swapchain.RecreateSwapchain();
+
+                    // cannot recreate it right now, skipping for now
+                    if (entry.NeedsRecreation)
+                    {
+                        continue;
+                    }
 
                     // Get new image count
                     int imageCount = (int)entry.Swapchain.SwapChainImagesCount;

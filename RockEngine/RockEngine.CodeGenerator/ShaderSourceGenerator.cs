@@ -143,7 +143,7 @@ namespace {namespaceName}
         public static async Task WriteToFileAsync(string directoryPath)
         {{
             var filePath = Path.Combine(directoryPath, ""{shaderName}.glsl"");
-            await File.WriteAllTextAsync(filePath, GLSLCode);
+            await File.WriteAllTextAsync(filePath, GLSLCode).ConfigureAwait(false);
         }}
         
         /// <summary>

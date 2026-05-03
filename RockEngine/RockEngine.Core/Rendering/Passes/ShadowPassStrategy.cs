@@ -40,13 +40,13 @@ namespace RockEngine.Core.Rendering.Passes
             for (int i = 0; i < lst.Count; i++)
             {
                 Light? light = lst[i];
-                await RenderShadowMap(primaryBatch, renderContext.GraphicsContext, light, renderer, i);
+                await RenderShadowMap(primaryBatch, renderContext.GraphicsContext, light, renderer, i).ConfigureAwait(false);
             }
             primaryBatch.Submit();
 
         }
 
-        private async Task RenderShadowMap(UploadBatch batch, SubmitContext submitContext, Light light, WorldRenderer renderer, int lightIndex)
+        private Task RenderShadowMap(UploadBatch batch, SubmitContext submitContext, Light light, WorldRenderer renderer, int lightIndex)
         {
             using var tracer = PerformanceTracer.BeginSection($"Shadow Pass - {light.Entity.Name}");
 
@@ -73,8 +73,8 @@ namespace RockEngine.Core.Rendering.Passes
                     batch.EndRenderPass();
                 }
                 shadowManager.UpdateShadowTexture(batch, light, shadowTarget.Image);
+                return Task.CompletedTask;
             }
-
         }
         private ShadowRenderTarget GetOrCreateShadowTarget(Light light)
         {

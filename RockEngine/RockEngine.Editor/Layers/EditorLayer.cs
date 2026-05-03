@@ -138,11 +138,11 @@ namespace RockEngine.Editor.Layers
             if (loadFromProject)
             {
                 await LoadAssetsFromProject(
-                    @"X:\RockEngine.Vulkan\RockEngine\RockEngine.Editor\bin\Debug\net9.0\Project\TestAssetSystem\DebugProject\DebugProject.rckproj");
+                    @"X:\RockEngine.Vulkan\RockEngine\RockEngine.Editor\bin\Debug\net9.0\Project\TestAssetSystem\DebugProject\DebugProject.rckproj").ConfigureAwait(false);
             }
             else
             {
-                await CreateAssetsProgrammatically();
+                await CreateAssetsProgrammatically().ConfigureAwait(false);
             }
         }
 
@@ -151,11 +151,11 @@ namespace RockEngine.Editor.Layers
             try
             {
                 _logger.Info($"Loading assets from project: {projectPath}");
-                await _assetManager.LoadAssetAsync<ProjectAsset>(projectPath);
+                await _assetManager.LoadAssetAsync<ProjectAsset>(projectPath).ConfigureAwait(false);
 
-                var scene = await _assetManager.LoadAssetAsync<SceneAsset>("Scenes/DebugScene");
-                await scene.LoadDataAsync();
-                await scene.InstantiateEntities();
+                var scene = await _assetManager.LoadAssetAsync<SceneAsset>("Scenes/DebugScene").ConfigureAwait(false);
+                await scene.LoadDataAsync().ConfigureAwait(false);
+                await scene.InstantiateEntities().ConfigureAwait(false);
 
                 _logger.Info("Project assets loaded successfully");
             }
@@ -173,7 +173,7 @@ namespace RockEngine.Editor.Layers
             {
                 _logger.Info("Creating assets programmatically");
 
-                var project = await _projectManager.CreateProjectAsync<ProjectAsset, ProjectData>("X:\\RockEngine.Vulkan\\RockEngine\\RockEngine.Editor\\TestProject", "DebugProject");
+                var project = await _projectManager.CreateProjectAsync<ProjectAsset, ProjectData>("X:\\RockEngine.Vulkan\\RockEngine\\RockEngine.Editor\\TestProject", "DebugProject").ConfigureAwait(false);
 
                 var scene = _assetFactory.Create<SceneAsset>(new AssetPath("Scenes", "DebugScene"));
                 scene.SetData(new SceneData());
@@ -182,15 +182,15 @@ namespace RockEngine.Editor.Layers
                     "Resources/skybox/right.jpg", "Resources/skybox/left.jpg",
                     "Resources/skybox/top.jpg", "Resources/skybox/bottom.jpg",
                     "Resources/skybox/front.jpg", "Resources/skybox/back.jpg"
-                ], TextureDimension.TextureCube);
+                ], TextureDimension.TextureCube).ConfigureAwait(false);
 
-                var cubeMesh = await _assetManager.GetAssetAsync<MeshAsset>(DefaultMeshes.CubeAssetID);
+                var cubeMesh = await _assetManager.GetAssetAsync<MeshAsset>(DefaultMeshes.CubeAssetID).ConfigureAwait(false);
                 await CreateSceneEntities(scene, cubeMesh, skyboxAsset).ConfigureAwait(false);
 
-                var sponza = (ModelAsset)await _assetFactory.CreateModelFromFileAsync("Resources\\Models\\SponzaAtrium\\scene.gltf", "Sponza");
+                var sponza = (ModelAsset)await _assetFactory.CreateModelFromFileAsync("Resources\\Models\\SponzaAtrium\\scene.gltf", "Sponza").ConfigureAwait(false);
                 CreateModelEntities(scene, sponza, new Vector3(0), new Vector3(0.1f));
 
-                await SaveAssetsAsync(sponza, skyboxAsset, scene);
+                await SaveAssetsAsync(sponza, skyboxAsset, scene).ConfigureAwait(false);
                 _logger.Info("Programmatic assets created successfully");
             }
             catch (Exception ex)
@@ -211,8 +211,8 @@ namespace RockEngine.Editor.Layers
                 Dimension = type,
                 ArrayLayers = (uint)filePaths.Length
             });
-            await texture.LoadGpuResourcesAsync();
-            await _assetManager.SaveAsync(texture);
+            await texture.LoadGpuResourcesAsync().ConfigureAwait(false);
+            await _assetManager.SaveAsync(texture).ConfigureAwait(false);
             return texture;
         }
 
@@ -260,7 +260,7 @@ namespace RockEngine.Editor.Layers
                 lightComponent.Radius = 100;
                 lightComponent.Color = lightColor;
 
-                await _assetManager.SaveAsync(solidMaterial);
+                await _assetManager.SaveAsync(solidMaterial).ConfigureAwait(false);
             }
         }
 
@@ -294,7 +294,7 @@ namespace RockEngine.Editor.Layers
         {
             foreach (var asset in assets)
             {
-                await _assetManager.SaveAsync(asset);
+                await _assetManager.SaveAsync(asset).ConfigureAwait(false);
             }
         }
 

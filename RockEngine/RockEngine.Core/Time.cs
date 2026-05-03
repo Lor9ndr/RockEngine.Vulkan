@@ -26,7 +26,7 @@
 
         public static void Update(double currentTime)
         {
-            lock (_lock)
+            //lock (_lock)
             {
                 // Calculate delta time based on actual time difference
                 if (_lastUpdateTime > 0)
@@ -45,6 +45,11 @@
                     {
                         _deltaTimeHistory.Dequeue();
                     }
+                }
+                else
+                {
+                    _deltaTime = (float)currentTime;
+
                 }
 
                 _lastUpdateTime = currentTime;

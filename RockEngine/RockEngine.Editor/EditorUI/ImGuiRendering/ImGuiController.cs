@@ -472,6 +472,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
                 // Always ensure we have a valid frame before rendering
                 if (!_frameBegun)
                 {
+                    ImGui.UpdatePlatformWindows();
                     ImGui.NewFrame();
                     _frameBegun = true;
 

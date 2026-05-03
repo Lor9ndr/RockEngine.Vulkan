@@ -1,9 +1,7 @@
 ﻿using System.Numerics;
-using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using NLog;
 using RockEngine.Core.ECS.Components;
-using RockEngine.Core.Helpers;
 using RockEngine.Core.Rendering.Buffers;
 using RockEngine.Core.Rendering.ResourceBindings;
 using RockEngine.Core.Rendering.Texturing;
@@ -15,13 +13,13 @@ namespace RockEngine.Core.Rendering.Managers
     public class ShadowManager : IDisposable
     {
         private readonly VulkanContext _context;
-        private readonly UniformBuffer _shadowMatricesUbo;
+        private readonly StorageBuffer<Matrix4x4> _shadowMatricesUbo;
         private readonly UniformBuffer _csmDataUbo;
         private readonly Texture _shadowMapArray;
         private readonly Texture _pointShadowMapArray;
         private readonly TextureBinding _shadowMapsBinding;
         private readonly TextureBinding _pointShadowMapsBinding;
-        private readonly UniformBufferBinding _shadowMatricesBinding;
+        private readonly StorageBufferBinding<Matrix4x4> _shadowMatricesBinding;
         private readonly UniformBufferBinding _csmDataBinding;
 
         private readonly Dictionary<Light, uint> _lightShadowMapIndices = new();
@@ -29,14 +27,23 @@ namespace RockEngine.Core.Rendering.Managers
         private readonly uint _maxShadowMaps = 20;
         private static readonly Logger _logger = LogManager.GetCurrentClassLogger();
 
-        
+        [Flags]
+        private enum UploadFlags
+        {
+            None = 0,
+            Point = 1 << 0,
+            Csm = 1 << 1
+        }
+
+        public StorageBuffer<Matrix4x4> ShadowMatricesUbo => _shadowMatricesUbo;
+
         public ShadowManager(VulkanContext context)
         {
             _context = context;
 
             // Create uniform buffer for shadow matrices
-            _shadowMatricesUbo = new UniformBuffer(_context, (uint)(Unsafe.SizeOf<Matrix4x4>() * 6 * (int)_maxShadowMaps));
-            _shadowMatricesBinding = new UniformBufferBinding(_shadowMatricesUbo, 0, 0);
+            _shadowMatricesUbo = new StorageBuffer<Matrix4x4>(_context, (ulong)6 * _maxShadowMaps);
+            _shadowMatricesBinding = new StorageBufferBinding<Matrix4x4>(_shadowMatricesUbo, 0, 0);
 
             // Create uniform buffer for CSM data
             _csmDataUbo = new UniformBuffer(_context, (ulong)(_maxShadowMaps * Marshal.SizeOf<CSMData>()));
@@ -48,14 +55,23 @@ namespace RockEngine.Core.Rendering.Managers
 
             // Create texture bindings
             _shadowMapsBinding = new TextureBinding(4,
-                                                    0,
-                                                    0,
-                                                    1,
-                                                    ImageLayout.ShaderReadOnlyOptimal,
-                                                    0,
-                                                    _shadowMapArray.Image.ArrayLayers,
-                                                    _shadowMapArray);
-            _pointShadowMapsBinding = new TextureBinding(4, 1, 0, 1, ImageLayout.ShaderReadOnlyOptimal, 0, _pointShadowMapArray.Image.ArrayLayers, _pointShadowMapArray);
+                0,
+                0,
+                1,
+                ImageLayout.ShaderReadOnlyOptimal,
+                0,
+                _shadowMapArray.Image.ArrayLayers,
+                _shadowMapArray);
+
+            _pointShadowMapsBinding = new TextureBinding(
+                4,
+                1,
+                0,
+                1,
+                ImageLayout.ShaderReadOnlyOptimal,
+                0,
+                _pointShadowMapArray.Image.ArrayLayers,
+                _pointShadowMapArray);
 
             // Initialize available indices
             for (uint i = 0; i < _maxShadowMaps; i++)
@@ -198,10 +214,10 @@ namespace RockEngine.Core.Rendering.Managers
 
         public TextureBinding GetShadowMapsBinding() => _shadowMapsBinding;
         public TextureBinding GetPointShadowMapsBinding() => _pointShadowMapsBinding;
-        public UniformBufferBinding GetShadowMatricesBinding() => _shadowMatricesBinding;
+        public StorageBufferBinding<Matrix4x4> GetShadowMatricesBinding() => _shadowMatricesBinding;
         public UniformBufferBinding GetCSMDataBinding() => _csmDataBinding;
 
-        
+
         public void UpdateShadowMatrices(List<Light> shadowCastingLights, Camera mainCamera)
         {
             if (shadowCastingLights.Count == 0)
@@ -209,16 +225,12 @@ namespace RockEngine.Core.Rendering.Managers
                 return;
             }
 
-            var shadowMatrices = new List<Matrix4x4>();
             var csmDataArray = new CSMData[_maxShadowMaps];
+            var batch = _context.GraphicsSubmitContext.CreateBatch();
+            var uploadFlags = UploadFlags.None;
 
             foreach (var light in shadowCastingLights)
             {
-                if (shadowMatrices.Count >= _maxShadowMaps * 16)
-                {
-                    break;
-                }
-
                 var shadowIndex = AssignShadowMapIndex(light);
                 if (shadowIndex == uint.MaxValue)
                 {
@@ -229,110 +241,82 @@ namespace RockEngine.Core.Rendering.Managers
 
                 if (light.Type == LightType.Directional && light.CascadeCount > 1)
                 {
-                    // Update cascade splits using camera far plane
-                    light.UpdateCascadeSplits(mainCamera.FarClip);
+                    // CSM directional
+                    var cascadeMatrices = mainCamera.ComputeCSMMatrices(light);
+                    light.SetDirectionalShadowMatrices(cascadeMatrices);
+                    var cascadeSplits = mainCamera.ComputeCascadeSplits(light.ShadowDistance, light.CascadeCount);
 
-                    var cascadeMatrices = light.CalculateCSMMatrices(mainCamera, light.Entity.Transform.EulerAngles);
-
-                    // Create enhanced CSM data
-                    var csmData = new CSMData
+                    csmDataArray[shadowIndex] = new CSMData
                     {
                         CascadeMatrices0 = cascadeMatrices.Length > 0 ? cascadeMatrices[0] : Matrix4x4.Identity,
                         CascadeMatrices1 = cascadeMatrices.Length > 1 ? cascadeMatrices[1] : Matrix4x4.Identity,
                         CascadeMatrices2 = cascadeMatrices.Length > 2 ? cascadeMatrices[2] : Matrix4x4.Identity,
                         CascadeMatrices3 = cascadeMatrices.Length > 3 ? cascadeMatrices[3] : Matrix4x4.Identity,
                         CascadeSplits = new Vector4(
-                            light.CascadeSplits[0],
-                            light.CascadeSplits[1],
-                            light.CascadeSplits[2],
-                            light.CascadeSplits[3]),
-                        CSMParams = new Vector4(
-                            light.CascadeCount,
-                            light.ShadowMapSize,
-                            light.CSMShadowBias,
-                            light.NormalOffset),
+                            cascadeSplits.Length > 0 ? cascadeSplits[0] : 0,
+                            cascadeSplits.Length > 1 ? cascadeSplits[1] : 0,
+                            cascadeSplits.Length > 2 ? cascadeSplits[2] : 0,
+                            cascadeSplits.Length > 3 ? cascadeSplits[3] : 0),
+                        CSMParams = new Vector4(light.CascadeCount, light.ShadowMapSize, light.CSMShadowBias, light.NormalOffset),
                         ViewMatrix = mainCamera.ViewMatrix
                     };
-
-                    csmDataArray[shadowIndex] = csmData;
-
-                    // Add cascade matrices (only CascadeCount, not +1)
-                    for (int i = 0; i < light.CascadeCount; i++)
-                    {
-                        shadowMatrices.Add(cascadeMatrices[i]);
-                    }
-
-                    // Pad to 16 matrices for UBO alignment
-                    int matricesToAdd = 16 - light.CascadeCount;
-                    /*for (int i = 0; i < matricesToAdd; i++)
-                    {
-                        shadowMatrices.Add(Matrix4x4.Identity);
-                    }*/
+                    uploadFlags |= UploadFlags.Csm;
                 }
                 else if (light.Type == LightType.Point)
                 {
-                    // Point lights - 6 matrices
                     var pointMatrices = light.GetShadowMatrix();
-                    for (int i = 0; i < 6; i++)
-                    {
-                        shadowMatrices.Add(pointMatrices[i]);
-                    }
-                    /*// Pad to 16
-                    for (int i = 6; i < 16 - pointMatrices.Length; i++)
-                    {
-                        shadowMatrices.Add(Matrix4x4.Identity);
-                    }*/
-                }
-                else
-                {
-                    // Single matrix for spot/non-CSM directional
-                    var singleMatrix = light.GetShadowMatrix();
-                    shadowMatrices.Add(singleMatrix[0]);
-                    /* // Pad to 16
-                     for (int i = 1; i < 16 - singleMatrix.Length; i++)
-                     {
-                         shadowMatrices.Add(Matrix4x4.Identity);
-                     }*/
+                    _shadowMatricesUbo.StageData(
+                        batch,
+                        pointMatrices,
+                        startIndex: shadowIndex * 6);
+                    uploadFlags |= UploadFlags.Point;
                 }
             }
 
-            // Update GPU buffers
-            if (shadowMatrices.Count > 0)
+            // Stage CSM data if needed
+            if (uploadFlags.HasFlag(UploadFlags.Csm))
             {
-                var batch = _context.GraphicsSubmitContext.CreateBatch();
+                batch.StageToBuffer(csmDataArray, _csmDataUbo.Buffer, 0,
+                    (ulong)(Marshal.SizeOf<CSMData>() * csmDataArray.Length));
+            }
 
-                // Update shadow matrices buffer (16 matrices per light)
-                batch.StageToBuffer(
-                    shadowMatrices.ToArray(),
-                    _shadowMatricesUbo.Buffer,
-                    0,
-                    (uint)(Unsafe.SizeOf<Matrix4x4>() * shadowMatrices.Count)
-                );
-
-                // Update CSM data buffer
-                batch.StageToBuffer(csmDataArray, _csmDataUbo.Buffer, 0, (ulong)(Unsafe.SizeOf<CSMData>() * csmDataArray.Length));
-
-                // Add pipeline barrier
-                var bufferBarrier = new BufferMemoryBarrier2
+            // Build barriers according to flags
+            var barriers = new List<BufferMemoryBarrier2>();
+            if (uploadFlags.HasFlag(UploadFlags.Point))
+            {
+                barriers.Add(new BufferMemoryBarrier2
                 {
                     SType = StructureType.BufferMemoryBarrier2,
                     SrcAccessMask = AccessFlags2.TransferWriteBit,
-                    DstAccessMask = AccessFlags2.UniformReadBit | AccessFlags2.ShaderReadBit,
-                    SrcQueueFamilyIndex = Vk.QueueFamilyIgnored,
-                    DstQueueFamilyIndex = Vk.QueueFamilyIgnored,
+                    DstAccessMask = AccessFlags2.ShaderReadBit,
                     Buffer = _shadowMatricesUbo.Buffer,
                     Offset = 0,
                     Size = Vk.WholeSize,
                     SrcStageMask = PipelineStageFlags2.TransferBit,
-                    DstStageMask = PipelineStageFlags2.VertexShaderBit,
-                };
-
-                batch.PipelineBarrier(
-                    bufferMemoryBarriers: [bufferBarrier]
-                );
-
-                batch.Submit();
+                    DstStageMask = PipelineStageFlags2.GeometryShaderBit
+                });
             }
+            if (uploadFlags.HasFlag(UploadFlags.Csm))
+            {
+                barriers.Add(new BufferMemoryBarrier2
+                {
+                    SType = StructureType.BufferMemoryBarrier2,
+                    SrcAccessMask = AccessFlags2.TransferWriteBit,
+                    DstAccessMask = AccessFlags2.UniformReadBit,
+                    Buffer = _csmDataUbo.Buffer,
+                    Offset = 0,
+                    Size = Vk.WholeSize,
+                    SrcStageMask = PipelineStageFlags2.TransferBit,
+                    DstStageMask = PipelineStageFlags2.AllGraphicsBit
+                });
+            }
+
+            if (barriers.Count > 0)
+            {
+                batch.PipelineBarrier(bufferMemoryBarriers: barriers.ToArray());
+            }
+
+            batch.Submit();
         }
 
 
@@ -348,7 +332,6 @@ namespace RockEngine.Core.Rendering.Managers
         }
     }
 
-    [GLSLStruct(GLSLMemoryLayout.Scalar)]
 
     public struct CSMData
     {

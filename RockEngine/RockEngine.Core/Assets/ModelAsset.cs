@@ -86,15 +86,15 @@ namespace RockEngine.Core.Assets
         
         public override async Task LoadDataAsync()
         {
-            await base.LoadDataAsync();
+            await base.LoadDataAsync().ConfigureAwait(false);
 
             // Load GPU resources for all parts
             foreach (var part in Parts)
             {
                 try
                 {
-                    await part.Mesh.Asset.LoadGpuResourcesAsync();
-                    await part.Material.Asset.LoadGpuResourcesAsync();
+                    await part.Mesh.Asset.LoadGpuResourcesAsync().ConfigureAwait(false);
+                    await part.Material.Asset.LoadGpuResourcesAsync().ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {
@@ -110,8 +110,8 @@ namespace RockEngine.Core.Assets
         {
             foreach (var part in Parts)
             {
-                await part.Mesh.Asset.LoadGpuResourcesAsync();
-                await part.Material.Asset.LoadGpuResourcesAsync();
+                await part.Mesh.Asset.LoadGpuResourcesAsync().ConfigureAwait(false);
+                await part.Material.Asset.LoadGpuResourcesAsync().ConfigureAwait(false);
             }
         }
 

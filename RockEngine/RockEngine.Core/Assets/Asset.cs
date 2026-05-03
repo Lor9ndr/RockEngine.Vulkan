@@ -51,13 +51,13 @@ namespace RockEngine.Core.Assets
                 return;
             }
 
-            await _fileSemaphore.WaitAsync();
+            await _fileSemaphore.WaitAsync().ConfigureAwait(false);
             try
             {
                 if (!IsDataLoaded)
                 {
                     var assetManager = IoC.Container.GetInstance<IAssetManager>();
-                    await assetManager.LoadAssetDataAsync(this);
+                    await assetManager.LoadAssetDataAsync(this).ConfigureAwait(false);
                 }
             }
             finally

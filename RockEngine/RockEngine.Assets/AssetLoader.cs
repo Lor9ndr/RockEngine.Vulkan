@@ -23,7 +23,7 @@ namespace RockEngine.Assets
         public async Task SetBasePathAsync(string basePath)
         {
             _basePath = basePath;
-            await BuildIdToPathMap();
+            await BuildIdToPathMap().ConfigureAwait(false);
         }
 
         private string GetFullPath(string assetPath) =>
@@ -58,7 +58,7 @@ namespace RockEngine.Assets
                 try
                 {
                     using var stream = File.OpenRead(file);
-                    var header = await _serializer.DeserializeHeaderAsync(stream);
+                    var header = await _serializer.DeserializeHeaderAsync(stream).ConfigureAwait(false);
                     var relativePath = Path.GetRelativePath(_basePath, file);
                     _idToPathMap[header.AssetId] = relativePath;
                 }
@@ -67,7 +67,7 @@ namespace RockEngine.Assets
                     // Log warning but continue
                     _logger.Error(ex, "Failed to read header from {file}", file);
                 }
-            });
+            }).ConfigureAwait(false);
         }
 
         public async Task<IAsset> LoadAssetAsync(Guid assetId)
@@ -77,7 +77,7 @@ namespace RockEngine.Assets
                 throw new FileNotFoundException($"Asset with ID {assetId} not found in index");
             }
 
-            return await LoadAssetAsync(path);
+            return await LoadAssetAsync(path).ConfigureAwait(false);
         }
 
         public async Task<IAsset> LoadAssetAsync(string assetPath)
@@ -85,7 +85,7 @@ namespace RockEngine.Assets
             var fullPath = GetFullPath(assetPath);
             var strategy = GetLoadStrategy(fullPath);
 
-            var asset = await strategy.LoadAssetAsync(fullPath, _serializer);
+            var asset = await strategy.LoadAssetAsync(fullPath, _serializer).ConfigureAwait(false);
 
             // Update ID to path map
             _idToPathMap[asset.ID] = assetPath;
@@ -95,19 +95,19 @@ namespace RockEngine.Assets
 
         public async Task<T> LoadAssetAsync<T>(Guid assetId) where T : class, IAsset
         {
-            var asset = await LoadAssetAsync(assetId);
+            var asset = await LoadAssetAsync(assetId).ConfigureAwait(false);
             return asset as T ?? throw new InvalidCastException($"Asset is not of type {typeof(T).Name}");
         }
 
         public async Task<T> LoadAssetAsync<T>(string assetPath) where T : class, IAsset
         {
-            var asset = await LoadAssetAsync(assetPath);
+            var asset = await LoadAssetAsync(assetPath).ConfigureAwait(false);
             return asset as T ?? throw new InvalidCastException($"Asset is not of type {typeof(T).Name}");
         }
 
         public async Task LoadAssetDataAsync<T>(IAsset<T> asset) where T : class
         {
-            await LoadAssetDataAsync(asset, typeof(T));
+            await LoadAssetDataAsync(asset, typeof(T)).ConfigureAwait(false);
         }
 
         public async Task LoadAssetDataAsync(IAsset asset, Type dataType)
@@ -120,7 +120,7 @@ namespace RockEngine.Assets
             var fullPath = GetFullPath(asset.Path.ToString());
             var strategy = GetLoadStrategy(fullPath);
 
-            await strategy.LoadDataAsync(asset, dataType, fullPath, _serializer);
+            await strategy.LoadDataAsync(asset, dataType, fullPath, _serializer).ConfigureAwait(false);
         }
     }
 }

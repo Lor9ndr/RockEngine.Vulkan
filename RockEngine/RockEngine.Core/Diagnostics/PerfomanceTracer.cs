@@ -1,6 +1,7 @@
 ﻿
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Text;
 using NLog;
 using RockEngine.Vulkan;
@@ -137,7 +138,7 @@ namespace RockEngine.Core.Diagnostics
             {
                 frame?.Dispose();
             }
-            _frameData = Array.Empty<PerFrameData>();
+            _frameData = [];
             GC.SuppressFinalize(this);
         }
 
@@ -418,11 +419,11 @@ namespace RockEngine.Core.Diagnostics
         public struct GpuSectionTracker : IDisposable
         {
             private readonly int _scopeId;
-            private readonly UploadBatch _batch;
-            private readonly PerFrameData _frame;
+            private readonly UploadBatch? _batch;
+            private readonly PerFrameData? _frame;
             private readonly uint _startIndex;
             private readonly bool _valid;
-            private readonly ScopeInfo _previousScope;
+            private readonly ScopeInfo? _previousScope;
             private bool _disposed;
 
             public GpuSectionTracker() // Disabled constructor
@@ -467,7 +468,7 @@ namespace RockEngine.Core.Diagnostics
                 _disposed = true;
 
                 // Write end timestamp
-                _batch.WriteTimestamp(PipelineStageFlags2.AllCommandsBit, _frame.QueryPool, _startIndex + 1);
+                _batch?.WriteTimestamp(PipelineStageFlags2.AllCommandsBit, _frame.QueryPool, _startIndex + 1);
 
                 _currentGpuScope.Value = _previousScope;
             }
@@ -507,7 +508,6 @@ namespace RockEngine.Core.Diagnostics
 
             internal void ResetQueryPool(UploadBatch currentBatch)
             {
-                Console.WriteLine();
                 currentBatch.ResetQueryPool(QueryPool, 0, _nextQueryIndex);
                 lock (_queryLock)
                 {
@@ -586,8 +586,8 @@ namespace RockEngine.Core.Diagnostics
                     }
 
                     // Each query takes 2 slots: [timestamp, availability]
-                    int startBaseIdx = (int)query.StartIndex * 2;
-                    int endBaseIdx = (int)(query.StartIndex + 1) * 2;
+                    int startBaseIdx = query.StartIndex * 2;
+                    int endBaseIdx = (query.StartIndex + 1) * 2;
 
                     // Get timestamp and availability for start query
                     ulong startTime = timestampsAndAvailability[startBaseIdx];

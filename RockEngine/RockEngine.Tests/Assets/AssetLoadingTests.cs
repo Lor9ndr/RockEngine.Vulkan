@@ -45,7 +45,7 @@ namespace RockEngine.Tests
         {
             var assetManager = Scope.GetInstance<IProjectManager>();
             var projectName = $"TestProject_{TestContext.CurrentContext.Test.Name}";
-            await assetManager.CreateProjectAsync<ProjectAsset, ProjectData>(_tempDir, projectName);
+            await assetManager.CreateProjectAsync<ProjectAsset, ProjectData>(_tempDir, projectName).ConfigureAwait(false);
         }
 
         #region TextureAsset Tests
@@ -63,7 +63,7 @@ namespace RockEngine.Tests
                     FlipVertically = false
                 });
 
-                await textureAsset.LoadDataAsync();
+                await textureAsset.LoadDataAsync().ConfigureAwait(false);
 
                 Assert.That(textureAsset.IsDataLoaded, Is.True);
                 Assert.That(textureAsset.Width, Is.EqualTo(64));
@@ -97,8 +97,8 @@ namespace RockEngine.Tests
                     }
                 });
 
-                await textureAsset.LoadDataAsync();
-                await textureAsset.LoadGpuResourcesAsync();
+                await textureAsset.LoadDataAsync().ConfigureAwait(false);
+                await textureAsset.LoadGpuResourcesAsync().ConfigureAwait(false);
 
                 Assert.That(textureAsset.GpuReady, Is.True);
                 Assert.That(textureAsset.Texture, Is.Not.Null);
@@ -159,7 +159,7 @@ namespace RockEngine.Tests
                 meshAsset.SetGeometry(vertices, indices);
                 meshAsset.ID = Guid.NewGuid();
 
-                await meshAsset.LoadGpuResourcesAsync();
+                await meshAsset.LoadGpuResourcesAsync().ConfigureAwait(false);
 
                 Assert.That(meshAsset.GpuReady, Is.True);
             }
@@ -251,8 +251,8 @@ namespace RockEngine.Tests
             materialAsset.SetData(new MaterialData { PipelineName = "Test" });
 
             var assetManager = Scope.GetInstance<IAssetManager>();
-            await assetManager.SaveAsync(meshAsset);
-            await assetManager.SaveAsync(materialAsset);
+            await assetManager.SaveAsync(meshAsset).ConfigureAwait(false);
+            await assetManager.SaveAsync(materialAsset).ConfigureAwait(false);
 
             var modelAsset = new ModelAsset
             {
@@ -269,9 +269,9 @@ namespace RockEngine.Tests
             };
             modelAsset.AddPart(part);
 
-            await assetManager.SaveAsync(modelAsset);
+            await assetManager.SaveAsync(modelAsset).ConfigureAwait(false);
 
-            var loadedModel = await assetManager.LoadAssetAsync<ModelAsset>("Models/TestModel.asset");
+            var loadedModel = await assetManager.LoadAssetAsync<ModelAsset>("Models/TestModel.asset").ConfigureAwait(false);
 
             Assert.That(loadedModel, Is.Not.Null);
             Assert.That(loadedModel.Parts.Count, Is.EqualTo(1));
@@ -318,7 +318,7 @@ namespace RockEngine.Tests
             };
             newSceneAsset.SetData(sceneData);
 
-            await newSceneAsset.InstantiateEntities();
+            await newSceneAsset.InstantiateEntities().ConfigureAwait(false);
 
             Assert.That(newSceneAsset.Entities.Count, Is.EqualTo(1));
             var loadedEntity = newSceneAsset.Entities.Values.First();
@@ -348,9 +348,9 @@ namespace RockEngine.Tests
                 null);
 
             var assetManager = Scope.GetInstance<IAssetManager>();
-            await assetManager.SaveAsync(meshAsset);
+            await assetManager.SaveAsync(meshAsset).ConfigureAwait(false);
 
-            var loaded = await assetManager.LoadAssetAsync<MeshAsset>("Meshes/PathTest.asset");
+            var loaded = await assetManager.LoadAssetAsync<MeshAsset>("Meshes/PathTest.asset").ConfigureAwait(false);
 
             Assert.That(loaded, Is.Not.Null);
             Assert.That(loaded.Name, Is.EqualTo("PathTest"));
@@ -376,14 +376,14 @@ namespace RockEngine.Tests
             });
 
             var assetManager = Scope.GetInstance<IAssetManager>();
-            await assetManager.SaveAsync(textureAsset);
+            await assetManager.SaveAsync(textureAsset).ConfigureAwait(false);
 
-            var loaded = await assetManager.LoadAssetAsync<TextureAsset>("Textures/SaveTest.asset");
+            var loaded = await assetManager.LoadAssetAsync<TextureAsset>("Textures/SaveTest.asset").ConfigureAwait(false);
             Assert.That(loaded, Is.Not.Null);
             Assert.That(loaded.Name, Is.EqualTo("SaveTest"));
             Assert.That(loaded.IsDataLoaded, Is.True);
 
-            await loaded.LoadDataAsync();
+            await loaded.LoadDataAsync().ConfigureAwait(false);
             Assert.That(loaded.Width, Is.EqualTo(64));
             Assert.That(loaded.Height, Is.EqualTo(64));
 
@@ -405,10 +405,10 @@ namespace RockEngine.Tests
                 null);
 
             var assetManager = Scope.GetInstance<IAssetManager>();
-            await assetManager.SaveAsync(meshAsset);
+            await assetManager.SaveAsync(meshAsset).ConfigureAwait(false);
 
-            var first = await assetManager.LoadAssetAsync<MeshAsset>("Meshes/CacheTest.asset");
-            var second = await assetManager.LoadAssetAsync<MeshAsset>("Meshes/CacheTest.asset");
+            var first = await assetManager.LoadAssetAsync<MeshAsset>("Meshes/CacheTest.asset").ConfigureAwait(false);
+            var second = await assetManager.LoadAssetAsync<MeshAsset>("Meshes/CacheTest.asset").ConfigureAwait(false);
 
             Assert.That(ReferenceEquals(first, second), Is.True, "Cache should return same instance");
 
@@ -435,12 +435,12 @@ namespace RockEngine.Tests
                 var assetManager = Scope.GetInstance<IAssetManager>();
                 tasks.Add(Task.Run(async () =>
                 {
-                    await assetManager.SaveAsync(textureAsset);
-                    var loaded = await assetManager.LoadAssetAsync<TextureAsset>(textureAsset.Path.ToString());
+                    await assetManager.SaveAsync(textureAsset).ConfigureAwait(false);
+                    var loaded = await assetManager.LoadAssetAsync<TextureAsset>(textureAsset.Path.ToString()).ConfigureAwait(false);
                     Assert.That(loaded, Is.Not.Null);
                 }));
             }
-            await Task.WhenAll(tasks);
+            await Task.WhenAll(tasks).ConfigureAwait(false);
         }
 
         #endregion
@@ -489,10 +489,10 @@ namespace RockEngine.Tests
                 null);
 
             var assetManager = Scope.GetInstance<IAssetManager>();
-            await assetManager.SaveAsync(meshAsset);
+            await assetManager.SaveAsync(meshAsset).ConfigureAwait(false);
 
             var reference = new AssetReference<MeshAsset>(meshAsset.ID);
-            var loaded = await reference.GetAssetAsync();
+            var loaded = await reference.GetAssetAsync().ConfigureAwait(false);
 
             Assert.That(loaded, Is.Not.Null);
             Assert.That(loaded.ID, Is.EqualTo(meshAsset.ID));
@@ -516,10 +516,10 @@ namespace RockEngine.Tests
                 null);
 
             var assetManager = Scope.GetInstance<IAssetManager>();
-            await assetManager.SaveAsync(meshAsset);
+            await assetManager.SaveAsync(meshAsset).ConfigureAwait(false);
 
             AssetReference<MeshAsset> reference = meshAsset.ID;
-            MeshAsset resolved = await reference.GetAssetAsync();
+            MeshAsset resolved = await reference.GetAssetAsync().ConfigureAwait(false);
 
             Assert.That(resolved, Is.Not.Null);
             Assert.That(resolved.ID, Is.EqualTo(meshAsset.ID));
@@ -544,9 +544,9 @@ namespace RockEngine.Tests
             });
 
             var assetManager = Scope.GetInstance<IAssetManager>();
-            await assetManager.SaveAsync(materialAsset);
+            await assetManager.SaveAsync(materialAsset).ConfigureAwait(false);
 
-            var loaded = await assetManager.LoadAssetAsync<MaterialAsset>(materialAsset.Path.ToString());
+            var loaded = await assetManager.LoadAssetAsync<MaterialAsset>(materialAsset.Path.ToString()).ConfigureAwait(false);
 
             var param = loaded.Parameters["Color"];
             Assert.That(param, Is.InstanceOf<Vector3>());
@@ -580,7 +580,7 @@ namespace RockEngine.Tests
                     GenerateMipmaps = true
                 });
                 var assetManager = Scope.GetInstance<IAssetManager>();
-                await assetManager.SaveAsync(textureAsset);
+                await assetManager.SaveAsync(textureAsset).ConfigureAwait(false);
                 texturePaths.Add($"Textures/StressTex_{i}.asset");
             }
 
@@ -588,12 +588,12 @@ namespace RockEngine.Tests
             var tasks = texturePaths.Select(path => Task.Run(async () =>
             {
                 var assetManager = Scope.GetInstance<IAssetManager>();
-                var texture = await assetManager.LoadAssetAsync<TextureAsset>(path);
+                var texture = await assetManager.LoadAssetAsync<TextureAsset>(path).ConfigureAwait(false);
                 Assert.That(texture, Is.Not.Null);
                 return texture;
             })).ToList();
 
-            var loadedTextures = await Task.WhenAll(tasks);
+            var loadedTextures = await Task.WhenAll(tasks).ConfigureAwait(false);
 
             // Verify all loaded
             Assert.That(loadedTextures.Length, Is.EqualTo(textureCount));
@@ -622,19 +622,19 @@ namespace RockEngine.Tests
                     FilePaths = new List<string> { _testImagePath },
                     GenerateMipmaps = true
                 });
-                await assetManager.SaveAsync(textureAsset);
+                await assetManager.SaveAsync(textureAsset).ConfigureAwait(false);
                 assets.Add(textureAsset);
             }
 
             // Load them all
             var loadTasks = assets.Select(a => assetManager.LoadAssetAsync<TextureAsset>(a.Path.ToString()));
-            var loaded = await Task.WhenAll(loadTasks);
+            var loaded = await Task.WhenAll(loadTasks).ConfigureAwait(false);
 
             // Force cache eviction by loading more (cache size is limited)
             // The cache should evict old entries automatically
             for (int i = 0; i < 50; i++)
             {
-                var tex = await assetManager.LoadAssetAsync<TextureAsset>($"Textures/MemoryTex_{i}.asset");
+                var tex = await assetManager.LoadAssetAsync<TextureAsset>($"Textures/MemoryTex_{i}.asset").ConfigureAwait(false);
                 Assert.That(tex, Is.Not.Null);
             }
 
@@ -661,7 +661,7 @@ namespace RockEngine.Tests
             baseMesh.SetGeometry(
                 new[] { new Vertex(Vector3.Zero, Vector3.UnitZ, Vector2.Zero) },
                 null);
-            await assetManager.SaveAsync(baseMesh);
+            await assetManager.SaveAsync(baseMesh).ConfigureAwait(false);
 
             var baseMaterial = new MaterialAsset
             {
@@ -669,7 +669,7 @@ namespace RockEngine.Tests
                 Path = new AssetPath("Materials", "BaseMaterial")
             };
             baseMaterial.SetData(new MaterialData { PipelineName = "Test" });
-            await assetManager.SaveAsync(baseMaterial);
+            await assetManager.SaveAsync(baseMaterial).ConfigureAwait(false);
 
             // Create a model with many parts
             var model = new ModelAsset
@@ -689,10 +689,10 @@ namespace RockEngine.Tests
                 });
             }
 
-            await assetManager.SaveAsync(model);
+            await assetManager.SaveAsync(model).ConfigureAwait(false);
 
             // Load the model and verify parts
-            var loadedModel = await assetManager.LoadAssetAsync<ModelAsset>("Models/StressModel.asset");
+            var loadedModel = await assetManager.LoadAssetAsync<ModelAsset>("Models/StressModel.asset").ConfigureAwait(false);
             Assert.That(loadedModel.Parts.Count, Is.EqualTo(partCount));
 
             // Unload GPU resources

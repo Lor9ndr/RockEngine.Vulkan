@@ -3,6 +3,7 @@
 using RockEngine.Core;
 using RockEngine.Core.Rendering;
 using RockEngine.Core.Rendering.Commands;
+using RockEngine.Core.Synchronization;
 using RockEngine.Editor.EditorUI.ImGuiRendering;
 using RockEngine.Editor.EditorUI.UndoRedo;
 using RockEngine.Vulkan;
@@ -35,26 +36,28 @@ namespace RockEngine.Editor.Layers
         public void OnImGuiRender(UploadBatch batch)
         {
             ImGui.DockSpaceOverViewport(0, ImGui.GetMainViewport(), ImGuiDockNodeFlags.PassthruCentralNode);
-
         }
 
         public void OnRender(UploadBatch batch)
         {
         }
-
         
         public void OnUpdate()
         {
-            _controller.Update(_renderer);
-            if (ImGui.GetIO().KeyCtrl && ImGui.IsKeyPressed(ImGuiKey.Z))
-            {
-                UndoRedoService.Instance.Undo();
-            }
-            if (ImGui.GetIO().KeyCtrl && ImGui.IsKeyPressed(ImGuiKey.Y))
-            {
-                UndoRedoService.Instance.Redo();
-            }
-            _renderer.AddCommand(new ImguiRenderCommand(_controller.Render));
+            
+                _controller.Update(_renderer);
+                if (ImGui.GetIO().KeyCtrl && ImGui.IsKeyPressed(ImGuiKey.Z))
+                {
+                    UndoRedoService.Instance.Undo();
+                }
+                if (ImGui.GetIO().KeyCtrl && ImGui.IsKeyPressed(ImGuiKey.Y))
+                {
+                    UndoRedoService.Instance.Redo();
+                }
+                _renderer.AddCommand(new ImguiRenderCommand(_controller.Render));
+
+            //}, null);
+            
         }
     }
 }

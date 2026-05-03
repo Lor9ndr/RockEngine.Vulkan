@@ -39,7 +39,7 @@ namespace RockEngine.Editor.Rendering.Passes
                 }
                 tasks.Add(ExecuteCameraPass(renderContext.GraphicsContext, debugCamera, renderer, i, frameIndex));
             }
-            await Task.WhenAll(tasks);
+            await Task.WhenAll(tasks).ConfigureAwait(false);
         }
 
         private Task ExecuteCameraPass(SubmitContext submitContext, DebugCamera camera, WorldRenderer renderer, int camIndex, uint frameIndex)

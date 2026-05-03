@@ -41,7 +41,7 @@ namespace RockEngine.Core.Assets
         public async Task<IAsset> CreateModelFromFileAsync(string filePath, string? modelName = null, string parentPath = "Models", CancellationToken cancellationToken = default)
         {
             modelName ??= Path.GetFileNameWithoutExtension(filePath);
-            var meshesData = await _assimpLoader.LoadMeshesAsync(filePath);
+            var meshesData = await _assimpLoader.LoadMeshesAsync(filePath).ConfigureAwait(false);
             var modelAsset = Create<ModelAsset>(new AssetPath(parentPath, modelName));
 
             var textureCache = new Dictionary<string, TextureAsset>(StringComparer.OrdinalIgnoreCase);
@@ -70,7 +70,7 @@ namespace RockEngine.Core.Assets
                 // Handle albedo
                 if (texturesBySemantic.TryGetValue(TextureSemantic.Albedo, out var albedoSemantic))
                 {
-                    albedoTexture = await CreateTextureAsync(albedoSemantic.Slot, textureFolder, textureCache);
+                    albedoTexture = await CreateTextureAsync(albedoSemantic.Slot, textureFolder, textureCache).ConfigureAwait(false);
                 }
                 else
                 {
@@ -81,7 +81,7 @@ namespace RockEngine.Core.Assets
                 // Handle normal
                 if (texturesBySemantic.TryGetValue(TextureSemantic.Normal, out var normalSemantic))
                 {
-                    normalTexture = await CreateTextureAsync(normalSemantic.Slot, textureFolder, textureCache);
+                    normalTexture = await CreateTextureAsync(normalSemantic.Slot, textureFolder, textureCache).ConfigureAwait(false);
                 }
                 else
                 {
@@ -91,7 +91,7 @@ namespace RockEngine.Core.Assets
                 // Handle MRA
                 if (texturesBySemantic.TryGetValue(TextureSemantic.MRA, out var mraSemantic))
                 {
-                    mraTexture = await CreateTextureAsync(mraSemantic.Slot, textureFolder, textureCache);
+                    mraTexture = await CreateTextureAsync(mraSemantic.Slot, textureFolder, textureCache).ConfigureAwait(false);
                 }
                 else if (texturesBySemantic.TryGetValue(TextureSemantic.Metallic, out var metallicSemantic) &&
                          texturesBySemantic.TryGetValue(TextureSemantic.Roughness, out var roughnessSemantic) &&
@@ -103,7 +103,7 @@ namespace RockEngine.Core.Assets
                         metallicSemantic,
                         roughnessSemantic,
                         aoSemantic,
-                        cancellationToken);
+                        cancellationToken).ConfigureAwait(false);
                 }
                 else
                 {

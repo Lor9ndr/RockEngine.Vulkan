@@ -140,8 +140,7 @@ namespace RockEngine.Vulkan
         }
         public async Task WaitIdleAsync(CancellationToken cancellationToken = default)
         {
-            await Task.Run(() => WaitIdle(), cancellationToken);
+            await Task.Run(() => WaitIdle(), cancellationToken).ConfigureAwait(false);
         }
-
     }
 }

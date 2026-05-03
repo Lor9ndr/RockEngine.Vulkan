@@ -224,7 +224,7 @@ namespace RockEngine.Editor.Layers
 
             try
             {
-                var success = await _projectManager.OpenProjectAsync(path, this);
+                var success = await _projectManager.OpenProjectAsync(path, this).ConfigureAwait(false);
                 if (!success)
                 {
                     _statusMessage = "Failed to open project";
@@ -251,13 +251,13 @@ namespace RockEngine.Editor.Layers
 
             try
             {
-                var success = await _projectManager.CreateProjectAsync(name, path);
+                var success = await _projectManager.CreateProjectAsync(name, path).ConfigureAwait(false);
                 if (success)
                 {
                     _statusMessage = "Project created successfully";
                     _statusError = false;
                     _showCreateProjectModal = false;
-                    await OpenProjectAsync(path);
+                    await OpenProjectAsync(path).ConfigureAwait(false);
                 }
                 else
                 {

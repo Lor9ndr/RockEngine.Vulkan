@@ -61,7 +61,7 @@ namespace RockEngine.Core.Assets
                 return;
             }
 
-            await _gpuLock.WaitAsync();
+            await _gpuLock.WaitAsync().ConfigureAwait(false);
             try
             {
                 if (GpuReady)
@@ -71,10 +71,10 @@ namespace RockEngine.Core.Assets
 
                 if (!IsDataLoaded)
                 {
-                    await LoadDataAsync();
+                    await LoadDataAsync().ConfigureAwait(false);
                 }
 
-                await CreateMaterialAsync();
+                await CreateMaterialAsync().ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -99,7 +99,7 @@ namespace RockEngine.Core.Assets
             );
 
             // Load and bind textures
-            await LoadAndBindTextures();
+            await LoadAndBindTextures().ConfigureAwait(false);
 
             // Apply material parameters
             ApplyMaterialParameters();
@@ -129,7 +129,7 @@ namespace RockEngine.Core.Assets
                 foreach (var texture in Data.Textures)
                 {
                     var textureRef = texture.Value;
-                    var textureAsset = await textureRef.GetAssetAsync();
+                    var textureAsset = await textureRef.GetAssetAsync().ConfigureAwait(false);
                     if (textureAsset?.Texture != null)
                     {
                         _loadedTextures[textureRef.AssetID] = textureAsset.Texture;
@@ -161,8 +161,8 @@ namespace RockEngine.Core.Assets
                     {
                         if (Data.Textures.TryGetValue(slot, out var texRef))
                         {
-                            var texAsset = await texRef.GetAssetAsync();
-                            await texAsset.LoadGpuResourcesAsync();
+                            var texAsset = await texRef.GetAssetAsync().ConfigureAwait(false);
+                            await texAsset.LoadGpuResourcesAsync().ConfigureAwait(false);
                             textures.Add(texAsset.Texture);
                             var globalArray = IoC.Container.GetInstance<GlobalTextureArray>();
                             var index = globalArray.AllocateIndex(texAsset.Texture);
@@ -190,8 +190,8 @@ namespace RockEngine.Core.Assets
                     {
                         if (Data.Textures.TryGetValue(item.Key, out var assetRef))
                         {
-                            var texAsset = await assetRef.GetAssetAsync();
-                            await texAsset.LoadGpuResourcesAsync();
+                            var texAsset = await assetRef.GetAssetAsync().ConfigureAwait(false);
+                            await texAsset.LoadGpuResourcesAsync().ConfigureAwait(false);
                             var binding = new TextureBinding(
                                    setLocation: item.Value.Set,
                                    bindingLocation: item.Value.Reflection.Binding,
@@ -307,7 +307,7 @@ namespace RockEngine.Core.Assets
                 return MaterialInstance;
             }
 
-            await LoadGpuResourcesAsync();
+            await LoadGpuResourcesAsync().ConfigureAwait(false);
             return MaterialInstance!;
         }
 

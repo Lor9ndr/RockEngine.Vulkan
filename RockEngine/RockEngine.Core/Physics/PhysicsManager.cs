@@ -118,7 +118,10 @@ namespace RockEngine.Core.Physics
                 _physicsSystem.Gravity = _settings.Gravity;
 
                 // Create job system
-                var jobSystemConfig = new JobSystemThreadPoolConfig();
+                var jobSystemConfig = new JobSystemThreadPoolConfig()
+                {
+                     numThreads = Environment.ProcessorCount - 1
+                };
                 _jobSystem = new JobSystemThreadPool(jobSystemConfig);
 
 
