@@ -1,4 +1,5 @@
-﻿using System.Numerics;
+﻿using System.Buffers;
+using System.Numerics;
 using System.Runtime.InteropServices;
 using NLog;
 using RockEngine.Core.ECS.Components;
@@ -225,98 +226,106 @@ namespace RockEngine.Core.Rendering.Managers
                 return;
             }
 
-            var csmDataArray = new CSMData[_maxShadowMaps];
-            var batch = _context.GraphicsSubmitContext.CreateBatch();
-            var uploadFlags = UploadFlags.None;
-
-            foreach (var light in shadowCastingLights)
+            var csmDataArray = ArrayPool<CSMData>.Shared.Rent((int)_maxShadowMaps);
+            try
             {
-                var shadowIndex = AssignShadowMapIndex(light);
-                if (shadowIndex == uint.MaxValue)
+                var batch = _context.GraphicsSubmitContext.CreateBatch();
+                var uploadFlags = UploadFlags.None;
+
+                foreach (var light in shadowCastingLights)
                 {
-                    continue;
-                }
-
-                light.SetShadowIndices(shadowIndex);
-
-                if (light.Type == LightType.Directional && light.CascadeCount > 1)
-                {
-                    // CSM directional
-                    var cascadeMatrices = mainCamera.ComputeCSMMatrices(light);
-                    light.SetDirectionalShadowMatrices(cascadeMatrices);
-                    var cascadeSplits = mainCamera.ComputeCascadeSplits(light.ShadowDistance, light.CascadeCount);
-
-                    csmDataArray[shadowIndex] = new CSMData
+                    var shadowIndex = AssignShadowMapIndex(light);
+                    if (shadowIndex == uint.MaxValue)
                     {
-                        CascadeMatrices0 = cascadeMatrices.Length > 0 ? cascadeMatrices[0] : Matrix4x4.Identity,
-                        CascadeMatrices1 = cascadeMatrices.Length > 1 ? cascadeMatrices[1] : Matrix4x4.Identity,
-                        CascadeMatrices2 = cascadeMatrices.Length > 2 ? cascadeMatrices[2] : Matrix4x4.Identity,
-                        CascadeMatrices3 = cascadeMatrices.Length > 3 ? cascadeMatrices[3] : Matrix4x4.Identity,
-                        CascadeSplits = new Vector4(
-                            cascadeSplits.Length > 0 ? cascadeSplits[0] : 0,
-                            cascadeSplits.Length > 1 ? cascadeSplits[1] : 0,
-                            cascadeSplits.Length > 2 ? cascadeSplits[2] : 0,
-                            cascadeSplits.Length > 3 ? cascadeSplits[3] : 0),
-                        CSMParams = new Vector4(light.CascadeCount, light.ShadowMapSize, light.CSMShadowBias, light.NormalOffset),
-                        ViewMatrix = mainCamera.ViewMatrix
-                    };
-                    uploadFlags |= UploadFlags.Csm;
+                        continue;
+                    }
+
+                    light.SetShadowIndices(shadowIndex);
+
+                    if (light.Type == LightType.Directional && light.CascadeCount > 1)
+                    {
+                        // CSM directional
+                        var cascadeMatrices = mainCamera.ComputeCSMMatrices(light);
+                        light.SetDirectionalShadowMatrices(cascadeMatrices);
+                        var cascadeSplits = mainCamera.ComputeCascadeSplits(light.ShadowDistance, light.CascadeCount);
+
+                        csmDataArray[shadowIndex] = new CSMData
+                        {
+                            CascadeMatrices0 = cascadeMatrices.Length > 0 ? cascadeMatrices[0] : Matrix4x4.Identity,
+                            CascadeMatrices1 = cascadeMatrices.Length > 1 ? cascadeMatrices[1] : Matrix4x4.Identity,
+                            CascadeMatrices2 = cascadeMatrices.Length > 2 ? cascadeMatrices[2] : Matrix4x4.Identity,
+                            CascadeMatrices3 = cascadeMatrices.Length > 3 ? cascadeMatrices[3] : Matrix4x4.Identity,
+                            CascadeSplits = new Vector4(
+                                cascadeSplits.Length > 0 ? cascadeSplits[0] : 0,
+                                cascadeSplits.Length > 1 ? cascadeSplits[1] : 0,
+                                cascadeSplits.Length > 2 ? cascadeSplits[2] : 0,
+                                cascadeSplits.Length > 3 ? cascadeSplits[3] : 0),
+                            CSMParams = new Vector4(light.CascadeCount, light.ShadowMapSize, light.CSMShadowBias, light.NormalOffset),
+                            ViewMatrix = mainCamera.ViewMatrix
+                        };
+                        uploadFlags |= UploadFlags.Csm;
+                    }
+                    else if (light.Type == LightType.Point)
+                    {
+                        var pointMatrices = light.GetShadowMatrix();
+                        _shadowMatricesUbo.StageData(
+                            batch,
+                            pointMatrices,
+                            startIndex: shadowIndex * 6);
+                        uploadFlags |= UploadFlags.Point;
+                    }
                 }
-                else if (light.Type == LightType.Point)
+
+                // Stage CSM data if needed
+                if (uploadFlags.HasFlag(UploadFlags.Csm))
                 {
-                    var pointMatrices = light.GetShadowMatrix();
-                    _shadowMatricesUbo.StageData(
-                        batch,
-                        pointMatrices,
-                        startIndex: shadowIndex * 6);
-                    uploadFlags |= UploadFlags.Point;
+                    batch.StageToBuffer(csmDataArray, _csmDataUbo.Buffer, 0,
+                        (ulong)(Marshal.SizeOf<CSMData>() * csmDataArray.Length));
                 }
-            }
 
-            // Stage CSM data if needed
-            if (uploadFlags.HasFlag(UploadFlags.Csm))
-            {
-                batch.StageToBuffer(csmDataArray, _csmDataUbo.Buffer, 0,
-                    (ulong)(Marshal.SizeOf<CSMData>() * csmDataArray.Length));
-            }
-
-            // Build barriers according to flags
-            var barriers = new List<BufferMemoryBarrier2>();
-            if (uploadFlags.HasFlag(UploadFlags.Point))
-            {
-                barriers.Add(new BufferMemoryBarrier2
+                // Build barriers according to flags
+                var barriers = new List<BufferMemoryBarrier2>();
+                if (uploadFlags.HasFlag(UploadFlags.Point))
                 {
-                    SType = StructureType.BufferMemoryBarrier2,
-                    SrcAccessMask = AccessFlags2.TransferWriteBit,
-                    DstAccessMask = AccessFlags2.ShaderReadBit,
-                    Buffer = _shadowMatricesUbo.Buffer,
-                    Offset = 0,
-                    Size = Vk.WholeSize,
-                    SrcStageMask = PipelineStageFlags2.TransferBit,
-                    DstStageMask = PipelineStageFlags2.GeometryShaderBit
-                });
-            }
-            if (uploadFlags.HasFlag(UploadFlags.Csm))
-            {
-                barriers.Add(new BufferMemoryBarrier2
+                    barriers.Add(new BufferMemoryBarrier2
+                    {
+                        SType = StructureType.BufferMemoryBarrier2,
+                        SrcAccessMask = AccessFlags2.TransferWriteBit,
+                        DstAccessMask = AccessFlags2.ShaderReadBit,
+                        Buffer = _shadowMatricesUbo.Buffer,
+                        Offset = 0,
+                        Size = Vk.WholeSize,
+                        SrcStageMask = PipelineStageFlags2.TransferBit,
+                        DstStageMask = PipelineStageFlags2.GeometryShaderBit
+                    });
+                }
+                if (uploadFlags.HasFlag(UploadFlags.Csm))
                 {
-                    SType = StructureType.BufferMemoryBarrier2,
-                    SrcAccessMask = AccessFlags2.TransferWriteBit,
-                    DstAccessMask = AccessFlags2.UniformReadBit,
-                    Buffer = _csmDataUbo.Buffer,
-                    Offset = 0,
-                    Size = Vk.WholeSize,
-                    SrcStageMask = PipelineStageFlags2.TransferBit,
-                    DstStageMask = PipelineStageFlags2.AllGraphicsBit
-                });
-            }
+                    barriers.Add(new BufferMemoryBarrier2
+                    {
+                        SType = StructureType.BufferMemoryBarrier2,
+                        SrcAccessMask = AccessFlags2.TransferWriteBit,
+                        DstAccessMask = AccessFlags2.UniformReadBit,
+                        Buffer = _csmDataUbo.Buffer,
+                        Offset = 0,
+                        Size = Vk.WholeSize,
+                        SrcStageMask = PipelineStageFlags2.TransferBit,
+                        DstStageMask = PipelineStageFlags2.AllGraphicsBit
+                    });
+                }
 
-            if (barriers.Count > 0)
+                if (barriers.Count > 0)
+                {
+                    batch.PipelineBarrier(bufferMemoryBarriers: barriers.ToArray());
+                }
+
+                batch.Submit();
+            }
+            finally
             {
-                batch.PipelineBarrier(bufferMemoryBarriers: barriers.ToArray());
+                ArrayPool<CSMData>.Shared.Return(csmDataArray,true);
             }
-
-            batch.Submit();
+            
         }
 
 

@@ -23,7 +23,7 @@ namespace RockEngine.Core.Rendering.Passes
         public override int Order => -10000;
         private static readonly float[] _shadowPassColors = [0.2f, 0.2f, 0.2f, 1.0f];
 
-        
+
         public override async ValueTask Execute(RenderContext renderContext, WorldRenderer renderer)
         {
             var shadowCastingLights = lightManager.GetShadowCastingLights();

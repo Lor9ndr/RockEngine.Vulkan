@@ -76,6 +76,7 @@ namespace RockEngine.Core.Rendering.Managers
 
             return ValueTask.CompletedTask;
         }
+
         public IEnumerable<Light> GetShadowCastingLights() => _activeLights.AsValueEnumerable().Where(s => s.CastShadows == true).ToList();
 
         public void Dispose()

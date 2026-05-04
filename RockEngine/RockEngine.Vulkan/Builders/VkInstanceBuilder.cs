@@ -39,7 +39,8 @@ namespace RockEngine.Vulkan.Builders
         {
             if (_enableValidationLayers && !CheckValidationLayerSupport())
             {
-                throw new Exception("Validation layers requested, but not available!");
+                _enableValidationLayers = false;
+                //throw new Exception("Validation layers requested, but not available!");
             }
             byte** validationLayerNames = null;
             // Add logic to modify instanceCreateInfo based on validation layers and extensions
