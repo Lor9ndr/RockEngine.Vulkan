@@ -65,7 +65,7 @@ namespace RockEngine.Assets
                 throw new TypeLoadException($"Cannot load asset type: {header.AssetTypeName}");
 
             var asset = _assetFactory.Create(tempPath, assetType);
-            asset.ID = header.AssetId;
+            asset.ID = header.AssetID;
             asset.Name = header.Name;
             asset.Created = header.Created;
             asset.Modified = header.Modified;
@@ -87,7 +87,7 @@ namespace RockEngine.Assets
                 throw new TypeLoadException($"Cannot load asset type: {header.AssetTypeName}");
 
             var asset = _assetFactory.Create(path, assetType);
-            asset.ID = header.AssetId;
+            asset.ID = header.AssetID;
             asset.Name = header.Name;
             asset.Created = header.Created;
             asset.Modified = header.Modified;
@@ -116,7 +116,7 @@ namespace RockEngine.Assets
             {
                 if (line.StartsWith("# ID: "))
                 {
-                    header.AssetId = Guid.Parse(line.AsSpan("# ID: ".Length));
+                    header.AssetID = Guid.Parse(line.AsSpan("# ID: ".Length));
                 }
                 else if (line.StartsWith("# Type: "))
                 {
@@ -159,7 +159,7 @@ namespace RockEngine.Assets
             {
                 Format = "binary",             // Read header fields
                 Version = reader.ReadInt32(),
-                AssetId = new Guid(reader.ReadBytes(16)),
+                AssetID = new Guid(reader.ReadBytes(16)),
                 AssetTypeName = Encoding.UTF8.GetString(reader.ReadBytes(reader.ReadInt32())),
                 Name = Encoding.UTF8.GetString(reader.ReadBytes(reader.ReadInt32())),
                 Created = new DateTime(reader.ReadInt64(), DateTimeKind.Utc),

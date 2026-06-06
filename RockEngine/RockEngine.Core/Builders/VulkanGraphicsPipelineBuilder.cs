@@ -1,6 +1,7 @@
 ﻿using System.Buffers;
 using System.Text;
 using Microsoft.Extensions.DependencyInjection;
+using RockEngine.Core.CoreObjects;
 using RockEngine.Core.Rendering.Managers;
 using RockEngine.Core.Rendering.Objects;
 using RockEngine.Core.Rendering.Passes;
@@ -17,7 +18,7 @@ namespace RockEngine.Core.Builders
         private readonly VulkanContext _context;
         private readonly string _name;
         private RckRenderPass _renderPass;
-        private VkPipelineLayout _pipelineLayout;
+        private CoreObjects.PipelineLayout _pipelineLayout;
         private readonly PipelineStageBuilder _pipelineStageBuilder = new PipelineStageBuilder();
         private VulkanPipelineVertexInputStateBuilder _vertexInputStateBuilder;
         private VulkanInputAssemblyBuilder _inputAssemblyBuilder;
@@ -36,7 +37,7 @@ namespace RockEngine.Core.Builders
             _name = name;
         }
 
-        public static GraphicsPipelineBuilder CreateDefault(VulkanContext context, string name, RckRenderPass renderPass, params VkShaderModule[] shaders)
+        public static GraphicsPipelineBuilder CreateDefault(VulkanContext context, string name, RckRenderPass renderPass, params Shader[] shaders)
         {
             var builder = new GraphicsPipelineBuilder(context, name)
                 .WithShaderModule(shaders)
@@ -47,7 +48,7 @@ namespace RockEngine.Core.Builders
                     .AddScissors(new Rect2D(new Offset2D(), new Extent2D(1280, 720))))
                 .WithRasterizer(new VulkanRasterizerBuilder().CullFace(CullModeFlags.None))
                 .WithMultisampleState(new VulkanMultisampleStateInfoBuilder().Configure(false, SampleCountFlags.Count1Bit))
-                .WithPipelineLayout(VkPipelineLayout.Create(context, shaders))
+                .WithPipelineLayout(new CoreObjects.PipelineLayout(context, shaders))
                 .AddRenderPass(renderPass)
                 .AddDepthStencilState(new PipelineDepthStencilStateCreateInfo()
                 {
@@ -66,7 +67,7 @@ namespace RockEngine.Core.Builders
 
             return builder;
         }
-        public static GraphicsPipelineBuilder CreateDefault<TRenderPassStrategy>(VulkanContext context, string name, IServiceProvider container, params VkShaderModule[] shaders) where TRenderPassStrategy : class, IRenderPassStrategy
+        public static GraphicsPipelineBuilder CreateDefault<TRenderPassStrategy>(VulkanContext context, string name, IServiceProvider container, params Shader[] shaders) where TRenderPassStrategy : class, IRenderPassStrategy
         {
             var renderPassStrategy = container.GetService<TRenderPassStrategy>();
             var builder = new GraphicsPipelineBuilder(context, name)
@@ -78,7 +79,7 @@ namespace RockEngine.Core.Builders
                     .AddScissors(new Rect2D(new Offset2D(), new Extent2D(1280, 720))))
                 .WithRasterizer(new VulkanRasterizerBuilder().CullFace(CullModeFlags.None))
                 .WithMultisampleState(new VulkanMultisampleStateInfoBuilder().Configure(false, SampleCountFlags.Count1Bit))
-                .WithPipelineLayout(VkPipelineLayout.Create(context, shaders))
+                .WithPipelineLayout(new CoreObjects.PipelineLayout(context, shaders))
                 .AddRenderPass(renderPassStrategy.RenderPass ?? renderPassStrategy.BuildRenderPass())
                 .AddDepthStencilState(new PipelineDepthStencilStateCreateInfo()
                 {
@@ -135,17 +136,17 @@ namespace RockEngine.Core.Builders
             return this;
         }
 
-        public unsafe GraphicsPipelineBuilder WithShaderModule(VkShaderModule shaderModule)
+        public unsafe GraphicsPipelineBuilder WithShaderModule(Shader shaderModule)
         {
-            _pipelineStageBuilder.AddStage(shaderModule.Stage, shaderModule, (byte*)_entryPoint.Pointer);
+            _pipelineStageBuilder.AddStage(shaderModule.GetVulkanStage(), shaderModule, (byte*)_entryPoint.Pointer);
             return this;
         }
 
-        public unsafe GraphicsPipelineBuilder WithShaderModule(params VkShaderModule[] shaderModules)
+        public unsafe GraphicsPipelineBuilder WithShaderModule(params Shader[] shaderModules)
         {
             foreach (var item in shaderModules)
             {
-                _pipelineStageBuilder.AddStage(item.Stage, item, (byte*)_entryPoint.Pointer);
+                _pipelineStageBuilder.AddStage(item.GetVulkanStage(), item, (byte*)_entryPoint.Pointer);
             }
             return this;
         }
@@ -197,7 +198,7 @@ namespace RockEngine.Core.Builders
             return this;
         }
 
-        public GraphicsPipelineBuilder WithPipelineLayout(VkPipelineLayout pipelineLayout)
+        public GraphicsPipelineBuilder WithPipelineLayout(CoreObjects.PipelineLayout pipelineLayout)
         {
             _pipelineLayout = pipelineLayout;
             return this;
@@ -271,12 +272,12 @@ namespace RockEngine.Core.Builders
                 PRasterizationState = (PipelineRasterizationStateCreateInfo*)pRasterizer.Pointer,
                 PViewportState = (PipelineViewportStateCreateInfo*)pVpState.Value.Pointer,
                 PDepthStencilState = (PipelineDepthStencilStateCreateInfo*)pDepthState.Pointer,
-                Layout = _pipelineLayout,
+                Layout = _pipelineLayout.VkPipelineLayout,
                 RenderPass = _renderPass,
                 Subpass = _subpassMetadata.Order,
             };
 
-            return VkPipeline.Create(_context, _name, ref ci, (VkRenderPass)_renderPass, _pipelineLayout);
+            return VkPipeline.Create(_context, _name, ref ci, (VkRenderPass)_renderPass, _pipelineLayout.VkPipelineLayout);
         }
 
         protected override void Dispose(bool disposing)

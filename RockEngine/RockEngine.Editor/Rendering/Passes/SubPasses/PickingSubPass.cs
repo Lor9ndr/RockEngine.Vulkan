@@ -2,6 +2,7 @@
 using System.Runtime.InteropServices;
 using RockEngine.Core;
 using RockEngine.Core.Builders;
+using RockEngine.Core.CoreObjects;
 using RockEngine.Core.DI;
 using RockEngine.Core.Diagnostics;
 using RockEngine.Core.ECS.Components;
@@ -105,7 +106,7 @@ namespace RockEngine.Editor.Rendering.Passes.SubPasses
                     ulong entityId = drawGroup.MeshRenderer.Entity.ID;
 
                     // Push entity ID as push constant
-                    cmd.PushConstants(_pipeline.Layout, ShaderStageFlags.FragmentBit,
+                    cmd.PushConstants(_pipeline.Layout.VkPipelineLayout, ShaderStageFlags.FragmentBit,
                         0, sizeof(uint), ref entityId);
                     //drawGroup.MaterialPass.CmdPushConstants(cmd);
 
@@ -255,8 +256,8 @@ namespace RockEngine.Editor.Rendering.Passes.SubPasses
         public void Initilize()
         {
             var shaderManager = IoC.Container.GetInstance<IShaderManager>();
-            var vertShader = VkShaderModule.Create(_context, shaderManager.GetShader("Picking.vert"), ShaderStageFlags.VertexBit);
-            var fragShader = VkShaderModule.Create(_context, shaderManager.GetShader("Picking.frag"), ShaderStageFlags.FragmentBit);
+            var vertShader = new Shader(_context, shaderManager.GetShader("Picking.vert"));
+            var fragShader = new Shader(_context, shaderManager.GetShader("Picking.frag"));
             var colorBlendAttachments = new PipelineColorBlendAttachmentState[1]
               {
                     new PipelineColorBlendAttachmentState

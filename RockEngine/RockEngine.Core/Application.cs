@@ -1,6 +1,5 @@
-﻿using System.Diagnostics;
-using NLog;
-
+﻿using NLog;
+using NLog.Targets;
 using RockEngine.Core.Coroutines;
 using RockEngine.Core.DI;
 using RockEngine.Core.Diagnostics;
@@ -42,6 +41,15 @@ namespace RockEngine.Core
 
         protected Application()
         {
+            var config = new NLog.Config.LoggingConfiguration();
+            var consoleTarget = new ConsoleTarget
+            {
+                Layout = "${time}|${level:uppercase=true}|${logger}|${message}${onexception:${newline}${exception:format=tostring:maxInnerExceptionLevel=10}}"
+            };
+            config.AddTarget("EditorConsole", consoleTarget);
+            config.AddRuleForAllLevels(consoleTarget);
+            LogManager.Configuration = config;
+
             IoC.Initialize(this);
             _applicationScope = AsyncScopedLifestyle.BeginScope(IoC.Container);
             ConfigureWindow();
@@ -53,6 +61,7 @@ namespace RockEngine.Core
             var settings = IoC.Container.GetInstance<AppSettings>();
 
             _window = IoC.Container.GetInstance<IWindow>();
+
 
             // Setup event handlers
             // In ConfigureWindow()
@@ -155,7 +164,12 @@ namespace RockEngine.Core
             PerformanceTracer.ProcessQueries(_vulkanContext, _graphicsContext.FrameIndex);
             PerformanceTracer.BeginFrame(_graphicsContext.FrameIndex);
 
-            _graphicsContext.BeginFrame();
+            if (_graphicsContext.BeginFrame() is null)
+            {
+                //_graphicsContext.SubmitAndPresent();
+                return;
+            }
+
 
             try
             {
@@ -172,8 +186,6 @@ namespace RockEngine.Core
                 // All work scheduled with RunOnRender() will be executed here
                 _mainSyncCtx?.ProcessRenderWork();
                 _mainSyncCtx?.ProcessAllQueuedWork();
-
-
             }
             catch (Exception ex)
             {

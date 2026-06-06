@@ -45,7 +45,7 @@ namespace RockEngine.Core.Rendering.Managers
                 foreach (var (setLocation, perSetBindings) in materialPass.Bindings)
                 {
                     if (skipSets.Contains(setLocation) ||
-                        materialPass.Pipeline.Layout.GetSetLayout(setLocation) == default)
+                        materialPass.Pipeline.Layout.VkPipelineLayout.GetSetLayout(setLocation) == default)
                     {
                         continue;
                     }
@@ -88,7 +88,7 @@ namespace RockEngine.Core.Rendering.Managers
                 foreach (var (setLocation, perSetBindings) in materialPass.Bindings)
                 {
                     if (skipSets.Contains(setLocation) ||
-                    materialPass.Pipeline.Layout.GetSetLayout(setLocation) == default)
+                    materialPass.Pipeline.Layout.VkPipelineLayout.GetSetLayout(setLocation) == default)
                     {
                         continue;
                     }
@@ -114,11 +114,11 @@ namespace RockEngine.Core.Rendering.Managers
           uint frameIndex,
           ResourceBinding binding,
           UploadBatch batch,
-          VkPipelineLayout pipelineLayout,
+          CoreObjects.PipelineLayout pipelineLayout,
           bool isCompute = false)
         {
             var setLocation = binding.SetLocation;
-            var setLayout = pipelineLayout.GetSetLayout(setLocation);
+            var setLayout = pipelineLayout.VkPipelineLayout.GetSetLayout(setLocation);
             if (setLayout == default || setLayout.Bindings.Length == 0 ||
                 setLayout.Bindings.Any(s => s.DescriptorType != binding.DescriptorType))
             {
@@ -142,7 +142,7 @@ namespace RockEngine.Core.Rendering.Managers
          VkDescriptorSet set,
          UploadBatch batch,
          VkDescriptorSetLayout setLayout,
-         VkPipelineLayout pipelineLayout,
+         CoreObjects.PipelineLayout pipelineLayout,
          bool isCompute = false)
         {
 
@@ -165,18 +165,18 @@ namespace RockEngine.Core.Rendering.Managers
             BindResourcesForMaterial(frameIndex, material, materialPass, batch, isCompute);
         }
 
-        private void ProcessSet(uint frameIndex, VkPipelineLayout pipelineLayout, uint setLocation,
+        private void ProcessSet(uint frameIndex, CoreObjects.PipelineLayout pipelineLayout, uint setLocation,
             PerSetBindings perSetBindings, Span<DescriptorSet> setsToBind, ref int index)
         {
             var descriptorSet = GetOrCreateDescriptorSet(frameIndex, pipelineLayout, setLocation, perSetBindings);
             setsToBind[index++] = descriptorSet;
         }
 
-        private VkDescriptorSet GetOrCreateDescriptorSet(uint frameIndex, VkPipelineLayout pipelineLayout, uint setLocation, PerSetBindings perSetBindings)
+        private VkDescriptorSet GetOrCreateDescriptorSet(uint frameIndex, CoreObjects.PipelineLayout pipelineLayout, uint setLocation, PerSetBindings perSetBindings)
         {
             lock (_updateLocker)
             {
-                var setLayout = pipelineLayout.GetSetLayout(setLocation);
+                var setLayout = pipelineLayout.VkPipelineLayout.GetSetLayout(setLocation);
                 if (setLayout == default)
                 {
                     throw new InvalidOperationException("Failed to find set layout");
@@ -234,17 +234,17 @@ namespace RockEngine.Core.Rendering.Managers
             }
         }
 
-        private void BindDescriptorSetsToCommandBuffer(
+        private static void BindDescriptorSetsToCommandBuffer(
                 UploadBatch batch,
-                VkPipelineLayout pipelineLayout,
-                Span<DescriptorSet> descriptorSets,
+                CoreObjects.PipelineLayout pipelineLayout,
+                ReadOnlySpan<DescriptorSet> descriptorSets,
                 ReadOnlySpan<uint> dynamicOffsets,
                 uint minSetIndex,
                 bool isCompute)
         {
             batch.BindDescriptorSets(
                 isCompute ? PipelineBindPoint.Compute : PipelineBindPoint.Graphics,
-                pipelineLayout,
+                pipelineLayout.VkPipelineLayout,
                 minSetIndex,
                 descriptorSets,
                 dynamicOffsets);

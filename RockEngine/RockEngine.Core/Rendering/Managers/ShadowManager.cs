@@ -279,8 +279,11 @@ namespace RockEngine.Core.Rendering.Managers
                 // Stage CSM data if needed
                 if (uploadFlags.HasFlag(UploadFlags.Csm))
                 {
+                    // Important here to setup Marshal.SizeOf<CSMData>() * _maxShadowMaps not Marshal.SizeOf<CSMData>() * csmDataArray.Length
+                    // because ArrayPool.Rent will return minimum array length.
+                    // So it can be larger
                     batch.StageToBuffer(csmDataArray, _csmDataUbo.Buffer, 0,
-                        (ulong)(Marshal.SizeOf<CSMData>() * csmDataArray.Length));
+                        (ulong)(Marshal.SizeOf<CSMData>() * _maxShadowMaps));
                 }
 
                 // Build barriers according to flags
@@ -323,9 +326,9 @@ namespace RockEngine.Core.Rendering.Managers
             }
             finally
             {
-                ArrayPool<CSMData>.Shared.Return(csmDataArray,true);
+                ArrayPool<CSMData>.Shared.Return(csmDataArray, true);
+
             }
-            
         }
 
 

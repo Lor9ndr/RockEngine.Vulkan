@@ -1,9 +1,11 @@
 ﻿using System.Numerics;
 using ImGuiNET;
+using NLog;
 using RockEngine.Core.Assets;
 using RockEngine.Core.ECS.Components;
 using RockEngine.Core.Helpers;
 using RockEngine.Core.ResourceProviders;
+using RockEngine.Editor.EditorUI.Thumbnails;
 using RockEngine.Editor.EditorUI.UndoRedo;
 using RockEngine.Editor.EditorUI.UndoRedo.Commands;
 
@@ -13,6 +15,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.PropertyHandlers
     public class MaterialProviderPropertyHandler : IPropertyHandler
     {
         private readonly Dictionary<string, object> _editingParamOldValues = new();
+        private static readonly Logger _logger = LogManager.GetCurrentClassLogger();
 
         public bool CanHandle(Type propertyType) => propertyType == typeof(MaterialProvider);
 
@@ -49,7 +52,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.PropertyHandlers
             ImGui.PopID();
         }
 
-        private void DrawTextureList(MaterialAsset material, PropertyDrawer drawer)
+        public void  DrawTextureList(MaterialAsset material, PropertyDrawer drawer)
         {
             if (material.MaterialInstance is null)
             {
@@ -61,66 +64,110 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.PropertyHandlers
                 ImGui.PushID(pass.Key);
                 ImGui.BeginGroup();
 
-                foreach (var expectedTexture in pass.Value.ExpectedResources)
+                foreach (var metadata in pass.Value.Pipeline.Layout.ShadersMetadata)
                 {
-                    if (expectedTexture.Value.Reflection.DescriptorType != Silk.NET.Vulkan.DescriptorType.CombinedImageSampler)
+                    if (metadata is null)
                     {
                         continue;
                     }
-                    if (material.Textures.TryGetValue(expectedTexture.Key, out var texRef))
-                    {
-                        ImGui.BeginGroup();
-                        ImGui.TextDisabled(expectedTexture.Key);
-                        ImGui.SameLine();
-                        DrawTextureThumbnail(texRef, drawer);
-                        ImGui.SameLine();
-                        if (ImGui.SmallButton($"X##{expectedTexture.Key}"))
-                        {
-                            var cmd = new ChangeMaterialTextureCommand(material, expectedTexture.Key, texRef, null);
-                            UndoRedoService.Instance.Execute(cmd);
-                        }
-                        ImGui.EndGroup();
 
-                        if (ImGui.BeginDragDropTarget())
-                        {
-                            HandleTextureDrop(material, expectedTexture.Key, drawer);
-                            ImGui.EndDragDropTarget();
-                        }
-                    }
-                    else
+                    foreach (var item in metadata.Textures)
                     {
-                        ImGui.BeginGroup();
-                        ImGui.TextDisabled(expectedTexture.Key);
-                        ImGui.EndGroup();
+                        // Check if the slot already has a texture
+                        material.Textures.TryGetValue(item.Name, out var texRef);
 
-                        if (ImGui.BeginDragDropTarget())
+                        // Begin a table with 3 columns for this slot
+                        if (ImGui.BeginTable($"##texSlot_{item.Name}", 3,
+                            ImGuiTableFlags.NoSavedSettings | ImGuiTableFlags.SizingFixedFit))
                         {
-                            HandleTextureDrop(material, expectedTexture.Key, drawer);
-                            ImGui.EndDragDropTarget();
+                            // Column 0: Slot name
+                            ImGui.TableSetupColumn("Slot", ImGuiTableColumnFlags.WidthFixed, 100);
+                            // Column 1: Thumbnail (64x64)
+                            ImGui.TableSetupColumn("Thumbnail", ImGuiTableColumnFlags.WidthFixed, 72);
+                            // Column 2: Remove button
+                            ImGui.TableSetupColumn("", ImGuiTableColumnFlags.WidthFixed, 20);
+
+                            ImGui.TableNextRow();
+                            ImGui.TableNextColumn();
+                            ImGui.AlignTextToFramePadding();
+                            ImGui.TextDisabled(item.Name);
+
+                            ImGui.TableNextColumn();
+                            // Draw thumbnail or placeholder, and make it a drop target
+                            bool hasTexture = DrawTextureThumbnail(texRef, drawer, out bool drawn);
+                            if (!hasTexture)
+                            {
+                                // If no texture, draw a grey placeholder rectangle that also acts as drop target
+                                ImGui.InvisibleButton($"##drop_{item.Name}", new System.Numerics.Vector2(64, 64));
+                                HandleTextureDrop(material, item.Name, drawer);
+
+                                // Draw the placeholder frame
+                                var min = ImGui.GetItemRectMin();
+                                var max = ImGui.GetItemRectMax();
+                                ImGui.GetWindowDrawList().AddRectFilled(min, max, ImGui.GetColorU32(ImGuiCol.FrameBg));
+                                ImGui.GetWindowDrawList().AddRect(min, max, ImGui.GetColorU32(ImGuiCol.Border));
+                                ImGui.SetCursorScreenPos(min);
+                                ImGui.TextDisabled("None");
+                            }
+                            else
+                            {
+                                // The thumbnail image itself can accept drops
+                                HandleTextureDrop(material, item.Name, drawer);
+                            }
+
+                            ImGui.TableNextColumn();
+                            if (texRef != null && hasTexture) // only show remove button for existing textures
+                            {
+                                if (ImGui.SmallButton($"X##{item.Name}"))
+                                {
+                                    var cmd = new ChangeMaterialTextureCommand(material, item.Name, texRef, null);
+                                    UndoRedoService.Instance.Execute(cmd);
+                                }
+                            }
+
+                            ImGui.EndTable();
                         }
                     }
                 }
                 ImGui.EndGroup();
-
                 ImGui.PopID();
             }
         }
 
-        private void DrawTextureThumbnail(AssetReference<TextureAsset> texRef, PropertyDrawer drawer)
+        private bool DrawTextureThumbnail(AssetReference<TextureAsset> texRef, PropertyDrawer drawer, out bool drawn)
         {
+            drawn = false;
+            if (texRef == null)
+            {
+                return false;
+            }
+
             var textureAsset = texRef.Asset;
             if (textureAsset == null)
             {
                 ImGui.Text("[...]");
+                // Trigger async loading – later you'd update the UI when the thumbnail is ready
                 _ = drawer.ThumbnailService.GetOrCreateThumbnailAsync(texRef.Asset);
-                return;
+                return false;
             }
 
-            var thumbnail = drawer.ThumbnailService.GetOrCreateThumbnailAsync(textureAsset).GetAwaiter().GetResult();
+            // Try to get a thumbnail (non-blocking would be ideal; here we just check if it’s ready)
+            Thumbnail? thumbnail = null;
+            try
+            {
+                // If this must be synchronous, at least handle the case where thumbnail isn't ready
+                thumbnail = drawer.ThumbnailService.GetOrCreateThumbnailAsync(textureAsset).GetAwaiter().GetResult();
+            }
+            catch (Exception ex)
+            {
+                _logger.Error(ex);
+            }
+
             if (thumbnail?.Texture != null)
             {
                 ImGui.Image(drawer.ImGuiController.GetTextureID(thumbnail.Texture), new Vector2(64, 64));
-                return;
+                drawn = true;
+                return true;
             }
 
             if (textureAsset.Texture != null)
@@ -129,11 +176,14 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.PropertyHandlers
                 if (texId != 0)
                 {
                     ImGui.Image(texId, new Vector2(64, 64));
-                    return;
+                    drawn = true;
+                    return true;
                 }
             }
 
             ImGui.Text($"[{Icons.QuestionCircle}]");
+            drawn = true;
+            return true;
         }
 
         private void HandleTextureDrop(MaterialAsset material, string slot, PropertyDrawer drawer)

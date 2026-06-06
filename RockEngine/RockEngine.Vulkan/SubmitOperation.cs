@@ -19,7 +19,6 @@ namespace RockEngine.Vulkan
         public VkFence Fence => _fence;
         public bool IsCompleted => _completed;
         private readonly Lock _lock = new Lock();
-        private readonly ManualResetEventSlim _completedEvent = new();
 
         internal SubmitOperation(
             SubmitContext context,
@@ -49,7 +48,7 @@ namespace RockEngine.Vulkan
             Complete();
         }
 
-        private async Task WaitAsync(CancellationToken cancellationToken = default)
+        private async ValueTask WaitAsync(CancellationToken cancellationToken = default)
         {
             if (_completed)
             {
@@ -63,8 +62,8 @@ namespace RockEngine.Vulkan
             Complete();
         }
 
-        public TaskAwaiter GetAwaiter() => WaitAsync().GetAwaiter();
-        public Task AsTask() => WaitAsync();
+        public ValueTaskAwaiter GetAwaiter() => WaitAsync().GetAwaiter();
+        public Task AsTask() => WaitAsync().AsTask();
 
         private void Complete()
         {

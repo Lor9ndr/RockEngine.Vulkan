@@ -1,6 +1,7 @@
 ﻿using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using RockEngine.Core.Builders;
+using RockEngine.Core.CoreObjects;
 using RockEngine.Core.DI;
 using RockEngine.Core.Diagnostics;
 using RockEngine.Core.ECS.Components;
@@ -233,11 +234,11 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
         public void Initilize()
         {
             var shaderManager = IoC.Container.GetInstance<IShaderManager>();
-            VkShaderModule vkShaderModuleFrag = VkShaderModule.Create(_context, shaderManager.GetShader("Geometry.frag"), ShaderStageFlags.FragmentBit);
+            using var vkShaderModuleFrag = new Shader(_context, shaderManager.GetShader("Geometry.frag"));
 
-            VkShaderModule vkShaderModuleVert = VkShaderModule.Create(_context, shaderManager.GetShader("Geometry.vert"), ShaderStageFlags.VertexBit);
+            using var vkShaderModuleVert = new Shader(_context, shaderManager.GetShader("Geometry.vert"));
 
-            var pipelineLayout = VkPipelineLayout.Create(_context, vkShaderModuleVert, vkShaderModuleFrag);
+            var pipelineLayout = new CoreObjects.PipelineLayout(_context, vkShaderModuleVert, vkShaderModuleFrag);
 
             var binding_desc = new VertexInputBindingDescription();
             binding_desc.Stride = (uint)Unsafe.SizeOf<Vertex>();

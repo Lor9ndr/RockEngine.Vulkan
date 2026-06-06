@@ -393,7 +393,7 @@ namespace RockEngine.Assets
 
                 // Update our ID to path map
                 var relativePath = Path.GetRelativePath(BasePath, e.FullPath);
-                _idToPathMap[header.AssetId] = relativePath;
+                _idToPathMap[header.AssetID] = relativePath;
 
                 // Load the full asset
                 var asset = await _loader.LoadAssetAsync<IAsset>(relativePath).ConfigureAwait(false);
@@ -491,6 +491,7 @@ namespace RockEngine.Assets
         {
             _currentProject = project;
             await _loader.SetBasePathAsync(BasePath).ConfigureAwait(false);
+            Directory.SetCurrentDirectory(BasePath);
             InitializeFileWatcher();
             _repository.Add(project);
 
@@ -517,7 +518,7 @@ namespace RockEngine.Assets
                     using var stream = File.OpenRead(file);
                     var header = await _serializer.DeserializeHeaderAsync(stream).ConfigureAwait(false);
                     var relativePath = Path.GetRelativePath(BasePath, file);
-                    _idToPathMap[header.AssetId] = relativePath;
+                    _idToPathMap[header.AssetID] = relativePath;
                 }
                 catch (Exception ex)
                 {

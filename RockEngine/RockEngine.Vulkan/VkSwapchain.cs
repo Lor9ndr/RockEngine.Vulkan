@@ -32,7 +32,6 @@ namespace RockEngine.Vulkan
         public int SwapChainImagesCount => _images.Length;
         public Format DepthFormat => _depthFormat;
         public ISurfaceHandler Surface => _surface;
-        public uint CurrentImageIndex => _currentImageIndex;
         public PresentModeKHR PresentMode => _createInfo.PresentMode;
 
         public VkImageView DepthImageView { get => _depthImageView; private set => _depthImageView = value; }
@@ -96,7 +95,11 @@ namespace RockEngine.Vulkan
             uint graphicsFamily = indices.GraphicsFamily!.Value;
             uint presentFamily = indices.PresentFamily!.Value;
 
-            var queueFamilyIndices = stackalloc uint[] { context.Device.QueueFamilyIndices.GraphicsFamily.Value, context.Device.QueueFamilyIndices.PresentFamily.Value };
+            var queueFamilyIndices = stackalloc uint[]
+            {
+                context.Device.QueueFamilyIndices.GraphicsFamily.Value,
+                context.Device.QueueFamilyIndices.PresentFamily.Value
+            };
             if (context.Device.QueueFamilyIndices.GraphicsFamily != context.Device.QueueFamilyIndices.PresentFamily)
             {
                 createInfo.ImageSharingMode = SharingMode.Concurrent;
@@ -134,7 +137,6 @@ namespace RockEngine.Vulkan
             var swapchain = new VkSwapchain(context, swapChain, swapchainApi, vkImages, surfaceFormat.Format, extent, surface, in createInfo);
 
             // Ensure initial layout transition
-            swapchain.TransitionSwapchainImagesToPresentLayout();
 
             return swapchain;
         }
@@ -277,63 +279,31 @@ namespace RockEngine.Vulkan
                 }
             }
         }
-        public Result AcquireNextImage(VkSemaphore imageAvailable, out uint imageIndex)
+
+        public Result AcquireNextImage(VkSemaphore imageAvailable, VkFence fence, out uint imageIndex)
         {
+            imageIndex = 0;
             var semaphore = imageAvailable.VkObjectNative;
+            var fenceNative = fence?.VkObjectNative ?? default;
 
             var result = _khrSwapchain.AcquireNextImage(
                 _context.Device,
                 _vkObject,
                 ulong.MaxValue,
                 semaphore,
-                default,
-                ref _currentImageIndex);
-            imageIndex = _currentImageIndex;
-            return result;
-        }
+                fenceNative,
+                ref imageIndex);
 
-
-        public unsafe Result Present(FrameData frame)
-        {
-            var currentFrame = frame;
-            var swapchains = _vkObject;
-            var imageIndices = _currentImageIndex;
-            var waitSemaphores = currentFrame.RenderFinished.VkObjectNative;
-
-            var presentInfo = new PresentInfoKHR
+            if (result == Result.Success)
             {
-                SType = StructureType.PresentInfoKhr,
-                WaitSemaphoreCount = 1,
-                PWaitSemaphores = &waitSemaphores,
-                SwapchainCount = 1,
-                PSwapchains = &swapchains,
-                PImageIndices = &imageIndices,
-            };
-
-            var result = _khrSwapchain.QueuePresent(_context.Device.PresentQueue, in presentInfo);
-            return result.VkAssertResult("Failed to present queue", Result.ErrorOutOfDateKhr, Result.SuboptimalKhr, Result.ErrorSurfaceLostKhr);
-        }
-        public Result Present(VkSemaphore renderComplete)
-        {
-            var swapchainHandle = VkObjectNative;
-            var imageIndex = CurrentImageIndex;
-            var waitSemaphore = renderComplete.VkObjectNative;
-
-            unsafe
-            {
-                var presentInfo = new PresentInfoKHR
-                {
-                    SType = StructureType.PresentInfoKhr,
-                    WaitSemaphoreCount = 1,
-                    PWaitSemaphores = &waitSemaphore,
-                    SwapchainCount = 1,
-                    PSwapchains = &swapchainHandle,
-                    PImageIndices = &imageIndex,
-                    PResults = null
-                };
-
-                return _khrSwapchain.QueuePresent(_context.Device.PresentQueue, in presentInfo);
+                _currentImageIndex = imageIndex;
             }
+            else
+            {
+                _currentImageIndex = 0;
+            }
+
+            return result;
         }
 
         public bool RecreateSwapchain()
@@ -347,8 +317,8 @@ namespace RockEngine.Vulkan
                 return false;
             }
             // Wait for device idle
-            _context.Device.GraphicsQueue.WaitIdle();
-            _context.Device.PresentQueue.WaitIdle();
+            /*            _context.Device.GraphicsQueue.WaitIdle();
+                        _context.Device.PresentQueue.WaitIdle();*/
             // Dispose of old resources
             DisposeImagesAndViews();
 
@@ -471,8 +441,12 @@ namespace RockEngine.Vulkan
                 // Clean up old swapchain
                 if (oldSwapchain.Handle != 0)
                 {
-                    _khrSwapchain.DestroySwapchain(_context.Device, oldSwapchain,
+                    _context.GraphicsSubmitContext.AddDependency(() =>
+                    {
+                        _khrSwapchain.DestroySwapchain(_context.Device, oldSwapchain,
                         in VulkanContext.CustomAllocator<VkSwapchain>());
+                    });
+
                 }
 
                 // Get swapchain images
@@ -507,47 +481,12 @@ namespace RockEngine.Vulkan
                 // Recreate image views and depth resources
                 InitializeSwapchainResources();
 
-                TransitionSwapchainImagesToPresentLayout();
                 OnSwapchainRecreate?.Invoke(this);
 
             }
             return true;
         }
 
-        private void TransitionSwapchainImagesToPresentLayout()
-        {
-            var batch = _context.GraphicsSubmitContext.CreateBatch();
-            Span<ImageMemoryBarrier2> barriers = stackalloc ImageMemoryBarrier2[_images.Length];
-            // Transition all swapchain images to PRESENT_SRC_KHR layout
-            for (int i = 0; i < _images.Length; i++)
-            {
-                var image = _images[i];
-                var barrier = new ImageMemoryBarrier2
-                {
-                    SType = StructureType.ImageMemoryBarrier2,
-                    OldLayout = ImageLayout.Undefined,
-                    NewLayout = ImageLayout.PresentSrcKhr,
-                    SrcQueueFamilyIndex = Vk.QueueFamilyIgnored,
-                    DstQueueFamilyIndex = Vk.QueueFamilyIgnored,
-                    Image = image.VkObjectNative,
-                    SubresourceRange = new ImageSubresourceRange
-                    {
-                        AspectMask = ImageAspectFlags.ColorBit,
-                        BaseMipLevel = 0,
-                        LevelCount = 1,
-                        BaseArrayLayer = 0,
-                        LayerCount = 1
-                    },
-                    SrcAccessMask = AccessFlags2.None,
-                    DstAccessMask = AccessFlags2.ColorAttachmentWriteBit,
-                    SrcStageMask = PipelineStageFlags2.None,
-                    DstStageMask = PipelineStageFlags2.ColorAttachmentOutputBit
-                };
-                barriers[i] = barrier;
-            }
-            batch.PipelineBarrier(barriers);
-            batch.Submit();
-        }
 
         private void DisposeImagesAndViews()
         {
@@ -559,7 +498,7 @@ namespace RockEngine.Vulkan
             _depthImageView.Dispose();
         }
 
-        public unsafe void CreateDepthResources()
+        public void CreateDepthResources()
         {
             var batch = _context.GraphicsSubmitContext.CreateBatch();
 
@@ -616,7 +555,7 @@ namespace RockEngine.Vulkan
 
         public override void LabelObject(string name) => _context.DebugUtils.SetDebugUtilsObjectName(_vkObject, ObjectType.SwapchainKhr, name);
 
-        protected override unsafe void Dispose(bool disposing)
+        protected override void Dispose(bool disposing)
         {
             if (_disposed)
             {
@@ -629,40 +568,6 @@ namespace RockEngine.Vulkan
             _khrSwapchain.DestroySwapchain(_context.Device, _vkObject, in VulkanContext.CustomAllocator<VkSwapchain>());
             _vkObject = default;
             _disposed = true;
-        }
-    }
-    public sealed class FrameData : IDisposable
-    {
-        public VkFence InFlightFence;
-        public VkSemaphore ImageAvailable;
-        public VkSemaphore RenderFinished;
-        public UploadBatch CurrentBatch;
-        public List<IDisposable> Resources = new();
-
-        public void Reset()
-        {
-            //Fence will be awaited in the flush operation
-
-
-            foreach (var resource in Resources)
-            {
-                resource.Dispose();
-            }
-
-            InFlightFence?.Reset();
-            Resources.Clear();
-        }
-
-        public void Dispose()
-        {
-            InFlightFence?.Dispose();
-            ImageAvailable?.Dispose();
-            RenderFinished?.Dispose();
-
-            foreach (var resource in Resources)
-            {
-                resource.Dispose();
-            }
         }
     }
 }

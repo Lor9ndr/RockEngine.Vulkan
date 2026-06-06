@@ -289,7 +289,6 @@ namespace RockEngine.Core.Assets
             {
                 data.SaveTo(stream);
             }
-
             var textureAsset = Create<TextureAsset>(new AssetPath(textureFolder, fileName));
             textureAsset.SetData(new TextureData
             {

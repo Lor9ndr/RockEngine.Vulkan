@@ -2,6 +2,7 @@
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using RockEngine.Core.Builders;
+using RockEngine.Core.CoreObjects;
 using RockEngine.Core.DI;
 using RockEngine.Core.Diagnostics;
 using RockEngine.Core.ECS.Components;
@@ -68,28 +69,29 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
 
         private void CreateShadowPipelines()
         {
+            var shaderManager = IoC.Container.GetInstance<ShaderManager>();
             // Directional/Spot light shadow pipeline (single layer)
-            using var dirVertShader = VkShaderModule.Create(_context, "Shaders/Shadow.vert.spv", ShaderStageFlags.VertexBit);
-            using var dirFragShader = VkShaderModule.Create(_context, "Shaders/Shadow.frag.spv", ShaderStageFlags.FragmentBit);
+            using var dirVertShader = new Shader(_context, shaderManager.GetShader("Shadow.vert"));
+            using var dirFragShader = new Shader(_context, shaderManager.GetShader("Shadow.frag"));
 
             using var dirPipelineBuilder = GraphicsPipelineBuilder.CreateDefault<ShadowPassStrategy>(_context, "ShadowDirectional", IoC.Container, [dirVertShader, dirFragShader]);
             ConfigureDirectionalPipeline(dirPipelineBuilder);
             _directionalShadowPipeline = _pipelineManager.Create(dirPipelineBuilder);
 
             // Point light shadow pipeline (with geometry shader)
-            var shaderManager = IoC.Container.GetInstance<ShaderManager>();
-            using var pointVertShader = VkShaderModule.Create(_context, shaderManager.GetShader("PointShadow.vert"), ShaderStageFlags.VertexBit);
-            using var pointGeomShader = VkShaderModule.Create(_context, shaderManager.GetShader("PointShadow.geom"), ShaderStageFlags.GeometryBit);
-            using var pointFragShader = VkShaderModule.Create(_context, shaderManager.GetShader("PointShadow.frag"), ShaderStageFlags.FragmentBit);
+
+            using var pointVertShader = new Shader(_context, shaderManager.GetShader("PointShadow.vert"));
+            using var pointGeomShader = new Shader(_context, shaderManager.GetShader("PointShadow.geom"));
+            using var pointFragShader = new Shader(_context, shaderManager.GetShader("PointShadow.frag"));
 
             using var pointPipelineBuilder = GraphicsPipelineBuilder.CreateDefault<ShadowPassStrategy>(_context, "ShadowPoint", IoC.Container, [pointVertShader, pointGeomShader, pointFragShader]);
             ConfigurePointPipeline(pointPipelineBuilder);
             _pointShadowPipeline = _pipelineManager.Create(pointPipelineBuilder);
 
             // CSM pipeline for directional lights
-            var csmVertShader = VkShaderModule.Create(_context, shaderManager.GetShader("CSMShadow.vert"), ShaderStageFlags.VertexBit);
-            var csmGeomShader = VkShaderModule.Create(_context, shaderManager.GetShader("CSMShadow.geom"), ShaderStageFlags.GeometryBit);
-            var csmFragShader = VkShaderModule.Create(_context, shaderManager.GetShader("CSMShadow.frag"), ShaderStageFlags.FragmentBit);
+            var csmVertShader = new Shader(_context, shaderManager.GetShader("CSMShadow.vert"));
+            var csmGeomShader = new Shader(_context, shaderManager.GetShader("CSMShadow.geom"));
+            var csmFragShader = new Shader(_context, shaderManager.GetShader("CSMShadow.frag"));
 
             using var csmPipelineBuilder = GraphicsPipelineBuilder.CreateDefault<ShadowPassStrategy>(_context, "ShadowCSM", IoC.Container, [csmVertShader, csmGeomShader, csmFragShader]);
             ConfigureCSMPipeline(csmPipelineBuilder);
@@ -158,9 +160,9 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
                 .WithRasterizer(new VulkanRasterizerBuilder()
                     .CullFace(CullModeFlags.BackBit)
                     .DepthBiasEnabe(true)
-                    .DepthBiasConstantFactor(1.25f)
+                    .DepthBiasConstantFactor(1.0f)
                     .DepthBiasClamp(0.0f)
-                    .DepthBiasSlopeFactor(1.75f))
+                    .DepthBiasSlopeFactor(1.0f))
                 .AddDepthStencilState(new PipelineDepthStencilStateCreateInfo
                 {
                     SType = StructureType.PipelineDepthStencilStateCreateInfo,

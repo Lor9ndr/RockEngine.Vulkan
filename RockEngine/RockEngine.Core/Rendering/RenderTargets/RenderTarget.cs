@@ -51,7 +51,10 @@ namespace RockEngine.Core.Rendering.RenderTargets
         {
 
         }
-
+        public virtual VkFrameBuffer GetFrameBuffer(uint frameIndex)
+        {
+            return Framebuffers[frameIndex];
+        }
 
         public void Dispose() => DisposeResources();
     }

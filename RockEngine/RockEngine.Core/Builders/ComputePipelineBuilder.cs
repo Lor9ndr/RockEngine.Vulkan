@@ -1,4 +1,5 @@
-﻿using RockEngine.Core.Rendering.Objects;
+﻿using RockEngine.Core.CoreObjects;
+using RockEngine.Core.Rendering.Objects;
 using RockEngine.Vulkan;
 using RockEngine.Vulkan.Builders;
 
@@ -10,8 +11,8 @@ namespace RockEngine.Core.Builders
     public class ComputePipelineBuilder : DisposableBuilder
     {
         private readonly VulkanContext _context;
-        private VkPipelineLayout _layout;
-        private VkShaderModule _shaderModule;
+        private CoreObjects.PipelineLayout _layout;
+        private Shader _shader;
         private readonly string _name;
         private readonly nint _pName;
 
@@ -22,13 +23,13 @@ namespace RockEngine.Core.Builders
             _pName = SilkMarshal.StringToPtr("main");
         }
 
-        public ComputePipelineBuilder WithShaderModule(VkShaderModule shader)
+        public ComputePipelineBuilder WithShaderModule(Shader shader)
         {
-            _shaderModule = shader;
+            _shader = shader;
             return this;
         }
 
-        public ComputePipelineBuilder WithLayout(VkPipelineLayout layout)
+        public ComputePipelineBuilder WithLayout(CoreObjects.PipelineLayout layout)
         {
             _layout = layout;
             return this;
@@ -36,13 +37,13 @@ namespace RockEngine.Core.Builders
 
         public unsafe RckPipeline Build() // Changed return type to RckPipeline
         {
-            _layout ??= VkPipelineLayout.Create(_context, _shaderModule);
+            _layout ??= new CoreObjects.PipelineLayout(_context, _shader);
 
             var stageInfo = new PipelineShaderStageCreateInfo
             {
                 SType = StructureType.PipelineShaderStageCreateInfo,
                 Stage = ShaderStageFlags.ComputeBit,
-                Module = _shaderModule,
+                Module = _shader.ShaderModule,
                 PName = (byte*)_pName
             };
 
@@ -50,7 +51,7 @@ namespace RockEngine.Core.Builders
             {
                 SType = StructureType.ComputePipelineCreateInfo,
                 Stage = stageInfo,
-                Layout = _layout
+                Layout = _layout.VkPipelineLayout
             };
 
             VulkanContext.Vk.CreateComputePipelines(
@@ -64,7 +65,7 @@ namespace RockEngine.Core.Builders
 
             _context.DebugUtils.SetDebugUtilsObjectName(pipeline, ObjectType.Pipeline, _name);
 
-            var vkPipeline = new VkPipeline(_context, _name, pipeline, _layout);
+            var vkPipeline = new VkPipeline(_context, _name, pipeline, _layout.VkPipelineLayout);
 
             return new RckPipeline(vkPipeline, _name, _layout);
         }
@@ -72,7 +73,6 @@ namespace RockEngine.Core.Builders
         protected override void Dispose(bool disposing)
         {
             SilkMarshal.Free(_pName);
-            _shaderModule?.Dispose();
         }
     }
 }

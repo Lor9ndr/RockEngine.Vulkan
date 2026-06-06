@@ -7,23 +7,16 @@ namespace RockEngine.Vulkan
         T VkObjectNative { get; }
         abstract void LabelObject(string name);
     }
-    public abstract class VkObject<T> : IVkObject<T>, IDisposable where T : struct
+    public abstract class VkObject<T>(in T vkObject) : IVkObject<T>, IDisposable where T : struct
     {
-        protected T _vkObject;
+        protected T _vkObject = vkObject;
         protected volatile bool _disposed;
         public T VkObjectNative => _vkObject;
         protected Vk Vk => VulkanContext.Vk;
 
         public bool IsDisposed { get => _disposed; protected set => _disposed = value; }
 
-
-        protected VkObject(in T vkObject)
-        {
-            _vkObject = vkObject;
-        }
-
         protected abstract void Dispose(bool disposing);
-
 
         // Override finalizer only if 'Dispose(bool disposing)' has code to free unmanaged resources
         ~VkObject()

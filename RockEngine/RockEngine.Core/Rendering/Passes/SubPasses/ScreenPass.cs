@@ -1,4 +1,6 @@
 ﻿using RockEngine.Core.Builders;
+using RockEngine.Core.CoreObjects;
+using RockEngine.Core.DI;
 using RockEngine.Core.Diagnostics;
 using RockEngine.Core.ECS.Components;
 using RockEngine.Core.Rendering.Managers;
@@ -73,12 +75,13 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
         }
         public void Initilize()
         {
+            var shaderManager = IoC.Container.GetInstance<IShaderManager>();
             var renderPass = _renderPassManager.GetRenderPass<SwapchainPassStrategy>() ?? throw new Exception($"Unable to get renderPass of {nameof(SwapchainPassStrategy)}");
 
-            var vertShader = VkShaderModule.Create(_context, "Shaders/screen.vert.spv", ShaderStageFlags.VertexBit);
-            var fragShader = VkShaderModule.Create(_context, "Shaders/screen.frag.spv", ShaderStageFlags.FragmentBit);
+            using var vertShader =  new Shader(_context, shaderManager.GetShader("screen.vert"));
+            using var fragShader = new Shader(_context, shaderManager.GetShader("screen.frag"));
 
-            var pipelineLayout = VkPipelineLayout.Create(_context, vertShader, fragShader);
+            var pipelineLayout = new CoreObjects.PipelineLayout(_context, vertShader, fragShader);
 
             using var pipelineBuilder = new GraphicsPipelineBuilder(_context, "Screen")
                 .WithShaderModule(vertShader)

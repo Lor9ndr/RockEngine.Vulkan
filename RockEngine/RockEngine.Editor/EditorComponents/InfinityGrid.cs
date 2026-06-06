@@ -4,12 +4,14 @@ using MessagePack;
 using RockEngine.Core;
 using RockEngine.Core.Assets;
 using RockEngine.Core.Builders;
+using RockEngine.Core.CoreObjects;
 using RockEngine.Core.DI;
 using RockEngine.Core.ECS;
 using RockEngine.Core.ECS.Components;
 using RockEngine.Core.Helpers;
 using RockEngine.Core.Rendering;
 using RockEngine.Core.Rendering.Buffers;
+using RockEngine.Core.Rendering.Managers;
 using RockEngine.Core.Rendering.Materials;
 using RockEngine.Core.Rendering.Objects;
 using RockEngine.Core.Rendering.Passes.SubPasses;
@@ -108,10 +110,11 @@ namespace RockEngine.Editor.EditorComponents
             var (vertices, indices) = GenerateQuadGeometry();
 
             _material = new Material("InfinityGrid");
+            var shaderManager = IoC.Container.GetInstance<ShaderManager>();
 
             // Create grid material
-            var vertShader = await VkShaderModule.CreateAsync(renderer.Context, "Shaders/Grid.vert.spv", ShaderStageFlags.VertexBit).ConfigureAwait(false);
-            var fragShader = await VkShaderModule.CreateAsync(renderer.Context, "Shaders/Grid.frag.spv", ShaderStageFlags.FragmentBit).ConfigureAwait(false);
+            using var vertShader = new Shader(renderer.Context, shaderManager.GetShader("Grid.vert"));
+            using var fragShader = new Shader(renderer.Context, shaderManager.GetShader("Grid.frag"));
 
             var pipeline = CreateGridPipeline(renderer, vertShader, fragShader);
             _material.AddPass(PostLightPass.Name, new MaterialPass(pipeline));
@@ -136,7 +139,7 @@ namespace RockEngine.Editor.EditorComponents
                 new MaterialProvider(_material));
         }
 
-        private RckPipeline CreateGridPipeline(WorldRenderer renderer, VkShaderModule vertShader, VkShaderModule fragShader)
+        private RckPipeline CreateGridPipeline(WorldRenderer renderer, Shader vertShader, Shader fragShader)
         {
             using var pipelineBuilder = GraphicsPipelineBuilder.CreateDefault(VulkanContext.GetCurrent(), "InfinityGrid", renderer.RenderPass, [vertShader, fragShader]);
 

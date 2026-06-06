@@ -134,7 +134,7 @@ namespace RockEngine.Vulkan
             var newMemory = AllocateAndBindMemory(_context, newImage, MemoryPropertyFlags.DeviceLocalBit);
 
             UpdateResources(newImage, newMemory);
-            TransitionToDefaultLayout();
+            //TransitionToDefaultLayout();
 
             NotifyResize();
         }

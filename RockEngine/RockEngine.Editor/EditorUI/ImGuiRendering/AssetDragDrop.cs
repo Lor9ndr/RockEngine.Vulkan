@@ -15,7 +15,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
 
         public static bool BeginAssetDragDropSource<T>(Guid assetID, string displayName) where T : IAsset
         {
-            if (ImGui.BeginDragDropSource(ImGuiDragDropFlags.None))
+            if (ImGui.BeginDragDropSource())
             {
                 string payloadType = GetPayloadType<T>();
                 nint ptr = Marshal.AllocHGlobal(Marshal.SizeOf(assetID));
@@ -33,7 +33,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
 
         public static bool BeginAssetDragDropSource(Guid assetID, string displayName, Type assetType)
         {
-            if (ImGui.BeginDragDropSource(ImGuiDragDropFlags.None))
+            if (ImGui.BeginDragDropSource())
             {
                 string payloadType = GetPayloadType(assetType);
                 nint ptr = Marshal.AllocHGlobal(Marshal.SizeOf(assetID));

@@ -1,4 +1,5 @@
 ﻿using System.Buffers;
+using RockEngine.Core.CoreObjects;
 using RockEngine.Vulkan;
 using RockEngine.Vulkan.Builders;
 using Silk.NET.Vulkan;
@@ -17,13 +18,13 @@ namespace RockEngine.Core.Builders
         /// <param name="module"></param>
         /// <param name="entryPoint"></param>
         /// <returns>chaining</returns>
-        public unsafe PipelineStageBuilder AddStage(ShaderStageFlags stage, VkShaderModule module, byte* entryPoint)
+        public unsafe PipelineStageBuilder AddStage(ShaderStageFlags stage, Shader module, byte* entryPoint)
         {
             _stages.Add(new PipelineShaderStageCreateInfo
             {
                 SType = StructureType.PipelineShaderStageCreateInfo,
                 Stage = stage,
-                Module = module,
+                Module = module.ShaderModule,
                 PName = entryPoint
             });
             return this; // Return the builder for chaining

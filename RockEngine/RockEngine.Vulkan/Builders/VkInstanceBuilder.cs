@@ -1,5 +1,6 @@
 ﻿using System.Runtime.InteropServices;
 using System.Text;
+using NLog;
 using Silk.NET.Vulkan;
 
 namespace RockEngine.Vulkan.Builders
@@ -12,6 +13,7 @@ namespace RockEngine.Vulkan.Builders
         private string[]? _validationLayers;
         private DebugUtilsMessengerCreateInfoEXT? _debugUtilsMessengerCreateInfoEXT;
 
+        private static readonly Logger _logger = LogManager.GetCurrentClassLogger();
 
         public VkInstanceBuilder UseValidationLayers(string[] validationLayers)
         {
@@ -40,6 +42,7 @@ namespace RockEngine.Vulkan.Builders
             if (_enableValidationLayers && !CheckValidationLayerSupport())
             {
                 _enableValidationLayers = false;
+                _logger.Warn("Validation layers requested, but not available! Skipping without validation layers");
                 //throw new Exception("Validation layers requested, but not available!");
             }
             byte** validationLayerNames = null;
@@ -67,12 +70,13 @@ namespace RockEngine.Vulkan.Builders
                     instanceInfo.EnabledExtensionCount, "VK_EXT_debug_utils", Encoding.UTF8);
                 instanceInfo.EnabledExtensionCount += 1; // Update count to reflect the new size
                 instanceInfo.PpEnabledExtensionNames = newExtensions;
+                if (_debugUtilsMessengerCreateInfoEXT.HasValue)
+                {
+                    var value = _debugUtilsMessengerCreateInfoEXT.Value;
+                    instanceInfo.PNext = &value;
+                }
             }
-            if (_debugUtilsMessengerCreateInfoEXT.HasValue)
-            {
-                var value = _debugUtilsMessengerCreateInfoEXT.Value;
-                instanceInfo.PNext = &value;
-            }
+            
             VkInstance instanceWrapper;
 
             VulkanContext.Vk.CreateInstance(in instanceInfo, in VulkanContext.CustomAllocator<VkInstance>(), out Instance instance)
@@ -83,7 +87,7 @@ namespace RockEngine.Vulkan.Builders
             {
                 FreeUnmanagedArray(validationLayerNames, _validationLayers!.Length);
             }
-            if (_debugUtilsMessengerCreateInfoEXT.HasValue)
+            if (_enableValidationLayers && _debugUtilsMessengerCreateInfoEXT.HasValue)
             {
                 var rslt = CreateDebugUtilsMessenger(instanceWrapper, _debugUtilsMessengerCreateInfoEXT.Value, out var messenger);
                 if (rslt != Result.Success)

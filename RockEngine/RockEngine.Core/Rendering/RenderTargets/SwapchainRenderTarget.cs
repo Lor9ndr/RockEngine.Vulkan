@@ -7,13 +7,15 @@ namespace RockEngine.Core.Rendering.RenderTargets
 {
     public class SwapchainRenderTarget : RenderTarget, IDisposable
     {
+        private readonly GraphicsContext _graphicsContext;
         private VkSwapchain _swapchain;
 
         public VkSwapchain Swapchain => _swapchain;
 
-        public SwapchainRenderTarget(VulkanContext context, VkSwapchain swapchain)
+        public SwapchainRenderTarget(VulkanContext context, GraphicsContext graphicsContext, VkSwapchain swapchain)
             : base(context, swapchain.Extent, swapchain.Format, ImageUsageFlags.ColorAttachmentBit)
         {
+            _graphicsContext = graphicsContext;
             _swapchain = swapchain;
             _swapchain.OnSwapchainRecreate += HandleSwapchainRecreated;
         }
@@ -39,7 +41,6 @@ namespace RockEngine.Core.Rendering.RenderTargets
 
         private void HandleSwapchainRecreated(VkSwapchain newSwapchain)
         {
-
             // Update to new swapchain and resubscribe
             _swapchain = newSwapchain;
 
@@ -65,6 +66,13 @@ namespace RockEngine.Core.Rendering.RenderTargets
             // Recreate resources
             CreateFramebuffers();
             UpdateViewportAndScissor();
+        }
+        public override VkFrameBuffer GetFrameBuffer(uint frameIndex)
+        {
+            uint imageIndex = _graphicsContext.GetAcquiredImageIndex(_swapchain, frameIndex);
+            /*Debug.Assert(imageIndex < (uint)Framebuffers.Length, $"Invalid image index {imageIndex} for frame {frameIndex}");
+            Debug.Assert(Framebuffers[imageIndex] != null, $"Framebuffer {imageIndex} is null");*/
+            return Framebuffers[imageIndex];
         }
 
         private void UpdateViewportAndScissor()

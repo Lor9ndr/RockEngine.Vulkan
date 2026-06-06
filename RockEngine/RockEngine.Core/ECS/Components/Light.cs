@@ -158,7 +158,7 @@ namespace RockEngine.Core.ECS.Components
         public delegate Matrix4x4[] CalculateShadowMatrixStrategy();
 
         [IgnoreMember]
-        public CalculateShadowMatrixStrategy? GetShadowMatrix { get; set; }
+        public CalculateShadowMatrixStrategy GetShadowMatrix { get; set; }
 
         [IgnoreMember]
 

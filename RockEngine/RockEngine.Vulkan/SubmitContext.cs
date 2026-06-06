@@ -255,7 +255,7 @@ namespace RockEngine.Vulkan
                     semaphores.AddRange(batch.WaitSemaphores.Keys);
                 }
                 // Create operation that will handle cleanup when fence passes
-                var operation = new SubmitOperation(this, fence,
+                var operation = new SubmitOperation(this, fence!,
                [.. _batchList],
                [.. _disposableList],
                semaphores);
@@ -345,9 +345,9 @@ namespace RockEngine.Vulkan
             }
             finally
             {
-                signalPool.Return(signalSemaphores);
-                waitPool.Return(waitSemaphores);
-                stagePool.Return(waitStages);
+                signalPool.Return(signalSemaphores, true);
+                waitPool.Return(waitSemaphores, true);
+                stagePool.Return(waitStages , true);
             }
         }
 

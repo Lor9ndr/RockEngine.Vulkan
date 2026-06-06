@@ -46,6 +46,8 @@ namespace RockEngine.Core.DI
             container.Register<ShadowManager>(Lifestyle.Scoped);
             container.Register<PhysicsManager>(Lifestyle.Scoped);
             container.Register<IServiceProvider, Container>(Lifestyle.Singleton);
+            container.Register<ComputeShaderManager>(Lifestyle.Scoped);
+            container.Register<IBLManager>(Lifestyle.Scoped);
 
 
             // Factory for IWindow
@@ -102,7 +104,7 @@ namespace RockEngine.Core.DI
 
             var poolSizes = new[]
             {
-                new DescriptorPoolSize(DescriptorType.CombinedImageSampler, 300),
+                new DescriptorPoolSize(DescriptorType.CombinedImageSampler, 1024),
                 new DescriptorPoolSize(DescriptorType.UniformBuffer, 200),
                 new DescriptorPoolSize(DescriptorType.StorageBuffer, 200),
                 new DescriptorPoolSize(DescriptorType.InputAttachment, 20),
@@ -134,6 +136,8 @@ namespace RockEngine.Core.DI
                 var context = container.GetInstance<VulkanContext>();
                 return new GlobalGeometryBuffer(context);
             }, Lifestyle.Singleton);
+
+
             var registry = new FeatureRegistry();
             container.RegisterInstance<FeatureRegistry>(registry);
             container.Register<IShaderPreprocessor, MainShaderPreprocessor>();

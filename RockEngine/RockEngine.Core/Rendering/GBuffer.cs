@@ -122,8 +122,7 @@ namespace RockEngine.Core.Rendering
                 ColorTextures[i] = new Texture2D(
                     _context,
                     ColorAttachments[i].Image,
-                    Samplers[i],
-                null);
+                    Samplers[i]);
             }
         }
 

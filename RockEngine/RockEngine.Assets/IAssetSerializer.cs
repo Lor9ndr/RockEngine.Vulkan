@@ -19,7 +19,7 @@
     {
         private Type? _assetType;
 
-        public Guid AssetId { get; set; }
+        public Guid AssetID { get; set; }
         public string AssetTypeName { get; set; } = string.Empty;
         public string Name { get; set; } = string.Empty;
         public DateTime Created { get; set; }
@@ -43,7 +43,7 @@
 
         public AssetHeader(Guid assetId, string assetTypeName, string name, DateTime created, DateTime modified, int version, string format)
         {
-            AssetId = assetId;
+            AssetID = assetId;
             AssetTypeName = assetTypeName;
             Name = name;
             Created = created;

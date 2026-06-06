@@ -81,26 +81,33 @@ namespace RockEngine.Core.Assets
 
         private static async Task<SKBitmap[]> LoadBitmapsAsync(TextureData data)
         {
-            var bitmaps = new List<SKBitmap>();
+            var bitmaps = new SKBitmap[data.FilePaths.Count];
+            
+            var tasks = new Task[data.FilePaths.Count];
 
-            foreach (var filePath in data.FilePaths)
+            for (var i = 0; i < data.FilePaths.Count; i++)
             {
+                var filePath = data.FilePaths[i];
+                
                 if (!File.Exists(filePath))
                 {
                     throw new FileNotFoundException($"Texture file not found: {filePath}");
                 }
-
-                var bytes = await File.ReadAllBytesAsync(filePath).ConfigureAwait(false);
-                var bitmap = SKBitmap.Decode(bytes) ?? throw new InvalidOperationException($"Failed to decode texture: {filePath}");
-                if (data.FlipVertically)
+                int currentIndex = i;
+                tasks[i] = Task.Run(async () =>
                 {
-                    bitmap = FlipBitmapVertically(bitmap);
-                }
+                    var bytes = await File.ReadAllBytesAsync(filePath).ConfigureAwait(false);
+                    var bitmap = SKBitmap.Decode(bytes) ?? throw new InvalidOperationException($"Failed to decode texture: {filePath}");
+                    if (data.FlipVertically)
+                    {
+                        bitmap = FlipBitmapVertically(bitmap);
+                    }
 
-                bitmaps.Add(bitmap);
+                    bitmaps[currentIndex] = bitmap;
+                });
             }
-
-            return bitmaps.ToArray();
+            await Task.WhenAll(tasks).ConfigureAwait(false);
+            return bitmaps;
         }
 
         private static SKBitmap FlipBitmapVertically(SKBitmap bitmap)

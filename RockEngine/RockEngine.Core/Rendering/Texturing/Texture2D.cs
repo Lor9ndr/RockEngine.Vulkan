@@ -22,7 +22,7 @@ namespace RockEngine.Core.Rendering.Texturing
         public uint Width => _image.Extent.Width;
         public uint Height => _image.Extent.Height;
 
-        public Texture2D(VulkanContext context, VkImage image, VkSampler sampler, string? sourcePath = null)
+        public Texture2D(VulkanContext context, VkImage image, VkSampler sampler)
             : base(context, image, sampler) { }
 
         // Unified creation method using TextureData
@@ -107,7 +107,7 @@ namespace RockEngine.Core.Rendering.Texturing
         private static async Task<Texture2D> CreateFromFileAsync(VulkanContext context, TextureData textureData,
             CancellationToken cancellationToken)
         {
-            using var bitmap = SKBitmap.Decode(textureData.FilePaths[0]) ?? throw new InvalidOperationException("Failed to decode image");
+            using var bitmap = SKBitmap.Decode(textureData.FilePaths[0]) ?? throw new InvalidOperationException($"Failed to decode image at path: {textureData.FilePaths[0]}");
             textureData.Width = (uint)bitmap.Width;
             textureData.Height = (uint)bitmap.Height;
             textureData.Format = TextureData.FromSKFormat(bitmap.ColorType, textureData.ConvertToSrgb); // also set format if missing

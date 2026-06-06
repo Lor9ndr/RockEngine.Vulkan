@@ -5,6 +5,7 @@ using System.Runtime.InteropServices;
 using ImGuiNET;
 using RockEngine.Core;
 using RockEngine.Core.Builders;
+using RockEngine.Core.CoreObjects;
 using RockEngine.Core.Diagnostics;
 using RockEngine.Core.Rendering;
 using RockEngine.Core.Rendering.Managers;
@@ -26,11 +27,11 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
 {
     public class ImGuiController : IDisposable
     {
-        private const string ImguiRenderPass = "ImGuiPass";
+        private const string _imguiRenderPass = "ImGuiPass";
         private readonly VulkanContext _vkContext;
         private readonly GraphicsContext _graphicsContext;
         private readonly InputManager _input;
-        private VkPipelineLayout _pipelineLayout;
+        private Core.CoreObjects.PipelineLayout _pipelineLayout;
         private VkDescriptorSetLayout _descriptorSetLayout;
         private readonly VkBuffer[] _vertexBuffers;
         private readonly VkBuffer[] _indexBuffers;
@@ -45,14 +46,14 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
         private readonly Dictionary<Texture, TextureBinding> _textureBindings = new Dictionary<Texture, TextureBinding>();
         private readonly List<Texture> _texturesToRemove = new List<Texture>();
         private readonly Lock _textureCacheLock = new Lock();
-        private bool _disposed;
         private readonly RenderTarget _uiRenderTarget;
         private readonly GlobalTextureArray _globalTextureArray;
+        private readonly ShaderManager _shaderManager;
         private ImFontPtr _iconFont;
         private bool _initialized;
 
         private uint _currentFrame = 0;
-        private ImGuiViewportManager _viewportManager;
+        private readonly ImGuiViewportManager _viewportManager;
         private nint _allocatedMonitorsData;
         private Vector2D<int> _lastMousePosition;
 
@@ -72,6 +73,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
                                WorldRenderer renderer,
                                IWindow mainWindow,
                                GlobalTextureArray textureArray,
+                               ShaderManager shaderManager,
                                Application application)
         {
             _vkContext = vkContext;
@@ -80,6 +82,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
             _input = inputContext;
             _uiRenderTarget = renderer.SwapchainTarget;
             _globalTextureArray = textureArray;
+            _shaderManager = shaderManager;
             _renderPass = _uiRenderTarget.RenderPass;
 
             // Create and set ImGui context
@@ -521,10 +524,6 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
         
         public unsafe void RenderImDrawData(ImDrawDataPtr drawData, SwapchainRenderTarget renderTarget, UploadBatch uploadBatch, uint frameIndex, RckImGuiViewport imguiViewport)
         {
-            if (drawData.CmdListsCount == 0)
-            {
-                return;
-            }
             renderTarget.PrepareForRender(uploadBatch);
             using (PerformanceTracer.BeginSection("IMGUI", uploadBatch, frameIndex))
             {
@@ -537,7 +536,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
                         {
                             SType = StructureType.RenderPassBeginInfo,
                             RenderPass = _renderPass,
-                            Framebuffer = renderTarget.Framebuffers[frameIndex],
+                            Framebuffer = renderTarget.GetFrameBuffer(frameIndex),
                             RenderArea = new Rect2D { Extent = renderTarget.Size },
                             ClearValueCount = (uint)renderTarget.ClearValues.Length,
                             PClearValues = pClearValue
@@ -621,8 +620,8 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
                 Span<float> scale = [2.0f / drawData.DisplaySize.X, 2.0f / drawData.DisplaySize.Y];
                 Span<float> translate = [-1.0f - drawData.DisplayPos.X * scale[0], -1.0f - drawData.DisplayPos.Y * scale[1]];
 
-                uploadBatch.PushConstants(_pipelineLayout, ShaderStageFlags.VertexBit, sizeof(float) * 0, sizeof(float) * 2, scale);
-                uploadBatch.PushConstants(_pipelineLayout, ShaderStageFlags.VertexBit, sizeof(float) * 2, sizeof(float) * 2, translate);
+                uploadBatch.PushConstants(_pipelineLayout.VkPipelineLayout, ShaderStageFlags.VertexBit, sizeof(float) * 0, sizeof(float) * 2, scale);
+                uploadBatch.PushConstants(_pipelineLayout.VkPipelineLayout, ShaderStageFlags.VertexBit, sizeof(float) * 2, sizeof(float) * 2, translate);
 
 
                 // Render command lists
@@ -977,7 +976,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
         private void BindTextureForDraw(UploadBatch uploadBatch, IntPtr textureId)
         {
             uint index = GetTextureIndexFromId(textureId);
-            uploadBatch.PushConstants(_pipelineLayout, ShaderStageFlags.FragmentBit, 16, sizeof(uint), new Span<uint>(ref index));
+            uploadBatch.PushConstants(_pipelineLayout.VkPipelineLayout, ShaderStageFlags.FragmentBit, 16, sizeof(uint), new Span<uint>(ref index));
         }
 
         private uint GetTextureIndexFromId(IntPtr textureId)
@@ -1011,8 +1010,8 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
         private void CreateDeviceObjects()
         {
             // Create shaders
-            var vertShaderModule = VkShaderModule.Create(_vkContext, "Shaders/Imgui.vert.spv", ShaderStageFlags.VertexBit);
-            var fragShaderModule = VkShaderModule.Create(_vkContext, "Shaders/Imgui.frag.spv", ShaderStageFlags.FragmentBit);
+            using var vertShaderModule = new Shader(_vkContext, _shaderManager.GetShader("Imgui.vert"));
+            using var fragShaderModule = new Shader(_vkContext, _shaderManager.GetShader("Imgui.frag"));
 
 
             SetPipeline(vertShaderModule, fragShaderModule);
@@ -1020,24 +1019,28 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
         }
 
 
-        private unsafe void SetPipeline(VkShaderModule vertShaderModule, VkShaderModule fragShaderModule)
+        private unsafe void SetPipeline(Shader vertShaderModule, Shader fragShaderModule)
         {
-            _pipelineLayout = VkPipelineLayout.Create(_vkContext, vertShaderModule, fragShaderModule);
-            _descriptorSetLayout = _pipelineLayout.DescriptorSetLayouts[0];
+            _pipelineLayout = new Core.CoreObjects.PipelineLayout(_vkContext, vertShaderModule, fragShaderModule);
+            _descriptorSetLayout = _pipelineLayout.VkPipelineLayout.DescriptorSetLayouts[0];
 
-            var binding_desc = new VertexInputBindingDescription();
-            binding_desc.Stride = (uint)Unsafe.SizeOf<ImDrawVert>();
-            binding_desc.InputRate = VertexInputRate.Vertex;
+            var binding_desc = new VertexInputBindingDescription
+            {
+                Stride = (uint)Unsafe.SizeOf<ImDrawVert>(),
+                InputRate = VertexInputRate.Vertex
+            };
 
-            var color_attachment = new PipelineColorBlendAttachmentState();
-            color_attachment.BlendEnable = new Silk.NET.Core.Bool32(true);
-            color_attachment.SrcColorBlendFactor = BlendFactor.SrcAlpha;
-            color_attachment.DstColorBlendFactor = BlendFactor.OneMinusSrcAlpha;
-            color_attachment.ColorBlendOp = BlendOp.Add;
-            color_attachment.SrcAlphaBlendFactor = BlendFactor.One;
-            color_attachment.DstAlphaBlendFactor = BlendFactor.OneMinusSrcAlpha;
-            color_attachment.AlphaBlendOp = BlendOp.Add;
-            color_attachment.ColorWriteMask = ColorComponentFlags.RBit | ColorComponentFlags.GBit | ColorComponentFlags.BBit | ColorComponentFlags.ABit;
+            var color_attachment = new PipelineColorBlendAttachmentState
+            {
+                BlendEnable = new Silk.NET.Core.Bool32(true),
+                SrcColorBlendFactor = BlendFactor.SrcAlpha,
+                DstColorBlendFactor = BlendFactor.OneMinusSrcAlpha,
+                ColorBlendOp = BlendOp.Add,
+                SrcAlphaBlendFactor = BlendFactor.One,
+                DstAlphaBlendFactor = BlendFactor.OneMinusSrcAlpha,
+                AlphaBlendOp = BlendOp.Add,
+                ColorWriteMask = ColorComponentFlags.RBit | ColorComponentFlags.GBit | ColorComponentFlags.BBit | ColorComponentFlags.ABit
+            };
 
             using GraphicsPipelineBuilder pipelineBuilder = new GraphicsPipelineBuilder(_vkContext, "Imgui")
                  .WithShaderModule(vertShaderModule)

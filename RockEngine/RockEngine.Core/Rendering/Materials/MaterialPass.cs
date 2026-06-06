@@ -94,10 +94,10 @@ namespace RockEngine.Core.Rendering.Materials
             };
         }
 
-        private void BuildPushConstantBlocks(VkPipelineLayout layout)
+        private void BuildPushConstantBlocks(CoreObjects.PipelineLayout layout)
         {
             // layout.PushConstantRanges should be extended to include members
-            foreach (var blockInfo in layout.PushConstantRanges)
+            foreach (var blockInfo in layout.VkPipelineLayout.PushConstantRanges)
             {
                 var block = new PushConstantBlock
                 {
@@ -140,7 +140,7 @@ namespace RockEngine.Core.Rendering.Materials
 
         private bool IsBindingCompatible(ResourceBinding binding)
         {
-            return Pipeline.Layout.DescriptorSetLayouts.TryGetValue(binding.SetLocation, out var setLayout) &&
+            return Pipeline.Layout.VkPipelineLayout.DescriptorSetLayouts.TryGetValue(binding.SetLocation, out var setLayout) &&
                    setLayout.Bindings.AsValueEnumerable().Any(s =>
                    {
                        return binding.BindingLocation.Contains(s.Binding) &&
@@ -208,7 +208,7 @@ namespace RockEngine.Core.Rendering.Materials
                 fixed (byte* dataPtr = block.Data)
                 {
                     batch.PushConstants(
-                        Pipeline.Layout,
+                        Pipeline.Layout.VkPipelineLayout,
                         block.StageFlags,
                         block.Offset,
                         block.Size,

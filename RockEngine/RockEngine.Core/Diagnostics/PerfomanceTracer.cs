@@ -9,6 +9,7 @@ using Silk.NET.Vulkan;
 
 namespace RockEngine.Core.Diagnostics
 {
+    [DebuggerStepThrough]
     public sealed class PerformanceTracer : IDisposable
     {
         private static readonly Logger _logger = LogManager.GetCurrentClassLogger();
@@ -380,6 +381,7 @@ namespace RockEngine.Core.Diagnostics
             }
         }
 
+        [DebuggerStepThrough]
         public struct CpuSectionTracker : IDisposable
         {
             private readonly int _scopeId;

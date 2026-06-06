@@ -47,10 +47,10 @@ namespace RockEngine.Core.Synchronization
         /// </summary>
         public static void WaitOnMainThread(Task task)
         {
-            var ctx = Current ?? throw new InvalidOperationException("MainThreadSynchronizationContext is not installed.");
+            var ctx = Current;
 
             // Fast path: already completed
-            if (task.IsCompleted)
+            if (task.IsCompleted || ctx is null)
             {
                 task.GetAwaiter().GetResult(); // re-throws exceptions
                 return;
@@ -59,7 +59,7 @@ namespace RockEngine.Core.Synchronization
             // Slow path: pump the queue until the task finishes
             while (!task.IsCompleted)
             {
-                ctx.ProcessAllQueuedWork();
+                ctx?.ProcessAllQueuedWork();
                 // Yield the thread for a tiny moment – avoids 100% CPU spin
                 Thread.Yield();
             }

@@ -81,7 +81,7 @@ namespace RockEngine.Core.Rendering.RenderTargets
 
             Framebuffers = new VkFrameBuffer[_context.MaxFramesPerFlight];
 
-            var attachments = _gBuffer.ColorAttachments.Concat([_gBuffer.DepthAttachment, OutputTexture.Image.GetMipView(0)]).ToArray();
+            var attachments = _gBuffer.ColorAttachments.Concat([_gBuffer.DepthAttachment, OutputTexture.Image.GetView(0)]).ToArray();
             Debug.Assert(attachments.All(a => a.Image.Extent.Width == Size.Width &&
                                      a.Image.Extent.Height == Size.Height),
                 "Attachment size mismatch before framebuffer creation");

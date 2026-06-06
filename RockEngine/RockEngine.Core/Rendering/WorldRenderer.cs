@@ -1,6 +1,7 @@
 ﻿using System.Numerics;
 using NLog;
 using RockEngine.Core.Builders;
+using RockEngine.Core.DI;
 using RockEngine.Core.Diagnostics;
 using RockEngine.Core.ECS.Components;
 using RockEngine.Core.Rendering.Commands;
@@ -75,6 +76,7 @@ namespace RockEngine.Core.Rendering
                         LightManager lightManager,
                         CameraManager cameraManager,
                         ShadowManager shadowManager,
+                        IBLManager iblManager,
                         GlobalUbo globalUbo)
         {
             _context = context;
@@ -89,17 +91,13 @@ namespace RockEngine.Core.Rendering
             _lightManager = lightManager;
             _indirectCommandManager = indirectCommandManager;
             _renderPassManager = renderPassManager;
+            _iblManager = iblManager;
 
             if (GraphicsEngine.MainSwapchain is not null)
             {
-                SwapchainTarget = new SwapchainRenderTarget(context, graphicsEngine.MainSwapchain);
+                SwapchainTarget = new SwapchainRenderTarget(context, graphicsEngine, graphicsEngine.MainSwapchain);
             }
 
-            _iblManager = new IBLManager(
-           context,
-           new ComputeShaderManager(context, _pipelineManager),
-           _bindingManager
-            );
         }
 
         internal async Task InitializeAsync()
@@ -185,10 +183,11 @@ namespace RockEngine.Core.Rendering
             _prevFrameIndex = FrameIndex;
         }
 
-        private unsafe VkPipeline CreateSkyboxPipeline()
+        private unsafe RckPipeline CreateSkyboxPipeline()
         {
-            var vertShader = VkShaderModule.Create(_context, "Shaders/Skybox.vert.spv", ShaderStageFlags.VertexBit);
-            var fragShader = VkShaderModule.Create(_context, "Shaders/Skybox.frag.spv", ShaderStageFlags.FragmentBit);
+            var shaderManager = IoC.Container.GetInstance<ShaderManager>();
+            using var vertShader = new CoreObjects.Shader(_context, shaderManager.GetShader("Skybox.vert"));
+            using var fragShader = new CoreObjects.Shader(_context, shaderManager.GetShader("Skybox.frag"));
             var colorBlendAttachments = new PipelineColorBlendAttachmentState[1]
               {
                     new PipelineColorBlendAttachmentState

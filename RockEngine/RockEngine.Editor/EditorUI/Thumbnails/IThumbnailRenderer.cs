@@ -1,6 +1,7 @@
 ﻿using RockEngine.Assets;
 using RockEngine.Core.Assets;
 using RockEngine.Core.Builders;
+using RockEngine.Core.CoreObjects;
 using RockEngine.Core.Rendering.Managers;
 using RockEngine.Core.Rendering.Texturing;
 using RockEngine.Vulkan;
@@ -25,11 +26,11 @@ namespace RockEngine.Editor.EditorUI.Thumbnails
             _pipelineManager = pipelineManager;
             _bindingManager = bindingManager;
             var builder = new ComputePipelineBuilder(_context, "ComputeCopyImage");
-            var shader = VkShaderModule.Create(_context, shaderManager.GetShader("ComputeCopyImage.comp"), ShaderStageFlags.ComputeBit);
+
+            var shader = new Shader(_context, shaderManager.GetShader("ComputeCopyImage.comp"));
             builder.WithShaderModule(shader);
             pipelineManager.Create(builder);
         }
-
         
         public async Task<Thumbnail> RenderThumbnailAsync(IAsset asset, int size = 128, CancellationToken cancellationToken = default)
         {

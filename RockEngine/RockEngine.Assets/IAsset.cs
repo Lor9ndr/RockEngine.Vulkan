@@ -1,4 +1,6 @@
-﻿namespace RockEngine.Assets
+﻿using System.Runtime.CompilerServices;
+
+namespace RockEngine.Assets
 {
     public interface IAsset : IPolymorphicSerializable
     {

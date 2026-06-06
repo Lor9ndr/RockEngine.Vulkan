@@ -16,12 +16,14 @@ namespace RockEngine.Editor.Layers
         private readonly ImGuiController _controller;
         private readonly WorldRenderer _renderer;
         private readonly Application _app;
+        private ImguiRenderCommand _command;
 
         public ImGuiLayer(ImGuiController controller, WorldRenderer renderer, Application app)
         {
             _controller = controller;
             _renderer = renderer;
             _app = app;
+            _command = new ImguiRenderCommand(controller.Render);
         }
 
         public Task OnAttach()
@@ -35,29 +37,29 @@ namespace RockEngine.Editor.Layers
 
         public void OnImGuiRender(UploadBatch batch)
         {
-            ImGui.DockSpaceOverViewport(0, ImGui.GetMainViewport(), ImGuiDockNodeFlags.PassthruCentralNode);
+            ImGui.DockSpaceOverViewport(0, ImGui.GetWindowViewport(), ImGuiDockNodeFlags.PassthruCentralNode);
         }
 
         public void OnRender(UploadBatch batch)
         {
+            _renderer.AddCommand(_command);
         }
-        
+
         public void OnUpdate()
         {
-            
-                _controller.Update(_renderer);
-                if (ImGui.GetIO().KeyCtrl && ImGui.IsKeyPressed(ImGuiKey.Z))
-                {
-                    UndoRedoService.Instance.Undo();
-                }
-                if (ImGui.GetIO().KeyCtrl && ImGui.IsKeyPressed(ImGuiKey.Y))
-                {
-                    UndoRedoService.Instance.Redo();
-                }
-                _renderer.AddCommand(new ImguiRenderCommand(_controller.Render));
+
+            _controller.Update(_renderer);
+            if (ImGui.GetIO().KeyCtrl && ImGui.IsKeyPressed(ImGuiKey.Z))
+            {
+                UndoRedoService.Instance.Undo();
+            }
+            if (ImGui.GetIO().KeyCtrl && ImGui.IsKeyPressed(ImGuiKey.Y))
+            {
+                UndoRedoService.Instance.Redo();
+            }
 
             //}, null);
-            
+
         }
     }
 }

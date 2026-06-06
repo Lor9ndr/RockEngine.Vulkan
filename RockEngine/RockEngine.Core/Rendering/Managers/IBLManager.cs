@@ -36,15 +36,15 @@ namespace RockEngine.Core.Rendering.Managers
         {
             // Create all compute pipelines
             _irradiancePipeline = await _computeManager.CreateComputePipelineAsync(
-                "Shaders/irradiance.comp.spv",
+                "irradiance.comp",
                 "IrradianceGen").ConfigureAwait(false);
 
             _prefilterPipeline = await _computeManager.CreateComputePipelineAsync(
-                "Shaders/prefilter.comp.spv",
+                "prefilter.comp",
                 "PrefilterGen").ConfigureAwait(false);
 
             _brdfPipeline = await _computeManager.CreateComputePipelineAsync(
-                "Shaders/brdf.comp.spv",
+                "brdf.comp",
                 "BRDFGen").ConfigureAwait(false);
         }
 

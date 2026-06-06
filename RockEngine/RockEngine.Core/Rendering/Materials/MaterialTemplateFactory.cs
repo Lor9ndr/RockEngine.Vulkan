@@ -30,7 +30,7 @@ namespace RockEngine.Core.Rendering.Materials
             ArgumentException.ThrowIfNullOrEmpty(pipelineName, nameof(pipelineName));
             ArgumentNullException.ThrowIfNull(pipeline, nameof(pipeline));
 
-            var reflection = pipeline.Layout.MergedReflectionData;
+            var reflection = pipeline.Layout.VkPipelineLayout.MergedReflectionData;
             var template = new MaterialTemplate(pipelineName, reflection);
 
             // Use the subpass metadata from the RckPipeline

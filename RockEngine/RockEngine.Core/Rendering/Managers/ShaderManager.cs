@@ -7,11 +7,24 @@ using Silk.NET.Vulkan;
 
 namespace RockEngine.Core.Rendering.Managers
 {
+
+    public class ShaderCompileResult : IShaderCompileResult
+    {
+        public required string ShaderPath { get; set; }
+        public required ShaderMetadata Metadata { get; set; }
+    }
+
+    public class SpirVShader : ISpirVShader
+    {
+        public required byte[] ShaderData { get; set; }
+        public required ShaderMetadata Metadata { get; set; }
+    }
+
     public class ShaderManager : IShaderManager
     {
         private readonly string _basePath;
         private readonly string _includePath;
-        private readonly ConcurrentDictionary<string, byte[]> _compiledShaders = new();
+        private readonly ConcurrentDictionary<string, ISpirVShader> _compiledShaders = new();
         private readonly FeatureRegistry _featureRegistry;
         private readonly IShaderPreprocessor _shaderPreProcessor;
 
@@ -36,7 +49,7 @@ namespace RockEngine.Core.Rendering.Managers
         public async Task CompileAllShadersAsync()
         {
             var defines = _featureRegistry?.GetAllPreprocessorDefines().ToList() ?? new List<string>();
-            var tasks = new List<Task>();
+            var tasks = new List<Task<IShaderCompileResult>>();
             var files = Directory.EnumerateFiles(_basePath, "*", SearchOption.AllDirectories)
                 .Where(f => f.EndsWith(".vert") || f.EndsWith(".geom") ||
                            f.EndsWith(".frag") || f.EndsWith(".comp"))
@@ -47,33 +60,34 @@ namespace RockEngine.Core.Rendering.Managers
                 tasks.Add(CompileShaderAsync(file, defines));
             }
 
-            await Task.WhenAll(tasks).ConfigureAwait(false);
+           var results = await Task.WhenAll(tasks).ConfigureAwait(false);
 
             // Load all compiled .spv files
-            var spvFiles = Directory.EnumerateFiles(_basePath, "*.spv", SearchOption.AllDirectories);
-            foreach (var file in spvFiles)
+
+            foreach (var compileResult in results)
             {
-                var shaderName = Path.GetFileName(file);
+                var shaderName = Path.GetFileName(compileResult.ShaderPath);
                 shaderName = shaderName[..^4]; // Remove ".spv"
 
-                var shaderNameWithoutExt = Path.GetFileNameWithoutExtension(shaderName);
-                var shaderBytes = await File.ReadAllBytesAsync(file).ConfigureAwait(false);
-
-                _compiledShaders[shaderName] = shaderBytes;
-                if (!_compiledShaders.ContainsKey(shaderNameWithoutExt))
+                var shaderBytes = await File.ReadAllBytesAsync(compileResult.ShaderPath).ConfigureAwait(false);
+                var shader = new SpirVShader()
                 {
-                    _compiledShaders[shaderNameWithoutExt] = shaderBytes;
-                }
+                    ShaderData = shaderBytes,
+                    Metadata = compileResult.Metadata
+                };
+
+                _compiledShaders[shaderName] = shader;
+                
             }
         }
 
-        public Task<string> CompileShaderAsync(string path)
+        public Task<IShaderCompileResult> CompileShaderAsync(string path)
         {
             var defines = _featureRegistry?.GetAllPreprocessorDefines().ToList() ?? new List<string>();
             return CompileShaderAsync(path, defines);
         }
 
-        public async Task<string> CompileShaderByStringAsync(string code, ShaderStageFlags stage)
+        public async Task<IShaderCompileResult> CompileShaderByStringAsync(string code, ShaderStageFlags stage)
         {
             // Create a unique temporary file path with .glsl extension
             string tempDir = Path.GetTempPath();
@@ -107,7 +121,7 @@ namespace RockEngine.Core.Rendering.Managers
         /// <summary>
         /// Compiles a single shader file with include processing and preprocessor defines.
         /// </summary>
-        private async Task<string> CompileShaderAsync(string path, List<string> defines)
+        private async Task<IShaderCompileResult> CompileShaderAsync(string path, List<string> defines)
         {
             var compiledPath = $"{path}.spv";
             var extension = Path.GetExtension(path); // .comp, .vert, .frag, etc.
@@ -117,8 +131,8 @@ namespace RockEngine.Core.Rendering.Managers
 
             try
             {
-                var processedSource = await PreprocessShader(path).ConfigureAwait(false);
-                await File.WriteAllTextAsync(tempFile, processedSource).ConfigureAwait(false);
+                var preprocessResult = await PreprocessShader(path).ConfigureAwait(false);
+                await File.WriteAllTextAsync(tempFile, preprocessResult.ProcessedSource).ConfigureAwait(false);
 
                 var args = BuildCompilerArgs(compiledPath, tempFile, extension, defines);
 
@@ -173,6 +187,16 @@ namespace RockEngine.Core.Rendering.Managers
                 {
                     Console.WriteLine($"Shader compilation warnings for {Path.GetFileName(path)}:\n{errorBuilder}");
                 }
+                return new ShaderCompileResult()
+                { 
+                     ShaderPath = compiledPath,
+                     Metadata = preprocessResult.Metadata
+                };
+
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine(e.Message);
             }
             finally
             {
@@ -185,8 +209,12 @@ namespace RockEngine.Core.Rendering.Managers
                     catch { }
                 }
             }
+            return new ShaderCompileResult()
+            {
+                 Metadata = null,
+                 ShaderPath = compiledPath
+            };
 
-            return compiledPath;
         }
 
         private string BuildCompilerArgs(string outputPath, string inputPath, string extension, List<string> defines)
@@ -209,7 +237,7 @@ namespace RockEngine.Core.Rendering.Managers
             return args.ToString();
         }
 
-        private async Task<string> PreprocessShader(string path)
+        private async Task<ShaderPreProcessResult> PreprocessShader(string path)
         {
             if (!File.Exists(path))
             {
@@ -223,11 +251,11 @@ namespace RockEngine.Core.Rendering.Managers
             // Let the preprocessor handle includes, material annotations, and defines
             var result = await _shaderPreProcessor.PreprocessAsync(source, path, defines, extensions).ConfigureAwait(false);
 
-            return result.ProcessedSource;
+            return result;
         }
 
 
-        public byte[] GetShader(string name, bool removeAfterGet = true)
+        public ISpirVShader GetShader(string name, bool removeAfterGet = false)
         {
             if (_compiledShaders.TryGetValue(name, out var bytes))
             {
@@ -239,20 +267,8 @@ namespace RockEngine.Core.Rendering.Managers
                 return bytes;
             }
 
-            var nameWithoutExtension = Path.GetFileNameWithoutExtension(name);
-            if (_compiledShaders.TryGetValue(nameWithoutExtension, out bytes))
-            {
-                if (removeAfterGet)
-                {
-                    _compiledShaders.Remove(nameWithoutExtension, out _);
-                }
-
-                return bytes;
-            }
-
             var key = _compiledShaders.Keys.FirstOrDefault(k =>
-                string.Equals(k, name, StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(Path.GetFileNameWithoutExtension(k), nameWithoutExtension, StringComparison.OrdinalIgnoreCase));
+                string.Equals(k, name, StringComparison.OrdinalIgnoreCase));
 
             if (key != null && _compiledShaders.TryGetValue(key, out bytes))
             {
@@ -268,26 +284,15 @@ namespace RockEngine.Core.Rendering.Managers
             throw new KeyNotFoundException($"Shader '{name}' not found. Available shaders: {availableShaders}");
         }
 
-        public byte[] GetShaderByPath(string path, bool removeAfterGet = true)
+        public ISpirVShader GetShaderByPath(string path, bool removeAfterGet = true)
         {
             var fileName = Path.GetFileName(path);
-            var fileNameWithoutExt = Path.GetFileNameWithoutExtension(fileName);
 
             if (_compiledShaders.TryGetValue(fileName, out var bytes))
             {
                 if (removeAfterGet)
                 {
                     _compiledShaders.Remove(fileName, out _);
-                }
-
-                return bytes;
-            }
-
-            if (_compiledShaders.TryGetValue(fileNameWithoutExt, out bytes))
-            {
-                if (removeAfterGet)
-                {
-                    _compiledShaders.Remove(fileNameWithoutExt, out _);
                 }
 
                 return bytes;
@@ -306,9 +311,9 @@ namespace RockEngine.Core.Rendering.Managers
             return _compiledShaders.Keys.OrderBy(k => k).ToList();
         }
 
-        public Dictionary<string, byte[]> GetAllShaders()
+        public Dictionary<string, ISpirVShader> GetAllShaders()
         {
-            return new Dictionary<string, byte[]>(_compiledShaders);
+            return new Dictionary<string, ISpirVShader>(_compiledShaders);
         }
     }
 }

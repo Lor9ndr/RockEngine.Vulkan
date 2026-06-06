@@ -4,6 +4,7 @@ using RockEngine.Assets;
 using RockEngine.Core;
 using RockEngine.Core.Assets;
 using RockEngine.Core.Builders;
+using RockEngine.Core.CoreObjects;
 using RockEngine.Core.DI;
 using RockEngine.Core.ECS;
 using RockEngine.Core.ECS.Components;
@@ -301,8 +302,8 @@ namespace RockEngine.Editor.Layers
         private void CreateSolidPipeline()
         {
             var shaderManager = IoC.Container.GetInstance<IShaderManager>();
-            var vertShader = VkShaderModule.Create(_context, shaderManager.GetShader("Solid.vert"), ShaderStageFlags.VertexBit);
-            var fragShader = VkShaderModule.Create(_context, shaderManager.GetShader("Solid.frag"), ShaderStageFlags.FragmentBit);
+            var vertShader = new Shader(_context, shaderManager.GetShader("Solid.vert"));
+            var fragShader = new Shader(_context, shaderManager.GetShader("Solid.frag"));
 
             var colorBlendAttachments = new PipelineColorBlendAttachmentState[1]
             {

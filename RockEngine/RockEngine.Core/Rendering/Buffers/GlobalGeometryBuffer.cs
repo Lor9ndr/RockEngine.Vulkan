@@ -197,7 +197,7 @@ namespace RockEngine.Core.Rendering.Buffers
             // or just in test we have to await for submittion after the uploading mesh.
             // THEN it is incorrect implementation and not understandable for user that we have to await transfer context
             // make it sync and write comments of requirements to submit context or rewrite method to return mesh pending allocation then or smth.
-            return await _context.TransferSubmitContext.Submit().AsTask()
+            return await _context.TransferSubmitContext.Submit().AsTask()            
                 .ContinueWith((_) =>
             {
                 return new MeshAllocation(meshID,

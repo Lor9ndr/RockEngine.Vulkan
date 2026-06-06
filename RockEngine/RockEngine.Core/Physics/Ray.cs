@@ -26,6 +26,11 @@ namespace RockEngine.Core.Physics
             t = Vector3.Dot(planeNormal, planePoint - ray.Origin) / denom;
             return t >= 0;
         }
+
+        public override string? ToString()
+        {
+            return $"Origin: {Origin}; Direction:{Direction}";
+        }
     }
 
 }

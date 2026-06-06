@@ -7,27 +7,21 @@ using RockEngine.Editor.Layers;
 
 namespace RockEngine.Editor
 {
-    public class EditorContext : ApplicationContextBase
+    public class EditorContext(EditorStateManager stateManager,
+                               PhysicsManager physicsManager,
+                               LayerStack layerStack,
+                               ImGuiLayer imGuiLayer,
+                               ProjectSelectionLayer projectLayer,
+                               World world,
+                               WorldRenderer worldRenderer) : ApplicationContextBase
     {
-        private readonly EditorStateManager _stateManager;
-        private readonly PhysicsManager _physicsManager;
-        private readonly LayerStack _layerStack;
-        private readonly ImGuiLayer _imGuiLayer;
-        private readonly ProjectSelectionLayer _projectLayer;
-        private readonly World _world;
-        private readonly WorldRenderer _worldRenderer;
-
-        public EditorContext(EditorStateManager stateManager, PhysicsManager physicsManager,
-                             LayerStack layerStack, ImGuiLayer imGuiLayer, ProjectSelectionLayer projectLayer, World world, WorldRenderer worldRenderer)
-        {
-            _stateManager = stateManager;
-            _physicsManager = physicsManager;
-            _layerStack = layerStack;
-            _imGuiLayer = imGuiLayer;
-            _projectLayer = projectLayer;
-            _world = world;
-            _worldRenderer = worldRenderer;
-        }
+        private readonly EditorStateManager _stateManager = stateManager;
+        private readonly PhysicsManager _physicsManager = physicsManager;
+        private readonly LayerStack _layerStack = layerStack;
+        private readonly ImGuiLayer _imGuiLayer = imGuiLayer;
+        private readonly ProjectSelectionLayer _projectLayer = projectLayer;
+        private readonly World _world = world;
+        private readonly WorldRenderer _worldRenderer = worldRenderer;
 
         /// <inheritdoc/>
         public override async Task InitializeAsync(GraphicsContext graphics, WorldRenderer renderer, World world)

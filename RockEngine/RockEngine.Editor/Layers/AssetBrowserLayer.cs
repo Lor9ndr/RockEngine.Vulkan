@@ -1,6 +1,7 @@
 ﻿using System.Collections;
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
 using ImGuiNET;
 using NLog;
@@ -65,6 +66,8 @@ namespace RockEngine.Editor.Layers
             public bool IsAssetFile { get; set; }
             public bool IsLoading { get; set; }
             public bool IsLoaded { get; set; }
+
+            [MemberNotNullWhen(true, nameof(IsAssetFile))]
             public AssetHeader? AssetHeader { get; set; } // Changed from AssetMetadata to AssetHeader
             public IAsset? Asset { get; set; }
             public FileInfo? FileInfo { get; set; }
@@ -386,7 +389,7 @@ namespace RockEngine.Editor.Layers
         private void DrawContentArea()
         {
             float contentHeight = ImGui.GetContentRegionAvail().Y - ImGui.GetFrameHeightWithSpacing(); // reserve space for status bar
-            ImGui.BeginChild("##AssetBrowserContent", new Vector2(0, contentHeight), ImGuiChildFlags.Borders, ImGuiWindowFlags.AlwaysVerticalScrollbar);
+            ImGui.BeginChild("##AssetBrowserContent", new Vector2(0, contentHeight), ImGuiChildFlags.Border, ImGuiWindowFlags.AlwaysVerticalScrollbar);
 
             if (!Directory.Exists(_basePath))
             {
@@ -533,7 +536,11 @@ namespace RockEngine.Editor.Layers
 
                     ImGui.TableNextColumn();
                     ImGui.PushID(item.UniqueId);
+
+
                     DrawGridItem(item);
+
+
                     ImGui.PopID();
                 }
                 ImGui.EndTable();
@@ -544,6 +551,7 @@ namespace RockEngine.Editor.Layers
 
         private void DrawGridItem(FileSystemItem item)
         {
+            ImGui.BeginGroup();
             bool isSelected = _selectedItems.Contains(item.Path);
             bool isHovered = _currentHoveredItem == item.Path;
 
@@ -562,11 +570,10 @@ namespace RockEngine.Editor.Layers
 
             drawList.AddRectFilled(cardMin, cardMax, bgColor, 6.0f);
             drawList.AddRect(cardMin, cardMax, ImGui.GetColorU32(ImGuiCol.Border), 6.0f);
-
+            ImGui.InvisibleButton("##card_hitbox", cardSize);
             // Thumbnail area
             var thumbPos = cursorPos + new Vector2(10, 10);
             var thumbSize = new Vector2(_thumbnailSize, _thumbnailSize);
-
             // Decide what to draw
             if (item.IsLoading || item.IsThumbnailLoading)
             {
@@ -585,8 +592,32 @@ namespace RockEngine.Editor.Layers
                 var textPos = thumbPos + (thumbSize - textSize) * 0.5f;
                 drawList.AddText(textPos, ImGui.GetColorU32(ImGuiCol.Text), iconText);
             }
+            if (ImGui.IsMouseDragging(ImGuiMouseButton.Left))
+            {
+                if (item.IsAssetFile && item.AssetHeader is not null)
+                {
+                    if (AssetDragDrop.BeginDragDropSource(item.AssetHeader.AssetID, item.AssetHeader.Name))
+                    {
 
+                    }
+                    if (AssetDragDrop.AcceptAssetDrop(out var id))
+                    {
 
+                    }
+                }
+                else
+                {
+                    if (AssetDragDrop.BeginDragDropSource(item.Path, item.Name))
+                    {
+
+                    }
+                    if (AssetDragDrop.AcceptFolderDrop(out var path))
+                    {
+
+                    }
+
+                }
+            }
 
             // If this is a texture asset and thumbnail not yet loaded, start loading
             if (item.IsAssetFile && item.AssetHeader?.AssetType == typeof(TextureAsset) && item.Thumbnail == null && !item.IsThumbnailLoading)
@@ -633,7 +664,8 @@ namespace RockEngine.Editor.Layers
             // Reserve the exact card size using a dummy placed at the top of the cell
             ImGui.SetCursorScreenPos(cursorPos);
             ImGui.Dummy(cardSize);   // this advances cursor to cardMax.Y automatically
-
+            ImGui.EndGroup();
+            
             // Interaction (uses the same rect as the dummy)
             if (ImGui.IsMouseHoveringRect(cardMin, cardMax))
             {
@@ -660,11 +692,8 @@ namespace RockEngine.Editor.Layers
                     _selectedItems.Add(item.Path);
                     ImGui.OpenPopup("##ItemContextMenu");
                 }
-                if (ImGui.IsMouseDragging(ImGuiMouseButton.Left) && isSelected)
-                {
-                    HandleItemDragDrop(item);
-                }
             }
+            
 
             // Context menu
             if (ImGui.BeginPopup("##ItemContextMenu"))
@@ -681,7 +710,7 @@ namespace RockEngine.Editor.Layers
         }
         private void StartThumbnailLoadingCoroutine(FileSystemItem item)
         {
-            var assetId = item.AssetHeader!.AssetId;
+            var assetId = item.AssetHeader!.AssetID;
 
             item.IsThumbnailLoading = true;
 
@@ -739,7 +768,7 @@ namespace RockEngine.Editor.Layers
                     if (item.IsAssetFile && item.AssetHeader != null)
                     {
                         ImGui.Text($"Type: {GetSimpleTypeName(item.AssetHeader.AssetTypeName)}");
-                        ImGui.Text($"ID: {item.AssetHeader.AssetId}");
+                        ImGui.Text($"ID: {item.AssetHeader.AssetID}");
                     }
                     else
                     {
@@ -1010,7 +1039,7 @@ namespace RockEngine.Editor.Layers
                 ImGui.Separator();
                 if (ImGui.MenuItem("Copy Asset ID"))
                 {
-                    ImGui.SetClipboardText(item.AssetHeader.AssetId.ToString());
+                    ImGui.SetClipboardText(item.AssetHeader.AssetID.ToString());
                 }
             }
         }
@@ -1348,6 +1377,7 @@ namespace RockEngine.Editor.Layers
         private void HandleItemDragDrop(FileSystemItem item)
         {
 
+
         }
 
         private void OpenFileWithDefaultApplication(string filePath)
@@ -1542,7 +1572,7 @@ namespace RockEngine.Editor.Layers
             {
                 cachedItem.AssetHeader = new AssetHeader
                 {
-                    AssetId = args.Asset.ID,
+                    AssetID = args.Asset.ID,
                     AssetTypeName = args.Asset.GetType().AssemblyQualifiedName,
                     Name = args.Asset.Name,
                     Created = args.Asset.Created,

@@ -18,11 +18,11 @@ namespace RockEngine.Core.Rendering.Objects
         public PipelineType Type { get; }
         public RckRenderPass? RenderPass { get; } // Null for compute pipelines
         public SubPassMetadata SubpassMetadata { get; } // Default for compute pipelines
-        public VkPipelineLayout Layout { get; }
+        public CoreObjects.PipelineLayout Layout { get; }
         private bool _disposed = false;
 
         // Graphics pipeline constructor
-        public RckPipeline(VkPipeline pipeline, string name, RckRenderPass renderPass, SubPassMetadata subpassMetadata, VkPipelineLayout layout)
+        public RckPipeline(VkPipeline pipeline, string name, RckRenderPass renderPass, SubPassMetadata subpassMetadata, CoreObjects.PipelineLayout layout)
         {
             VkPipeline = pipeline ?? throw new ArgumentNullException(nameof(pipeline));
             Name = name ?? throw new ArgumentNullException(nameof(name));
@@ -33,7 +33,7 @@ namespace RockEngine.Core.Rendering.Objects
         }
 
         // Compute pipeline constructor
-        public RckPipeline(VkPipeline pipeline, string name, VkPipelineLayout layout)
+        public RckPipeline(VkPipeline pipeline, string name, CoreObjects.PipelineLayout layout)
         {
             VkPipeline = pipeline ?? throw new ArgumentNullException(nameof(pipeline));
             Name = name ?? throw new ArgumentNullException(nameof(name));

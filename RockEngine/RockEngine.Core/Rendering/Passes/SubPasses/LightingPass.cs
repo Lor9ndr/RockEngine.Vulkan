@@ -1,4 +1,5 @@
 ﻿using RockEngine.Core.Builders;
+using RockEngine.Core.CoreObjects;
 using RockEngine.Core.DI;
 using RockEngine.Core.Diagnostics;
 using RockEngine.Core.ECS.Components;
@@ -55,10 +56,10 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
         public void Initilize()
         {
             var shaderManager = IoC.Container.GetInstance<IShaderManager>();
-            var vertShader = VkShaderModule.Create(_context, shaderManager.GetShader("deferred_lighting.vert"), ShaderStageFlags.VertexBit);
-            var fragShader = VkShaderModule.Create(_context, shaderManager.GetShader("deferred_lighting.frag"), ShaderStageFlags.FragmentBit);
+            var vertShader = new Shader(_context, shaderManager.GetShader("deferred_lighting.vert"));
+            var fragShader = new Shader(_context, shaderManager.GetShader("deferred_lighting.frag"));
 
-            var pipelineLayout = VkPipelineLayout.Create(_context, vertShader, fragShader);
+            var pipelineLayout = new CoreObjects.PipelineLayout(_context, vertShader, fragShader);
 
             var colorBlendAttachments = new PipelineColorBlendAttachmentState[1];
             colorBlendAttachments[0] = new PipelineColorBlendAttachmentState

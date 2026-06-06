@@ -128,21 +128,30 @@ namespace RockEngine.Core.Assets
                 int i = 0;
                 foreach (var texture in Data.Textures)
                 {
-                    var textureRef = texture.Value;
-                    var textureAsset = await textureRef.GetAssetAsync().ConfigureAwait(false);
-                    if (textureAsset?.Texture != null)
+                    try
                     {
-                        _loadedTextures[textureRef.AssetID] = textureAsset.Texture;
-                        MaterialInstance.BindResource(new TextureBinding(
-                            MaterialInfo.TEXTURE_SET, (uint)i, 0, 1,
-                            ImageLayout.ShaderReadOnlyOptimal, textureAsset.Texture));
+                        var textureRef = texture.Value;
+                        var textureAsset = await textureRef.GetAssetAsync().ConfigureAwait(false);
+                        if (textureAsset?.Texture != null)
+                        {
+                            _loadedTextures[textureRef.AssetID] = textureAsset.Texture;
+                            MaterialInstance.BindResource(new TextureBinding(
+                                MaterialInfo.TEXTURE_SET, (uint)i, 0, 1,
+                                ImageLayout.ShaderReadOnlyOptimal, textureAsset.Texture));
+                        }
+                        i++;
                     }
-                    i++;
+                    catch (Exception ex)
+                    {
+                        _logger.Error(ex, "Failed to load texture {AssetID}", texture.Value.AssetID);
+                    }
+
                 }
 
                 return;
             }
 
+            var globalArray = IoC.Container.GetInstance<GlobalTextureArray>();
 
             foreach (var pass in MaterialInstance.Passes.Values)
             {
@@ -159,14 +168,21 @@ namespace RockEngine.Core.Assets
                     var textures = new List<Texture>();
                     foreach (var slot in slotNames)
                     {
+
                         if (Data.Textures.TryGetValue(slot, out var texRef))
                         {
-                            var texAsset = await texRef.GetAssetAsync().ConfigureAwait(false);
-                            await texAsset.LoadGpuResourcesAsync().ConfigureAwait(false);
-                            textures.Add(texAsset.Texture);
-                            var globalArray = IoC.Container.GetInstance<GlobalTextureArray>();
-                            var index = globalArray.AllocateIndex(texAsset.Texture);
-                            pass.PushConstant($"{slot}Index", index);
+                            try
+                            {
+                                var texAsset = await texRef.GetAssetAsync().ConfigureAwait(false);
+                                await texAsset.LoadGpuResourcesAsync().ConfigureAwait(false);
+                                textures.Add(texAsset.Texture);
+                                var index = globalArray.AllocateIndex(texAsset.Texture);
+                                pass.PushConstant($"{slot}Index", index);
+                            }
+                            catch (Exception ex)
+                            {
+                                _logger.Error(ex, "Failed to load texture {AssetID}", texRef.AssetID);
+                            }
 
                         }
                         else
@@ -175,6 +191,7 @@ namespace RockEngine.Core.Assets
                             // HAVE TO HANDLE SOMEHOW
                             textures.Add(null);
                         }
+
                     }
 
                     // Set push constant indices for each slot

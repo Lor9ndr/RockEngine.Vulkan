@@ -367,14 +367,16 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.MultiWindowing
                     var surface = SurfaceHandler.CreateSurface(viewport.Window, _vkContext);
                     var swapchain = VkSwapchain.Create(_vkContext, surface);
 
-                    var renderTarget = new SwapchainRenderTarget(_vkContext, swapchain);
+                    var renderTarget = new SwapchainRenderTarget(_vkContext, _graphicsContext, swapchain);
                     renderTarget.Initialize(_renderPass);
 
                     // Add to graphics context
                     _graphicsContext.AddSwapchain(swapchain);
+                    //swapchain.TransitionSwapchainImagesToPresentLayout();
 
                     viewport.RenderTarget = renderTarget;
                     vp.RendererUserData = GCHandle.ToIntPtr(GCHandle.Alloc(renderTarget));
+                    vp.PlatformWindowCreated = true;
                 }
                 catch (Exception ex)
                 {
@@ -434,10 +436,10 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.MultiWindowing
                 try
                 {
 
-                    if (renderContext.Swapchain.CurrentImageIndex == uint.MaxValue)
+                   /* if (renderContext.Swapchain.CurrentImageIndex == uint.MaxValue)
                     {
                         return;
-                    }
+                    }*/
                     var gcHandle = GCHandle.FromIntPtr(renderArg);
                     var vpImgui = (ViewportImguiStruct)gcHandle.Target;
                     // Get current image index from swapchain

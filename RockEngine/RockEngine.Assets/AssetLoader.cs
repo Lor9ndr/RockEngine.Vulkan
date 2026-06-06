@@ -60,7 +60,7 @@ namespace RockEngine.Assets
                     using var stream = File.OpenRead(file);
                     var header = await _serializer.DeserializeHeaderAsync(stream).ConfigureAwait(false);
                     var relativePath = Path.GetRelativePath(_basePath, file);
-                    _idToPathMap[header.AssetId] = relativePath;
+                    _idToPathMap[header.AssetID] = relativePath;
                 }
                 catch (Exception ex)
                 {

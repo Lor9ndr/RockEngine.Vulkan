@@ -3,12 +3,14 @@ using System.Runtime.InteropServices;
 using RockEngine.Core;
 using RockEngine.Core.Assets;
 using RockEngine.Core.Builders;
+using RockEngine.Core.CoreObjects;
 using RockEngine.Core.DI;
 using RockEngine.Core.ECS;
 using RockEngine.Core.ECS.Components;
 using RockEngine.Core.Helpers;
 using RockEngine.Core.Physics;
 using RockEngine.Core.Rendering;
+using RockEngine.Core.Rendering.Managers;
 using RockEngine.Core.Rendering.Materials;
 using RockEngine.Core.Rendering.Objects;
 using RockEngine.Core.Rendering.Passes.SubPasses;
@@ -207,15 +209,15 @@ namespace RockEngine.Editor.EditorComponents
         /// </summary>
         private void UpdateGizmoGeometry()
         {
-            var (vertices, indices) = GenerateGizmoGeometry(_currentMode);
-            var meshProvider = new MeshProvider<GizmoVertex>(new MeshData<GizmoVertex>(vertices, indices));
+            var meshData = GenerateGizmoGeometry(_currentMode);
+            var meshProvider = new MeshProvider<GizmoVertex>(meshData);
             _meshRenderer.SetProviders(meshProvider, new MaterialProvider(_gizmoMaterial));
         }
 
         /// <summary>
         /// Dispatches geometry generation to the appropriate method for the current mode.
         /// </summary>
-        private (GizmoVertex[] vertices, uint[] indices) GenerateGizmoGeometry(GizmoType mode)
+        private MeshData<GizmoVertex> GenerateGizmoGeometry(GizmoType mode)
         {
             return mode switch
             {
@@ -229,7 +231,7 @@ namespace RockEngine.Editor.EditorComponents
         /// <summary>
         /// Generates a translation gizmo: three coloured arrows and a centre cube.
         /// </summary>
-        private (GizmoVertex[] vertices, uint[] indices) GenerateTranslateGizmo()
+        private MeshData<GizmoVertex> GenerateTranslateGizmo()
         {
             var vertices = new List<GizmoVertex>();
             var indices = new List<uint>();
@@ -245,20 +247,20 @@ namespace RockEngine.Editor.EditorComponents
             GenerateArrow(vertices, indices, Vector3.UnitZ, _colorZ, axisLength, arrowHeadSize, shaftRadius, ref currentIndex, GizmoAxis.Z);
             GenerateCube(vertices, indices, Vector3.Zero, _colorCenter, centerSize, ref currentIndex, GizmoAxis.Uniform);
 
-            return (vertices.ToArray(), indices.ToArray());
+            return new MeshData<GizmoVertex>(vertices.ToArray(), indices.ToArray());
         }
 
         /// <summary>
         /// Generates a rotation gizmo: three coloured rings and a centre sphere.
         /// </summary>
-        private (GizmoVertex[] vertices, uint[] indices) GenerateRotateGizmo()
+        private MeshData<GizmoVertex> GenerateRotateGizmo()
         {
             var vertices = new List<GizmoVertex>();
             var indices = new List<uint>();
             uint currentIndex = 0;
 
             float radius = 1.0f;
-            float thickness = 0.5f;
+            float thickness = 0.08f;
             int segments = 48;
 
             GenerateRing(vertices, indices, Vector3.UnitX, _colorX, radius, thickness, segments, ref currentIndex, GizmoAxis.X);
@@ -266,13 +268,13 @@ namespace RockEngine.Editor.EditorComponents
             GenerateRing(vertices, indices, Vector3.UnitZ, _colorZ, radius, thickness, segments, ref currentIndex, GizmoAxis.Z);
             GenerateSphere(vertices, indices, Vector3.Zero, _colorCenter, 0.1f, 3, ref currentIndex, GizmoAxis.Uniform);
 
-            return (vertices.ToArray(), indices.ToArray());
+            return new MeshData<GizmoVertex>(vertices.ToArray(), indices.ToArray());
         }
 
         /// <summary>
         /// Generates a scale gizmo: three coloured lines with end cubes and a centre cube.
         /// </summary>
-        private (GizmoVertex[] vertices, uint[] indices) GenerateScaleGizmo()
+        private MeshData<GizmoVertex> GenerateScaleGizmo()
         {
             var vertices = new List<GizmoVertex>();
             var indices = new List<uint>();
@@ -287,8 +289,8 @@ namespace RockEngine.Editor.EditorComponents
             GenerateScaleHandle(vertices, indices, Vector3.UnitY, _colorY, axisLength, cubeSize, shaftRadius, ref currentIndex, GizmoAxis.Y);
             GenerateScaleHandle(vertices, indices, Vector3.UnitZ, _colorZ, axisLength, cubeSize, shaftRadius, ref currentIndex, GizmoAxis.Z);
             GenerateCube(vertices, indices, Vector3.Zero, _colorUniform, centerSize, ref currentIndex, GizmoAxis.Uniform);
-
-            return (vertices.ToArray(), indices.ToArray());
+            MeshData<GizmoVertex> mesh = new MeshData<GizmoVertex>(vertices.ToArray(), indices.ToArray());
+            return mesh;
         }
 
         // --- Geometry helpers (unchanged) ---
@@ -318,7 +320,7 @@ namespace RockEngine.Editor.EditorComponents
             GenerateCube(vertices, indices, cubePos, color, cubeSize, ref currentIndex, axis);
         }
 
-        private void GenerateRing(List<GizmoVertex> vertices, List<uint> indices, Vector3 normal, Vector4 color, float radius, float thickness, int segments, ref uint currentIndex, GizmoAxis axis)
+        private static void GenerateRing(List<GizmoVertex> vertices, List<uint> indices, Vector3 normal, Vector4 color, float radius, float thickness, int segments, ref uint currentIndex, GizmoAxis axis)
         {
             Vector3 right, up;
             if (normal == Vector3.UnitX)
@@ -368,7 +370,7 @@ namespace RockEngine.Editor.EditorComponents
             }
         }
 
-        private void GenerateCylinder(List<GizmoVertex> vertices, List<uint> indices, Vector3 start, Vector3 end, float radius, int sides, Vector4 color, ref uint currentIndex, GizmoAxis axis)
+        private static void GenerateCylinder(List<GizmoVertex> vertices, List<uint> indices, Vector3 start, Vector3 end, float radius, int sides, Vector4 color, ref uint currentIndex, GizmoAxis axis)
         {
             Vector3 direction = Vector3.Normalize(end - start);
             float length = Vector3.Distance(start, end);
@@ -414,7 +416,7 @@ namespace RockEngine.Editor.EditorComponents
             }
         }
 
-        private void GenerateCone(List<GizmoVertex> vertices, List<uint> indices, Vector3 baseCenter, Vector3 tip, float baseRadius, int sides, Vector4 color, ref uint currentIndex, GizmoAxis axis)
+        private static void GenerateCone(List<GizmoVertex> vertices, List<uint> indices, Vector3 baseCenter, Vector3 tip, float baseRadius, int sides, Vector4 color, ref uint currentIndex, GizmoAxis axis)
         {
             Vector3 direction = Vector3.Normalize(tip - baseCenter);
 
@@ -456,7 +458,7 @@ namespace RockEngine.Editor.EditorComponents
             }
         }
 
-        private void GenerateCube(List<GizmoVertex> vertices, List<uint> indices, Vector3 center, Vector4 color, float size, ref uint currentIndex, GizmoAxis axis)
+        private static void GenerateCube(List<GizmoVertex> vertices, List<uint> indices, Vector3 center, Vector4 color, float size, ref uint currentIndex, GizmoAxis axis)
         {
             float halfSize = size * 0.5f;
             Vector3[] corners = new Vector3[]
@@ -504,7 +506,7 @@ namespace RockEngine.Editor.EditorComponents
             currentIndex += 36;
         }
 
-        private void GenerateSphere(List<GizmoVertex> vertices, List<uint> indices, Vector3 center, Vector4 color, float radius, int subdivisions, ref uint currentIndex, GizmoAxis axis)
+        private static void GenerateSphere(List<GizmoVertex> vertices, List<uint> indices, Vector3 center, Vector4 color, float radius, int subdivisions, ref uint currentIndex, GizmoAxis axis)
         {
             float t = (1.0f + MathF.Sqrt(5.0f)) / 2.0f;
 
@@ -539,15 +541,17 @@ namespace RockEngine.Editor.EditorComponents
 
         private async Task<Material> CreateGizmoMaterial(WorldRenderer renderer)
         {
+            var shaderManager = IoC.Container.GetInstance<ShaderManager>();
             var material = new Material("Gizmo");
-            var vertShader = await VkShaderModule.CreateAsync(renderer.Context, "Shaders/Gizmo.vert.spv", ShaderStageFlags.VertexBit).ConfigureAwait(false);
-            var fragShader = await VkShaderModule.CreateAsync(renderer.Context, "Shaders/Gizmo.frag.spv", ShaderStageFlags.FragmentBit).ConfigureAwait(false);
+
+            using var vertShader = new Shader(renderer.Context, shaderManager.GetShader("Gizmo.vert"));
+            using var fragShader = new Shader(renderer.Context, shaderManager.GetShader("Gizmo.frag"));
 
             var pipeline = CreateGizmoPipeline<PostLightPass>(renderer, renderer.RenderPass, vertShader, fragShader, "Gizmo");
             material.AddPass(PostLightPass.Name, new MaterialPass(pipeline));
 
-            var vertPickingShader = await VkShaderModule.CreateAsync(renderer.Context, "Shaders/Gizmo.vert.spv", ShaderStageFlags.VertexBit).ConfigureAwait(false);
-            var fragPickingShader = await VkShaderModule.CreateAsync(renderer.Context, "Shaders/GizmoPicking.frag.spv", ShaderStageFlags.FragmentBit).ConfigureAwait(false);
+            var vertPickingShader = new Shader(renderer.Context, shaderManager.GetShader("Gizmo.vert"));
+            var fragPickingShader = new Shader(renderer.Context, shaderManager.GetShader("GizmoPicking.frag"));
 
             var pickingRenderPass = IoC.Container.GetInstance<PickingPassStrategy>().RenderPass;
             if (pickingRenderPass is not null)
@@ -560,7 +564,7 @@ namespace RockEngine.Editor.EditorComponents
         }
 
         private RckPipeline CreateGizmoPipeline<T>(WorldRenderer renderer, RckRenderPass renderPass,
-            VkShaderModule vertShader, VkShaderModule fragShader, string name) where T : IRenderSubPass
+            Shader vertShader, Shader fragShader, string name) where T : IRenderSubPass
         {
             using var pipelineBuilder = GraphicsPipelineBuilder.CreateDefault(
                 VulkanContext.GetCurrent(),
@@ -742,7 +746,7 @@ namespace RockEngine.Editor.EditorComponents
 
             Vector2 ndc = new Vector2(
                 imagePos.X * 2.0f - 1.0f,
-                1.0f - imagePos.Y * 2.0f
+                imagePos.Y * 2.0f - 1.0f
             );
 
             Matrix4x4.Invert(camera.ProjectionMatrix, out var invProj);

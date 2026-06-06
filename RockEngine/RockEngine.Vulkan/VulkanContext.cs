@@ -35,8 +35,8 @@ namespace RockEngine.Vulkan
 
         public static ref AllocationCallbacks CustomAllocator<T>() => ref VulkanAllocator.CreateCallbacks<T>();
 
-        private static readonly string[] _validationLayers = ["VK_LAYER_KHRONOS_validation"];
-        private static DebugUtilsMessengerCallbackFunctionEXT _debugCallback;
+        private static readonly string[] _validationLayers = ["VK_LAYER_KHRONOS_validation" /*, "VK_LAYER_NV_ngfx_capture_release_public_2026_1_0 - 1.4.299"*/];
+        private static DebugUtilsMessengerCallbackFunctionEXT? _debugCallback;
         private readonly Stack<IDisposable> _pendingDisposals = new Stack<IDisposable>();
         private readonly DebugUtilsFunctions _debugUtilsFunctions;
         private readonly AppSettings _settings;
@@ -227,8 +227,8 @@ namespace RockEngine.Vulkan
 
             if (messageSeverity == DebugUtilsMessageSeverityFlagsEXT.ErrorBitExt)
             {
-                Debugger.Break();
-                throw new VulkanException(messageSeverity, sb.ToString());
+                //Debugger.Break();
+                //throw new VulkanException(messageSeverity, sb.ToString());
             }
 
             return Vk.False; // Returning false tells the messenger to continue normal operation

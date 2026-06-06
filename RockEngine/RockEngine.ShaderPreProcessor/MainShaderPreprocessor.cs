@@ -44,11 +44,32 @@ namespace RockEngine.ShaderPreprocessor
 
             // Step 4: Process all #include directives (including the newly added one)
             source = await ProcessIncludesAsync(source, Path.GetDirectoryName(filePath), filePath, lineMappings);
-
+            List<TextureInfo> textureInfos = new List<TextureInfo>();
             // Step 5: Process [MATERIAL] annotations
-            source = ProcessMaterialAnnotations(source, defines ?? Array.Empty<string>(), filePath, lineMappings);
+            source = ProcessMaterialAnnotations(source, defines ?? Array.Empty<string>(), filePath, lineMappings, textureInfos);
 
-            return new ShaderPreProcessResult(source, lineMappings);
+            var extension = Path.GetExtension(filePath);
+            ShaderStage stage = ShaderStage.All;
+            switch (extension)
+            {
+                case ".vert":
+                    stage = ShaderStage.Vertex;
+                    break;
+                case ".frag":
+                    stage = ShaderStage.Fragment;
+                    break;
+                case ".geom":
+                    stage = ShaderStage.Geometry;
+                    break;
+                case ".comp":
+                    stage = ShaderStage.Compute;
+                    break;
+            }
+
+            var metadata = new ShaderMetadata(textureInfos, stage);
+            
+
+            return new ShaderPreProcessResult(source, lineMappings, metadata);
         }
 
         private string InsertExtensions(string source, IReadOnlyList<string> extensions, List<LineMapping> lineMappings, string filePath)
@@ -190,7 +211,7 @@ namespace RockEngine.ShaderPreprocessor
             return source;
         }
 
-        private string ProcessMaterialAnnotations(string source, IReadOnlyList<string> defines, string filePath, List<LineMapping> lineMappings)
+        private string ProcessMaterialAnnotations(string source, IReadOnlyList<string> defines, string filePath, List<LineMapping> lineMappings, List<TextureInfo> textureInfos)
         {
             var pattern = @"\[MATERIAL\]\s*\{([^}]*)\}";
             var matches = Regex.Matches(source, pattern, RegexOptions.Singleline);
@@ -207,6 +228,11 @@ namespace RockEngine.ShaderPreprocessor
                 var match = matches[i];
                 var blockContent = match.Groups[1].Value;
                 var textures = ParseTextureDeclarations(blockContent);
+                textureInfos.AddRange(textures.Select(s => new TextureInfo()
+                {
+                    Name = s.name,
+                    Type = s.type,
+                }));
                 var generatedCode = GenerateMaterialCode(textures, bindlessEnabled);
 
                 int lineNumberOfBlock = GetLineNumber(source, match.Index);
