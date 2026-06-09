@@ -345,9 +345,9 @@ namespace RockEngine.Vulkan
             }
             finally
             {
-                signalPool.Return(signalSemaphores, true);
-                waitPool.Return(waitSemaphores, true);
-                stagePool.Return(waitStages , true);
+                signalPool.Return(signalSemaphores, false);
+                waitPool.Return(waitSemaphores, false);
+                stagePool.Return(waitStages , false);
             }
         }
 

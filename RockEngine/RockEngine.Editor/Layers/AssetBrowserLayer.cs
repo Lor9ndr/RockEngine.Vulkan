@@ -3,11 +3,14 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
+using System.Text;
 using ImGuiNET;
 using NLog;
 using RockEngine.Assets;
+using RockEngine.Core;
 using RockEngine.Core.Assets;
 using RockEngine.Core.Coroutines;
+using RockEngine.Core.Diagnostics;
 using RockEngine.Core.Rendering;
 using RockEngine.Editor.EditorUI;
 using RockEngine.Editor.EditorUI.ImGuiRendering;
@@ -55,6 +58,48 @@ namespace RockEngine.Editor.Layers
         private int _sortColumn = 0; // 0 = Name, 1 = Type, 2 = Size, 3 = Modified
 
         private static readonly Logger _logger = LogManager.GetCurrentClassLogger();
+
+        // Add caching for frequently used values
+        private readonly Dictionary<string, Vector2> _cachedTextSizes = new();
+        private readonly Dictionary<string, string> _cachedDisplayNames = new();
+        private readonly Dictionary<string, uint> _cachedColors = new();
+        private readonly Dictionary<char, string> _cachedIconTexts = new();
+
+        // Batch drawing operations
+        private readonly List<GridItemDrawCommand> _pendingDrawCommands = new();
+        // Reusable objects to avoid allocations
+        private readonly StringBuilder _stringBuilder = new();
+        private readonly Vector2[] _tempRect = new Vector2[2];
+
+        // Virtual scrolling for large directories
+        private int _scrollOffset = 0;
+        private int _visibleItemCount = 0;
+        private float _lastScrollY = 0;
+
+        // Pre-calculate layout values
+        private float _cachedItemWidth = 0;
+        private int _cachedColumns = 0;
+        private int _cachedFrameCount;
+        private float _cachedCellPadding = 0;
+
+        private readonly Queue<(FileSystemItem Item, Guid AssetId)> _thumbnailQueue = new();
+        private bool _isProcessingThumbnails = false;
+        private const int MAX_CONCURRENT_THUMBNAILS = 3;
+        private int _activeThumbnailLoads = 0;
+        private float _lastRefreshTime;
+
+        private const float REFRESH_COOLDOWN = 0.033f; // ~30 FPS for file system operations
+
+
+        private class GridItemDrawCommand
+        {
+            public required FileSystemItem Item;
+            public Vector2 Position;
+            public Vector2 Size;
+            public uint BgColor;
+            public bool IsSelected;
+            public bool IsHovered;
+        }
 
         private class FileSystemItem
         {
@@ -209,7 +254,10 @@ namespace RockEngine.Editor.Layers
 
         public void OnImGuiRender(UploadBatch vkCommandBuffer)
         {
-            RenderMainWindow();
+            using (PerformanceTracer.BeginSection("AssetBrowserLayer"))
+            {
+                RenderMainWindow();
+            }
         }
 
         private void RenderMainWindow()
@@ -389,7 +437,7 @@ namespace RockEngine.Editor.Layers
         private void DrawContentArea()
         {
             float contentHeight = ImGui.GetContentRegionAvail().Y - ImGui.GetFrameHeightWithSpacing(); // reserve space for status bar
-            ImGui.BeginChild("##AssetBrowserContent", new Vector2(0, contentHeight), ImGuiChildFlags.Border, ImGuiWindowFlags.AlwaysVerticalScrollbar);
+            ImGui.BeginChild("##AssetBrowserContent", new Vector2(0, contentHeight), ImGuiChildFlags.Borders, ImGuiWindowFlags.AlwaysVerticalScrollbar);
 
             if (!Directory.Exists(_basePath))
             {
@@ -441,94 +489,132 @@ namespace RockEngine.Editor.Layers
         }
         private IEnumerator RefreshDirectoryCoroutine()
         {
-            _logger.Debug("Starting directory refresh coroutine for: {Path}", _basePath);
+            // Throttle refreshes
+            float currentTime = Time.TotalTime;
+            if (currentTime - _lastRefreshTime < REFRESH_COOLDOWN)
+            {
+                yield break;
+            }
+            _lastRefreshTime = currentTime;
 
+            _logger.Debug("Starting directory refresh for: {Path}", _basePath);
             _currentDirectoryItems.Clear();
 
             if (!Directory.Exists(_basePath))
             {
-                _logger.Warn("Directory does not exist: {Path}", _basePath);
                 yield break;
             }
 
-            yield return new WaitForNextFrame();
+            // Use batch operations instead of yielding after each file
+            var directories = Directory.GetDirectories(_basePath);
+            var allFiles = Directory.GetFiles(_basePath);
 
-            string[] directories = Array.Empty<string>();
-            string[] allFiles = Array.Empty<string>();
+            // Process in larger batches (50 items per frame instead of 1)
+            int batchSize = 50;
 
-            directories = Directory.GetDirectories(_basePath);
-            _logger.Debug("Found {Count} directories in {Path}", directories.Length, _basePath);
-
-            foreach (var dir in directories)
+            // Add directories in batch
+            for (int i = 0; i < directories.Length; i += batchSize)
             {
-                var dirInfo = new DirectoryInfo(dir);
-                var item = CreateDirectoryItem(dirInfo);
-                _currentDirectoryItems.Add(item);
+                int end = Math.Min(i + batchSize, directories.Length);
+                for (int j = i; j < end; j++)
+                {
+                    var item = CreateDirectoryItem(new DirectoryInfo(directories[j]));
+                    _currentDirectoryItems.Add(item);
+                }
+                yield return new WaitForNextFrame();
             }
 
-            yield return new WaitForNextFrame();
-
-            allFiles = Directory.GetFiles(_basePath);
-            _logger.Debug("Found {Count} files in {Path}", allFiles.Length, _basePath);
-
-            int filesProcessed = 0;
-
-            foreach (var file in allFiles)
+            // Process files in batches
+            for (int i = 0; i < allFiles.Length; i += batchSize)
             {
-                var fileInfo = new FileInfo(file);
-                var cacheKey = fileInfo.FullName;
-                if (!_itemCache.TryGetValue(cacheKey, out var item))
+                int end = Math.Min(i + batchSize, allFiles.Length);
+                for (int j = i; j < end; j++)
                 {
-                    item = CreateFileItem(fileInfo);
-                    _itemCache[cacheKey] = item;
+                    var fileInfo = new FileInfo(allFiles[j]);
+                    var cacheKey = fileInfo.FullName;
 
-                    if (item.IsAssetFile)
+                    if (!_itemCache.TryGetValue(cacheKey, out var item))
                     {
-                        StartAssetHeaderCoroutine(item);
+                        item = CreateFileItem(fileInfo);
+                        _itemCache[cacheKey] = item;
+
+                        if (item.IsAssetFile && !_activeCoroutines.ContainsKey($"metadata_{item.UniqueId}"))
+                        {
+                            StartAssetHeaderCoroutine(item);
+                        }
                     }
+                    _currentDirectoryItems.Add(item);
                 }
-
-                _currentDirectoryItems.Add(item);
-                filesProcessed++;
-
-                if (filesProcessed % 20 == 0)
-                {
-                    yield return new WaitForNextFrame();
-                }
+                yield return new WaitForNextFrame();
             }
 
-            _currentDirectoryItems.Sort((a, b) =>
+            // Batch sort (using more efficient comparison)
+            _currentDirectoryItems.Sort(OptimizedSortComparison);
+        }
+        private int OptimizedSortComparison(FileSystemItem a, FileSystemItem b)
+        {
+            // Directories first
+            if (a.IsDirectory != b.IsDirectory)
             {
-                if (a.IsDirectory && !b.IsDirectory)
+                return a.IsDirectory ? -1 : 1;
+            }
+
+            // Use ordinal comparison which is faster than CurrentCulture
+            return string.CompareOrdinal(a.Name, b.Name);
+        }
+        private void HandleVirtualScrolling(float itemHeight)
+        {
+            var scrollY = ImGui.GetScrollY();
+            if (Math.Abs(scrollY - _lastScrollY) > itemHeight)
+            {
+                _lastScrollY = scrollY;
+
+                // Calculate visible range
+                int itemsPerRow = _cachedColumns;
+                int totalRows = (int)Math.Ceiling(_currentDirectoryItems.Count / (float)itemsPerRow);
+                int currentRow = (int)(scrollY / itemHeight);
+
+                // Update scroll offset to show items around current row
+                _scrollOffset = Math.Max(0, (currentRow - 2) * itemsPerRow); // Show 2 rows above
+                int maxOffset = Math.Max(0, totalRows - _visibleItemCount / itemsPerRow) * itemsPerRow;
+                _scrollOffset = Math.Min(_scrollOffset, maxOffset);
+
+                // Clear caches when scrolling significantly
+                if (Math.Abs(scrollY - _lastScrollY) > itemHeight * 5)
                 {
-                    return -1;
+                    _cachedTextSizes.Clear();
+                    _cachedDisplayNames.Clear();
                 }
-
-                if (!a.IsDirectory && b.IsDirectory)
-                {
-                    return 1;
-                }
-
-                return string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase);
-            });
-
-            _logger.Debug("Directory refresh completed. Found {DirCount} directories, {FileCount} files",
-                directories.Length, allFiles.Length);
+            }
         }
 
         private void DrawGridView()
         {
-            // Reduce cell padding to tighten vertical spacing
-            ImGui.PushStyleVar(ImGuiStyleVar.CellPadding, new Vector2(4, 2));
-
-            float availableWidth = ImGui.GetContentRegionAvail().X;
-            float itemWidth = _thumbnailSize + ImGui.GetStyle().ItemSpacing.X + 20; // extra for text
-            int columns = Math.Max(1, (int)(availableWidth / itemWidth));
-
-            if (ImGui.BeginTable("##AssetGrid", columns, ImGuiTableFlags.SizingFixedFit))
+            // Cache style values once per frame
+            if (ImGui.GetFrameCount() != _cachedFrameCount)
             {
-                foreach (var item in _currentDirectoryItems)
+                _cachedFrameCount = ImGui.GetFrameCount();
+                _cachedCellPadding = ImGui.GetStyle().CellPadding.X;
+                _cachedItemWidth = _thumbnailSize + _cachedCellPadding + 20;
+                _cachedColumns = Math.Max(1, (int)(ImGui.GetContentRegionAvail().X / _cachedItemWidth));
+            }
+
+            // Virtual scrolling - only render visible items
+            float itemHeight = _thumbnailSize + 50;
+            float availableHeight = ImGui.GetContentRegionAvail().Y;
+            _visibleItemCount = (int)(availableHeight / itemHeight) + 2; // +2 for buffer
+
+            int startIndex = Math.Max(0, _scrollOffset);
+            int endIndex = Math.Min(_currentDirectoryItems.Count, startIndex + _visibleItemCount * _cachedColumns);
+
+            // Batch all draw commands
+            _pendingDrawCommands.Clear();
+
+            if (ImGui.BeginTable("##AssetGrid", _cachedColumns, ImGuiTableFlags.SizingFixedFit))
+            {
+                for (int i = startIndex; i < endIndex; i++)
                 {
+                    var item = _currentDirectoryItems[i];
                     if (ShouldFilterItem(item))
                     {
                         continue;
@@ -537,16 +623,259 @@ namespace RockEngine.Editor.Layers
                     ImGui.TableNextColumn();
                     ImGui.PushID(item.UniqueId);
 
-
-                    DrawGridItem(item);
-
+                    // Collect draw command instead of drawing immediately
+                    CollectGridItemDrawCommand(item);
 
                     ImGui.PopID();
                 }
+
+                // Fill remaining columns in last row to maintain layout
+                int itemsInLastRow = (endIndex - startIndex) % _cachedColumns;
+                if (itemsInLastRow > 0)
+                {
+                    for (int i = itemsInLastRow; i < _cachedColumns; i++)
+                    {
+                        ImGui.TableNextColumn();
+                        ImGui.Dummy(new Vector2(_thumbnailSize + 20, _thumbnailSize + 40));
+                    }
+                }
+
                 ImGui.EndTable();
             }
 
-            ImGui.PopStyleVar();
+            // Execute batched draws
+            ExecuteBatchedDraws();
+
+            // Handle scrolling
+            HandleVirtualScrolling(itemHeight);
+        }
+
+        private void CollectGridItemDrawCommand(FileSystemItem item)
+        {
+            bool isSelected = _selectedItems.Contains(item.Path);
+            var cursorPos = ImGui.GetCursorScreenPos();
+            var cardSize = new Vector2(_thumbnailSize + 20, _thumbnailSize + 40);
+
+            // Get cached color
+            uint bgColor = GetCachedColor(isSelected, ImGuiCol.Header, ImGuiCol.WindowBg);
+            if (_currentHoveredItem == item.Path && !isSelected)
+            {
+                bgColor = GetCachedColor(false, ImGuiCol.HeaderHovered, ImGuiCol.HeaderHovered);
+            }
+
+            _pendingDrawCommands.Add(new GridItemDrawCommand
+            {
+                Item = item,
+                Position = cursorPos,
+                Size = cardSize,
+                BgColor = bgColor,
+                IsSelected = isSelected,
+                IsHovered = _currentHoveredItem == item.Path
+            });
+
+            // Reserve space but defer actual drawing
+            ImGui.Dummy(cardSize);
+        }
+        private void HandleItemInteraction(FileSystemItem item)
+        {
+            var cardMin = ImGui.GetItemRectMin();
+            var cardMax = ImGui.GetItemRectMax();
+
+            if (ImGui.IsMouseHoveringRect(cardMin, cardMax))
+            {
+                _currentHoveredItem = item.Path;
+                _hoverStartTime = ImGui.GetTime();
+
+                if (ImGui.IsMouseClicked(ImGuiMouseButton.Left))
+                {
+                    HandleItemClick(item);
+                }
+
+                if (ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left))
+                {
+                    HandleItemDoubleClick(item);
+                }
+
+                if (ImGui.IsMouseClicked(ImGuiMouseButton.Right))
+                {
+                    if (!_selectedItems.Contains(item.Path))
+                    {
+                        _selectedItems.Clear();
+                        _selectedItems.Add(item.Path);
+                    }
+                    ImGui.OpenPopup("##ItemContextMenu");
+                }
+            }
+
+            // Context menu
+            if (ImGui.BeginPopup("##ItemContextMenu"))
+            {
+                DrawItemContextMenu(item);
+                ImGui.EndPopup();
+            }
+
+            // Tooltip with delay
+            if (ImGui.IsItemHovered() && ImGui.GetTime() - _hoverStartTime > 0.5)
+            {
+                DrawItemTooltip(item);
+            }
+        }
+        private void ExecuteBatchedDraws()
+        {
+            var drawList = ImGui.GetWindowDrawList();
+
+            foreach (var cmd in _pendingDrawCommands)
+            {
+                var cardMin = cmd.Position;
+                var cardMax = cmd.Position + cmd.Size;
+
+                // Batch rectangle draws
+                drawList.AddRectFilled(cardMin, cardMax, cmd.BgColor, 6.0f);
+                drawList.AddRect(cardMin, cardMax, GetCachedColor(false, ImGuiCol.Border, 0), 6.0f);
+
+                // Draw thumbnail or icon
+                DrawItemContent(drawList, cmd);
+
+                // Interaction hitbox
+                ImGui.SetCursorScreenPos(cmd.Position);
+                ImGui.InvisibleButton($"##hitbox_{cmd.Item.UniqueId.GetHashCode()}", cmd.Size);
+
+                HandleItemInteraction(cmd.Item);
+            }
+        }
+
+        private void DrawItemContent(ImDrawListPtr drawList, GridItemDrawCommand cmd)
+        {
+            var item = cmd.Item;
+            var thumbPos = cmd.Position + new Vector2(10, 10);
+            var thumbSize = new Vector2(_thumbnailSize, _thumbnailSize);
+
+            if (item.IsAssetFile && item.AssetHeader?.AssetType == typeof(TextureAsset) && item.Thumbnail == null && !item.IsThumbnailLoading)
+            {
+                StartThumbnailLoadingCoroutine(item);
+            }
+            if (item.IsLoading || item.IsThumbnailLoading)
+            {
+                // Draw simple loading indicator instead of spinner (cheaper)
+                var center = thumbPos + thumbSize * 0.5f;
+                drawList.AddCircleFilled(center, 8, GetCachedColor(false, ImGuiCol.Text, 0), 8);
+            }
+            else if (item.Thumbnail?.AtlasRegion != null)
+            {
+                var region = item.Thumbnail.AtlasRegion;
+                drawList.AddImage(region.TextureId, thumbPos, thumbPos + thumbSize, region.UV0, region.UV1);
+            }
+            else
+            {
+                // Cache icon text and size
+                string iconText = GetCachedIconText(item.Icon);
+                var textSize = GetCachedTextSize(iconText);
+                var textPos = thumbPos + (thumbSize - textSize) * 0.5f;
+                drawList.AddText(textPos, GetCachedColor(false, ImGuiCol.Text, 0), iconText);
+            }
+
+            // Draw name with ellipsis (cached)
+            string displayName = GetCachedDisplayName(item);
+            var namePos = cmd.Position + new Vector2(10, 10 + _thumbnailSize + 5);
+            drawList.AddText(namePos, GetCachedColor(false, ImGuiCol.Text, 0), displayName);
+        }
+        private string GetCachedIconText(char icon)
+        {
+            if (!_cachedIconTexts.TryGetValue(icon, out var iconText))
+            {
+                iconText = icon.ToString();
+                _cachedIconTexts[icon] = iconText;
+
+                // Limit cache size
+                if (_cachedIconTexts.Count > 100)
+                {
+                    _cachedIconTexts.Clear();
+                }
+            }
+            return iconText;
+        }
+
+        // Optimized text size caching
+        private Vector2 GetCachedTextSize(string text)
+        {
+            if (!_cachedTextSizes.TryGetValue(text, out var size))
+            {
+                size = ImGui.CalcTextSize(text);
+                _cachedTextSizes[text] = size;
+            }
+            return size;
+        }
+        private string GetCachedDisplayName(FileSystemItem item)
+        {
+            string key = $"{item.UniqueId}_{_thumbnailSize}_{_showFileExtensions}";
+
+            if (!_cachedDisplayNames.TryGetValue(key, out var displayName))
+            {
+                displayName = ComputeDisplayName(item);
+                _cachedDisplayNames[key] = displayName;
+
+                // Limit cache size
+                if (_cachedDisplayNames.Count > 1000)
+                {
+                    var toRemove = _cachedDisplayNames.Keys.Take(500).ToList();
+                    foreach (var k in toRemove)
+                    {
+                        _cachedDisplayNames.Remove(k);
+                    }
+                }
+            }
+            return displayName;
+        }
+
+        private string ComputeDisplayName(FileSystemItem item)
+        {
+            string name = item.IsDirectory ? item.Name :
+                (_showFileExtensions ? item.Name : item.DisplayName);
+
+            float maxNameWidth = _thumbnailSize + 20;
+            Vector2 nameSize = GetCachedTextSize(name);
+
+            if (nameSize.X <= maxNameWidth)
+            {
+                return name;
+            }
+
+            // Optimized ellipsis calculation using binary search on char array
+            char[] chars = name.ToCharArray();
+            float ellipsisWidth = GetCachedTextSize("...").X;
+            float availableWidth = maxNameWidth - ellipsisWidth;
+
+            int low = 0, high = chars.Length;
+            int best = 0;
+
+            while (low <= high)
+            {
+                int mid = (low + high) / 2;
+                float w = GetCachedTextSize(new string(chars, 0, mid)).X;
+                if (w <= availableWidth)
+                {
+                    best = mid;
+                    low = mid + 1;
+                }
+                else
+                {
+                    high = mid - 1;
+                }
+            }
+
+            return new string(chars, 0, best) + "...";
+        }
+
+        // Optimized color caching
+        private uint GetCachedColor(bool isSelected, ImGuiCol col1, ImGuiCol col2)
+        {
+            string key = $"{isSelected}_{col1}_{col2}";
+            if (!_cachedColors.TryGetValue(key, out var color))
+            {
+                color = ImGui.GetColorU32(isSelected ? col1 : col2);
+                _cachedColors[key] = color;
+            }
+            return color;
         }
 
         private void DrawGridItem(FileSystemItem item)
@@ -581,8 +910,14 @@ namespace RockEngine.Editor.Layers
             }
             else if (item.Thumbnail != null)
             {
-                var textureId = _imGuiController.GetTextureID(item.Thumbnail.Texture);
-                drawList.AddImage(textureId, thumbPos, thumbPos + thumbSize);
+                if (item.Thumbnail?.AtlasRegion != null)
+                {
+                    var region = item.Thumbnail.AtlasRegion;
+                    drawList.AddImage(
+                        region.TextureId,
+                        thumbPos, thumbPos + thumbSize,
+                        region.UV0, region.UV1);
+                }
             }
             else
             {
@@ -665,7 +1000,7 @@ namespace RockEngine.Editor.Layers
             ImGui.SetCursorScreenPos(cursorPos);
             ImGui.Dummy(cardSize);   // this advances cursor to cardMax.Y automatically
             ImGui.EndGroup();
-            
+
             // Interaction (uses the same rect as the dummy)
             if (ImGui.IsMouseHoveringRect(cardMin, cardMax))
             {
@@ -693,7 +1028,7 @@ namespace RockEngine.Editor.Layers
                     ImGui.OpenPopup("##ItemContextMenu");
                 }
             }
-            
+
 
             // Context menu
             if (ImGui.BeginPopup("##ItemContextMenu"))
@@ -708,17 +1043,71 @@ namespace RockEngine.Editor.Layers
                 DrawItemTooltip(item);
             }
         }
+
+
         private void StartThumbnailLoadingCoroutine(FileSystemItem item)
         {
-            var assetId = item.AssetHeader!.AssetID;
+            _thumbnailQueue.Enqueue((item, item.AssetHeader!.AssetID));
 
-            item.IsThumbnailLoading = true;
+            if (!_isProcessingThumbnails)
+            {
+                _coroutineScheduler.StartCoroutine(ProcessThumbnailQueue(), "ThumbnailQueue");
+            }
+        }
+        private IEnumerator ProcessThumbnailQueue()
+        {
+            _isProcessingThumbnails = true;
 
-            _coroutineScheduler.StartCoroutine(
-                LoadThumbnailCoroutine(item, assetId),
-                $"LoadThumbnail_{assetId}"
-            );
+            while (_thumbnailQueue.Count > 0 && _activeThumbnailLoads < MAX_CONCURRENT_THUMBNAILS)
+            {
+                var (item, assetId) = _thumbnailQueue.Dequeue();
 
+                if (item.Thumbnail != null || item.IsThumbnailLoading)
+                {
+                    continue;
+                }
+
+                _activeThumbnailLoads++;
+                item.IsThumbnailLoading = true;
+
+                _coroutineScheduler.StartCoroutine(LoadThumbnailBatched(item, assetId), $"Thumb_{assetId}");
+
+                yield return new WaitForNextFrame();
+            }
+
+            _isProcessingThumbnails = false;
+        }
+        private IEnumerator LoadThumbnailBatched(FileSystemItem item, Guid assetId)
+        {
+            try
+            {
+
+                // Load async
+                var assetTask = _assetManager.GetAssetAsync<IAsset>(assetId);
+                yield return new WaitForTask(assetTask);
+
+                if (assetTask.IsCompletedSuccessfully)
+                {
+                    var thumbnailTask = _thumbnailService.GetOrCreateThumbnailAsync(assetTask.Result);
+                    yield return new WaitForTask(thumbnailTask);
+
+                    if (thumbnailTask.IsCompletedSuccessfully)
+                    {
+                        item.Thumbnail = thumbnailTask.Result;
+                    }
+                }
+            }
+            finally
+            {
+                item.IsThumbnailLoading = false;
+                _activeThumbnailLoads--;
+
+                // Continue processing queue
+                if (_thumbnailQueue.Count > 0 && !_isProcessingThumbnails)
+                {
+                    _coroutineScheduler.StartCoroutine(ProcessThumbnailQueue(), "ThumbnailQueue");
+                }
+            }
         }
 
         private IEnumerator LoadThumbnailCoroutine(FileSystemItem item, Guid assetId)

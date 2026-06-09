@@ -227,7 +227,7 @@ namespace RockEngine.Vulkan
 
             if (messageSeverity == DebugUtilsMessageSeverityFlagsEXT.ErrorBitExt)
             {
-                //Debugger.Break();
+                Debugger.Break();
                 //throw new VulkanException(messageSeverity, sb.ToString());
             }
 

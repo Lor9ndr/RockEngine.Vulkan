@@ -30,7 +30,7 @@ namespace RockEngine.Vulkan
         internal CommandPoolContext Context { get; }
         public CommandBufferLevel Level => _level;
 
-        
+
         public StagingManager StagingManager => _stagingManager ??= Context.RentStagingManager();
 
         public CommandBufferInheritanceInfo? InheritanceInfo
@@ -115,7 +115,7 @@ namespace RockEngine.Vulkan
             _isInUse = false;
         }
 
-        
+
         public void StageToBuffer<T>(
             ReadOnlySpan<T> data,
             VkBuffer destination,
@@ -138,6 +138,40 @@ namespace RockEngine.Vulkan
                 new BufferCopy(srcOffset, dstOffset, size)
             );
         }
+
+        public void StageToImage<T>(
+            ReadOnlySpan<T> data,
+            VkImage destination,
+            ImageLayout destinationLayout,
+            Extent3D imageExtent,
+            Offset3D imageOffset,
+            ImageSubresourceLayers subResource) where T : unmanaged
+        {
+
+            if (!StagingManager.TryStage(this, data, out var srcOffset, out _))
+            {
+                throw new InvalidOperationException("Staging buffer overflow");
+            }
+
+            var imageCopyRegion = new BufferImageCopy()
+            {
+                BufferOffset = srcOffset,
+                BufferImageHeight = 0,
+                BufferRowLength = 0,
+                ImageExtent = imageExtent,
+                ImageOffset = imageOffset,
+                ImageSubresource = subResource
+
+            };
+            _commandBuffer.CopyBufferToImage(
+                StagingManager.StagingBuffer,
+                destination,
+                 destinationLayout,
+                 1,
+                 in imageCopyRegion
+            );
+        }
+
 
         public void Submit()
         {
@@ -320,6 +354,35 @@ namespace RockEngine.Vulkan
                         Depth = 1
                     }
                 }
+            };
+
+            // Perform the image copy
+            VulkanContext.Vk.CmdCopyImage(
+                _commandBuffer,
+                source,
+                srcLayout,
+                destination,
+                dstLayout,
+                (uint)regions.Length,
+                regions
+            );
+        }
+        public void CopyImage(VkImage source, ImageLayout srcLayout, VkImage destination, ImageLayout dstLayout, ImageCopy imageCopy)
+        {
+            // Validate image dimensions are compatible
+            if (source.Extent.Width != destination.Extent.Width ||
+                source.Extent.Height != destination.Extent.Height)
+            {
+                throw new ArgumentException(
+                    $"Image copy between different dimensions: " +
+                    $"{source.Extent.Width}x{source.Extent.Height} -> " +
+                    $"{destination.Extent.Width}x{destination.Extent.Height}");
+            }
+
+            // Create image copy regions for each layer
+            var regions = new ImageCopy[1]
+            {
+               imageCopy
             };
 
             // Perform the image copy

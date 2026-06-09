@@ -65,7 +65,7 @@
 
   <ItemGroup>
     <PackageReference Include="FontAwesome" Version="4.7.0" />
-    <PackageReference Include="ImGui.NET" Version="1.91.0.1" />
+    <PackageReference Include="ImGui.NET" Version="1.91.6.1" />
   </ItemGroup>
   
 

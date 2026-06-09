@@ -1,9 +1,9 @@
 ﻿using RockEngine.Assets;
 using RockEngine.Core.Assets;
-using RockEngine.Core.Builders;
-using RockEngine.Core.CoreObjects;
 using RockEngine.Core.Rendering.Managers;
 using RockEngine.Core.Rendering.Texturing;
+using RockEngine.Core.Rendering.Texturing.Atlasing;
+using RockEngine.Editor.EditorUI.ImGuiRendering;
 using RockEngine.Vulkan;
 
 using Silk.NET.Vulkan;
@@ -14,72 +14,74 @@ namespace RockEngine.Editor.EditorUI.Thumbnails
     {
         Task<Thumbnail> RenderThumbnailAsync(IAsset asset, int size = 128, CancellationToken cancellationToken = default);
     }
+
     public class ThumbnailRenderer : IThumbnailRenderer
     {
         private readonly VulkanContext _context;
-        private readonly PipelineManager _pipelineManager;
-        private readonly BindingManager _bindingManager;
+        private readonly Atlas _thumbAtlas;          // The atlas for packing thumbnails
 
-        public ThumbnailRenderer(VulkanContext context, ShaderManager shaderManager, PipelineManager pipelineManager, BindingManager bindingManager)
+        public ThumbnailRenderer(
+            VulkanContext context,
+            ImGuiController controller)
         {
             _context = context;
-            _pipelineManager = pipelineManager;
-            _bindingManager = bindingManager;
-            var builder = new ComputePipelineBuilder(_context, "ComputeCopyImage");
 
-            var shader = new Shader(_context, shaderManager.GetShader("ComputeCopyImage.comp"));
-            builder.WithShaderModule(shader);
-            pipelineManager.Create(builder);
+            // Create a 4096×4096 atlas with 256×256 fixed cells
+            var allocator = new GridAllocator();
+            allocator.Configure(256, 256);
+            _thumbAtlas = new Atlas(
+                context,
+                width: 4096, height: 4096,
+                format: TextureFormat.R8G8B8A8Unorm,
+                allocator: allocator,
+                registerTexture: controller.GetTextureID
+            );
         }
-        
-        public async Task<Thumbnail> RenderThumbnailAsync(IAsset asset, int size = 128, CancellationToken cancellationToken = default)
+
+        public async Task<Thumbnail> RenderThumbnailAsync(IAsset asset, int size = 256, CancellationToken cancellationToken = default)
         {
-            if (asset is TextureAsset textureAsset)
+            if (asset is not TextureAsset textureAsset)
             {
-                if (textureAsset.Texture is null)
-                {
-                    await textureAsset.LoadGpuResourcesAsync().ConfigureAwait(false);
-                }
-                if (textureAsset.Texture is Texture2D texture2D)
-                {
-                    var texture = await CreateTextureThumbnail(texture2D, _pipelineManager, _bindingManager).ConfigureAwait(false);
-                    var thumbnail = new Thumbnail(asset, size, size, texture);
-                    return thumbnail;
-                }
-            }
-            throw new NotImplementedException();
-        }
-        public async Task<Texture2D> CreateTextureThumbnail(Texture2D sourceTexture, PipelineManager pipelineManager, BindingManager bindingManager, uint size = 128)
-        {
-            // Ensure source has TransferSrc usage (may create a copy)
-            if (!sourceTexture.Image.Usage.HasFlag(ImageUsageFlags.TransferSrcBit))
-            {
-                sourceTexture = sourceTexture.CopyWithNewUsage(pipelineManager, bindingManager,
-                    ImageUsageFlags.TransferSrcBit);
+                throw new NotSupportedException($"Thumbnail rendering not supported for {asset.GetType().Name}");
             }
 
-            // Determine if this is a cube map
-            bool isCube = sourceTexture.Image.ArrayLayers == 6 &&
-                          sourceTexture.Image.CreateInfo.Flags.HasFlag(ImageCreateFlags.CreateCubeCompatibleBit);
+            // Ensure GPU texture is loaded
+            if (textureAsset.Texture is null)
+            {
+                await textureAsset.LoadGpuResourcesAsync().ConfigureAwait(false);
+            }
 
-            // Create the thumbnail image (always 2D, single layer)
-            var thumbnailImage = VkImage.Create(
-                _context,
-                size, size,
-                Format.R8G8B8A8Unorm,
-                ImageTiling.Optimal,
-                ImageUsageFlags.TransferDstBit | ImageUsageFlags.SampledBit,
-                MemoryPropertyFlags.DeviceLocalBit,
-                ImageLayout.Undefined,
-                1, 1, SampleCountFlags.Count1Bit,
-                ImageAspectFlags.ColorBit);
-            thumbnailImage.LabelObject("ThumbnailTexture");
+            if (textureAsset.Texture is not Texture2D sourceTexture)
+            {
+                throw new InvalidOperationException("Unsupported texture type");
+            }
 
+            // Use the atlas cell size (256), ignore the size parameter to match the GridAllocator
+            const int cellSize = 256;
+
+            // Allocate a region in the atlas
+            if (!_thumbAtlas.TryAllocate(cellSize, cellSize, out var region))
+            {
+                throw new InvalidOperationException("Thumbnail atlas is full.");
+            }
+
+            // Blit the source texture into the allocated atlas region
+            BlitSourceToAtlas(sourceTexture, region);
+
+            // Return the thumbnail with the atlas region
+            return new Thumbnail(asset, cellSize, cellSize, region);
+        }
+
+        /// <summary>
+        /// Blits the source texture (2D or cube‑map) into the specified atlas region.
+        /// </summary>
+        private void BlitSourceToAtlas(Texture2D sourceTexture, AtlasRegion region)
+        {
             var batch = _context.GraphicsSubmitContext.CreateBatch();
-            batch.LabelObject("CreateTextureThumbnail");
 
-            // Transition source to TransferSrcOptimal (all layers)
-            sourceTexture.Image.TransitionImageLayout(batch,
+            // ---------- transition source to TransferSrcOptimal ----------
+            sourceTexture.Image.TransitionImageLayout(
+                batch,
                 ImageLayout.Undefined,
                 ImageLayout.TransferSrcOptimal,
                 baseMipLevel: 0,
@@ -87,33 +89,31 @@ namespace RockEngine.Editor.EditorUI.Thumbnails
                 baseArrayLayer: 0,
                 layerCount: sourceTexture.Image.ArrayLayers);
 
-            // Transition thumbnail to TransferDstOptimal
-            thumbnailImage.TransitionImageLayout(batch,
+            // ---------- transition atlas to TransferDstOptimal ----------
+            _thumbAtlas.Texture.Image.TransitionImageLayout(
+                batch,
                 ImageLayout.Undefined,
                 ImageLayout.TransferDstOptimal);
 
-            if (isCube && size >= 3)
+            bool isCube = sourceTexture.Image.ArrayLayers == 6 &&
+                          sourceTexture.Image.CreateInfo.Flags.HasFlag(ImageCreateFlags.CreateCubeCompatibleBit);
+
+            if (isCube)
             {
-                uint cellSize = size / 3; // each face will occupy cellSize x cellSize pixels
+                // Blit cube faces into a 3×2 grid inside the 256×256 cell
                 uint cols = 3;
+                uint faceCellW = (uint)region.Rect.Width / cols;   // 85
+                uint faceCellH = (uint)region.Rect.Height / 2;     // 128
 
                 for (uint layer = 0; layer < 6; layer++)
                 {
                     uint col = layer % cols;
                     uint row = layer / cols;
 
-                    int dstX = (int)(col * cellSize);
-                    int dstY = (int)(row * cellSize);
-                    int dstW = (int)cellSize;
-                    int dstH = (int)cellSize;
-
                     var blitRegion = new ImageBlit
                     {
                         SrcSubresource = new ImageSubresourceLayers(
-                            ImageAspectFlags.ColorBit,
-                            0,      // mip level
-                            layer,  // base array layer
-                            1),     // layer count
+                            ImageAspectFlags.ColorBit, 0, layer, 1),
                         SrcOffsets = new ImageBlit.SrcOffsetsBuffer
                         {
                             [0] = new Offset3D(0, 0, 0),
@@ -123,81 +123,76 @@ namespace RockEngine.Editor.EditorUI.Thumbnails
                                 1)
                         },
                         DstSubresource = new ImageSubresourceLayers(
-                            ImageAspectFlags.ColorBit,
-                            0,      // mip level
-                            0,      // base array layer (thumbnail has only one layer)
-                            1),     // layer count
+                            ImageAspectFlags.ColorBit, 0, 0, 1),
                         DstOffsets = new ImageBlit.DstOffsetsBuffer
                         {
-                            [0] = new Offset3D(dstX, dstY, 0),
-                            [1] = new Offset3D(dstX + dstW, dstY + dstH, 1)
+                            [0] = new Offset3D(
+                                region.Rect.X + (int)(col * faceCellW),
+                                region.Rect.Y + (int)(row * faceCellH),
+                                0),
+                            [1] = new Offset3D(
+                                region.Rect.X + (int)((col + 1) * faceCellW),
+                                region.Rect.Y + (int)((row + 1) * faceCellH),
+                                1)
                         }
                     };
 
                     batch.BlitImage(
                         sourceTexture.Image, ImageLayout.TransferSrcOptimal,
-                        thumbnailImage, ImageLayout.TransferDstOptimal,
+                        _thumbAtlas.Texture.Image, ImageLayout.TransferDstOptimal,
                         in blitRegion, Filter.Linear);
                 }
             }
             else
             {
-                // Fallback: copy only the first layer (original behavior for 2D textures)
+                // Single face (2D texture)
                 var blitRegion = new ImageBlit
                 {
-                    SrcSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, 0, 0, 1),
+                    SrcSubresource = new ImageSubresourceLayers(
+                        ImageAspectFlags.ColorBit, 0, 0, 1),
                     SrcOffsets = new ImageBlit.SrcOffsetsBuffer
                     {
                         [0] = new Offset3D(0, 0, 0),
-                        [1] = new Offset3D((int)sourceTexture.Image.Extent.Width,
-                                           (int)sourceTexture.Image.Extent.Height, 1)
+                        [1] = new Offset3D(
+                            (int)sourceTexture.Image.Extent.Width,
+                            (int)sourceTexture.Image.Extent.Height,
+                            1)
                     },
-                    DstSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, 0, 0, 1),
+                    DstSubresource = new ImageSubresourceLayers(
+                        ImageAspectFlags.ColorBit, 0, 0, 1),
                     DstOffsets = new ImageBlit.DstOffsetsBuffer
                     {
-                        [0] = new Offset3D(0, 0, 0),
-                        [1] = new Offset3D((int)size, (int)size, 1)
+                        [0] = new Offset3D(region.Rect.X, region.Rect.Y, 0),
+                        [1] = new Offset3D(
+                            region.Rect.X + region.Rect.Width,
+                            region.Rect.Y + region.Rect.Height,
+                            1)
                     }
                 };
+
                 batch.BlitImage(
                     sourceTexture.Image, ImageLayout.TransferSrcOptimal,
-                    thumbnailImage, ImageLayout.TransferDstOptimal,
+                    _thumbAtlas.Texture.Image, ImageLayout.TransferDstOptimal,
                     in blitRegion, Filter.Linear);
             }
 
-            // Transition thumbnail to shader‑readable layout
-            thumbnailImage.TransitionImageLayout(batch,
+            // ---------- transition atlas back to ShaderReadOnlyOptimal ----------
+            _thumbAtlas.Texture.Image.TransitionImageLayout(
+                batch,
                 ImageLayout.TransferDstOptimal,
                 ImageLayout.ShaderReadOnlyOptimal);
 
-            // Transition source back to ShaderReadOnlyOptimal (optional, good practice)
-            sourceTexture.Image.TransitionImageLayout(batch,
+            // ---------- restore source layout (optional) ----------
+            sourceTexture.Image.TransitionImageLayout(
+                batch,
                 ImageLayout.TransferSrcOptimal,
                 ImageLayout.ShaderReadOnlyOptimal,
                 baseMipLevel: 0,
                 levelCount: 1,
                 baseArrayLayer: 0,
                 layerCount: sourceTexture.Image.ArrayLayers);
-            // Create sampler and wrap in Texture2D
-            var samplerCreateInfo = new SamplerCreateInfo
-            {
-                SType = StructureType.SamplerCreateInfo,
-                MagFilter = Filter.Linear,
-                MinFilter = Filter.Linear,
-                MipmapMode = SamplerMipmapMode.Linear,
-                AddressModeU = SamplerAddressMode.Repeat,
-                AddressModeV = SamplerAddressMode.Repeat,
-                AddressModeW = SamplerAddressMode.Repeat,
-                MinLod = 0,
-                MaxLod = 0
-            };
-            var sampler = _context.SamplerCache.GetSampler(samplerCreateInfo);
 
-            var texture = new Texture2D(_context, thumbnailImage, sampler);
-            batch.AddSignalSemaphore(texture.CompletionSemaphore);
-            batch.Submit();
-            //await _context.GraphicsSubmitContext.SubmitSingle(batch);
-            return texture;
+            batch.Submit();  // ensures the blit is executed on the GPU
         }
     }
 }

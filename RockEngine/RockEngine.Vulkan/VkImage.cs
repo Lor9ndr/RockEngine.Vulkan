@@ -710,8 +710,8 @@ namespace RockEngine.Vulkan
         {
             return GetOrCreateView(
                AspectFlags,
-               mipLevel,
-               1, // levelCount
+               mipLevel - 1,
+               MipLevels, // levelCount
                0, // baseArrayLayer
                _createInfo.ArrayLayers  // layerCount
            );

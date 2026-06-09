@@ -104,7 +104,7 @@ namespace RockEngine.Core.Rendering.Passes
                 }
                 finally
                 {
-                    ArrayPool<UploadBatch>.Shared.Return(secondaryBatches, true);
+                    ArrayPool<UploadBatch>.Shared.Return(secondaryBatches, false);
                     batch.EndRenderPass();
                     camera.RenderTarget.TransitionToRead(primaryBatch);
                 }

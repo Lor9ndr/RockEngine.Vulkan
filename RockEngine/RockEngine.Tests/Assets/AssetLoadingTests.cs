@@ -14,7 +14,7 @@ namespace RockEngine.Tests
     public class AssetLoadingTests : TestBase
     {
         private string? _tempDir;
-        private string? _testImagePath;
+        private string _testImagePath;
 
         [OneTimeSetUp]
         public void OneTimeSetup()

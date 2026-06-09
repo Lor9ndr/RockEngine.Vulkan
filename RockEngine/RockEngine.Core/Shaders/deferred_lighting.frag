@@ -132,6 +132,10 @@ float geometrySmith(vec3 N, vec3 V, vec3 L, float roughness) {
 
 // Environment rotation
 mat3 rotationMatrix(vec3 axis, float angle) {
+    // Guard against zero axis
+    if (length(axis) < 1e-6 || abs(angle) < 1e-6)
+        return mat3(1.0);
+
     axis = normalize(axis);
     float s = sin(angle);
     float c = cos(angle);
@@ -452,15 +456,19 @@ vec3 debugCascadeVisualization(vec3 fragPos, vec3 viewPos, vec3 originalColor, m
     return mix(originalColor, cascadeColor, 0.2 + border * 0.3);
 }
 
-// FIXED: Enhanced IBL calculation with proper energy conservation
 vec3 calculateIBL(vec3 N, vec3 V, vec3 F0, float roughness, float metallic, float ao, vec3 albedo) {
     roughness = clamp(roughness, MIN_ROUGHNESS, 0.99);
     float NdotV = clamp(dot(N, V), 0.001, 1.0);
     
     // Apply environment rotation
-    mat3 rotMatrix = rotationMatrix(vec3(0.0, 0.0, 0.0), iblParams.envRotation);
-    vec3 N_rot = rotMatrix * N;
-    vec3 R_rot = rotMatrix * reflect(-V, N);
+    // In calculateIBL:
+    vec3 N_rot = N;
+    vec3 R_rot = reflect(-V, N);
+    if (abs(iblParams.envRotation) > 0.001) {
+        mat3 rotMatrix = rotationMatrix(vec3(0.0, 1.0, 0.0), iblParams.envRotation);
+        N_rot = rotMatrix * N;
+        R_rot = rotMatrix * reflect(-V, N);
+    }
     
     // Specular IBL - improved LOD calculation
     vec3 F = fresnelSchlickRoughness(NdotV, F0, roughness);

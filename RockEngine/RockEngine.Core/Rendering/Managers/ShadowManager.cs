@@ -326,7 +326,7 @@ namespace RockEngine.Core.Rendering.Managers
             }
             finally
             {
-                ArrayPool<CSMData>.Shared.Return(csmDataArray, true);
+                ArrayPool<CSMData>.Shared.Return(csmDataArray, false);
 
             }
         }

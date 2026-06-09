@@ -22,12 +22,6 @@ namespace RockEngine.Core.CoreObjects
             ShaderModule = VkShaderModule.Create(context, shader.ShaderData, GetVulkanStage());
         }
 
-        public Shader(VkShaderModule shaderModule)
-        {
-            Metadata = null;
-            ShaderModule = shaderModule;
-        }
-
         public ShaderStageFlags GetVulkanStage()
         {
             if(Metadata is null)

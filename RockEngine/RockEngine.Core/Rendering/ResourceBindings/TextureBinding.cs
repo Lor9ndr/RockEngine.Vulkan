@@ -145,21 +145,11 @@ namespace RockEngine.Core.Rendering.ResourceBindings
                 {
                     continue;
                 }
+                var imageInfo = texture.GetDescriptorInfo();
+                imageInfo.ImageLayout = ImageLayout;
 
-                uint maxMip = Math.Min(texture.TotalMipLevels, BaseMipLevel + LevelCount);
-                var imageView = texture.Image.GetView(
-                    baseMipLevel: BaseMipLevel,
-                    levelCount: LevelCount,
-                    baseArrayLayer: _arrayLayer,
-                    layerCount: _layerCount
-                );
 
-                imageInfos[writeIdx] = new DescriptorImageInfo
-                {
-                    ImageLayout = ImageLayout,
-                    ImageView = imageView,
-                    Sampler = Texture.CreateSampler(context, maxMip)
-                };
+                imageInfos[writeIdx] = imageInfo;
 
                 writes[writeIdx] = new WriteDescriptorSet
                 {

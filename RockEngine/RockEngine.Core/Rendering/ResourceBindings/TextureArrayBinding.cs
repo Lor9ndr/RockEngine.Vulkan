@@ -181,8 +181,8 @@ namespace RockEngine.Core.Rendering.ResourceBindings
             }
             finally
             {
-                ArrayPool<WriteDescriptorSet>.Shared.Return(writes, true);
-                ArrayPool<DescriptorImageInfo>.Shared.Return(imageInfos, true);
+                ArrayPool<WriteDescriptorSet>.Shared.Return(writes, false);
+                ArrayPool<DescriptorImageInfo>.Shared.Return(imageInfos, false);
             }
         }
 

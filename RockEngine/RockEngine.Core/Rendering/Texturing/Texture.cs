@@ -17,7 +17,7 @@ namespace RockEngine.Core.Rendering.Texturing
         public VkImage Image => _image;
         public uint LoadedMipLevels { get => _loadedMipLevels; protected set => _loadedMipLevels = value; }
 
-        private ImageObserver _imageObserver;
+        private readonly ImageObserver _imageObserver;
 
         public uint TotalMipLevels => _image.MipLevels;
         public string? SourcePath { get; }
@@ -150,7 +150,7 @@ namespace RockEngine.Core.Rendering.Texturing
 
         public DescriptorImageInfo GetDescriptorInfo()
         {
-            return new DescriptorImageInfo(CreateSampler(_context, TotalMipLevels), Image.GetView());
+            return new DescriptorImageInfo(CreateSampler(_context, TotalMipLevels), Image.GetMipView(_loadedMipLevels));
         }
     }
 }

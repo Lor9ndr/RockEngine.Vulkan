@@ -39,25 +39,24 @@ namespace RockEngine.Core.Internal
 
         public void CheckForUpdates()
         {
-            ResourceBinding[] bindings;
-            lock (_bindings)   // assuming _bindings is a SortedList; use a dedicated lock if needed
+            lock (_bindings)
             {
-                bindings = _bindings.Values.ToArray();
-            }
-            foreach (var binding in bindings)
-            {
-                foreach (var descriptors in binding.DescriptorSets.Values)
+                foreach (var binding in _bindings.Values)
                 {
-                    foreach (var descriptor in descriptors)
+                    foreach (var descriptors in binding.DescriptorSets.Values)
                     {
-                        if (descriptor is null || descriptor.IsDirty)
+                        foreach (var descriptor in descriptors)
                         {
-                            _needToUpdate = true;
-                            return;
+                            if (descriptor is null || descriptor.IsDirty)
+                            {
+                                _needToUpdate = true;
+                                return;
+                            }
                         }
                     }
                 }
             }
+           
         }
 
         public void RemoveAll(Func<ResourceBinding, bool> predicate)

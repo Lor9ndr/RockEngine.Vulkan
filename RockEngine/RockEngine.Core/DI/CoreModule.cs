@@ -10,6 +10,7 @@ using RockEngine.Core.Rendering.Managers;
 using RockEngine.Core.Rendering.Objects;
 using RockEngine.Core.Rendering.Passes;
 using RockEngine.Core.Rendering.Passes.SubPasses;
+using RockEngine.Core.Rendering.Texturing.Atlasing;
 using RockEngine.ShaderPreprocessor;
 using RockEngine.Vulkan;
 using RockEngine.Vulkan.DeviceFeatures;

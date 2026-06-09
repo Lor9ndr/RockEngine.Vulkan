@@ -1,4 +1,5 @@
-﻿using RockEngine.Core.Rendering.Managers;
+﻿using System.Xml.Linq;
+using RockEngine.Core.Rendering.Managers;
 using RockEngine.Core.Rendering.ResourceBindings;
 using RockEngine.Vulkan;
 
@@ -33,7 +34,6 @@ namespace RockEngine.Core.Rendering.Texturing
             {
                 throw new ArgumentException("Invalid texture data", nameof(textureData));
             }
-
             return textureData.Dimension switch
             {
                 TextureDimension.Texture2D => await Create2DAsync(context, textureData, cancellationToken).ConfigureAwait(false),
@@ -180,7 +180,7 @@ namespace RockEngine.Core.Rendering.Texturing
                 baseMipLevel: 0,
                 levelCount: mipLevels
             );
-            CopyImageData(context, transferBatch, skBitmap, image, format);
+            CopyImageData(transferBatch, skBitmap, image, format);
             transferBatch.AddSignalSemaphore(transferComplete);
 
             var transferOp = context.TransferSubmitContext.SubmitSingle(transferBatch);
@@ -506,7 +506,7 @@ namespace RockEngine.Core.Rendering.Texturing
         }
 
 
-        private static void CopyImageData(VulkanContext context, UploadBatch batch,
+        private static void CopyImageData(UploadBatch batch,
             SKBitmap skBitmap, VkImage vkImage, Format format, uint arrayLayer = 0)
         {
             CopyImageDataFromPointer(batch, vkImage, skBitmap.GetPixelSpan(),
@@ -515,7 +515,7 @@ namespace RockEngine.Core.Rendering.Texturing
 
 
         private static void CopyImageDataFromPointer(UploadBatch batch, VkImage vkImage,
-            Span<byte> data, uint width, uint height, Format format, uint arrayLayer = 0)
+            ReadOnlySpan<byte> data, uint width, uint height, Format format, uint arrayLayer = 0)
         {
             var imageSize = (ulong)(width * height * GetBytesPerPixel(format));
 
@@ -576,13 +576,15 @@ namespace RockEngine.Core.Rendering.Texturing
             return _emptyTexture;
         }
 
-
-        public static Texture2D GetEmptyWhiteTexture(VulkanContext context)
+        public static Texture2D CreateEmptyTexture(VulkanContext context, TextureData textureData)
         {
-            _emptyWhiteTexture ??= CreateColorTexture(context, new Vector4D<byte>(255, 255, 255, 255));
-            return _emptyWhiteTexture;
+            using var surface = SKSurface.Create(new SKImageInfo((int)textureData.Width, (int)textureData.Height, SKColorType.Rgba8888));
+            surface.Canvas.Clear(new SKColor(0,0,0,255));
+            using var image = surface.Snapshot();
+            using var bitmap = SKBitmap.FromImage(image);
+           
+            return LoadFromSKImage(context, bitmap, textureData, name: textureData.Name);
         }
-
 
         public static Texture2D CreateColorTexture(VulkanContext context, Vector4D<byte> color, string? name = null, uint mipLevels = 1)
         {

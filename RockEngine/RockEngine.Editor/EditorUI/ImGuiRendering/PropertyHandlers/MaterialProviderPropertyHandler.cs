@@ -163,9 +163,9 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.PropertyHandlers
                 _logger.Error(ex);
             }
 
-            if (thumbnail?.Texture != null)
+            if (thumbnail?.TextureId != null)
             {
-                ImGui.Image(drawer.ImGuiController.GetTextureID(thumbnail.Texture), new Vector2(64, 64));
+                ImGui.Image(thumbnail.TextureId, new Vector2(64, 64), thumbnail.UV0, thumbnail.UV1);
                 drawn = true;
                 return true;
             }
@@ -175,7 +175,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.PropertyHandlers
                 var texId = drawer.ImGuiController.GetTextureID(textureAsset.Texture);
                 if (texId != 0)
                 {
-                    ImGui.Image(texId, new Vector2(64, 64));
+                    ImGui.Image(texId, new Vector2(64, 64), thumbnail.UV0, thumbnail.UV1);
                     drawn = true;
                     return true;
                 }

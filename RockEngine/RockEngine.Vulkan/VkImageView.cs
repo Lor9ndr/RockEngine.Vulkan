@@ -16,6 +16,7 @@ namespace RockEngine.Vulkan
 
         public Format Format => _createInfo.Format;
         public ImageAspectFlags AspectFlags => _createInfo.SubresourceRange.AspectMask;
+        public ImageViewType ViewType => _createInfo.ViewType;
         public uint BaseMipLevel => _createInfo.SubresourceRange.BaseMipLevel;
         public uint BaseArrayLayer => _createInfo.SubresourceRange.BaseArrayLayer;
         public uint LevelCount => _createInfo.SubresourceRange.LevelCount;
@@ -119,7 +120,6 @@ namespace RockEngine.Vulkan
 
         public override void LabelObject(string name) => _context.DebugUtils.SetDebugUtilsObjectName(_vkObject, ObjectType.ImageView, name);
 
-        // Вместо старого события WasUpdated теперь можно просто уведомлять трекер
         public void Update()
         {
             _tracker.NotifyObservers(ResourceChangeType.DataUpdated);
