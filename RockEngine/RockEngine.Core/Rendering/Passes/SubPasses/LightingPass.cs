@@ -165,38 +165,33 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
         {
             int attachmentIndex = 0;
 
-            // Input attachments (GBuffer)
-            for (; attachmentIndex < GBuffer.ColorAttachmentFormats.Length; attachmentIndex++)
+            // Input attachments: normal+depth (0), albedo (1), MRA (2)
+            for (; attachmentIndex < GBuffer.ColorAttachmentFormats.Length; attachmentIndex++)  // now 3
             {
                 subpass.AddInputAttachment(attachmentIndex, ImageLayout.ShaderReadOnlyOptimal);
             }
 
-            // Depth input attachment
-            subpass.AddInputAttachment(
-                attachmentIndex++,
-                ImageLayout.DepthStencilReadOnlyOptimal);
+            // Depth attachment is NOT added as input (skip index 3)
+            subpass.AddInputAttachment(attachmentIndex++, ImageLayout.DepthStencilReadOnlyOptimal);
 
-            // Color attachment (Swapchain)
-            subpass.AddColorAttachment(
-                attachmentIndex,
-                ImageLayout.ColorAttachmentOptimal);
+            // Color attachment for the final lit image (index 4)
+            subpass.AddColorAttachment(attachmentIndex, ImageLayout.ColorAttachmentOptimal);
         }
 
         public void SetupDependencies(RenderPassBuilder builder, uint subpassIndex)
         {
-            // GeometryPass -> LightingPass dependency
-            if (subpassIndex == 1)
+            if (subpassIndex == Order)
             {
                 builder.AddDependency()
-                    .FromSubpass(subpassIndex - 1)
-                    .ToSubpass(subpassIndex)
-                    .WithStages(
-                        PipelineStageFlags.ColorAttachmentOutputBit | PipelineStageFlags.LateFragmentTestsBit,
-                        PipelineStageFlags.FragmentShaderBit)
-                    .WithAccess(
-                        AccessFlags.ColorAttachmentWriteBit | AccessFlags.DepthStencilAttachmentWriteBit,
-                        AccessFlags.ShaderReadBit)
-                    .Add();
+                     .FromSubpass(GeometryPass.Order)
+                     .ToSubpass(Order)
+                     .WithStages(
+                         PipelineStageFlags.ColorAttachmentOutputBit | PipelineStageFlags.LateFragmentTestsBit,
+                         PipelineStageFlags.FragmentShaderBit)
+                     .WithAccess(
+                         AccessFlags.ColorAttachmentWriteBit | AccessFlags.DepthStencilAttachmentWriteBit,
+                         AccessFlags.ShaderReadBit)
+                     .Add();
             }
         }
 

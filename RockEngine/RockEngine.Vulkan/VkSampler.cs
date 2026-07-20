@@ -14,14 +14,14 @@ namespace RockEngine.Vulkan
 
         public static unsafe VkSampler Create(VulkanContext context, in SamplerCreateInfo ci)
         {
-            VulkanContext.Vk.CreateSampler(context.Device, in ci, in VulkanContext.CustomAllocator<VkSampler>(), out var sampler)
+            VK.CreateSampler(context.Device, in ci, in CustomAllocator<VkSampler>(), out var sampler)
                  .VkAssertResult("Failed to create sampler");
             return new VkSampler(context, sampler);
         }
 
         protected override unsafe void Dispose(bool disposing)
         {
-            VulkanContext.Vk.DestroySampler(_context.Device, _vkObject, in VulkanContext.CustomAllocator<VkSampler>());
+            VK.DestroySampler(_context.Device, _vkObject, in CustomAllocator<VkSampler>());
         }
         public override void LabelObject(string name) => _context.DebugUtils.SetDebugUtilsObjectName(_vkObject, ObjectType.Sampler, name);
 

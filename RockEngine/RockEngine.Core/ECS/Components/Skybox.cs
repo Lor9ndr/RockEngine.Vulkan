@@ -1,4 +1,4 @@
-﻿using MessagePack;
+﻿using MemoryPack;
 
 using RockEngine.Assets;
 using RockEngine.Core.Assets;
@@ -8,14 +8,13 @@ using RockEngine.Core.Rendering.Passes.SubPasses;
 
 namespace RockEngine.Core.ECS.Components
 {
-    [MessagePackObject]
+    [MemoryPackable]
     public partial class Skybox : Component
     {
         public Skybox()
         {
         }
 
-        [Key(7)]
         public AssetReference<TextureAsset> Cubemap { get; set; }
 
         

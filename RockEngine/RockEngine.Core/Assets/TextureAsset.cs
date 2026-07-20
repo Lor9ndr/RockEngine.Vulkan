@@ -1,4 +1,4 @@
-﻿using MessagePack;
+﻿using MemoryPack;
 using RockEngine.Core.DI;
 using RockEngine.Core.Rendering;
 using RockEngine.Core.Rendering.Texturing;
@@ -8,36 +8,35 @@ using SkiaSharp;
 
 namespace RockEngine.Core.Assets
 {
-    [MessagePackObject]
+    [MemoryPackable]
     public sealed partial class TextureAsset : Asset<TextureData>, IGpuResource
     {
-        [Key(15)]
         public override string Type => "Texture";
 
-        [IgnoreMember]
+        
         private Texture? _texture;
-        [IgnoreMember]
+        
         private readonly SemaphoreSlim _gpuSemaphore = new(1, 1);
-        [IgnoreMember]
+        
         private SKBitmap[]? _bitmaps; // CPU-side image data
-        [IgnoreMember]
+        
         private bool _disposed;
 
-        [Key(16)]
         public TextureDimension TextureType => Data?.Dimension ?? TextureDimension.Texture2D;
-        [IgnoreMember]
+        
         public bool GpuReady => _texture != null;
-        [IgnoreMember]
+
+        [MemoryPackIgnore]
         public Texture? Texture => _texture;
 
         // Texture properties
-        [IgnoreMember]
+        
         public uint Width => Data?.Width ?? 0;
-        [IgnoreMember]
+        
         public uint Height => Data?.Height ?? 0;
-        [IgnoreMember]
+        
         public TextureFormat Format => Data?.Format ?? TextureFormat.R8G8B8A8Unorm;
-        [IgnoreMember]
+        
         public bool HasMipmaps => Data?.GenerateMipmaps ?? false;
 
         public TextureAsset()
@@ -143,9 +142,8 @@ namespace RockEngine.Core.Assets
                 {
                     throw new InvalidOperationException("Texture data not loaded");
                 }
-
                 var context = IoC.Container.GetInstance<VulkanContext>();
-
+                Data.GenerateMipmaps = true;
                 // Use the new unified creation method
                 _texture = await Texture2D.CreateAsync(context, Data, default).ConfigureAwait(false);
 

@@ -73,7 +73,7 @@ void main() {
         // Transform to world space using tangent basis
         vec3 sampleDir = L.x * tangent + L.y * bitangent + L.z * N;
         
-        irradiance += textureLod(inputEnvMap, sampleDir, 0.0).rgb * cos(theta);
+        irradiance += texture(inputEnvMap, sampleDir).rgb * cos(theta);
     }
     
     irradiance = PI * irradiance / float(SAMPLE_COUNT);

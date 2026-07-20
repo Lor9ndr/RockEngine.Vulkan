@@ -20,6 +20,8 @@ namespace RockEngine.Core.Rendering.Objects
         public SubPassMetadata SubpassMetadata { get; } // Default for compute pipelines
         public CoreObjects.PipelineLayout Layout { get; }
         private bool _disposed = false;
+        public uint SubpassIndex => Type == PipelineType.Graphics ? SubpassMetadata.Order : 0;
+        public string SubpassName => Type == PipelineType.Graphics ? SubpassMetadata.Name : "compute";
 
         // Graphics pipeline constructor
         public RckPipeline(VkPipeline pipeline, string name, RckRenderPass renderPass, SubPassMetadata subpassMetadata, CoreObjects.PipelineLayout layout)
@@ -42,9 +44,6 @@ namespace RockEngine.Core.Rendering.Objects
             SubpassMetadata = default;
             Layout = layout ?? throw new ArgumentNullException(nameof(layout));
         }
-
-        public uint SubpassIndex => Type == PipelineType.Graphics ? SubpassMetadata.Order : 0;
-        public string SubpassName => Type == PipelineType.Graphics ? SubpassMetadata.Name : "compute";
 
         public void Bind(VkCommandBuffer commandBuffer)
         {

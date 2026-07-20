@@ -1,4 +1,6 @@
 ﻿using System.Diagnostics.CodeAnalysis;
+using System.Reflection;
+using RockEngine.DI;
 using SimpleInjector;
 
 namespace RockEngine.Core.DI
@@ -8,6 +10,10 @@ namespace RockEngine.Core.DI
         [RequiresUnreferencedCode("")]
         public static void RegisterModules(Container container)
         {
+            var moduleAssemblies = new[]
+            {
+                Assembly.Load("RockEngine.ShaderPreprocessor"),
+            };
             // Get all loaded assemblies
             var assemblies = AppDomain.CurrentDomain.GetAssemblies()
                 .Where(asm => !asm.IsDynamic)
@@ -16,6 +22,7 @@ namespace RockEngine.Core.DI
             // Find and execute all dependency modules
             foreach (var assembly in assemblies)
             {
+                Console.WriteLine(assembly.FullName);
                 var moduleTypes = assembly.GetExportedTypes()
                     .Where(t => !t.IsAbstract &&
                                 !t.IsInterface &&
@@ -27,7 +34,21 @@ namespace RockEngine.Core.DI
                     module.RegisterDependencies(container);
                 }
             }
-            ContainerExtensions.BuildRenderPassSystem(container);
+            foreach (var assembly in moduleAssemblies)
+            {
+                var moduleTypes = assembly.GetExportedTypes()
+                   .Where(t => !t.IsAbstract &&
+                               !t.IsInterface &&
+                               typeof(IDependencyModule).IsAssignableFrom(t));
+
+                foreach (var type in moduleTypes)
+                {
+                    var module = (IDependencyModule)Activator.CreateInstance(type);
+                    module.RegisterDependencies(container);
+                }
+            }
+
+                ContainerExtensions.BuildRenderPassSystem(container);
         }
     }
 }

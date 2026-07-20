@@ -24,7 +24,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
             ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(8, 4));
             ImGui.PushStyleVar(ImGuiStyleVar.ItemSpacing, new Vector2(6, 0));
 
-            if (ImGui.Begin("Toolbar", ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoTitleBar))
+            if (ImGui.Begin("Toolbar", ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.AlwaysAutoResize))
             {
                 var buttonSize = new Vector2(32, 32);
                 var style = ImGui.GetStyle();
@@ -114,7 +114,6 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
                 ImGui.SameLine(ImGui.GetWindowWidth() - 80);
                 ImGui.TextColored(new Vector4(0.5f, 0.5f, 0.5f, 1.0f), $"{Time.FPS} FPS");
             }
-
             ImGui.End();
             ImGui.PopStyleVar(2);
         }

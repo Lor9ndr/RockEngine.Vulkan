@@ -1,23 +1,18 @@
-﻿using MessagePack;
+﻿using MemoryPack;
 
 namespace RockEngine.Core.Rendering
 {
-
-    [MessagePackObject]
-    public class RenderLayer
+    [MemoryPackable]
+    public partial class RenderLayer
     {
-        [Key(0)]
         public uint ID { get; }
-        [Key(1)]
         public string Name { get; }
-        [Key(2)]
         public int Order { get; set; }
-        [Key(3)]
         public bool Enabled { get; set; }
 
-        [Key(4)]
         public RenderLayerMask Mask => (RenderLayerMask)ID;
 
+        [MemoryPackConstructor]
         public RenderLayer(uint id, string name, int order, bool enabled)
         {
             ID = id;

@@ -39,7 +39,7 @@ namespace RockEngine.Core.Rendering
 
         private static ulong CalculateTotalSize(uint maxCameras)
         {
-            var context = VulkanContext.GetCurrent();
+            var context = GetCurrent();
             ulong elementSize = (ulong)Marshal.SizeOf<GlobalUboData>();
             ulong minAlignment = context.Device.PhysicalDevice.Properties.Limits.MinUniformBufferOffsetAlignment;
             ulong alignedElementSize = (elementSize + minAlignment - 1) & ~(minAlignment - 1);
@@ -90,7 +90,7 @@ namespace RockEngine.Core.Rendering
             public System.Numerics.Vector4 CamPos;
             public Vector2 ScreenSize;
             public float FarClip;
-            private float _padding1;
+            public float NearClip;
         }
     }
 }

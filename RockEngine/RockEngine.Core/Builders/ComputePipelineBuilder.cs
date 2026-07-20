@@ -54,12 +54,12 @@ namespace RockEngine.Core.Builders
                 Layout = _layout.VkPipelineLayout
             };
 
-            VulkanContext.Vk.CreateComputePipelines(
+            VK.CreateComputePipelines(
                 _context.Device,
                 default,
                 1,
                 in createInfo,
-                in VulkanContext.CustomAllocator<VkPipeline>(),
+                in CustomAllocator<VkPipeline>(),
                 out var pipeline
             ).VkAssertResult();
 

@@ -1,4 +1,5 @@
 ﻿using System.Buffers;
+using RockEngine.Core.Attributes;
 using RockEngine.Core.DI;
 using RockEngine.Core.Diagnostics;
 using RockEngine.Core.ECS.Components;
@@ -20,12 +21,12 @@ namespace RockEngine.Core.Rendering.Passes
         public LightingPass LightingPass => SubPasses.OfType<LightingPass>().First();
         public override int Order => 0;
 
-        public override async ValueTask Execute(RenderContext renderContext, WorldRenderer renderer)
+        public override ValueTask Execute(RenderContext renderContext, WorldRenderer renderer)
         {
             uint frameIndex = renderer.FrameIndex;
             var cams = cameraManager.RegisteredCameras;
 
-            await Parallel.ForAsync(0, cams.Count, new ParallelOptions
+            Parallel.For(0, cams.Count, new ParallelOptions
             {
                 MaxDegreeOfParallelism = Environment.ProcessorCount
             }, async (i, ct) =>
@@ -37,27 +38,26 @@ namespace RockEngine.Core.Rendering.Passes
                 }
                 if (camera.IsActive)
                 {
-                    await ExecuteCameraPass(renderContext.GraphicsContext, camera, renderer, (uint)i, frameIndex).ConfigureAwait(false);
+                     ExecuteCameraPass(renderContext.GraphicsContext, camera, renderer, (uint)i, frameIndex);
                 }
-            }).ConfigureAwait(false);
+            });
+            return ValueTask.CompletedTask;
         }
-
-        private async ValueTask ExecuteCameraPass(SubmitContext submitContext, Camera camera, WorldRenderer renderer, uint cameraIndex, uint frameIndex)
+        [Trace("Camera - {camera.Entity.Name}")]
+        private void ExecuteCameraPass(SubmitContext submitContext, Camera camera, WorldRenderer renderer, uint cameraIndex, uint frameIndex)
         {
             var name = $"Camera - {camera.Entity.Name}";
 
             var primaryBatch = submitContext.CreateBatch();
             var batch = primaryBatch;
-            using (PerformanceTracer.BeginSection(name) |
-                batch.NameAction(name, [0.5f, 0.8f, 0.9f, 1.0f]) |
-                batch.BeginSection(name, frameIndex))
+            using (batch.NameAction(name, [0.5f, 0.8f, 0.9f, 1.0f]) | batch.BeginSection(name, frameIndex))
             {
-                camera.RenderTarget.PrepareForRender(primaryBatch);
+                camera.RenderTarget.PrepareForRender(primaryBatch, frameIndex);
 
                 BeginRenderPass(camera, renderer, batch);
 
                 // Precompute inheritance info
-                var inheritanceInfos = new CommandBufferInheritanceInfo[_subPasses.Length];
+                var inheritanceInfos = ArrayPool<CommandBufferInheritanceInfo>.Shared.Rent(_subPasses.Length);
                 for (int i = 0; i < _subPasses.Length; i++)
                 {
                     inheritanceInfos[i] = new CommandBufferInheritanceInfo
@@ -69,7 +69,7 @@ namespace RockEngine.Core.Rendering.Passes
                         OcclusionQueryEnable = false,
                         QueryFlags = QueryControlFlags.None,
                         PipelineStatistics = PipelineStatisticsEnabled && _pipelineStatsEnabled ?
-                            _pipelineStatisticsFlags : QueryPipelineStatisticFlags.None
+                        _pipelineStatisticsFlags : QueryPipelineStatisticFlags.None
                     };
                 }
 
@@ -104,9 +104,10 @@ namespace RockEngine.Core.Rendering.Passes
                 }
                 finally
                 {
+                    ArrayPool<CommandBufferInheritanceInfo>.Shared.Return(inheritanceInfos, clearArray: false);
                     ArrayPool<UploadBatch>.Shared.Return(secondaryBatches, false);
                     batch.EndRenderPass();
-                    camera.RenderTarget.TransitionToRead(primaryBatch);
+                    camera.RenderTarget.TransitionToRead(primaryBatch, frameIndex);
                 }
             }
 

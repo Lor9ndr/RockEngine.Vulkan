@@ -19,8 +19,12 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.PropertyHandlers
 
         public bool CanHandle(Type propertyType) => propertyType == typeof(MaterialProvider);
 
-        public void Draw(IComponent component, UIPropertyAccessor accessor, object value, PropertyDrawer drawer)
+        public void Draw(object owner, UIPropertyAccessor accessor, object value, PropertyDrawer drawer)
         {
+            if (owner is not IComponent component)
+            {
+                return;
+            }
             if (value is not MaterialProvider materialProvider || !materialProvider.IsAssetBased)
             {
                 return;

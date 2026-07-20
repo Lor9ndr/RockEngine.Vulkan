@@ -13,20 +13,23 @@ namespace RockEngine.Core.Rendering.Managers
 {
     public class ShadowManager : IDisposable
     {
-        private readonly VulkanContext _context;
-        private readonly StorageBuffer<Matrix4x4> _shadowMatricesUbo;
-        private readonly UniformBuffer _csmDataUbo;
-        private readonly Texture _shadowMapArray;
-        private readonly Texture _pointShadowMapArray;
-        private readonly TextureBinding _shadowMapsBinding;
-        private readonly TextureBinding _pointShadowMapsBinding;
-        private readonly StorageBufferBinding<Matrix4x4> _shadowMatricesBinding;
-        private readonly UniformBufferBinding _csmDataBinding;
-
+        private uint _capacity = 0;               // current max number of slots
+        private readonly List<uint> _freeIndices = new(); // indices available inside current capacity
         private readonly Dictionary<Light, uint> _lightShadowMapIndices = new();
-        private readonly Queue<uint> _availableShadowIndices = new();
-        private readonly uint _maxShadowMaps = 20;
+
+        // GPU resources – created/resized together
+        private StorageBuffer<Matrix4x4>? _shadowMatricesUbo;
+        private UniformBuffer? _csmDataUbo;
+        private Texture? _shadowMapArray;
+        private Texture? _pointShadowMapArray;
+
+        // Bindings that are handed out to the renderer – must be recreated on resize
+        private TextureBinding? _shadowMapsBinding;
+        private TextureBinding? _pointShadowMapsBinding;
+        private StorageBufferBinding<Matrix4x4>? _shadowMatricesBinding;
+        private UniformBufferBinding? _csmDataBinding;
         private static readonly Logger _logger = LogManager.GetCurrentClassLogger();
+        private readonly VulkanContext _context;
 
         [Flags]
         private enum UploadFlags
@@ -36,49 +39,60 @@ namespace RockEngine.Core.Rendering.Managers
             Csm = 1 << 1
         }
 
-        public StorageBuffer<Matrix4x4> ShadowMatricesUbo => _shadowMatricesUbo;
-
         public ShadowManager(VulkanContext context)
         {
             _context = context;
+        }
+        public void EnsureCapacity(int minSlots)
+        {
+            if (minSlots <= _capacity)
+            {
+                return;
+            }
 
-            // Create uniform buffer for shadow matrices
-            _shadowMatricesUbo = new StorageBuffer<Matrix4x4>(_context, (ulong)6 * _maxShadowMaps);
+            uint newCapacity = Math.Max((uint)minSlots, _capacity == 0 ? 2 : _capacity * 2);
+            Resize(newCapacity);
+        }
+        private void Resize(uint newCapacity)
+        {
+            // Dispose old resources if they exist
+            _shadowMatricesUbo?.Dispose();
+            _csmDataUbo?.Dispose();
+            _shadowMapArray?.Dispose();
+            _pointShadowMapArray?.Dispose();
+
+            // Create new UBOs sized for the new capacity
+            _shadowMatricesUbo = new StorageBuffer<Matrix4x4>(_context, (ulong)6 * newCapacity);
             _shadowMatricesBinding = new StorageBufferBinding<Matrix4x4>(_shadowMatricesUbo, 0, 0);
 
-            // Create uniform buffer for CSM data
-            _csmDataUbo = new UniformBuffer(_context, (ulong)(_maxShadowMaps * Marshal.SizeOf<CSMData>()));
+            _csmDataUbo = new UniformBuffer(_context, (ulong)(newCapacity * Marshal.SizeOf<CSMData>()));
             _csmDataBinding = new UniformBufferBinding(_csmDataUbo, 0, 0);
 
-            // Create shadow map arrays
-            _shadowMapArray = CreateShadowMapArray(_maxShadowMaps, 1024, false, "ShadowMapArray");
-            _pointShadowMapArray = CreateShadowMapArray(_maxShadowMaps, 1024, true, "PointShadowMapArray");
+            // Create shadow map arrays with the correct number of layers
+            _shadowMapArray = CreateShadowMapArray(newCapacity, 1024, false, "ShadowMapArray");
+            _pointShadowMapArray = CreateShadowMapArray(newCapacity, 1024, true, "PointShadowMapArray");
 
-            // Create texture bindings
-            _shadowMapsBinding = new TextureBinding(4,
-                0,
-                0,
-                1,
-                ImageLayout.ShaderReadOnlyOptimal,
-                0,
-                _shadowMapArray.Image.ArrayLayers,
-                _shadowMapArray);
+            // Build new bindings (descriptor set bindings will need to be updated!)
+            _shadowMapsBinding = new TextureBinding(
+                4, 0, 0, 1, ImageLayout.ShaderReadOnlyOptimal, 0,
+                _shadowMapArray.Image.ArrayLayers, _shadowMapArray);
 
             _pointShadowMapsBinding = new TextureBinding(
-                4,
-                1,
-                0,
-                1,
-                ImageLayout.ShaderReadOnlyOptimal,
-                0,
-                _pointShadowMapArray.Image.ArrayLayers,
-                _pointShadowMapArray);
+                4, 1, 0, 1, ImageLayout.ShaderReadOnlyOptimal, 0,
+                _pointShadowMapArray.Image.ArrayLayers, _pointShadowMapArray);
 
-            // Initialize available indices
-            for (uint i = 0; i < _maxShadowMaps; i++)
+            // Update the free list – all slots from old capacity..newCapacity-1 are free
+            _freeIndices.Clear();
+            for (uint i = 0; i < newCapacity; i++)
             {
-                _availableShadowIndices.Enqueue(i);
+                // Don't re‑assign indices that are still in use – we handle that separately
+                if (!_lightShadowMapIndices.ContainsValue(i))
+                {
+                    _freeIndices.Add(i);
+                }
             }
+
+            _capacity = newCapacity;
         }
 
         private Texture CreateShadowMapArray(uint arrayLayers, uint size, bool isPointLight, string name)
@@ -119,21 +133,29 @@ namespace RockEngine.Core.Rendering.Managers
                 return existingIndex;
             }
 
-            if (_availableShadowIndices.Count > 0)
+            // Ensure we have at least one free slot
+            if (_freeIndices.Count == 0)
             {
-                var index = _availableShadowIndices.Dequeue();
-                _lightShadowMapIndices[light] = index;
-                return index;
+                EnsureCapacity((int)_capacity + 1);
+                // After resize, _freeIndices was repopulated with all free slots
             }
 
-            return uint.MaxValue;
+            var index = _freeIndices[0];
+            _freeIndices.RemoveAt(0);
+            _lightShadowMapIndices[light] = index;
+            return index;
         }
 
         public void ReleaseShadowMapIndex(Light light)
         {
             if (_lightShadowMapIndices.Remove(light, out var index))
             {
-                _availableShadowIndices.Enqueue(index);
+                _freeIndices.Add(index);
+                // Optional: shrink if no lights remain
+                if (_lightShadowMapIndices.Count == 0 && _capacity > 0)
+                {
+                    Resize(0); // completely free GPU resources, or keep a minimum
+                }
             }
         }
 
@@ -213,11 +235,42 @@ namespace RockEngine.Core.Rendering.Managers
             };
         }
 
-        public TextureBinding GetShadowMapsBinding() => _shadowMapsBinding;
-        public TextureBinding GetPointShadowMapsBinding() => _pointShadowMapsBinding;
-        public StorageBufferBinding<Matrix4x4> GetShadowMatricesBinding() => _shadowMatricesBinding;
-        public UniformBufferBinding GetCSMDataBinding() => _csmDataBinding;
+        public TextureBinding GetShadowMapsBinding()
+        {
+            if (_shadowMapsBinding is null)
+            {
+                EnsureCapacity(1); // lazy init
+            }
 
+            return _shadowMapsBinding!;
+        }
+
+        public TextureBinding GetPointShadowMapsBinding()
+        {
+            if(_pointShadowMapsBinding is null)
+            {
+                EnsureCapacity(1);
+            }
+            return _pointShadowMapsBinding!;
+        }
+
+        public StorageBufferBinding<Matrix4x4> GetShadowMatricesBinding()
+        {
+            if (_shadowMatricesBinding is null)
+            {
+                EnsureCapacity(1);
+            }
+            return _shadowMatricesBinding!;
+        }
+
+        public UniformBufferBinding GetCSMDataBinding()
+        {
+            if (_csmDataBinding is null)
+            {
+                EnsureCapacity(1);
+            }
+            return _csmDataBinding!;
+        }
 
         public void UpdateShadowMatrices(List<Light> shadowCastingLights, Camera mainCamera)
         {
@@ -225,8 +278,8 @@ namespace RockEngine.Core.Rendering.Managers
             {
                 return;
             }
-
-            var csmDataArray = ArrayPool<CSMData>.Shared.Rent((int)_maxShadowMaps);
+            EnsureCapacity(shadowCastingLights.Count);
+            var csmDataArray = ArrayPool<CSMData>.Shared.Rent((int)_capacity);
             try
             {
                 var batch = _context.GraphicsSubmitContext.CreateBatch();
@@ -283,7 +336,7 @@ namespace RockEngine.Core.Rendering.Managers
                     // because ArrayPool.Rent will return minimum array length.
                     // So it can be larger
                     batch.StageToBuffer(csmDataArray, _csmDataUbo.Buffer, 0,
-                        (ulong)(Marshal.SizeOf<CSMData>() * _maxShadowMaps));
+                        (ulong)(Marshal.SizeOf<CSMData>() * _capacity));
                 }
 
                 // Build barriers according to flags
@@ -335,7 +388,6 @@ namespace RockEngine.Core.Rendering.Managers
         public void Dispose()
         {
             _lightShadowMapIndices.Clear();
-            _availableShadowIndices.Clear();
 
             _shadowMatricesUbo?.Dispose();
             _csmDataUbo?.Dispose();

@@ -1,22 +1,22 @@
-﻿
-using MessagePack;
-
-using RockEngine.Assets;
-using RockEngine.Core.ECS.Components.Physics;
+﻿using MemoryPack;
+using RockEngine.Core.ECS.Components.UI;
 using RockEngine.Core.Rendering;
 
 namespace RockEngine.Core.ECS.Components
 {
-    [Union(0, typeof(MeshRenderer))]
-    [Union(1, typeof(Light))]
-    [Union(2, typeof(Camera))]
-    [Union(3, typeof(RigidbodyComponent))]
-    [Union(4, typeof(Transform))]
-    [Union(5, typeof(SphereColliderComponent))]
-    [Union(6, typeof(BoxColliderComponent))]
-    [Union(7, typeof(CapsuleColliderComponent))]
-    [Union(8, typeof(Skybox))]
-    public interface IComponent : IPolymorphicSerializable
+    [MemoryPackUnion(1, typeof(Transform))]
+    [MemoryPackUnion(2, typeof(Light))]
+    [MemoryPackUnion(3, typeof(CapsuleColliderComponent))]
+    [MemoryPackUnion(4, typeof(BoxColliderComponent))]
+    [MemoryPackUnion(5, typeof(Camera))]
+    [MemoryPackUnion(6, typeof(RigidbodyComponent))]
+    [MemoryPackUnion(7, typeof(Skybox))]
+    [MemoryPackUnion(8, typeof(SphereColliderComponent))]
+    [MemoryPackUnion(9, typeof(TextRenderer))]
+    [MemoryPackUnion(11, typeof(MeshRenderer))]
+    [MemoryPackUnion(12, typeof(RectTransform))]
+    [MemoryPackable]
+    public partial interface IComponent 
     {
         public bool IsActive { get; }
         public Entity Entity { get; }

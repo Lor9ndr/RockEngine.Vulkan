@@ -92,9 +92,8 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
                     .AddState(DynamicState.Viewport)
                     .AddState(DynamicState.Scissor))
                 .WithViewportState(new VulkanViewportStateInfoBuilder()
-                    .AddViewport(new Viewport(0, 0, _graphicsEngine.MainSwapchain.Extent.Width,
-                                             _graphicsEngine.MainSwapchain.Extent.Height, 0, 1))
-                    .AddScissors(new Rect2D(new Offset2D(), _graphicsEngine.MainSwapchain.Extent)))
+                    .AddViewport(new Viewport(0, 0, 1,1, 0, 1))
+                    .AddScissors(new Rect2D(new Offset2D(), new Extent2D(1,1))))
                 .WithRasterizer(new VulkanRasterizerBuilder().CullFace(CullModeFlags.None))
                 .WithMultisampleState(new VulkanMultisampleStateInfoBuilder().Configure(false, SampleCountFlags.Count1Bit))
                 .WithColorBlendState(new VulkanColorBlendStateBuilder().AddDefaultAttachment())

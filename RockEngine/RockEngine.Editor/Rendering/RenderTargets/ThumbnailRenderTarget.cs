@@ -102,13 +102,13 @@ namespace RockEngine.Editor.Thumbnails
             Framebuffers[0].LabelObject("ThumbnailFramebuffer");
         }
 
-        public void PrepareForRender(UploadBatch batch)
+        public void PrepareForRender(UploadBatch batch, uint frameIndex)
         {
             ColorImage.TransitionImageLayout(batch, ImageLayout.Undefined, ImageLayout.ColorAttachmentOptimal);
             DepthImage.TransitionImageLayout(batch, ImageLayout.Undefined, ImageLayout.DepthStencilAttachmentOptimal);
         }
 
-        public void TransitionToRead(UploadBatch batch)
+        public void TransitionToRead(UploadBatch batch, uint frameIndex)
         {
             ColorImage.TransitionImageLayout(batch, ImageLayout.ColorAttachmentOptimal, ImageLayout.TransferSrcOptimal);
         }

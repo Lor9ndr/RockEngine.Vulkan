@@ -51,7 +51,7 @@ namespace RockEngine.Editor.Rendering.Passes
                 {
                     using (PerformanceTracer.BeginSection($"PickingPassStrategy-{camera.Entity.Name}", primaryBatch, frameIndex))
                     {
-                        PickingRenderTarget.PrepareForRender(primaryBatch);
+                        PickingRenderTarget.PrepareForRender(primaryBatch, frameIndex);
 
                         // Begin render pass
                         BeginRenderPass(PickingRenderTarget, renderer, primaryBatch);
@@ -63,7 +63,7 @@ namespace RockEngine.Editor.Rendering.Passes
                         }
 
                         primaryBatch.EndRenderPass();
-                        PickingRenderTarget.TransitionToRead(primaryBatch);
+                        PickingRenderTarget.TransitionToRead(primaryBatch, frameIndex);
                     }
                 }
 

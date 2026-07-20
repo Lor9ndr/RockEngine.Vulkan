@@ -1,6 +1,6 @@
 ﻿using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
-using MessagePack;
+using MemoryPack;
 using RockEngine.Core.DI;
 using RockEngine.Core.ECS.Components;
 using RockEngine.Core.Rendering;
@@ -8,46 +8,48 @@ using ZLinq;
 
 namespace RockEngine.Core.ECS
 {
-    [MessagePackObject(AllowPrivate = true)]
+    [MemoryPackable(GenerateType.Object)]
     [DebuggerDisplay("Entity - {Name} ({ID})")]
     public partial class Entity
     {
         private static ulong _nextId = 0;
-        [IgnoreMember]
+        
         private readonly Lock _componentsLock = new();
 
-        [Key(0)]
         public string Name { get; set; }
 
-        [Key(1)]
         public bool IsActive { get; private set; } = true;
 
-        [Key(2)]
         public ulong ID { get; init; }
 
-        [Key(3)]
-        private List<IComponent> _components = [];
+        [MemoryPackAllowSerialize]
+        private readonly List<IComponent> _components = [];
 
-        [IgnoreMember]
-        public IReadOnlyList<IComponent> Components => _components;
+        public IReadOnlyList<IComponent> Components
+        {
+            get => _components;
+            init
+            {
+                _components.Clear();
+                if (value != null)
+                    _components.AddRange(value);
+            }
+        }
 
-        [IgnoreMember]
         public Transform Transform => _components.OfType<Transform>().FirstOrDefault();
 
         // Parent relationship – serialized ONLY as ParentID
-        [Key(4)]
         public ulong? ParentID { get; set; }
 
-        [IgnoreMember]
+        [MemoryPackIgnore]
         public Entity? Parent { get; private set; }
 
-        [IgnoreMember]
+        
         private readonly List<Entity> _children = [];
 
-        [IgnoreMember]
+        
         public IReadOnlyList<Entity> Children => _children.AsReadOnly();
 
-        [Key(5)]
         public RenderLayer Layer { get; set; }
 
         public event Action? OnDestroy;

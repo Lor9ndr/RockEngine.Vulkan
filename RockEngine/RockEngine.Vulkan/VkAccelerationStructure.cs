@@ -74,7 +74,7 @@ namespace RockEngine.Vulkan
             };
 
             // Get size info
-            var khrAccel = new KhrAccelerationStructure(VulkanContext.Vk.Context);
+            var khrAccel = new KhrAccelerationStructure(VK.Context);
             khrAccel.GetAccelerationStructureBuildSizes(
                 device,
                  AccelerationStructureBuildTypeKHR.DeviceKhr,
@@ -141,7 +141,7 @@ namespace RockEngine.Vulkan
                 PGeometries = &geometry
             };
 
-            var khrAccel = new KhrAccelerationStructure(VulkanContext.Vk.Context);
+            var khrAccel = new KhrAccelerationStructure(VK.Context);
             ;
             khrAccel.GetAccelerationStructureBuildSizes(
                 device,
@@ -181,7 +181,7 @@ namespace RockEngine.Vulkan
             VkBuffer? indexBuffer = null, ulong indexOffset = 0, uint indexCount = 0,
             VkBuffer? transformBuffer = null, ulong transformOffset = 0)
         {
-            var khrAccel = new KhrAccelerationStructure(VulkanContext.Vk.Context);
+            var khrAccel = new KhrAccelerationStructure(VK.Context);
 
             // Prepare geometry info based on type
             AccelerationStructureGeometryKHR geometry;
@@ -275,7 +275,7 @@ namespace RockEngine.Vulkan
                 SType = StructureType.AccelerationStructureDeviceAddressInfoKhr,
                 AccelerationStructure = _vkObject
             };
-            var khrAccel = new KhrAccelerationStructure(VulkanContext.Vk.Context);
+            var khrAccel = new KhrAccelerationStructure(VK.Context);
             return khrAccel.GetAccelerationStructureDeviceAddress(_context.Device, ref info);
         }
 
@@ -294,7 +294,7 @@ namespace RockEngine.Vulkan
                 _buffer?.Dispose();
             }
 
-            var khrAccel = new KhrAccelerationStructure(VulkanContext.Vk.Context);
+            var khrAccel = new KhrAccelerationStructure(VK.Context);
             khrAccel.DestroyAccelerationStructure(_context.Device, _vkObject, null);
 
             _disposed = true;

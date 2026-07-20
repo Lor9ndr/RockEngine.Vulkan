@@ -17,10 +17,8 @@ namespace RockEngine.Core.Rendering
 
         public static readonly Format[] ColorAttachmentFormats =
         [
-            Format.R16G16B16A16Sfloat,   // Position (View Space)
-            Format.A2R10G10B10UnormPack32,     // Normal (Octahedral encoded) + Depth
-            Format.R8G8B8A8Srgb,         // Albedo + Specular
-            Format.R16G16B16A16Unorm             // Metallic (R), Roughness (G), 
+            Format.R8G8B8A8Unorm,        // gNormal (oct normal + roughness + metallic)
+            Format.R8G8B8A8Srgb,         // gAlbedo + ao
         ];
 
         public VkSampler[] Samplers { get; private set; }
@@ -33,10 +31,10 @@ namespace RockEngine.Core.Rendering
 
             // Create separate samplers for different texture types
             var positionSampler = CreateSampler(Filter.Nearest);  // Position benefits from nearest
-            var normalSampler = CreateSampler(Filter.Nearest);
+            var normalSampler = CreateSampler(Filter.Linear);
             var albedoSampler = CreateSampler(Filter.Linear);     // Albedo with sRGB handling
 
-            Samplers = new[] { positionSampler, normalSampler, albedoSampler, albedoSampler /*, albedoSampler*/ };
+            Samplers = new[] {/* positionSampler,*/ normalSampler, albedoSampler, albedoSampler /*, albedoSampler*/ };
             CreateAttachments();
             CreateTextures();
 
@@ -47,7 +45,7 @@ namespace RockEngine.Core.Rendering
         private void CreateAttachments()
         {
             ColorAttachments = new VkImageView[ColorAttachmentFormats.Length];
-            ReadOnlySpan<string> debugNames = ["GPosition", "GNormal", "GAlbedo", "GMRA", "GEmissive"];
+            ReadOnlySpan<string> debugNames = [ "GNormal", "GAlbedo"];
             for (int i = 0; i < ColorAttachments.Length; i++)
             {
                 ColorAttachments[i] = CreateColorAttachment(ColorAttachmentFormats[i]);

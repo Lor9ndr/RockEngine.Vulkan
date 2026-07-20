@@ -8,6 +8,7 @@ using RockEngine.Core.CoreObjects;
 using RockEngine.Core.DI;
 using RockEngine.Core.ECS;
 using RockEngine.Core.ECS.Components;
+using RockEngine.Core.ECS.Components.UI;
 using RockEngine.Core.Rendering;
 using RockEngine.Core.Rendering.Managers;
 using RockEngine.Core.Rendering.Passes;
@@ -127,7 +128,7 @@ namespace RockEngine.Editor.Layers
         {
             CreateSolidPipeline();
             // Uncomment to load assets when needed
-            // await LoadOrCreateAssets();
+            //await LoadOrCreateAssets();
 
         }
 
@@ -156,6 +157,7 @@ namespace RockEngine.Editor.Layers
 
                 var scene = await _assetManager.LoadAssetAsync<SceneAsset>("Scenes/DebugScene").ConfigureAwait(false);
                 await scene.LoadDataAsync().ConfigureAwait(false);
+
                 await scene.InstantiateEntities().ConfigureAwait(false);
 
                 _logger.Info("Project assets loaded successfully");
@@ -263,9 +265,31 @@ namespace RockEngine.Editor.Layers
 
                 await _assetManager.SaveAsync(solidMaterial).ConfigureAwait(false);
             }
+            var arialFont = await _assetManager.LoadAssetAsync<FontAsset>("Fonts/Arial").ConfigureAwait(false);
+            await arialFont.LoadGpuResourcesAsync().ConfigureAwait(false);
+
+            var canvasEntity = scene.CreateEntity("MainCanvas");
+
+            var canvas = canvasEntity.AddComponent<UICanvas>();
+
+            var textEntity = scene.CreateEntity("Hello label");
+            textEntity.AddComponent<RectTransform>().SizeDelta = new Vector2(400, 48);
+            var textComp = textEntity.AddComponent<UIText>();
+            textComp.Font = arialFont.FontAtlas;
+            textComp.Text = "Hello, RockEngine!";
+            textComp.Color = new Vector4(1, 1, 1, 1);
         }
 
-        
+        private async Task<FontAsset> CreateFontAsset(string fontPath, string assetName, float size = 32f)
+        {
+            var font = _assetFactory.Create<FontAsset>(new AssetPath("Fonts", assetName));
+            font.Configure(fontPath, size);
+            await font.LoadGpuResourcesAsync().ConfigureAwait(false);
+            await _assetManager.SaveAsync(font).ConfigureAwait(false);
+            return font;
+        }
+
+
         private void CreateModelEntities(SceneAsset scene, ModelAsset model, Vector3 position, Vector3 scale, Quaternion? rotation = null)
         {
             var parent = scene.CreateEntity();

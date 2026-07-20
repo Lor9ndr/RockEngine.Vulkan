@@ -28,10 +28,13 @@ namespace RockEngine.Tests.Atlasing
                 int w = 64 + i % 32;
                 int h = 64 + (i / 2) % 32;
                 if (alloc.Allocate(w, h, out var rect))
+                {
                     rects.Add(rect);
+                }
             }
             // No overlaps
             for (int i = 0; i < rects.Count; i++)
+            {
                 for (int j = i + 1; j < rects.Count; j++)
                 {
                     var a = rects[i];
@@ -39,6 +42,7 @@ namespace RockEngine.Tests.Atlasing
                     Assert.That(a.Right <= b.X || a.X >= b.Right || a.Bottom <= b.Y || a.Y >= b.Bottom,
                         $"Rects {i} and {j} overlap");
                 }
+            }
         }
 
         [Test]
@@ -69,22 +73,35 @@ namespace RockEngine.Tests.Atlasing
             var alloc1 = new MaxRectsAllocator(MaxRectsAllocator.FitHeuristic.BestShortSideFit);
             alloc1.Reset(512, 512);
             foreach (int s in sizes)
+            {
                 if (alloc1.Allocate(s, s, out var r))
+                {
                     rectsBSF.Add(r);
+                }
+            }
 
             // Run BottomLeft
             var alloc2 = new MaxRectsAllocator(MaxRectsAllocator.FitHeuristic.BottomLeft);
             alloc2.Reset(512, 512);
             foreach (int s in sizes)
+            {
                 if (alloc2.Allocate(s, s, out var r))
+                {
                     rectsBL.Add(r);
+                }
+            }
 
             // They should differ (at least in ordering)
             Assert.That(rectsBSF.Count, Is.EqualTo(rectsBL.Count));
             bool same = true;
             for (int i = 0; i < rectsBSF.Count; i++)
+            {
                 if (!rectsBSF[i].Equals(rectsBL[i]))
+                {
                     same = false;
+                }
+            }
+
             Assert.That(same, Is.False, "Different heuristics should produce different placements");
         }
 

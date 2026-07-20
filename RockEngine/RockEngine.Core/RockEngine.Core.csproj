@@ -39,25 +39,27 @@
   <ItemGroup>
     <PackageReference Include="AssimpNet" Version="4.1.0" />
     <PackageReference Include="JoltPhysicsSharp" Version="2.21.0" />
-    <PackageReference Include="MessagePackAnalyzer" Version="3.1.4">
+    <PackageReference Include="MemoryPack.Generator" Version="1.21.4" PrivateAssets="all">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
-    <PackageReference Include="Microsoft.Extensions.Caching.Memory" Version="10.0.8" />
-    <PackageReference Include="Microsoft.Extensions.ObjectPool" Version="10.0.8" />
+    <PackageReference Include="MethodDecorator.Fody" Version="1.1.1" />
+    <PackageReference Include="Microsoft.Extensions.Caching.Memory" Version="10.0.9" />
+    <PackageReference Include="Microsoft.Extensions.ObjectPool" Version="10.0.9" />
     <PackageReference Include="NLog" Version="6.1.3" />
     <PackageReference Include="Silk.NET.Input" Version="2.23.0" />
     <PackageReference Include="Silk.NET.Input.Extensions" Version="2.23.0" />
     <PackageReference Include="Silk.NET.Input.Sdl" Version="2.23.0" />
     <PackageReference Include="Silk.NET.Windowing" Version="2.23.0" />
-    <PackageReference Include="SimpleInjector" Version="5.5.2" />
-    <PackageReference Include="SkiaSharp" Version="3.119.2" />
+    <PackageReference Include="SimpleInjector" Version="5.6.0" />
+    <PackageReference Include="SkiaSharp" Version="4.148.0" />
     <PackageReference Include="ZLinq" Version="1.5.6" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\RockEngine.Assets\RockEngine.Assets.csproj" />
     <ProjectReference Include="..\RockEngine.CodeGenerator\RockEngine.CodeGenerator.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\RockEngine.DI\RockEngine.DI.csproj" />
     <ProjectReference Include="..\RockEngine.Math\RockEngine.Mathematics.csproj" />
     <ProjectReference Include="..\RockEngine.ShaderPreProcessor\RockEngine.ShaderPreProcessor.csproj" />
     <ProjectReference Include="..\RockEngine.Shading\RockEngine.Shading.csproj" />

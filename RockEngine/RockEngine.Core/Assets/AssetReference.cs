@@ -1,22 +1,21 @@
-﻿using MessagePack;
+﻿using MemoryPack;
 
 using RockEngine.Assets;
 using RockEngine.Core.DI;
 
 namespace RockEngine.Core.Assets
 {
-    [MessagePackObject]
-    public class AssetReference<T> : IAssetReference<T> where T : class, IAsset
+    [MemoryPackable]
+    public partial class AssetReference<T> : IAssetReference<T> where T : class, IAsset
     {
         private Guid _assetId;
         private T _asset;
         private bool _isResolved;
         private WeakReference<Task<T>> _loadingTask;
 
-        [Key(1)]
         public Guid AssetID => _assetId;
 
-        [IgnoreMember]
+        [MemoryPackIgnore]
         public T Asset
         {
             get
@@ -36,8 +35,9 @@ namespace RockEngine.Core.Assets
                 _loadingTask = new WeakReference<Task<T>>(Task.FromResult(value!));
             }
         }
-        [IgnoreMember]
+        
 
+        [MemoryPackIgnore]
         public bool IsResolved => _isResolved;
 
         public T Get()
@@ -65,6 +65,7 @@ namespace RockEngine.Core.Assets
             Set(asset);
         }
 
+        [MemoryPackConstructor]
         public AssetReference(Guid assetId)
         {
             _assetId = assetId;

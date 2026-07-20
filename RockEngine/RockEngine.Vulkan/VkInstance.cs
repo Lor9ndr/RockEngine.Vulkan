@@ -27,13 +27,13 @@ namespace RockEngine.Vulkan
                 {
                     if (DebugMessenger.HasValue)
                     {
-                        var destroyDebugUtils = VulkanContext.Vk.GetInstanceProcAddr(_vkObject, "vkDestroyDebugUtilsMessengerEXT");
+                        var destroyDebugUtils = VK.GetInstanceProcAddr(_vkObject, "vkDestroyDebugUtilsMessengerEXT");
                         var del = Marshal.GetDelegateForFunctionPointer<DestroyDebugUtilsDelegate>(destroyDebugUtils);
                         del(_vkObject, DebugMessenger.Value, default);
 
                     }
 
-                    VulkanContext.Vk.DestroyInstance(_vkObject, in VulkanContext.CustomAllocator<VkInstance>());
+                    VK.DestroyInstance(_vkObject, in CustomAllocator<VkInstance>());
 
                     _vkObject = default;
                 }
@@ -41,7 +41,7 @@ namespace RockEngine.Vulkan
                 _disposed = true;
             }
         }
-        public override void LabelObject(string name) => VulkanContext.GetCurrent().DebugUtils.SetDebugUtilsObjectName(_vkObject, ObjectType.Buffer, name);
+        public override void LabelObject(string name) => GetCurrent().DebugUtils.SetDebugUtilsObjectName(_vkObject, ObjectType.Buffer, name);
 
         private unsafe delegate void DestroyDebugUtilsDelegate(Instance instance, DebugUtilsMessengerEXT messenger, AllocationCallbacks* pAllocator);
     }

@@ -33,11 +33,11 @@ namespace RockEngine.Vulkan
 
         public static unsafe VkPipeline Create(VulkanContext context, string name, ref GraphicsPipelineCreateInfo ci, VkRenderPass renderPass, VkPipelineLayout layout)
         {
-            VulkanContext.Vk.CreateGraphicsPipelines(context.Device,
+            VK.CreateGraphicsPipelines(context.Device,
                                                      pipelineCache: default,
                                                      1,
                                                      in ci,
-                                                     in VulkanContext.CustomAllocator<VkPipeline>(),
+                                                     in CustomAllocator<VkPipeline>(),
                                                      out Pipeline pipeline)
                   .VkAssertResult("Failed to create pipeline");
 
@@ -48,7 +48,7 @@ namespace RockEngine.Vulkan
 
         public static VkPipeline CreateComputePipeline(VulkanContext context, string name, VkPipelineLayout layout, in ComputePipelineCreateInfo ci)
         {
-            VulkanContext.Vk.CreateComputePipelines(context.Device, default, 1u, in ci, in VulkanContext.CustomAllocator<VkPipeline>(), out Pipeline pipeline);
+            VK.CreateComputePipelines(context.Device, default, 1u, in ci, in CustomAllocator<VkPipeline>(), out Pipeline pipeline);
             var vkPipeline = new VkPipeline(context, name, pipeline, layout, null, 0);
             vkPipeline.LabelObject(name);
             return vkPipeline;
@@ -64,7 +64,7 @@ namespace RockEngine.Vulkan
                     // Dispose managed state (managed objects).
                 }
 
-                VulkanContext.Vk.DestroyPipeline(_context.Device, _vkObject, in VulkanContext.CustomAllocator<VkPipeline>());
+                VK.DestroyPipeline(_context.Device, _vkObject, in CustomAllocator<VkPipeline>());
                 _disposed = true;
             }
         }

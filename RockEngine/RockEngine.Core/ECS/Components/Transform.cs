@@ -1,31 +1,31 @@
 ﻿using System.Numerics;
-using MessagePack;
+using MemoryPack;
 using RockEngine.Core.Attributes;
 using RockEngine.Core.Extensions;
 using RockEngine.Core.Rendering;
 
 namespace RockEngine.Core.ECS.Components
 {
-    [MessagePackObject(AllowPrivate = true)]
+    [MemoryPackable]
     public partial class Transform : Component
     {
-        [IgnoreMember]
+        
         private Vector3 _position = Vector3.Zero;
-        [IgnoreMember]
+        
         private Quaternion _rotation = Quaternion.Identity;
-        [IgnoreMember]
+        
         private Vector3 _scale = Vector3.One;
-        [IgnoreMember]
+        
 
         private Transform? _parent;
-        [IgnoreMember]
+        
 
         private Matrix4x4 _worldMatrix;
-        [IgnoreMember]
+        
         private bool _isDirty = true;
         public event Action<Transform>? TransformChanged;
 
-        [Key(13)]
+        [UIEditable]
         public Vector3 Position
         {
             get => _position;
@@ -37,7 +37,7 @@ namespace RockEngine.Core.ECS.Components
         }
 
 
-        [Key(15), UIEditable("Rotation")]
+        [UIEditable("Rotation")]
         public Vector3 EulerAngles
         {
             get => _rotation.QuaternionToEuler();
@@ -48,7 +48,7 @@ namespace RockEngine.Core.ECS.Components
             }
         }
 
-        [Key(16), SerializeIgnore]
+        [SerializeIgnore]
         public Quaternion Rotation
         {
             get => _rotation;
@@ -59,7 +59,7 @@ namespace RockEngine.Core.ECS.Components
             }
         }
 
-        [Key(17), SerializeIgnore]
+        [SerializeIgnore]
         public Quaternion LocalRotation
         {
             get => _rotation;
@@ -70,7 +70,7 @@ namespace RockEngine.Core.ECS.Components
             }
         }
 
-        [Key(18)]
+        [UIEditable]
         public Vector3 Scale
         {
             get => _scale;
@@ -81,7 +81,7 @@ namespace RockEngine.Core.ECS.Components
             }
         }
 
-        [Key(19), SerializeIgnore]
+        [ SerializeIgnore]
         public Vector3 LocalScale
         {
             get => _scale;
@@ -92,14 +92,14 @@ namespace RockEngine.Core.ECS.Components
             }
         }
 
-        [IgnoreMember, SerializeIgnore]
+        [SerializeIgnore]
         public Transform? Parent
         {
             get => _parent;
             set => SetParent(value);
         }
 
-        [IgnoreMember, SerializeIgnore]
+        [SerializeIgnore]
         public Matrix4x4 LocalMatrix
         {
             get
@@ -110,7 +110,7 @@ namespace RockEngine.Core.ECS.Components
             }
         }
 
-        [IgnoreMember, SerializeIgnore]
+        [SerializeIgnore]
 
         public Matrix4x4 WorldMatrix
         {
@@ -124,11 +124,11 @@ namespace RockEngine.Core.ECS.Components
             }
         }
 
-        [IgnoreMember, SerializeIgnore]
+        [SerializeIgnore]
 
         public Vector3 WorldPosition => WorldMatrix.Translation;
 
-        [IgnoreMember, SerializeIgnore]
+        [SerializeIgnore]
         public Quaternion WorldRotation
         {
             get
@@ -142,7 +142,7 @@ namespace RockEngine.Core.ECS.Components
             }
         }
 
-        [IgnoreMember, SerializeIgnore]
+        [ SerializeIgnore]
         public Vector3 WorldScale
         {
             get
@@ -161,22 +161,22 @@ namespace RockEngine.Core.ECS.Components
             }
         }
 
-        [IgnoreMember]
+        
         public Vector3 Right => Vector3.Transform(Vector3.UnitX, WorldRotation);
 
-        [IgnoreMember]
+        
         public Vector3 Up => Vector3.Transform(Vector3.UnitY, WorldRotation);
 
-        [IgnoreMember]
+        
         public Vector3 Forward => Vector3.Transform(Vector3.UnitZ, WorldRotation);
 
-        [IgnoreMember]
+        
         public Vector3 LocalRight => Vector3.Transform(Vector3.UnitX, _rotation);
 
-        [IgnoreMember]
+        
         public Vector3 LocalUp => Vector3.Transform(Vector3.UnitY, _rotation);
 
-        [IgnoreMember]
+        
         public Vector3 LocalForward => Vector3.Transform(Vector3.UnitZ, _rotation);
 
         public Transform(Vector3 position, Quaternion rotation, Vector3 scale)
@@ -186,7 +186,7 @@ namespace RockEngine.Core.ECS.Components
             _scale = scale;
             UpdateWorldMatrix();
         }
-
+        [MemoryPackConstructor]
         public Transform() : this(Vector3.Zero, Quaternion.Identity, Vector3.One) { }
 
         public override void SetEntity(Entity entity)

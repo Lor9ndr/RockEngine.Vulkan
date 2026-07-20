@@ -4,6 +4,7 @@ using ImGuiNET;
 using RockEngine.Core.Rendering;
 using RockEngine.Core.Rendering.Objects;
 using RockEngine.Core.Rendering.RenderTargets;
+using RockEngine.Editor.Extensions;
 using RockEngine.Vulkan;
 using Silk.NET.Input;
 using Silk.NET.Maths;
@@ -67,6 +68,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.MultiWindowing
         public delegate byte Platform_GetWindowMinimized(ImGuiViewportPtr vp);
         public delegate void Platform_SetWindowTitle(ImGuiViewportPtr vp, IntPtr title);
         public delegate void Platform_CreateVkSurface(ImGuiViewportPtr vp, uint vkInstance, void* allocator, uint* surface);
+        public delegate void Platform_UpdateWindow(ImGuiViewportPtr vp);
 
         // Delegates to keep alive
         private readonly Platform_CreateWindow _createWindow;
@@ -80,6 +82,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.MultiWindowing
         private readonly Platform_GetWindowFocus _getWindowFocus;
         private readonly Platform_GetWindowMinimized _getWindowMinimized;
         private readonly Platform_SetWindowTitle _setWindowTitle;
+        private readonly Platform_UpdateWindow _updateWindow;
 
         private readonly Renderer_CreateWindow _rendererCreateWindow;
         private readonly Renderer_DestroyWindow _rendererDestroyWindow;
@@ -96,7 +99,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.MultiWindowing
         public IReadOnlyList<RckImGuiViewport> Viewports => _viewports;
         public RckImGuiViewport MainViewport => _viewports.FirstOrDefault(v => v.IsMainViewport);
 
-        
+
         public ImGuiViewportManager(VulkanContext vkContext, GraphicsContext graphicsContext, ImGuiController controller, RckRenderPass renderPass, Core.Application application)
         {
             _vkContext = vkContext;
@@ -120,6 +123,8 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.MultiWindowing
                 _getWindowFocus = GetWindowFocus;
                 _getWindowMinimized = GetWindowMinimized;
                 _setWindowTitle = SetWindowTitle;
+                _updateWindow = UpdateWindow;
+
                 // Set platform callbacks
                 platformIO.Platform_CreateWindow = Marshal.GetFunctionPointerForDelegate(_createWindow);
                 platformIO.Platform_DestroyWindow = Marshal.GetFunctionPointerForDelegate(_destroyWindow);
@@ -130,6 +135,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.MultiWindowing
                 platformIO.Platform_GetWindowFocus = Marshal.GetFunctionPointerForDelegate(_getWindowFocus);
                 platformIO.Platform_GetWindowMinimized = Marshal.GetFunctionPointerForDelegate(_getWindowMinimized);
                 platformIO.Platform_SetWindowTitle = Marshal.GetFunctionPointerForDelegate(_setWindowTitle);
+                platformIO.Platform_UpdateWindow = Marshal.GetFunctionPointerForDelegate(_updateWindow);
                 ImGuiNative.ImGuiPlatformIO_Set_Platform_GetWindowPos(platformIO.NativePtr, Marshal.GetFunctionPointerForDelegate(_getWindowPos));
                 ImGuiNative.ImGuiPlatformIO_Set_Platform_GetWindowSize(platformIO.NativePtr, Marshal.GetFunctionPointerForDelegate(_getWindowSize));
             }
@@ -147,20 +153,29 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.MultiWindowing
             }
         }
 
-        public void RegisterMainViewport(IWindow mainWindow, IInputContext mainInputContext)
+        public void RegisterMainViewport(IWindow mainWindow, IInputContext mainInputContext,
+                                 SwapchainRenderTarget mainRenderTarget)
         {
             var mainViewport = ImGui.GetMainViewport();
-            var viewport = new RckImGuiViewport(mainWindow, mainViewport, mainInputContext, this, true);
+            var viewport = new RckImGuiViewport(mainWindow, mainViewport, mainInputContext, this, true)
+            {
+                RenderTarget = mainRenderTarget
+            };
+
+            // Store the render target in ImGui's viewport
+            var handle = GCHandle.Alloc(mainRenderTarget);
+            mainViewport.RendererUserData = GCHandle.ToIntPtr(handle);
+            mainViewport.PlatformWindowCreated = true;
 
             mainViewport.PlatformUserData = mainWindow.Handle;
             mainViewport.PlatformHandle = mainWindow.Handle;
             mainViewport.PlatformHandleRaw = mainWindow.Handle;
+            // In RegisterMainViewport, after setting:
+            Console.WriteLine($"[MainVP] Set RendererUserData = 0x{mainViewport.RendererUserData:X}");
 
             _viewports.Add(viewport);
             _viewportMap[mainViewport.ID] = viewport;
             AttachInputHandlers(viewport, mainInputContext);
-
-            Console.WriteLine($"Registered main viewport with handle: {mainWindow.Handle}");
         }
 
         private void CreateWindow(ImGuiViewportPtr viewportPtr)
@@ -169,11 +184,8 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.MultiWindowing
             {
                 var windowOptions = WindowOptions.DefaultVulkan with
                 {
-                    IsContextControlDisabled = true,
-                    //IsEventDriven = true,
                     IsVisible = true,
                     WindowBorder = WindowBorder.Hidden,
-                    UpdatesPerSecond = 60,
                 };
 
                 var window = Window.Create(windowOptions);
@@ -197,6 +209,23 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.MultiWindowing
             {
                 Console.WriteLine($"Failed to create ImGui viewport window: {ex.Message}");
             }
+        }
+
+        private void UpdateWindow(ImGuiViewportPtr vp)
+        {
+            if (!_viewportMap.TryGetValue(vp.ID, out var viewport))
+            {
+                return;
+            }
+
+            viewport.Window.DoEvents();   // Non‑blocking per‑window event processing
+            vp.PlatformRequestClose = viewport.Window.IsClosing;
+            var io = ImGui.GetIO();
+            var input = viewport.InputContext;
+             _controller.UpdateViewportInput(io, input);
+
+            _controller.UpdateKeyboardInputForViewport(input, io);
+
         }
         private void AttachInputHandlers(RckImGuiViewport viewport, IInputContext input)
         {
@@ -372,11 +401,9 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.MultiWindowing
 
                     // Add to graphics context
                     _graphicsContext.AddSwapchain(swapchain);
-                    //swapchain.TransitionSwapchainImagesToPresentLayout();
 
                     viewport.RenderTarget = renderTarget;
                     vp.RendererUserData = GCHandle.ToIntPtr(GCHandle.Alloc(renderTarget));
-                    vp.PlatformWindowCreated = true;
                 }
                 catch (Exception ex)
                 {
@@ -398,7 +425,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.MultiWindowing
                         // Remove from graphics context
                         _graphicsContext.RemoveSwapchain(renderTarget.Swapchain);
                         _controller.CleanupViewportBuffers(viewport);
-
+                        _vkContext.GraphicsSubmitContext.AddDependency(renderTarget.Swapchain);
                         renderTarget.Dispose();
                         handle.Free();
                         vp.RendererUserData = IntPtr.Zero;
@@ -414,48 +441,58 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.MultiWindowing
             }
         }
 
-        
         private void RendererRenderWindow(ImGuiViewportPtr vp, nint renderArg)
         {
-            if (vp.RendererUserData == IntPtr.Zero || vp.DrawData.CmdListsCount == 0)
+            // Early exit if renderer user data is not ready
+            if (vp.RendererUserData == IntPtr.Zero)
             {
                 return;
             }
 
+            GCHandle handle;
             try
             {
-                var handle = GCHandle.FromIntPtr(vp.RendererUserData);
-                var renderContext = (SwapchainRenderTarget)handle.Target;
-
-                // Check if viewport is valid and visible
-                if (!_viewportMap.TryGetValue(vp.ID, out var rckViewport) || rckViewport.Window.WindowState == WindowState.Minimized)
-                {
-                    return;
-                }
-
-                try
-                {
-
-                   /* if (renderContext.Swapchain.CurrentImageIndex == uint.MaxValue)
-                    {
-                        return;
-                    }*/
-                    var gcHandle = GCHandle.FromIntPtr(renderArg);
-                    var vpImgui = (ViewportImguiStruct)gcHandle.Target;
-                    // Get current image index from swapchain
-                    uint imageIndex = vpImgui.FrameIndex;
-
-                    _controller.RenderImDrawData(vp.DrawData, renderContext, vpImgui.Batch, vpImgui.FrameIndex, rckViewport);
-
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"Error rendering viewport {vp.ID}: {ex.Message}");
-                }
+                handle = GCHandle.FromIntPtr(vp.RendererUserData);
             }
-            catch (Exception ex)
+            catch
             {
-                Console.WriteLine($"CRITICAL: Render error in viewport {vp.ID}: {ex.Message}");
+                return;
+            }
+
+            var renderTarget = handle.Target as SwapchainRenderTarget;
+            if (renderTarget == null)
+            {
+                return;
+            }
+
+            if (!_viewportMap.TryGetValue(vp.ID, out var rckViewport))
+            {
+                return;
+            }
+
+            // Skip main viewport when required (your existing logic)
+            var vpImgui = (ViewportImguiRenderContext)GCHandle.FromIntPtr(renderArg).Target;
+            if (rckViewport.IsMainViewport && vpImgui.SkipMainViewport)
+            {
+                return;
+            }
+
+            uint acquiredImageIdx = _graphicsContext.GetAcquiredImageIndex(renderTarget.Swapchain, vpImgui.FrameIndex);
+            if (acquiredImageIdx == Consts.NOT_ACQUIRED_IMAGE)
+            {
+                return;
+            }
+
+            bool isEmpty = vp.DrawData.CmdListsCount == 0 ||
+                           rckViewport.Window.WindowState == WindowState.Minimized;
+
+            if (isEmpty)
+            {
+                _controller.RenderEmptyPass(renderTarget, vpImgui.Batch, vpImgui.FrameIndex);
+            }
+            else
+            {
+                _controller.RenderImDrawData(vp.DrawData, renderTarget, vpImgui.Batch, vpImgui.FrameIndex, rckViewport);
             }
         }
 

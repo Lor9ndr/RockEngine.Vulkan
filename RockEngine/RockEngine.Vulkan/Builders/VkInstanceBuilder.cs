@@ -79,7 +79,7 @@ namespace RockEngine.Vulkan.Builders
             
             VkInstance instanceWrapper;
 
-            VulkanContext.Vk.CreateInstance(in instanceInfo, in VulkanContext.CustomAllocator<VkInstance>(), out Instance instance)
+            VK.CreateInstance(in instanceInfo, in CustomAllocator<VkInstance>(), out Instance instance)
                 .VkAssertResult($"Failed to create instance");
 
             instanceWrapper = new VkInstance(instance);
@@ -106,7 +106,7 @@ namespace RockEngine.Vulkan.Builders
         }
         private unsafe Result CreateDebugUtilsMessenger(VkInstance instance, DebugUtilsMessengerCreateInfoEXT ci, out DebugUtilsMessengerEXT messenger)
         {
-            nint vkCreateDebugUtilsMessengerEXTPtr = VulkanContext.Vk.GetInstanceProcAddr(instance, CREATE_DEBUG_UTILS_MESSENGER);
+            nint vkCreateDebugUtilsMessengerEXTPtr = VK.GetInstanceProcAddr(instance, CREATE_DEBUG_UTILS_MESSENGER);
             if (vkCreateDebugUtilsMessengerEXTPtr == nint.Zero)
             {
                 throw new Exception("Failed to load vkCreateDebugUtilsMessengerEXT");
@@ -120,12 +120,12 @@ namespace RockEngine.Vulkan.Builders
         private unsafe bool CheckValidationLayerSupport()
         {
             uint layerCount = 0;
-            VulkanContext.Vk.EnumerateInstanceLayerProperties(ref layerCount, null);
+            VK.EnumerateInstanceLayerProperties(ref layerCount, null);
 
             LayerProperties[] availableLayers = new LayerProperties[layerCount];
             fixed (LayerProperties* pLayerProperties = availableLayers)
             {
-                VulkanContext.Vk.EnumerateInstanceLayerProperties(ref layerCount, pLayerProperties);
+                VK.EnumerateInstanceLayerProperties(ref layerCount, pLayerProperties);
             }
             foreach (var validationLayer in _validationLayers!)
             {

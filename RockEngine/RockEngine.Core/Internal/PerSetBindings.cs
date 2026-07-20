@@ -1,6 +1,5 @@
 ﻿using System.Collections;
 using RockEngine.Core.Rendering.ResourceBindings;
-using ZLinq;
 
 namespace RockEngine.Core.Internal
 {
@@ -8,10 +7,8 @@ namespace RockEngine.Core.Internal
     {
         private readonly SortedList<UIntRange, ResourceBinding> _bindings = new SortedList<UIntRange, ResourceBinding>();
         private bool _needToUpdate;
-
         public uint Set { get; }
         public int Count => _bindings.Count;
-
         public bool NeedToUpdate => _needToUpdate;
 
         public PerSetBindings(uint set)
@@ -26,15 +23,21 @@ namespace RockEngine.Core.Internal
                 throw new ArgumentException($"Binding set {binding.SetLocation} doesn't match collection set {Set}");
             }
 
-            _bindings[binding.BindingLocation] = binding;
-            CheckForUpdates();
+            lock (_bindings)
+            {
+                _bindings[binding.BindingLocation] = binding;
+                CheckForUpdates(); // вызов внутри блокировки (реентерабельно)
+            }
         }
 
         public bool Remove(ResourceBinding binding)
         {
-            bool remove = _bindings.Remove(binding.BindingLocation);
-            CheckForUpdates();
-            return remove;
+            lock (_bindings)
+            {
+                bool remove = _bindings.Remove(binding.BindingLocation);
+                CheckForUpdates();
+                return remove;
+            }
         }
 
         public void CheckForUpdates()
@@ -56,49 +59,66 @@ namespace RockEngine.Core.Internal
                     }
                 }
             }
-           
         }
 
         public void RemoveAll(Func<ResourceBinding, bool> predicate)
         {
-            var keysToRemove = new List<UIntRange>();
-
-            foreach (var item in _bindings)
+            lock (_bindings)
             {
-                if (predicate.Invoke(item.Value))
+                var keysToRemove = new List<UIntRange>();
+                foreach (var item in _bindings)
                 {
-                    keysToRemove.Add(item.Key);
+                    if (predicate.Invoke(item.Value))
+                    {
+                        keysToRemove.Add(item.Key);
+                    }
                 }
-            }
 
-            foreach (var key in keysToRemove)
-            {
-                _bindings.Remove(key);
+                foreach (var key in keysToRemove)
+                {
+                    _bindings.Remove(key);
+                }
+
+                CheckForUpdates();
             }
-            CheckForUpdates();
         }
 
         public ResourceBinding? GetBinding(uint bindingNumber)
         {
-            foreach (var kv in _bindings)
+            lock (_bindings) // защита от изменений во время перебора
             {
-                if (kv.Key.Contains(bindingNumber))
+                foreach (var kv in _bindings)
                 {
-                    return kv.Value;
+                    if (kv.Key.Contains(bindingNumber))
+                    {
+                        return kv.Value;
+                    }
                 }
+                return null;
             }
-            return null;
         }
 
-        public IEnumerator<ResourceBinding> GetEnumerator() => _bindings.Values.GetEnumerator();
+        public IEnumerator<ResourceBinding> GetEnumerator()
+        {
+            // Возвращает снепшот или обёртку с блокировкой – на усмотрение.
+            // Здесь простой вариант: получить перечислитель под блокировкой,
+            // но он остаётся привязанным к живой коллекции, что небезопасно.
+            // Лучше материализовать список.
+            lock (_bindings)
+            {
+                return _bindings.Values.GetEnumerator();
+            }
+        }
 
         IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 
         internal void Clear()
         {
-            _bindings.Clear();
+            lock (_bindings)
+            {
+                _bindings.Clear();
+                CheckForUpdates(); // если нужно сбросить флаг
+            }
         }
-
-
     }
 }

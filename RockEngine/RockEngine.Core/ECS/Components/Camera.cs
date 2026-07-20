@@ -1,5 +1,5 @@
 ﻿using System.Numerics;
-using MessagePack;
+using MemoryPack;
 using RockEngine.Core.Attributes;
 using RockEngine.Core.Helpers;
 using RockEngine.Core.Rendering;
@@ -11,70 +11,52 @@ using static RockEngine.Core.Rendering.Managers.CameraManager;
 
 namespace RockEngine.Core.ECS.Components
 {
-    [MessagePackObject(AllowPrivate = true)]
+    [MemoryPackable]
     public partial class Camera : Component
     {
         public const int MAX_FOV = 120;
         public const int MIN_FOV = 30;
-        [IgnoreMember]
         private float _aspectRatio;
-        [IgnoreMember]
 
         private float _nearClip;
-        [IgnoreMember]
 
         private float _farClip;
-        [IgnoreMember]
 
         private Matrix4x4 _viewMatrix;
-        [IgnoreMember]
 
         private Matrix4x4 _projectionMatrix;
-        [IgnoreMember]
 
         private Matrix4x4 _viewProjectionMatrix;
-        [IgnoreMember]
 
         private float _fov = MathHelper.PiOver2;
 
         // Rotation around the X axis (radians)
-        [IgnoreMember]
 
         private float _pitch = -MathHelper.PiOver2;
-        [IgnoreMember]
 
         private float _yaw = -MathHelper.PiOver2; // Without this you would be started rotated 90 degrees right
 
-        [IgnoreMember]
 
         private Vector3 _right = Vector3.UnitX;
-        [IgnoreMember]
 
         private Vector3 _up;
-        [IgnoreMember]
 
         private Vector3 _front;
-        [IgnoreMember]
 
         private InputAttachmentBinding _attachmentBinding;
 
-        [IgnoreMember]
 
         public Vector3 Right => _right;
 
-        [IgnoreMember]
 
         public Vector3 Up => _up;
 
-        [IgnoreMember]
 
         public Matrix4x4 ViewProjectionMatrix => _viewProjectionMatrix;
 
-        [Key(23)]
         public virtual RenderLayerMask VisibleLayers { get; set; } = RenderLayerMask.All & ~RenderLayerMask.Debug;
 
         [Step(1)]
-        [Key(24)]
         public float Fov
         {
             get => MathHelper.RadiansToDegrees(_fov);
@@ -85,7 +67,6 @@ namespace RockEngine.Core.ECS.Components
             }
         }
 
-        [Key(25)]
         public float AspectRatio
         {
             get => _aspectRatio;
@@ -97,7 +78,6 @@ namespace RockEngine.Core.ECS.Components
 
         [Range(0.001f, float.MaxValue)]
         [Step(0.001f)]
-        [Key(26)]
         public float NearClip
         {
             get => _nearClip;
@@ -109,7 +89,6 @@ namespace RockEngine.Core.ECS.Components
 
         [Range(0.001f, float.MaxValue)]
         [Step(0.001f)]
-        [Key(27)]
         public float FarClip
         {
             get => _farClip;
@@ -119,7 +98,6 @@ namespace RockEngine.Core.ECS.Components
             }
         }
 
-        [Key(28)]
         public Vector3 Forward
         {
             get => _front;
@@ -129,7 +107,6 @@ namespace RockEngine.Core.ECS.Components
             }
         }
 
-        [Key(29)]
         public float Pitch
         {
             get => MathHelper.RadiansToDegrees(_pitch);
@@ -143,7 +120,6 @@ namespace RockEngine.Core.ECS.Components
             }
         }
 
-        [Key(30)]
         public float Yaw
         {
             get => MathHelper.RadiansToDegrees(_yaw);
@@ -154,33 +130,23 @@ namespace RockEngine.Core.ECS.Components
         }
 
         [Step(0.001f), Range(0.1f, 4.0f)]
-        [Key(31)]
         public float Exposure { get; set; } = 1.0f;
 
         [Step(0.001f), Range(0.0f, 2.0f)]
-        [Key(32)]
         public float EnvIntensity { get; set; } = 1.0f;
 
         [Step(0.001f), Range(0.0f, 2.0f)]
-        [Key(33)]
         public float AoStrength { get; set; } = 1.0f;
 
         [Step(0.01f), Range(1.8f, 2.4f)]
-        [Key(34)]
         public float Gamma { get; set; } = 2.2f;
 
         [Step(0.01f), Range(0.0f, (float)(2 * Math.PI))]
-        [Key(35)]
         public float EnvRotation { get; set; } = 0.0f;
 
-
-        [IgnoreMember]
+        [MemoryPackIgnore]
         public RenderTarget RenderTarget { get; set; }
-
-        [IgnoreMember]
         public Matrix4x4 ViewMatrix { get => _viewMatrix; set => _viewMatrix = value; }
-
-        [IgnoreMember]
         public Matrix4x4 ProjectionMatrix { get => _projectionMatrix; set => _projectionMatrix = value; }
 
         public Camera()
@@ -248,7 +214,7 @@ namespace RockEngine.Core.ECS.Components
             _attachmentBinding = new InputAttachmentBinding(
                 setLocation: 2,
                 bindingLocation: 0,
-                [.. gbuffer.ColorAttachments]  // Position + Normal + Albedo
+                [.. gbuffer.ColorAttachments.Concat([gbuffer.DepthAttachment])]  // Position + Normal + Albedo
             );
             material.BindResource(_attachmentBinding);
             material.BindResource(renderer.GlobalUbo.GetBinding((uint)cameraIndex));

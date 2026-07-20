@@ -41,8 +41,6 @@ namespace RockEngine.Core.Rendering.RenderTargets
                 // Color attachments (Albedo, Normal, Position)
                 new ClearValue { Color = new ClearColorValue(0.0f, 0.0f, 0.0f, 0) },
                 new ClearValue { Color = new ClearColorValue(0.0f, 0.0f, 0.0f, 0) },
-                new ClearValue { Color = new ClearColorValue(0.0f, 0.0f, 0.0f, 0) },
-                new ClearValue { Color = new ClearColorValue(0.0f, 0.0f, 0.0f, 0) },
                 //new ClearValue { Color = new ClearColorValue(0.0f, 0.0f, 0.0f, 1.0f) },
         
                 // Depth attachment
@@ -98,7 +96,7 @@ namespace RockEngine.Core.Rendering.RenderTargets
             }
         }
 
-        public override void PrepareForRender(UploadBatch batch)
+        public override void PrepareForRender(UploadBatch batch, uint frameIndex)
         {
             using (batch.NameAction(nameof(PrepareForRender), [1, 1, 1, 1]))
             {
@@ -106,7 +104,7 @@ namespace RockEngine.Core.Rendering.RenderTargets
             }
         }
 
-        public override void TransitionToRead(UploadBatch batch)
+        public override void TransitionToRead(UploadBatch batch, uint frameIndex)
         {
             using (batch.NameAction(nameof(TransitionToRead), [1, 1, 1, 1]))
             {

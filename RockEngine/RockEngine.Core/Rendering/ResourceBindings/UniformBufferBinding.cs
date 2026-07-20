@@ -48,7 +48,7 @@ namespace RockEngine.Core.Rendering.ResourceBindings
                 PBufferInfo = &bufferInfo
             };
 
-            VulkanContext.Vk.UpdateDescriptorSets(context.Device, 1, in writeDescriptorSet, 0, null);
+            VK.UpdateDescriptorSets(context.Device, 1, in writeDescriptorSet, 0, null);
         }
 
         public override UniformBufferBinding Clone()

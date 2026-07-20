@@ -1,6 +1,6 @@
 ﻿using System.Numerics;
 using System.Runtime.InteropServices;
-using MessagePack;
+using MemoryPack;
 using RockEngine.Core.Attributes;
 using RockEngine.Core.Helpers;
 using RockEngine.Core.Rendering;
@@ -13,11 +13,10 @@ namespace RockEngine.Core.ECS.Components
         Point,
         Spot
     }
-
-    [MessagePackObject(AllowPrivate = true)]
+    [MemoryPackable]
     public partial class Light : Component
     {
-        [Key(7)]
+        [UIEditable]
         public LightType Type
         {
             get;
@@ -45,26 +44,22 @@ namespace RockEngine.Core.ECS.Components
         }
 
         [Color]
-        [Key(8)]
         public Vector3 Color { get; set; } = Vector3.One;
 
         [Range(0, 1000)]
-        [Key(9)]
         public float Intensity { get; set; } = 1.0f;
 
 
         // Point/Spot properties
         [Range(0.02f, float.MaxValue)]
-        [Key(10)]
         public float Radius { get; set; } = 10.0f;
 
-        [IgnoreMember]
+        
         private float _innerCutoff = 0.9f;
-        [IgnoreMember]
+        
         private float _outerCutoff = 0.7f;
 
-        [Range(0.1f, 0.99f), Step(0.01f)]
-        [Key(13)]
+        [Range(0.1f, 0.99f)]
         public float InnerCutoff
         {
             get => _innerCutoff;
@@ -81,8 +76,7 @@ namespace RockEngine.Core.ECS.Components
             }
         }
 
-        [Range(0.05f, 0.98f), Step(0.01f)]
-        [Key(14)]
+        [Range(0.05f, 0.98f)]
         public float OuterCutoff
         {
             get => _outerCutoff;
@@ -101,7 +95,6 @@ namespace RockEngine.Core.ECS.Components
 
         // Helper properties for degrees (for easier editing)
         [Range(1f, 80f)]
-        [Key(15)]
         public float InnerCutoffDegrees
         {
             get => MathHelper.RadiansToDegrees(MathF.Acos(_innerCutoff));
@@ -109,66 +102,50 @@ namespace RockEngine.Core.ECS.Components
         }
 
         [Range(5f, 85f)]
-        [Key(16)]
         public float OuterCutoffDegrees
         {
             get => MathHelper.RadiansToDegrees(MathF.Acos(_outerCutoff));
             set => OuterCutoff = MathF.Cos(MathHelper.DegreesToRadians(Math.Clamp(value, 5f, 85f)));
         }
 
-        [Key(17)]
+        [UIEditable]
         public bool CastShadows { get; set; } = false;
 
-        [Range(0.001f, 0.1f), Step(0.001f)]
-        [Key(18)]
+        [Range(0.001f, 0.1f)]
         public float ShadowBias { get; set; } = 0.005f;
 
-        [Range(0.0f, 1.0f), Step(0.01f)]
-        [Key(19)]
+        [Range(0.0f, 1.0f)]
         public float ShadowStrength { get; set; } = 1.0f;
 
-        [Key(20)]
         public uint ShadowMapSize { get; set; } = 1024;
 
         // Directional light specific shadow properties
-        [Key(21)]
         public float ShadowDistance { get; set; } = 100.0f;
-        [Key(22)]
         public Vector2 ShadowOrthoSize { get; set; } = new Vector2(200, 200);
 
 
         [Range(1, 4)]
-        [Key(23)]
         public int CascadeCount { get; set; } = 4;
-        [Key(24)]
+
         public float[] CascadeSplits { get; private set; } = new float[4];
 
-        [Range(0.001f, 0.1f), Step(0.001f)]
-        [Key(25)]
+        [Range(0.001f, 0.1f)]
         public float CSMShadowBias { get; set; } = 0.001f;
 
-        [Range(0.0f, 0.1f), Step(0.01f)]
-        [Key(26)]
+        [Range(0.0f, 0.1f)]
         public float NormalOffset { get; set; } = 0.01f;
 
-        [Key(27)]
         public bool StabilizeCascades { get; set; } = true;
-
 
         public delegate Matrix4x4[] CalculateShadowMatrixStrategy();
 
-        [IgnoreMember]
+        [MemoryPackIgnore]
         public CalculateShadowMatrixStrategy GetShadowMatrix { get; set; }
 
-        [IgnoreMember]
 
         private LightData _lightData;
-        [IgnoreMember]
-        private uint _uboIndex;
-        [IgnoreMember]
         private uint _layerStart;
 
-        [IgnoreMember]
         private Matrix4x4[] _cachedDirectionalMatrices = Array.Empty<Matrix4x4>();
 
         public override ValueTask OnStart(WorldRenderer renderer)

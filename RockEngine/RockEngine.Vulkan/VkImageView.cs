@@ -48,7 +48,7 @@ namespace RockEngine.Vulkan
 
         public static VkImageView Create(VulkanContext context, VkImage image, in ImageViewCreateInfo ci)
         {
-            VulkanContext.Vk.CreateImageView(context.Device, in ci, in VulkanContext.CustomAllocator<VkImageView>(), out var imageView)
+            VK.CreateImageView(context.Device, in ci, in CustomAllocator<VkImageView>(), out var imageView)
                .VkAssertResult("Failed to create image view!");
             return new VkImageView(context, image, imageView, in ci);
         }
@@ -88,11 +88,11 @@ namespace RockEngine.Vulkan
             // Destroy existing view
             if (_vkObject.Handle != 0)
             {
-                VulkanContext.Vk.DestroyImageView(_context.Device, _vkObject, in VulkanContext.CustomAllocator<VkImageView>());
+                VK.DestroyImageView(_context.Device, _vkObject, in CustomAllocator<VkImageView>());
             }
             _createInfo.Image = _image;
 
-            VulkanContext.Vk.CreateImageView(_context.Device, in _createInfo, in VulkanContext.CustomAllocator<VkImageView>(), out var imageView);
+            VK.CreateImageView(_context.Device, in _createInfo, in CustomAllocator<VkImageView>(), out var imageView);
             _vkObject = imageView;
 
             // Уведомляем подписчиков об изменении вью
@@ -114,7 +114,7 @@ namespace RockEngine.Vulkan
             }
 
             _image.RemoveViewFromCache(this);
-            VulkanContext.Vk.DestroyImageView(_context.Device, _vkObject, in VulkanContext.CustomAllocator<VkImageView>());
+            VK.DestroyImageView(_context.Device, _vkObject, in CustomAllocator<VkImageView>());
             _disposed = true;
         }
 

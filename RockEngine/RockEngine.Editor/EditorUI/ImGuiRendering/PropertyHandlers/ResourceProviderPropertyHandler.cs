@@ -19,9 +19,13 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.PropertyHandlers
             propertyType.GetGenericTypeDefinition() == typeof(IResourceProvider<>);
 
         
-        public void Draw(IComponent component, UIPropertyAccessor accessor, object value, PropertyDrawer drawer)
+        public void Draw(object owner, UIPropertyAccessor accessor, object value, PropertyDrawer drawer)
         {
             var resourceProvider = value as IResourceProvider;
+            if (owner is not IComponent component)
+            {
+                return;
+            }
             var resourceType = accessor.PropertyType.GetGenericArguments()[0];
 
             string currentName = GetCurrentResourceName(resourceProvider, resourceType);

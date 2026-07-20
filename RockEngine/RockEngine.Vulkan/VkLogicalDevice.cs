@@ -77,7 +77,7 @@ namespace RockEngine.Vulkan
 
         public static VkLogicalDevice Create(VulkanContext context, VkPhysicalDevice physicalDevice, ISurfaceHandler? surface, params string[] extensions)
         {
-            var api = VulkanContext.Vk;
+            var api = VK;
             QueueFamilyIndices indices = FindQueueFamilies(api, physicalDevice, surface);
             var registry = context.FeatureRegistry;
             if (!registry.CheckSupport(physicalDevice, out var unsupported))
@@ -278,7 +278,7 @@ namespace RockEngine.Vulkan
             }
             return requiredExtensions.Count == 0;
         }
-        public override void LabelObject(string name) => VulkanContext.GetCurrent().DebugUtils.SetDebugUtilsObjectName(_vkObject, ObjectType.Buffer, name);
+        public override void LabelObject(string name) => GetCurrent().DebugUtils.SetDebugUtilsObjectName(_vkObject, ObjectType.Buffer, name);
 
         public void WaitIdle()
         {

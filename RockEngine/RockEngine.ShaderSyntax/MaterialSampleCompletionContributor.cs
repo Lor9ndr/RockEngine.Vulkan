@@ -13,12 +13,12 @@ namespace RockEngine.ShaderSyntax
         public IEnumerable<Completion> GetCompletions(ITextSnapshot snapshot, SnapshotPoint triggerPoint)
         {
             var textures = ParseMaterialBlocks(snapshot);
-            foreach (var tex in textures)
+            foreach (var (type, name) in textures)
             {
-                string methodName = $"sample{tex.name}";
-                string description = tex.type == "Texture2D"
-                    ? $"{methodName}(vec2 uv) → vec4\nSamples the {tex.name} texture."
-                    : $"{methodName}(vec3 uv) → vec4\nSamples the {tex.name} texture.";
+                string methodName = $"sample{name}";
+                string description = type == "Texture2D"
+                    ? $"{methodName}(vec2 uv) → vec4\nSamples the {name} texture."
+                    : $"{methodName}(vec3 uv) → vec4\nSamples the {name} texture.";
                 yield return new Completion(methodName, methodName, description, null, null);
             }
         }

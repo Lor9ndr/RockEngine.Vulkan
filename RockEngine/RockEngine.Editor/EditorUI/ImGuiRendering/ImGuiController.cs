@@ -65,7 +65,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
         private readonly Dictionary<RckImGuiViewport, (VkBuffer VertexBuffer, VkBuffer IndexBuffer)[]> _viewportBuffers = new();
         private readonly Lock _bufferLock = new();
 
-        
+
         public ImGuiController(VulkanContext vkContext,
                                GraphicsContext graphicsEngine,
                                BindingManager bindingManager,
@@ -93,8 +93,8 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
             io.ConfigFlags |= ImGuiConfigFlags.DockingEnable;
             io.ConfigFlags |= ImGuiConfigFlags.ViewportsEnable;
 
-            //io.BackendFlags |= ImGuiBackendFlags.HasMouseCursors;
-            //io.BackendFlags |= ImGuiBackendFlags.HasSetMousePos;
+            io.BackendFlags |= ImGuiBackendFlags.HasMouseCursors;
+            io.BackendFlags |= ImGuiBackendFlags.HasSetMousePos;
             io.BackendFlags |= ImGuiBackendFlags.RendererHasVtxOffset;
             io.BackendFlags |= ImGuiBackendFlags.PlatformHasViewports;
             io.BackendFlags |= ImGuiBackendFlags.RendererHasViewports;
@@ -130,15 +130,10 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
 
             // Initialize viewport manager AFTER basic setup
             _viewportManager = new ImGuiViewportManager(_vkContext, _graphicsContext, this, _renderPass, application);
-            _viewportManager.RegisterMainViewport(mainWindow, _input.Context);
+            _viewportManager.RegisterMainViewport(mainWindow, _input.Context, renderer.SwapchainTarget);
             ImGui.NewFrame();
             _frameBegun = true;
             _initialized = true;
-            renderer.GraphicsEngine.MainSwapchain.Surface.Window.StateChanged += (s) =>
-            {
-
-            };
-
         }
 
         private unsafe void UpdateMonitors()
@@ -237,7 +232,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
             {
                 _input.SetInput(mouseFocusedViewport.Window, mouseFocusedViewport.InputContext);
 
-                UpdateMainViewportInput(io, _input.Context);
+                UpdateViewportInput(io, _input.Context);
 
                 UpdateKeyboardInputForViewport(_input.Context, io);
                 // Process pressed characters (window-specific)
@@ -289,7 +284,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
         }
 
 
-        private void UpdateKeyboardInputForViewport(IInputContext input, ImGuiIOPtr io)
+        public void UpdateKeyboardInputForViewport(IInputContext input, ImGuiIOPtr io)
         {
             var keyboardState = input.Keyboards.Count > 0 ? input.Keyboards[0] : null;
 
@@ -319,7 +314,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
             io.KeySuper = state.IsKeyPressed(Key.SuperLeft) || state.IsKeyPressed(Key.SuperRight);
         }
 
-        private void UpdateMainViewportInput(ImGuiIOPtr io, IInputContext input)
+        internal void UpdateViewportInput(ImGuiIOPtr io, IInputContext input)
         {
             var mouseState = input.Mice.Count > 0 ? input.Mice[0] : null;
 
@@ -437,18 +432,9 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
             CleanupTextureCache();
 
             SetPerFrameImGuiData(Time.DeltaTime);
-            //UpdateImGuiInput();
-            foreach (var viewport in _viewportManager.Viewports)
-            {
-                if (!viewport.IsMainViewport)
-                {
-                    viewport.Window.DoEvents();
-                }
-            }
             if ((ImGui.GetIO().ConfigFlags & ImGuiConfigFlags.ViewportsEnable) != 0 && !_frameBegun)
             {
                 ImGui.UpdatePlatformWindows();
-
             }
 
             if (!_frameBegun)
@@ -463,87 +449,114 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
 
         }
 
-        
+
         public void Render(UploadBatch batch, uint frameIndex, WorldRenderer renderer)
         {
             if (!_initialized)
             {
                 return;
             }
+
             try
             {
-                // Always ensure we have a valid frame before rendering
+                // Ensure a frame is started
                 if (!_frameBegun)
                 {
                     ImGui.UpdatePlatformWindows();
                     ImGui.NewFrame();
                     _frameBegun = true;
-
-                    // If we started the frame here, we need to end it immediately for this render
-                    ImGui.Render();
                 }
                 else
                 {
-                    // If frame was begun in Update(), render it now
                     ImGui.Render();
                 }
 
-                RenderImDrawData(_viewportManager.MainViewport.ViewportPtr.DrawData, renderer.SwapchainTarget, batch, frameIndex, _viewportManager.MainViewport);
+                // 1. Explicitly render the main viewport
+                RenderImDrawData(
+                    _viewportManager.MainViewport.ViewportPtr.DrawData,
+                    renderer.SwapchainTarget,
+                    batch,
+                    frameIndex,
+                    _viewportManager.MainViewport);
+
+                // 2. Prepare argument that tells callbacks to skip the main viewport
+                var arg = new ViewportImguiRenderContext
+                {
+                    Batch = batch,
+                    FrameIndex = frameIndex,
+                    SkipMainViewport = true   // main viewport already rendered
+                };
+                var handle = GCHandle.Alloc(arg, GCHandleType.Normal);
+                var ptr = GCHandle.ToIntPtr(handle);
+
+                // 3. Let ImGui render only secondary viewports
                 if ((ImGui.GetIO().ConfigFlags & ImGuiConfigFlags.ViewportsEnable) != 0)
                 {
-
-                    //ImGui.UpdatePlatformWindows();
-                    var id = Guid.NewGuid();
-                    var ptr = GCHandle.Alloc(new ViewportImguiStruct()
-                    {
-                        Batch = batch,
-                        FrameIndex = frameIndex,
-                    }, GCHandleType.Normal);
-                    var nnt = GCHandle.ToIntPtr(ptr);
-                    ImGui.RenderPlatformWindowsDefault(nnt, nnt);
-                    ptr.Free();
+                    ImGui.RenderPlatformWindowsDefault(ptr, ptr);
                 }
+
+                handle.Free();
             }
             catch (Exception ex)
             {
-                Console.WriteLine(ex.Message + Environment.NewLine + ex.StackTrace);
+                Console.WriteLine(ex);
             }
             finally
             {
-                // Reset frame state for next frame
                 _frameBegun = false;
             }
-
         }
-        internal struct ViewportImguiStruct
+
+        internal struct ViewportImguiRenderContext
         {
             public UploadBatch Batch;
             public uint FrameIndex;
+            public bool SkipMainViewport;
+        }
+        internal unsafe void RenderEmptyPass(SwapchainRenderTarget renderTarget, UploadBatch batch, uint frameIndex)
+        {
+            // Prepare the render target (may insert an initial transition barrier if needed)
+            renderTarget.PrepareForRender(batch, frameIndex);
+
+            fixed (ClearValue* pClearValue = renderTarget.ClearValues.Span)
+            {
+                var beginInfo = new RenderPassBeginInfo
+                {
+                    SType = StructureType.RenderPassBeginInfo,
+                    RenderPass = _renderPass,
+                    Framebuffer = renderTarget.GetFramebuffer(frameIndex),
+                    RenderArea = new Rect2D { Extent = renderTarget.Size },
+                    ClearValueCount = (uint)renderTarget.ClearValues.Length,
+                    PClearValues = pClearValue
+                };
+
+                batch.BeginRenderPass(in beginInfo, SubpassContents.Inline);
+            }
+
+            // No draw commands – immediately end the pass.
+            // The finalLayout (PRESENT_SRC_KHR) will be applied.
+            batch.EndRenderPass();
         }
 
-        
         public unsafe void RenderImDrawData(ImDrawDataPtr drawData, SwapchainRenderTarget renderTarget, UploadBatch uploadBatch, uint frameIndex, RckImGuiViewport imguiViewport)
         {
-            renderTarget.PrepareForRender(uploadBatch);
+            renderTarget.PrepareForRender(uploadBatch, frameIndex);
             using (PerformanceTracer.BeginSection("IMGUI", uploadBatch, frameIndex))
             {
 
-                unsafe
+                fixed (ClearValue* pClearValue = renderTarget.ClearValues.Span)
                 {
-                    fixed (ClearValue* pClearValue = renderTarget.ClearValues.Span)
+                    var swapchainBeginInfo = new RenderPassBeginInfo
                     {
-                        var swapchainBeginInfo = new RenderPassBeginInfo
-                        {
-                            SType = StructureType.RenderPassBeginInfo,
-                            RenderPass = _renderPass,
-                            Framebuffer = renderTarget.GetFrameBuffer(frameIndex),
-                            RenderArea = new Rect2D { Extent = renderTarget.Size },
-                            ClearValueCount = (uint)renderTarget.ClearValues.Length,
-                            PClearValues = pClearValue
-                        };
+                        SType = StructureType.RenderPassBeginInfo,
+                        RenderPass = _renderPass,
+                        Framebuffer = renderTarget.GetFramebuffer(frameIndex),
+                        RenderArea = new Rect2D { Extent = renderTarget.Size },
+                        ClearValueCount = (uint)renderTarget.ClearValues.Length,
+                        PClearValues = pClearValue
+                    };
 
-                        uploadBatch.BeginRenderPass(in swapchainBeginInfo, SubpassContents.Inline);
-                    }
+                    uploadBatch.BeginRenderPass(in swapchainBeginInfo, SubpassContents.Inline);
                 }
 
                 ref var buffers = ref GetOrCreateViewportBuffers(imguiViewport, frameIndex);
@@ -729,7 +742,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
             }
         }
 
-        
+
         private void CreateOrResizeBuffer(ref VkBuffer? buffer, ulong size, BufferUsageFlags usage)
         {
             if (buffer is null || buffer.Size < size)
@@ -746,7 +759,7 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
             }
         }
 
-        
+
         private unsafe void CreateFontResources()
         {
             var io = ImGui.GetIO();

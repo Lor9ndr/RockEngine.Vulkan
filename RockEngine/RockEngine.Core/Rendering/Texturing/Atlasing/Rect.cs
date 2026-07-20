@@ -2,14 +2,16 @@
 {
     public struct Rect
     {
-        public int X;
-        public int Y;
-        public int Width;
-        public int Height;
-        public readonly int Area => Width * Height;
-        public readonly int Right => X + Width;
-        public readonly int Bottom => Y + Height;
-        public Rect(int x, int y, int w, int h)
+        public float X;
+        public float Y;
+        public float Width;
+        public float Height;
+        public readonly float Area => Width * Height;
+        public readonly float Right => X + Width;
+        public readonly float Bottom => Y + Height;
+        public readonly float Left => X;
+        public readonly float Top => Y;
+        public Rect(float x, float y, float w, float h)
         {
             X = x;
             Y = y;

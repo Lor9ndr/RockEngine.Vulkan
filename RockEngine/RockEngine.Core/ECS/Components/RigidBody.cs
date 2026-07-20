@@ -1,67 +1,66 @@
 ﻿using System.Numerics;
 using JoltPhysicsSharp;
-using MessagePack;
+using MemoryPack;
 using RockEngine.Core.Physics;
 using RockEngine.Core.Rendering;
 
-namespace RockEngine.Core.ECS.Components.Physics
+namespace RockEngine.Core.ECS.Components
 {
-    [MessagePackObject(AllowPrivate = true)]
+    [MemoryPackable]
     public partial class RigidbodyComponent : Component, IDisposable
     {
-        [IgnoreMember]
+        
         private readonly PhysicsManager _physicsManager;
-        [IgnoreMember]
+        
 
         private BodyID? _bodyId;
-        [IgnoreMember]
+        
 
-        private Core.Physics.BodyType _bodyType = Core.Physics.BodyType.Dynamic;
-        [IgnoreMember]
+        private Physics.BodyType _bodyType = Physics.BodyType.Dynamic;
+        
 
-        private Core.Physics.MotionQuality _motionQuality = Core.Physics.MotionQuality.Discrete;
-        [IgnoreMember]
+        private Physics.MotionQuality _motionQuality = Physics.MotionQuality.Discrete;
+        
 
         private float _mass = 1.0f;
-        [IgnoreMember]
+        
 
         private float _friction = 0.5f;
-        [IgnoreMember]
+        
 
         private float _restitution = 0.3f;
-        [IgnoreMember]
+        
 
         private float _linearDamping = 0.05f;
-        [IgnoreMember]
+        
 
         private float _angularDamping = 0.05f;
-        [IgnoreMember]
+        
 
         private Vector3 _lastPosition;
-        [IgnoreMember]
+        
 
         private Quaternion _lastRotation;
-        [IgnoreMember]
+        
 
         private bool _isDirty = true;
-        [IgnoreMember]
+        
 
-        private Core.Physics.BodyType _lastBodyType = Core.Physics.BodyType.Dynamic;
-        [IgnoreMember]
+        private Physics.BodyType _lastBodyType = Physics.BodyType.Dynamic;
+        
 
-        private Core.Physics.MotionQuality _lastMotionQuality = Core.Physics.MotionQuality.Discrete;
-        [IgnoreMember]
+        private Physics.MotionQuality _lastMotionQuality = Physics.MotionQuality.Discrete;
+        
 
         private List<IColliderComponent> _colliders = new();
-        [IgnoreMember]
+        
 
         private Shape? _cachedShape;
-        [IgnoreMember]
+        
 
         private bool _isDisposed;
 
-        [Key(24)]
-        public Core.Physics.BodyType BodyType
+        public Physics.BodyType BodyType
         {
             get => _bodyType;
             set
@@ -74,8 +73,7 @@ namespace RockEngine.Core.ECS.Components.Physics
             }
         }
 
-        [Key(25)]
-        public Core.Physics.MotionQuality MotionQuality
+        public Physics.MotionQuality MotionQuality
         {
             get => _motionQuality;
             set
@@ -88,7 +86,6 @@ namespace RockEngine.Core.ECS.Components.Physics
             }
         }
 
-        [Key(26)]
         public float Mass
         {
             get => _mass;
@@ -102,7 +99,6 @@ namespace RockEngine.Core.ECS.Components.Physics
             }
         }
 
-        [Key(27)]
         public float Friction
         {
             get => _friction;
@@ -113,7 +109,6 @@ namespace RockEngine.Core.ECS.Components.Physics
             }
         }
 
-        [Key(28)]
         public float Restitution
         {
             get => _restitution;
@@ -124,7 +119,6 @@ namespace RockEngine.Core.ECS.Components.Physics
             }
         }
 
-        [Key(29)]
         public float LinearDamping
         {
             get => _linearDamping;
@@ -135,7 +129,6 @@ namespace RockEngine.Core.ECS.Components.Physics
             }
         }
 
-        [Key(30)]
         public float AngularDamping
         {
             get => _angularDamping;
@@ -146,12 +139,9 @@ namespace RockEngine.Core.ECS.Components.Physics
             }
         }
 
-        [Key(31)]
         public Vector3 LinearVelocity { get; set; }
-        [Key(32)]
         public Vector3 AngularVelocity { get; set; }
 
-        [Key(33)]
         public IReadOnlyList<IColliderComponent> Colliders => _colliders;
 
         public RigidbodyComponent()
@@ -238,16 +228,13 @@ namespace RockEngine.Core.ECS.Components.Physics
 
             // Создать форму
             var shape = CreateCollisionShape();
-            if (shape == null)
-            {
-                shape = new BoxShape(new Vector3(0.5f, 0.5f, 0.5f));
-            }
+            shape ??= new BoxShape(new Vector3(0.5f, 0.5f, 0.5f));
 
             // Определить тип движения
             var motionType = _bodyType switch
             {
-                Core.Physics.BodyType.Static => MotionType.Static,
-                Core.Physics.BodyType.Kinematic => MotionType.Kinematic,
+                Physics.BodyType.Static => MotionType.Static,
+                Physics.BodyType.Kinematic => MotionType.Kinematic,
                 _ => MotionType.Dynamic,
             };
 
@@ -265,7 +252,7 @@ namespace RockEngine.Core.ECS.Components.Physics
             );
 
             // Установить качество движения
-            settings.MotionQuality = _motionQuality == Core.Physics.MotionQuality.LinearCast ?
+            settings.MotionQuality = _motionQuality == Physics.MotionQuality.LinearCast ?
                  JoltPhysicsSharp.MotionQuality.LinearCast : JoltPhysicsSharp.MotionQuality.Discrete;
 
             // Установить массу и другие свойства для динамических тел

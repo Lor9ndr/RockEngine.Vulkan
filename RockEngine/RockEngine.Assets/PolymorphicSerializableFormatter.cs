@@ -1,4 +1,4 @@
-﻿using MessagePack;
+﻿/*using MessagePack;
 using MessagePack.Formatters;
 
 namespace RockEngine.Assets;
@@ -71,4 +71,4 @@ public sealed class PolymorphicSerializableFormatter : IMessagePackFormatter<IPo
         reader.Depth--;
         return (IPolymorphicSerializable?)result;
     }
-}
+}*/

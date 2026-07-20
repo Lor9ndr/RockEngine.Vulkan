@@ -7,7 +7,7 @@ namespace RockEngine.Core.Rendering.Managers
     public class GlobalTextureArray
     {
         private readonly VulkanContext _context;
-        private GlobalTextureArrayBinding _binding;
+        private readonly GlobalTextureArrayBinding _binding;
 
         public GlobalTextureArray(VulkanContext context)
         {

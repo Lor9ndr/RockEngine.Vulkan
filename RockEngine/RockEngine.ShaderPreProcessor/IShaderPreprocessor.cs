@@ -1,4 +1,5 @@
 ﻿using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 
 namespace RockEngine.ShaderPreprocessor
@@ -19,13 +20,29 @@ namespace RockEngine.ShaderPreprocessor
 
     public class ShaderMetadata : IShaderMetadata
     {
-        public IReadOnlyList<TextureInfo> Textures { get; }
-        public ShaderStage Stage { get; }
+        public IReadOnlyList<TextureInfo> Textures { get; private set; }
+        public ShaderStage Stage { get; set; }
 
+        // Parameterless constructor for initial creation
+        public ShaderMetadata()
+        {
+            Textures = new List<TextureInfo>();
+            Stage = ShaderStage.All;
+        }
+
+        // Constructor that sets everything at once (still useful)
         public ShaderMetadata(IReadOnlyList<TextureInfo> textures, ShaderStage stage)
         {
             Textures = textures;
             Stage = stage;
+        }
+
+        // Helper to add textures (e.g. from annotation handler)
+        public void AddTextures(IEnumerable<TextureInfo> textures)
+        {
+            var currentList = Textures as List<TextureInfo> ?? Textures.ToList();
+            currentList.AddRange(textures);
+            Textures = currentList;
         }
     }
 

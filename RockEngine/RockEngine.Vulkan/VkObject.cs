@@ -12,7 +12,7 @@ namespace RockEngine.Vulkan
         protected T _vkObject = vkObject;
         protected volatile bool _disposed;
         public T VkObjectNative => _vkObject;
-        protected Vk Vk => VulkanContext.Vk;
+        protected Vk Vk => VK;
 
         public bool IsDisposed { get => _disposed; protected set => _disposed = value; }
 

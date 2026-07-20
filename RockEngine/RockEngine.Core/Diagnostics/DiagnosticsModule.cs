@@ -1,6 +1,6 @@
 ﻿using RockEngine.Core.DI;
 using RockEngine.Core.Rendering.Passes;
-
+using RockEngine.DI;
 using SimpleInjector;
 
 namespace RockEngine.Core.Diagnostics

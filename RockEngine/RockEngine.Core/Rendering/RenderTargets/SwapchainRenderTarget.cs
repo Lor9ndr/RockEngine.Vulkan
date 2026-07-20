@@ -67,7 +67,7 @@ namespace RockEngine.Core.Rendering.RenderTargets
             CreateFramebuffers();
             UpdateViewportAndScissor();
         }
-        public override VkFrameBuffer GetFrameBuffer(uint frameIndex)
+        public override VkFrameBuffer GetFramebuffer(uint frameIndex)
         {
             uint imageIndex = _graphicsContext.GetAcquiredImageIndex(_swapchain, frameIndex);
             /*Debug.Assert(imageIndex < (uint)Framebuffers.Length, $"Invalid image index {imageIndex} for frame {frameIndex}");
@@ -116,12 +116,15 @@ namespace RockEngine.Core.Rendering.RenderTargets
             }
         }
 
-        public override void PrepareForRender(UploadBatch batch)
+        public override void PrepareForRender(UploadBatch batch, uint frameIndex)
         {
-            // Automatic layout transitions handled by render pass
+            // Get the currently acquired swapchain image
+            uint imageIndex = _graphicsContext.GetAcquiredImageIndex(_swapchain, frameIndex);
+            var image = _swapchain.VkImages[(int)imageIndex];
+            image.TransitionImageLayout(batch, ImageLayout.Undefined, ImageLayout.Undefined);
         }
 
-        public override void TransitionToRead(UploadBatch batch)
+        public override void TransitionToRead(UploadBatch batch, uint frameIndex)
         {
             // No explicit transitions needed
         }
@@ -136,5 +139,7 @@ namespace RockEngine.Core.Rendering.RenderTargets
             Framebuffers = [];
             //RenderPass?.Dispose();
         }
+
+        
     }
 }

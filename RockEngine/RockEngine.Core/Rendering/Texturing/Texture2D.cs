@@ -1,5 +1,4 @@
-﻿using System.Xml.Linq;
-using RockEngine.Core.Rendering.Managers;
+﻿using RockEngine.Core.Rendering.Managers;
 using RockEngine.Core.Rendering.ResourceBindings;
 using RockEngine.Vulkan;
 
@@ -32,7 +31,7 @@ namespace RockEngine.Core.Rendering.Texturing
         {
             if (!textureData.Validate())
             {
-                throw new ArgumentException("Invalid texture data", nameof(textureData));
+                throw new ArgumentException("Texture data is not valid", nameof(textureData));
             }
             return textureData.Dimension switch
             {
@@ -48,6 +47,11 @@ namespace RockEngine.Core.Rendering.Texturing
         private static async Task<Texture2D> Create2DAsync(VulkanContext context, TextureData textureData,
             CancellationToken cancellationToken)
         {
+            if (!textureData.IsCubeMap)
+            {
+                textureData.MipLevels = textureData.CalculateMipLevels();
+                textureData.GenerateMipmaps = true;
+            }
             if (textureData.FilePaths.Count > 0)
             {
                 return await CreateFromFileAsync(context, textureData, cancellationToken).ConfigureAwait(false);
@@ -159,56 +163,118 @@ namespace RockEngine.Core.Rendering.Texturing
         }
 
         // Create from SKBitmap with TextureData
-        public static async Task<Texture2D> CreateFromSkBitmapAsync(VulkanContext context, SKBitmap skBitmap,
-            TextureData textureData, CancellationToken cancellationToken = default)
+        private static async Task<Texture2D> CreateFromSkBitmapAsync(
+         VulkanContext context,
+         SKBitmap skBitmap,
+         TextureData textureData,
+         CancellationToken cancellationToken = default)
         {
             var format = textureData.GetVulkanFormat();
-            var mipLevels = textureData.EnsureMipLevels();
+            uint mipLevels = textureData.EnsureMipLevels();   // 1 if no mips, else max possible
+            textureData.MipLevels = mipLevels;                // ensure textureData is consistent
 
+            // 1. Create image with the desired number of mip levels
             var image = CreateVulkanImage(context, textureData, ImageAspectFlags.ColorBit);
 
+            // 2. Upload base level using transfer queue
             var transferComplete = VkSemaphore.Create(context);
-            var graphicsComplete = VkSemaphore.Create(context);
-
-            // Upload base level
             var transferBatch = context.TransferSubmitContext.CreateBatch();
-            // Transfer queue operations
+            transferBatch.LabelObject("MipUpload");
+
+            // Transition all levels to TransferDstOptimal so that later blits can write to them
             image.TransitionImageLayout(
                 transferBatch,
                 ImageLayout.Undefined,
                 ImageLayout.TransferDstOptimal,
                 baseMipLevel: 0,
-                levelCount: mipLevels
-            );
-            CopyImageData(transferBatch, skBitmap, image, format);
-            transferBatch.AddSignalSemaphore(transferComplete);
+                levelCount: mipLevels,
+                baseArrayLayer: 0,
+                layerCount: image.ArrayLayers);
 
+            CopyImageData(transferBatch, skBitmap, image, format); // uploads to level 0
+            transferBatch.AddSignalSemaphore(transferComplete);
             var transferOp = context.TransferSubmitContext.SubmitSingle(transferBatch);
 
-            // Generate all mip levels on GPU
+            // 3. Graphics queue: generate mipmaps & final transition
             var graphicsBatch = context.GraphicsSubmitContext.CreateBatch();
+            graphicsBatch.LabelObject("MipGeneration");
             graphicsBatch.AddWaitSemaphore(transferComplete, PipelineStageFlags.TransferBit);
 
-            // Если не получилось сгенерировать мипмап(формат не поддерживает блиттинг), то надо самому менять лейаут
-            if (!textureData.GenerateMipmaps || !image.GenerateMipmaps(graphicsBatch))
+            uint actualLoadedMipLevels = 1; // default: only level 0 has data
+            bool mipGenerationSucceeded = false;
+
+            if (textureData.GenerateMipmaps && mipLevels > 1)
             {
+                // Transition level 0 from TransferDstOptimal to TransferSrcOptimal
                 image.TransitionImageLayout(
                     graphicsBatch,
-                 ImageLayout.TransferDstOptimal,
+                    ImageLayout.TransferDstOptimal,
+                    ImageLayout.TransferSrcOptimal,
+                    baseMipLevel: 0,
+                    levelCount: 1,
+                    baseArrayLayer: 0,
+                    layerCount: image.ArrayLayers);
+
+                // Try blit-based generation; helper must handle internal transitions of lower levels
+                mipGenerationSucceeded = image.GenerateMipmaps(graphicsBatch);
+                actualLoadedMipLevels = mipGenerationSucceeded ? mipLevels : 1;
+                // After mip generation
+                if (mipGenerationSucceeded && mipLevels > 1)
+                {
+                    // Transition all source levels (0 .. mipLevels-2)
+                    if (mipLevels > 1)
+                    {
+                        image.TransitionImageLayout(
+                            graphicsBatch,
+                            ImageLayout.TransferSrcOptimal,
+                            ImageLayout.ShaderReadOnlyOptimal,
+                            baseMipLevel: 0,
+                            levelCount: mipLevels - 1,
+                            baseArrayLayer: 0,
+                            layerCount: image.ArrayLayers);
+                    }
+
+                    // Transition the final destination level (mipLevels-1)
+                    image.TransitionImageLayout(
+                        graphicsBatch,
+                        ImageLayout.TransferDstOptimal,
+                        ImageLayout.ShaderReadOnlyOptimal,
+                        baseMipLevel: mipLevels - 1,
+                        levelCount: 1,
+                        baseArrayLayer: 0,
+                        layerCount: image.ArrayLayers);
+
+                    actualLoadedMipLevels = mipLevels;
+                }
+            }
+            else
+            {
+                // Mipmaps not generated; only level 0 is valid and it's still in TransferDstOptimal.
+                // Transition level 0 to ShaderReadOnlyOptimal.
+                image.TransitionImageLayout(
+                    graphicsBatch,
+                    ImageLayout.TransferDstOptimal,
                     ImageLayout.ShaderReadOnlyOptimal,
                     baseMipLevel: 0,
-                    levelCount: 1
-                );
+                    levelCount: 1,
+                    baseArrayLayer: 0,
+                    layerCount: image.ArrayLayers);
+                actualLoadedMipLevels = 1;
             }
 
-            graphicsBatch.AddSignalSemaphore(graphicsComplete);
-            var sampler = CreateSampler(context, textureData.Sampler, mipLevels);
-            var texture = new Texture2D(context, image, sampler);
-            graphicsBatch.AddSignalSemaphore(texture.CompletionSemaphore);
+            // 5. Create sampler with the actual number of loaded mip levels
+            textureData.Sampler.SetMaxLod(actualLoadedMipLevels);
+            var sampler = CreateSampler(context, textureData.Sampler, actualLoadedMipLevels);
+            var texture = new Texture2D(context, image, sampler)
+            {
+                LoadedMipLevels = actualLoadedMipLevels
+            };
 
-            await transferOp;
+            graphicsBatch.AddSignalSemaphore(texture.CompletionSemaphore);
             graphicsBatch.Submit();
-            //await context.GraphicsSubmitContext.SubmitSingle(graphicsBatch);
+
+            // Await the transfer queue submission to ensure staging buffer lifetime
+            await transferOp;
 
             if (!string.IsNullOrEmpty(textureData.Name))
             {
@@ -274,14 +340,16 @@ namespace RockEngine.Core.Rendering.Texturing
         }
 
         // Create cube from bitmaps
-        private static async Task<Texture2D> CreateCubeFromBitmapsAsync(VulkanContext context, SKBitmap[] faceBitmaps,
-            TextureData textureData, CancellationToken cancellationToken)
+        private static async Task<Texture2D> CreateCubeFromBitmapsAsync(
+    VulkanContext context,
+    SKBitmap[] faceBitmaps,
+    TextureData textureData,
+    CancellationToken cancellationToken)
         {
             if (faceBitmaps.Length != 6)
             {
-                throw new ArgumentException("Cube map requires exactly 6 face paths.");
+                throw new ArgumentException("Cube map requires exactly 6 face bitmaps");
             }
-
 
             uint width = (uint)faceBitmaps[0].Width;
             uint height = (uint)faceBitmaps[0].Height;
@@ -290,39 +358,33 @@ namespace RockEngine.Core.Rendering.Texturing
             textureData.Height = height;
             textureData.Format = TextureData.FromSKFormat(faceBitmaps[0].ColorType, textureData.ConvertToSrgb);
 
-            // Create image with initial layout as TransferDstOptimal
             var image = CreateVulkanImage(context, textureData, ImageAspectFlags.ColorBit);
 
-            // Create semaphores for queue synchronization
+            // 1. Upload all 6 faces to level 0 using transfer queue
             var transferComplete = VkSemaphore.Create(context);
-
-            // Transfer queue operations
             var transferBatch = context.TransferSubmitContext.CreateBatch();
-            transferBatch.LabelObject("CubeMap Transfer");
+            transferBatch.LabelObject("CubeUpload");
 
-            // Transition to TransferDstOptimal (even though we created it with this layout, this ensures tracking)
+            // Transition all layers/levels to TransferDstOptimal
             image.TransitionImageLayout(
                 transferBatch,
-                 ImageLayout.Undefined,
+                ImageLayout.Undefined,
                 ImageLayout.TransferDstOptimal,
                 baseMipLevel: 0,
-                levelCount: 1,
+                levelCount: mipLevels,
                 baseArrayLayer: 0,
-                layerCount: 6
-            );
+                layerCount: 6);
 
-            // Upload each face
             for (int i = 0; i < 6; i++)
             {
                 var pixelData = faceBitmaps[i].GetPixelSpan();
                 if (!transferBatch.StagingManager.TryStage(transferBatch, pixelData,
-                                                                  out ulong bufferOffset,
-                                                                  out ulong stagedSize))
+                                                              out ulong bufferOffset,
+                                                              out ulong stagedSize))
                 {
                     throw new InvalidOperationException("Staging buffer overflow");
                 }
 
-                // Barrier for staging buffer
                 var bufferBarrier = new BufferMemoryBarrier2
                 {
                     SType = StructureType.BufferMemoryBarrier2,
@@ -334,12 +396,8 @@ namespace RockEngine.Core.Rendering.Texturing
                     Offset = bufferOffset,
                     Size = stagedSize
                 };
+                transferBatch.PipelineBarrier(bufferMemoryBarriers: [bufferBarrier]);
 
-                transferBatch.PipelineBarrier(
-                    bufferMemoryBarriers: [bufferBarrier]
-                );
-
-                // Copy to image
                 var copyRegion = new BufferImageCopy
                 {
                     BufferOffset = bufferOffset,
@@ -352,61 +410,81 @@ namespace RockEngine.Core.Rendering.Texturing
                     },
                     ImageExtent = new Extent3D(width, height, 1)
                 };
-
                 transferBatch.CopyBufferToImage(
-                    srcBuffer: transferBatch.StagingManager.StagingBuffer,
-                    dstImage: image,
-                    dstImageLayout: ImageLayout.TransferDstOptimal,
-                    pRegions: in copyRegion
-                );
+                    transferBatch.StagingManager.StagingBuffer,
+                    image,
+                    ImageLayout.TransferDstOptimal,
+                    in copyRegion);
             }
 
             transferBatch.AddSignalSemaphore(transferComplete);
             transferBatch.Submit();
             await context.TransferSubmitContext.Submit();
 
-            // Graphics queue operations
+            // 2. Graphics queue: mipmap generation & final layout
             var graphicsBatch = context.GraphicsSubmitContext.CreateBatch();
-            graphicsBatch.LabelObject("CubeMap Graphics");
+            graphicsBatch.LabelObject("CubeMipGeneration");
             graphicsBatch.AddWaitSemaphore(transferComplete, PipelineStageFlags.TransferBit);
 
-            if (textureData.GenerateMipmaps)
+            uint actualLoadedMipLevels = 1;
+            bool mipGenerationSucceeded = false;
+
+            if (textureData.GenerateMipmaps && mipLevels > 1)
             {
-                // Prepare base level for mipmap generation
+                // Level 0 is currently TransferDstOptimal (from the transfer batch)
+                // Transition it to TransferSrcOptimal as required by GenerateMipmaps.
                 image.TransitionImageLayout(
                     graphicsBatch,
-                     ImageLayout.Undefined,
+                    ImageLayout.TransferDstOptimal,
                     ImageLayout.TransferSrcOptimal,
                     baseMipLevel: 0,
                     levelCount: 1,
                     baseArrayLayer: 0,
-                    layerCount: 6
-                );
+                    layerCount: 6);
 
-                // Generate mipmaps
-                image.GenerateMipmaps(graphicsBatch);
+                mipGenerationSucceeded = image.GenerateMipmaps(graphicsBatch);
+            }
+
+            // 3. Final transition: all valid levels to ShaderReadOnlyOptimal
+            if (mipGenerationSucceeded)
+            {
+                // After GenerateMipmaps, all mips are either in TransferSrcOptimal (used as source)
+                // or TransferDstOptimal (the highest mip, which was never used as source).
+                // Transition the whole mip chain to ShaderReadOnlyOptimal.
+                image.TransitionImageLayout(
+                    graphicsBatch,
+                    ImageLayout.TransferSrcOptimal,    // most levels are in this layout
+                    ImageLayout.ShaderReadOnlyOptimal,
+                    baseMipLevel: 0,
+                    levelCount: mipLevels,
+                    baseArrayLayer: 0,
+                    layerCount: 6);
+                actualLoadedMipLevels = mipLevels;
             }
             else
             {
-                // Transition directly to shader read layout
+                // No mipmaps – only level 0 is valid, still in TransferDstOptimal
                 image.TransitionImageLayout(
                     graphicsBatch,
-                     ImageLayout.Undefined,
+                    ImageLayout.TransferDstOptimal,
                     ImageLayout.ShaderReadOnlyOptimal,
                     baseMipLevel: 0,
                     levelCount: 1,
                     baseArrayLayer: 0,
-                    layerCount: 6
-                );
+                    layerCount: 6);
+                actualLoadedMipLevels = 1;
             }
-            // Create image view and sampler
-            var sampler = CreateSampler(context, mipLevels);
 
-            var texture = new Texture2D(context, image, sampler);
+            var sampler = CreateSampler(context, textureData.Sampler, actualLoadedMipLevels);
+            var texture = new Texture2D(context, image, sampler)
+            {
+                LoadedMipLevels = actualLoadedMipLevels
+            };
+
             graphicsBatch.AddSignalSemaphore(texture.CompletionSemaphore);
-            graphicsBatch.Submit();
-            //await context.GraphicsSubmitContext.SubmitSingle(graphicsBatch);
-            // Cleanup
+
+            await graphicsBatch.SubmitContext.SubmitSingle(graphicsBatch);
+
             foreach (var bitmap in faceBitmaps)
             {
                 bitmap.Dispose();
@@ -420,7 +498,7 @@ namespace RockEngine.Core.Rendering.Texturing
             var flipped = new SKBitmap(bitmap.Width, bitmap.Height, bitmap.ColorType, bitmap.AlphaType);
             using var canvas = new SKCanvas(flipped);
             canvas.Scale(1, -1, bitmap.Width / 2f, bitmap.Height / 2f);
-            canvas.DrawBitmap(bitmap, 0, 0);
+            canvas.DrawBitmap(bitmap, 0, 0, new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.Linear));
             return flipped;
         }
 
@@ -467,17 +545,17 @@ namespace RockEngine.Core.Rendering.Texturing
                 AddressModeU = ConvertWrap(samplerState.AddressModeU),
                 AddressModeV = ConvertWrap(samplerState.AddressModeV),
                 AddressModeW = ConvertWrap(samplerState.AddressModeW),
-                AnisotropyEnable = samplerState.AnisotropyEnable,
-                MaxAnisotropy = samplerState.MaxAnisotropy,
+                AnisotropyEnable = context.Device.PhysicalDevice.Features.SamplerAnisotropy ? Vk.True : Vk.False,
+                MaxAnisotropy = context.Device.PhysicalDevice.Properties.Limits.MaxSamplerAnisotropy,
                 BorderColor = samplerState.BorderColor,
                 UnnormalizedCoordinates = samplerState.UnnormalizedCoordinates,
                 CompareEnable = samplerState.CompareEnable,
                 CompareOp = samplerState.CompareOp,
-                MipmapMode = samplerState.MipFilter == TextureFilter.Nearest ?
-                    SamplerMipmapMode.Nearest : SamplerMipmapMode.Linear,
+                MipmapMode = /*samplerState.MipFilter == TextureFilter.Nearest ?
+                    SamplerMipmapMode.Nearest : SamplerMipmapMode.Linear,*/SamplerMipmapMode.Linear,
                 MipLodBias = samplerState.MipLodBias,
                 MinLod = samplerState.MinLod,
-                MaxLod = samplerState.MaxLod
+                MaxLod = mipLevels
             };
 
             return context.SamplerCache.GetSampler(samplerCreateInfo);
@@ -545,6 +623,18 @@ namespace RockEngine.Core.Rendering.Texturing
                 dstImageLayout: ImageLayout.TransferDstOptimal,
                 pRegions: in copyRegion
             );
+            var bufferBarrier = new BufferMemoryBarrier2
+            {
+                SType = StructureType.BufferMemoryBarrier2,
+                SrcStageMask = PipelineStageFlags2.HostBit,
+                DstStageMask = PipelineStageFlags2.TransferBit,
+                SrcAccessMask = AccessFlags2.HostWriteBit,
+                DstAccessMask = AccessFlags2.TransferReadBit,
+                Buffer = batch.StagingManager.StagingBuffer,
+                Offset = offset,
+                Size = size
+            };
+            batch.PipelineBarrier(bufferMemoryBarriers: [bufferBarrier]);
         }
 
         private static uint GetBytesPerPixel(Format format)
@@ -579,10 +669,10 @@ namespace RockEngine.Core.Rendering.Texturing
         public static Texture2D CreateEmptyTexture(VulkanContext context, TextureData textureData)
         {
             using var surface = SKSurface.Create(new SKImageInfo((int)textureData.Width, (int)textureData.Height, SKColorType.Rgba8888));
-            surface.Canvas.Clear(new SKColor(0,0,0,255));
+            surface.Canvas.Clear(new SKColor(0, 0, 0, 255));
             using var image = surface.Snapshot();
             using var bitmap = SKBitmap.FromImage(image);
-           
+
             return LoadFromSKImage(context, bitmap, textureData, name: textureData.Name);
         }
 
@@ -692,7 +782,7 @@ namespace RockEngine.Core.Rendering.Texturing
                 BorderColor = BorderColor.FloatOpaqueWhite,
                 UnnormalizedCoordinates = false,
                 CompareEnable = true,
-                CompareOp = CompareOp.Less,
+                CompareOp = CompareOp.LessOrEqual,
                 MipmapMode = SamplerMipmapMode.Linear,
                 MipLodBias = 0,
                 MinLod = 0,
@@ -764,7 +854,7 @@ namespace RockEngine.Core.Rendering.Texturing
                 BorderColor = BorderColor.FloatOpaqueWhite,
                 UnnormalizedCoordinates = false,
                 CompareEnable = true,
-                CompareOp = CompareOp.Less,
+                CompareOp = CompareOp.LessOrEqual,
                 MipmapMode = SamplerMipmapMode.Linear,
                 MipLodBias = 0,
                 MinLod = 0,

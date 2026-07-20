@@ -1,4 +1,5 @@
 ﻿using System.Numerics;
+using Assimp;
 using NUnit.Framework;
 using RockEngine.Assets;
 using RockEngine.Core;
@@ -7,6 +8,7 @@ using RockEngine.Core.ECS.Components;
 using RockEngine.Core.Rendering.Texturing;
 using RockEngine.Core.ResourceProviders;
 using SkiaSharp;
+using Matrix4x4 = System.Numerics.Matrix4x4;
 
 namespace RockEngine.Tests
 {
@@ -317,8 +319,8 @@ namespace RockEngine.Tests
                 Path = new AssetPath("Scenes", "TestScene")
             };
             newSceneAsset.SetData(sceneData);
-
-            await newSceneAsset.InstantiateEntities().ConfigureAwait(false);
+            await foreach (var _ in newSceneAsset.InstantiateEntities())
+            { }
 
             Assert.That(newSceneAsset.Entities.Count, Is.EqualTo(1));
             var loadedEntity = newSceneAsset.Entities.Values.First();

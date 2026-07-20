@@ -33,8 +33,8 @@ namespace RockEngine.Core.Rendering.RenderTargets
             Framebuffers = new VkFrameBuffer[context.MaxFramesPerFlight];
         }
 
-        public abstract void PrepareForRender(UploadBatch batch);
-        public abstract void TransitionToRead(UploadBatch batch);
+        public abstract void PrepareForRender(UploadBatch batch, uint frameIndex);
+        public abstract void TransitionToRead(UploadBatch batch, uint frameIndex);
         protected abstract void CreateFramebuffers();
         public abstract void Initialize(RckRenderPass renderPass);
 
@@ -51,7 +51,7 @@ namespace RockEngine.Core.Rendering.RenderTargets
         {
 
         }
-        public virtual VkFrameBuffer GetFrameBuffer(uint frameIndex)
+        public virtual VkFrameBuffer GetFramebuffer(uint frameIndex)
         {
             return Framebuffers[frameIndex];
         }

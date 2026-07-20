@@ -25,7 +25,7 @@ namespace RockEngine.Core.Rendering.ResourceBindings
 
             if (!_descriptorSetsByLayout.TryGetValue(layout, out var sets))
             {
-                sets = new VkDescriptorSet[VulkanContext.GetCurrent().MaxFramesPerFlight];
+                sets = new VkDescriptorSet[GetCurrent().MaxFramesPerFlight];
                 _descriptorSetsByLayout[layout] = sets;
             }
             return sets[frameIndex];
@@ -36,7 +36,7 @@ namespace RockEngine.Core.Rendering.ResourceBindings
         {
             if (!_descriptorSetsByLayout.TryGetValue(layout, out var sets))
             {
-                sets = new VkDescriptorSet[VulkanContext.GetCurrent().MaxFramesPerFlight];
+                sets = new VkDescriptorSet[GetCurrent().MaxFramesPerFlight];
                 _descriptorSetsByLayout.TryAdd(layout, sets);
             }
 

@@ -1,5 +1,6 @@
 ﻿
 using System.Text.Json.Serialization;
+using MemoryPack;
 using NLog;
 using RockEngine.Assets;
 using RockEngine.Core.DI;
@@ -7,7 +8,8 @@ using RockEngine.Core.Rendering;
 
 namespace RockEngine.Core.Assets
 {
-    public sealed class ModelAsset : Asset<ModelData>, IGpuResource
+    [MemoryPackable]
+    public sealed partial class ModelAsset : Asset<ModelData>, IGpuResource
     {
         private static readonly Logger _logger = LogManager.GetCurrentClassLogger();
         private bool _loaded;

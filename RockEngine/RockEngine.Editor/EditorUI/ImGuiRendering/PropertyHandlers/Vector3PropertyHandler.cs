@@ -14,8 +14,12 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.PropertyHandlers
         // Dictionary to store the original value while editing
         private readonly Dictionary<string, Vector3> _editingOldValues = new();
 
-        protected override void DrawProperty(IComponent component, UIPropertyAccessor accessor, Vector3 value, PropertyDrawer drawer)
+        protected override void DrawProperty(object owner, UIPropertyAccessor accessor, Vector3 value, PropertyDrawer drawer)
         {
+            if (owner is not IComponent component)
+            {
+                return;
+            }
             bool isColor = accessor.GetAttribute<ColorAttribute>() != null;
             var stepAttr = accessor.GetAttribute<StepAttribute>();
             float step = stepAttr?.Step ?? 0.1f;

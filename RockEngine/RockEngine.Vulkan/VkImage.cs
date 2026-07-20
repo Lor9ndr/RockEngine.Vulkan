@@ -102,7 +102,7 @@ namespace RockEngine.Vulkan
         private static unsafe Image CreateImage(VulkanContext context, in ImageCreateInfo createInfo)
         {
             Image image;
-            VulkanContext.Vk.CreateImage(context.Device, in createInfo, in VulkanContext.CustomAllocator<VkImage>(), &image)
+            VK.CreateImage(context.Device, in createInfo, in CustomAllocator<VkImage>(), &image)
                 .VkAssertResult("Failed to create image");
             return image;
         }
@@ -112,9 +112,9 @@ namespace RockEngine.Vulkan
             Image image,
             MemoryPropertyFlags memoryProperties)
         {
-            VulkanContext.Vk.GetImageMemoryRequirements(context.Device, image, out var requirements);
+            VK.GetImageMemoryRequirements(context.Device, image, out var requirements);
             var memory = VkDeviceMemory.Allocate(context, requirements, memoryProperties);
-            VulkanContext.Vk.BindImageMemory(context.Device, image, memory, 0);
+            VK.BindImageMemory(context.Device, image, memory, 0);
 
             return memory;
         }
@@ -338,7 +338,7 @@ namespace RockEngine.Vulkan
 
         private void BlitMipLevel(UploadBatch batch, in ImageBlit blit)
         {
-            VulkanContext.Vk.CmdBlitImage(
+            VK.CmdBlitImage(
                 batch.CommandBuffer,
                 _vkObject, ImageLayout.TransferSrcOptimal,
                 _vkObject, ImageLayout.TransferDstOptimal,
@@ -436,7 +436,7 @@ namespace RockEngine.Vulkan
             _tracker.Clear();
             VulkanAllocator.DeviceMemoryTracker.DisassociateObject(_vkObject.Handle);
 
-            VulkanContext.Vk.DestroyImage(_context.Device, _vkObject, in VulkanContext.CustomAllocator<VkImage>());
+            VK.DestroyImage(_context.Device, _vkObject, in CustomAllocator<VkImage>());
             _imageMemory?.Dispose();
 
         }
@@ -445,7 +445,7 @@ namespace RockEngine.Vulkan
             if (_vkObject.Handle != default)
             {
                 VulkanAllocator.DeviceMemoryTracker.DisassociateObject(_vkObject.Handle);
-                VulkanContext.Vk.DestroyImage(_context.Device, _vkObject, in VulkanContext.CustomAllocator<VkImage>());
+                VK.DestroyImage(_context.Device, _vkObject, in CustomAllocator<VkImage>());
             }
             _imageMemory?.Dispose();
 
@@ -470,6 +470,8 @@ namespace RockEngine.Vulkan
 
             return (oldLayout, newLayout) switch
             {
+                (ImageLayout.Undefined, ImageLayout.Undefined) =>
+                (PipelineStageFlags2.TopOfPipeBit, PipelineStageFlags2.TopOfPipeBit),
                 // Undefined -> PresentSrcKhr (for initial setup)
                 (ImageLayout.Undefined, ImageLayout.PresentSrcKhr)
                     => (PipelineStageFlags2.TopOfPipeBit, PipelineStageFlags2.BottomOfPipeBit),
@@ -575,7 +577,7 @@ namespace RockEngine.Vulkan
                 (PipelineStageFlags2.FragmentShaderBit, PipelineStageFlags2.FragmentShaderBit),
                 (ImageLayout.DepthStencilAttachmentOptimal, ImageLayout.TransferDstOptimal) =>
     (PipelineStageFlags2.EarlyFragmentTestsBit, PipelineStageFlags2.TransferBit),
-
+     
                 (ImageLayout.TransferDstOptimal, ImageLayout.DepthStencilAttachmentOptimal) =>
                     (PipelineStageFlags2.TransferBit, PipelineStageFlags2.EarlyFragmentTestsBit),
 
@@ -591,8 +593,7 @@ namespace RockEngine.Vulkan
             }
             return (oldLayout, newLayout) switch
             {
-                // ADD THESE MISSING TRANSITIONS FOR PresentSrcKhr:
-                // Undefined -> PresentSrcKhr
+                (ImageLayout.Undefined, ImageLayout.Undefined)=> (AccessFlags2.None, AccessFlags2.None),
                 (ImageLayout.Undefined, ImageLayout.PresentSrcKhr)
                     => (AccessFlags2.None, AccessFlags2.MemoryReadBit),
 
@@ -695,7 +696,7 @@ namespace RockEngine.Vulkan
                 (ImageLayout.ShaderReadOnlyOptimal, ImageLayout.ShaderReadOnlyOptimal) =>
                (AccessFlags2.ShaderReadBit, AccessFlags2.ShaderReadBit),
                 (ImageLayout.DepthStencilAttachmentOptimal, ImageLayout.TransferDstOptimal) =>
-     (AccessFlags2.DepthStencilAttachmentWriteBit, AccessFlags2.TransferWriteBit),
+                    (AccessFlags2.DepthStencilAttachmentWriteBit, AccessFlags2.TransferWriteBit),
 
                 (ImageLayout.TransferDstOptimal, ImageLayout.DepthStencilAttachmentOptimal) =>
                     (AccessFlags2.TransferWriteBit, AccessFlags2.DepthStencilAttachmentReadBit | AccessFlags2.DepthStencilAttachmentWriteBit),

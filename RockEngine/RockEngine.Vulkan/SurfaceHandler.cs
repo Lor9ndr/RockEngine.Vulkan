@@ -31,7 +31,7 @@ namespace RockEngine.Vulkan
             VkSurfaceNative = window.VkSurface;
             _window = window;
             _context = context;
-            _surfaceApi = new KhrSurface(VulkanContext.Vk.Context);
+            _surfaceApi = new KhrSurface(VK.Context);
             _size = new Vector2(_window.Size.X, _window.Size.Y);
             _window.Resize += SurfaceResized;
         }

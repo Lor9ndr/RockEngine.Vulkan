@@ -59,8 +59,8 @@ namespace RockEngine.Vulkan
                     PPushConstantRanges = pushConstantsPtr
                 };
 
-                VulkanContext.Vk.CreatePipelineLayout(context.Device, &layoutInfo,
-                    in VulkanContext.CustomAllocator<VkPipelineLayout>(), out var pipelineLayout)
+                VK.CreatePipelineLayout(context.Device, &layoutInfo,
+                    in CustomAllocator<VkPipelineLayout>(), out var pipelineLayout)
                     .VkAssertResult("Failed to create pipeline layout");
 
                 return new VkPipelineLayout(context, pipelineLayout, pushConstantRanges, mergedSetLayouts, mergedReflectionData);
@@ -367,8 +367,8 @@ namespace RockEngine.Vulkan
                     }
                 }
 
-                VulkanContext.Vk.CreateDescriptorSetLayout(context.Device, in layoutInfo,
-                    in VulkanContext.CustomAllocator<VkDescriptorSetLayout>(),
+                VK.CreateDescriptorSetLayout(context.Device, in layoutInfo,
+                    in CustomAllocator<VkDescriptorSetLayout>(),
                     out var descriptorSetLayout)
                     .VkAssertResult("Failed to create descriptor set layout");
 
@@ -408,10 +408,10 @@ namespace RockEngine.Vulkan
                     {
                         foreach (var item in DescriptorSetLayouts)
                         {
-                            VulkanContext.Vk.DestroyDescriptorSetLayout(_context.Device, item.Value.DescriptorSetLayout, in VulkanContext.CustomAllocator<VkDescriptorSetLayout>());
+                            VK.DestroyDescriptorSetLayout(_context.Device, item.Value.DescriptorSetLayout, in CustomAllocator<VkDescriptorSetLayout>());
                         }
 
-                        VulkanContext.Vk.DestroyPipelineLayout(_context.Device, _vkObject, in VulkanContext.CustomAllocator<VkPipelineLayout>());
+                        VK.DestroyPipelineLayout(_context.Device, _vkObject, in CustomAllocator<VkPipelineLayout>());
                     }
                     _vkObject = default;
                 }

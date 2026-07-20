@@ -3,6 +3,7 @@ using RockEngine.Core.DI;
 using RockEngine.Core.Registries;
 using RockEngine.Core.Rendering;
 using RockEngine.Core.Rendering.Passes;
+using RockEngine.DI;
 using RockEngine.Editor.EditorComponents;
 using RockEngine.Editor.EditorUI.ImGuiRendering;
 using RockEngine.Editor.EditorUI.Logging;
@@ -35,7 +36,7 @@ namespace RockEngine.Editor.Modules
             container.Register<DebugCamera>();
             container.Register<InfinityGrid>();
             container.Register<TransformGizmo>();
-            container.Register<ISelectionManager, EntitySelectionManager>();
+            container.Register<ISelectionManager, SelectionManager>();
             container.Register<RenderDocIntegration>();
             container.Register<IThumbnailRenderer, ThumbnailRenderer>();
             container.Register<IThumbnailService, ThumbnailService>();

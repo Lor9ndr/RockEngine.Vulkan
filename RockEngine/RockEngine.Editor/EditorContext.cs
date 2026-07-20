@@ -1,4 +1,5 @@
 ﻿using RockEngine.Core;
+using RockEngine.Core.DI;
 using RockEngine.Core.ECS;
 using RockEngine.Core.Extensions;
 using RockEngine.Core.Physics;
@@ -28,6 +29,7 @@ namespace RockEngine.Editor
         {
             await _layerStack.PushLayer(_imGuiLayer).ConfigureAwait(false);
             await _layerStack.PushLayer(_projectLayer).ConfigureAwait(false);
+            await _layerStack.PushLayer(IoC.Container.GetInstance<EditorLayer>()).ConfigureAwait(false);
         }
 
         /// <inheritdoc/>
@@ -46,18 +48,13 @@ namespace RockEngine.Editor
         /// <inheritdoc/>
         public override async Task RenderAsync(RenderContext renderContext)
         {
-            var batch = renderContext.GraphicsContext.CreateBatch();
+            using (renderContext.GraphicsBatch.BeginSection("Editor UI", renderContext.FrameIndex))
             {
-                using (batch.BeginSection("Editor UI", renderContext.FrameIndex))
-                {
-                    _layerStack.RenderImGui(batch);
-                }
-                using (batch.BeginSection("Layer render", renderContext.FrameIndex))
-                {
-                    _layerStack.Render(batch);
-                }
-
-                batch.Submit();
+                _layerStack.RenderImGui(renderContext.GraphicsBatch);
+            }
+            using (renderContext.GraphicsBatch.BeginSection("Layer render", renderContext.FrameIndex))
+            {
+                _layerStack.Render(renderContext.GraphicsBatch);
             }
             await renderContext.WorldRenderer.Render(renderContext).ConfigureAwait(false);
         }

@@ -22,10 +22,10 @@ namespace RockEngine.Vulkan
 
         public static VkQueryPool Create(VulkanContext context, in QueryPoolCreateInfo createInfo)
         {
-            VulkanContext.Vk.CreateQueryPool(
+            VK.CreateQueryPool(
                 context.Device,
                 in createInfo,
-                in VulkanContext.CustomAllocator<VkQueryPool>(),
+                in CustomAllocator<VkQueryPool>(),
                 out QueryPool queryPool
             ).VkAssertResult("Failed to create Query pool");
 
@@ -72,7 +72,7 @@ namespace RockEngine.Vulkan
 
             fixed (T* ptr = destination)
             {
-                return VulkanContext.Vk.GetQueryPoolResults(
+                return VK.GetQueryPoolResults(
                     device: _context.Device,
                     queryPool: _vkObject,
                     firstQuery: firstQuery,
@@ -95,10 +95,10 @@ namespace RockEngine.Vulkan
                 }
 
                 // Destroy Vulkan query pool
-                VulkanContext.Vk.DestroyQueryPool(
+                VK.DestroyQueryPool(
                     _context.Device,
                     _vkObject,
-                    in VulkanContext.CustomAllocator<VkQueryPool>()
+                    in CustomAllocator<VkQueryPool>()
                 );
                 _disposed = true;
             }
@@ -106,7 +106,7 @@ namespace RockEngine.Vulkan
 
         public void Reset(uint firstQuery = 0, uint queryCount = 1)
         {
-            VulkanContext.Vk.ResetQueryPool(_context.Device, _vkObject, firstQuery, queryCount);
+            VK.ResetQueryPool(_context.Device, _vkObject, firstQuery, queryCount);
         }
 
     }

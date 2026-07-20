@@ -149,7 +149,6 @@ namespace RockEngine.Core.Coroutines
         private readonly List<Coroutine> _activeCoroutines = new List<Coroutine>();
         private readonly List<Coroutine> _coroutinesToAdd = new List<Coroutine>();
         private readonly List<Coroutine> _coroutinesToRemove = new List<Coroutine>();
-        private readonly ConcurrentQueue<Coroutine> _readyCoroutines = new ConcurrentQueue<Coroutine>();
         private bool _isUpdating;
 
         public Coroutine StartCoroutine(IEnumerator routine, string? name = null)
@@ -223,8 +222,9 @@ namespace RockEngine.Core.Coroutines
                         }
                     }
                 }
-                else if (current is WaitForNextFrame)
+                else if (current is WaitForNextFrame || current == null)
                 {
+                    // null means wait one frame 
                     // Always continue on next frame
                     if (!coroutine.MoveNext())
                     {
@@ -259,14 +259,6 @@ namespace RockEngine.Core.Coroutines
                         {
                             _coroutinesToRemove.Add(coroutine);
                         }
-                    }
-                }
-                else if (current == null)
-                {
-                    // null means wait one frame (like yield return null in Unity)
-                    if (!coroutine.MoveNext())
-                    {
-                        _coroutinesToRemove.Add(coroutine);
                     }
                 }
                 else

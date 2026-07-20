@@ -1,10 +1,11 @@
-﻿using MessagePack;
+﻿using MemoryPack;
 
 namespace RockEngine.Core.Assets
 {
-    [MessagePackObject]
-    public class MeshData<T> where T : struct, IVertex
+    [MemoryPackable]
+    public partial class MeshData<T> where T : struct, IVertex
     {
+        [MemoryPackConstructor]
         public MeshData()
         {
         }
@@ -22,11 +23,8 @@ namespace RockEngine.Core.Assets
             Name = name;
         }
 
-        [Key(0)]
         public T[] Vertices { get; set; } = Array.Empty<T>();
-        [Key(1)]
         public uint[]? Indices { get; set; }
-        [Key(2)]
         public string Name { get; set; } = string.Empty;
     }
 }

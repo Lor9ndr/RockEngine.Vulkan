@@ -33,6 +33,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\RockEngine.Core\RockEngine.Core.csproj" />
+    <ProjectReference Include="..\RockEngine.Editor.Generator\RockEngine.Editor.Generator.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
 
@@ -53,7 +54,6 @@
   
   
   <ItemGroup>
-    <None Remove="Resources\skybox\front.jpg" />
   </ItemGroup>
   
   
@@ -71,7 +71,8 @@
 
   <ItemGroup>
     <Folder Include="Resources\Models\Revoulier\" />
-    <Folder Include="TestProject\" />
+    <Content Include="TestProject\**" />
+    <Folder Include="TestProject\DebugProject\Materials\" />
   </ItemGroup>
   
 
@@ -80,10 +81,6 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>
-
- 
- 
-
 
 
 </Project>

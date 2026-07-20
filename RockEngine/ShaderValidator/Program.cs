@@ -8,6 +8,8 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using RockEngine.ShaderPreprocessor;
+using RockEngine.ShaderPreProcessor;
+using RockEngine.ShaderPreProcessor.Steps;
 
 namespace ShaderValidator
 {
@@ -50,7 +52,10 @@ namespace ShaderValidator
 
             string basePathForIncludes = originalFilePath ?? filePath;
 
-            var preprocessor = new MainShaderPreprocessor();
+            var preprocessor = new MainShaderPreprocessor([new AnnotationProcessorStep(new IAnnotationHandler[]
+            {
+                new MaterialAnnotationHandler()
+            })]);
             string originalSource = await File.ReadAllTextAsync(filePath);
             ShaderPreProcessResult processedSource;
             try

@@ -13,8 +13,12 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.PropertyHandlers
     {
         private readonly Dictionary<string, int> _editingOldValues = new();
 
-        protected override void DrawProperty(IComponent component, UIPropertyAccessor accessor, int value, PropertyDrawer drawer)
+        protected override void DrawProperty(object owner, UIPropertyAccessor accessor, int value, PropertyDrawer drawer)
         {
+            if (owner is not IComponent component)
+            {
+                return;
+            }
             var stepAttr = accessor.GetAttribute<StepAttribute>();
             float step = stepAttr?.Step ?? 1f;
 

@@ -25,7 +25,7 @@ namespace RockEngine.Vulkan
 
                 unsafe
                 {
-                    VulkanContext.Vk.DestroyRenderPass(_context.Device, _vkObject, in VulkanContext.CustomAllocator<VkRenderPass>());
+                    VK.DestroyRenderPass(_context.Device, _vkObject, in CustomAllocator<VkRenderPass>());
                 }
 
                 _disposed = true;
@@ -33,7 +33,7 @@ namespace RockEngine.Vulkan
         }
         public static unsafe VkRenderPass Create(VulkanContext context, in RenderPassCreateInfo createInfo)
         {
-            VulkanContext.Vk.CreateRenderPass(context.Device, in createInfo, in VulkanContext.CustomAllocator<VkRenderPass>(), out RenderPass renderPass)
+            VK.CreateRenderPass(context.Device, in createInfo, in CustomAllocator<VkRenderPass>(), out RenderPass renderPass)
                      .VkAssertResult("Failed to create render pass.");
 
             return new VkRenderPass(context, renderPass);
@@ -58,7 +58,7 @@ namespace RockEngine.Vulkan
                     PDependencies = pDependencies
                 };
 
-                VulkanContext.Vk.CreateRenderPass(context.Device, in createInfo, in VulkanContext.CustomAllocator<VkRenderPass>(), out renderPass)
+                VK.CreateRenderPass(context.Device, in createInfo, in CustomAllocator<VkRenderPass>(), out renderPass)
                     .VkAssertResult("Failed to create render pass.");
             }
 

@@ -56,10 +56,11 @@ namespace RockEngine.Core.Rendering.ResourceBindings
             var writes = stackalloc WriteDescriptorSet[Attachments.Length];
             for (int i = 0; i < Attachments.Length; i++)
             {
+                var attachment = Attachments[i];
                 imageInfos[i] = new DescriptorImageInfo
                 {
-                    ImageLayout = ImageLayout.ShaderReadOnlyOptimal,
-                    ImageView = Attachments[i],
+                    ImageLayout = attachment.AspectFlags.HasFlag(ImageAspectFlags.DepthBit) ? ImageLayout.DepthStencilReadOnlyOptimal : ImageLayout.ShaderReadOnlyOptimal,
+                    ImageView = attachment,
                     Sampler = default
                 };
 
@@ -75,7 +76,7 @@ namespace RockEngine.Core.Rendering.ResourceBindings
                 };
             }
 
-            VulkanContext.Vk.UpdateDescriptorSets(context.Device, (uint)Attachments.Length, writes, 0, null);
+            VK.UpdateDescriptorSets(context.Device, (uint)Attachments.Length, writes, 0, null);
         }
 
         protected override void Dispose(bool disposing)

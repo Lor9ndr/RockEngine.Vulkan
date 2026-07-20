@@ -87,7 +87,7 @@ namespace RockEngine.Editor.Rendering.RenderTargets
             }
         }
 
-        public override void PrepareForRender(UploadBatch cmd)
+        public override void PrepareForRender(UploadBatch cmd, uint frameIndex)
         {
             // Transition color attachment to color attachment optimal
             /*   if (OutputTexture.Image.GetMipLayout(0) != ImageLayout.ColorAttachmentOptimal)
@@ -96,7 +96,7 @@ namespace RockEngine.Editor.Rendering.RenderTargets
                }*/
         }
 
-        public override void TransitionToRead(UploadBatch cmd)
+        public override void TransitionToRead(UploadBatch cmd, uint frameIndex)
         {
             // Transition color attachment to transfer source for reading
             /*OutputTexture.Image.TransitionImageLayout(cmd, ImageLayout.TransferSrcOptimal);*/

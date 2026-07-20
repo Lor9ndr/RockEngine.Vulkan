@@ -1,5 +1,5 @@
 ﻿using System.Collections.Concurrent;
-using MessagePack;
+using MemoryPack;
 using NLog;
 using RockEngine.Core.ECS;
 using RockEngine.Core.ECS.Components;
@@ -8,20 +8,17 @@ using ZLinq;
 
 namespace RockEngine.Core.Assets
 {
-    [MessagePackObject]
+    [MemoryPackable]
     public sealed partial class SceneAsset : Asset<SceneData>, IGpuResource
     {
         private static readonly Logger _logger = LogManager.GetCurrentClassLogger();
 
-        [IgnoreMember]
         public ConcurrentDictionary<ulong, Entity> Entities { get; private set; } = new();
 
         public override string Type => "Scene";
 
-        [IgnoreMember]
         public bool IsLoaded { get; private set; }
 
-        [IgnoreMember]
         public bool GpuReady => Entities.All(e =>
             !e.Value.HasComponent<MeshRenderer>() ||
             e.Value.GetComponent<MeshRenderer>()?.Mesh == null);

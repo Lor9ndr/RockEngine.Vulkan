@@ -1,4 +1,5 @@
 ﻿using System.Collections.Concurrent;
+using RockEngine.Core.Attributes;
 using RockEngine.Core.Diagnostics;
 using RockEngine.Core.ECS.Components;
 using RockEngine.Core.Rendering.Managers;
@@ -45,7 +46,7 @@ namespace RockEngine.Core.Rendering.Passes
             primaryBatch.Submit();
 
         }
-
+        [Trace("Shadow Pass - {light.Entity.Name}")]
         private Task RenderShadowMap(UploadBatch batch, SubmitContext submitContext, Light light, WorldRenderer renderer, int lightIndex)
         {
             using var tracer = PerformanceTracer.BeginSection($"Shadow Pass - {light.Entity.Name}");

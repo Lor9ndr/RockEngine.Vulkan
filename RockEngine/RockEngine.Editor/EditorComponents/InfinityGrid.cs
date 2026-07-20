@@ -1,6 +1,6 @@
 ﻿using System.Numerics;
 using System.Runtime.InteropServices;
-using MessagePack;
+using MemoryPack;
 using RockEngine.Core;
 using RockEngine.Core.Assets;
 using RockEngine.Core.Builders;
@@ -195,10 +195,9 @@ namespace RockEngine.Editor.EditorComponents
         }
 
         [StructLayout(LayoutKind.Sequential, Pack = 16)]
-        [MessagePackObject]
+        [MemoryPackable]
         public struct PositionVertex : IVertex
         {
-            [Key(0)]
             public Vector4 Position;
 
             public PositionVertex(Vector3 position)

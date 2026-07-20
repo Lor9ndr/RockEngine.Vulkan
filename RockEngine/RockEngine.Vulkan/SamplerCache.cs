@@ -23,9 +23,10 @@ namespace RockEngine.Vulkan
             }
             if (sampler.IsDisposed)
             {
-                sampler = VkSampler.Create(_context, ci);
+               
                 _samplers[key] = sampler;
             }
+            sampler = VkSampler.Create(_context, ci);
             return sampler;
         }
 

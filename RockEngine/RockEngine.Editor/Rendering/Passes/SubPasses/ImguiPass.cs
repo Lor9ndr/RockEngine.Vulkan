@@ -4,7 +4,6 @@ using RockEngine.Core.Rendering;
 using RockEngine.Core.Rendering.Commands;
 using RockEngine.Core.Rendering.Managers;
 using RockEngine.Core.Rendering.Passes.SubPasses;
-using RockEngine.Core.Synchronization;
 using RockEngine.Vulkan;
 
 using Silk.NET.Vulkan;
@@ -44,9 +43,7 @@ namespace RockEngine.Editor.Rendering.Passes.SubPasses
                     {
                        /* MainThreadSynchronizationContext.Current?.RunOnRender((_) =>
                         {*/
-                            var newbatch = batch.SubmitContext.CreateBatch();
-                            imguiCmd.RenderCommand(newbatch, _graphicsEngine.FrameIndex, renderer);
-                            newbatch.Submit();
+                            imguiCmd.RenderCommand(batch, _graphicsEngine.FrameIndex, renderer);
                         //},null);
                     }
                     else

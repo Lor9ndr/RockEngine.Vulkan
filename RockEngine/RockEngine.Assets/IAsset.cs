@@ -1,8 +1,8 @@
-﻿using System.Runtime.CompilerServices;
+﻿using MemoryPack;
 
 namespace RockEngine.Assets
 {
-    public interface IAsset : IPolymorphicSerializable
+    public interface IAsset
     {
         Guid ID { get; set; }
 

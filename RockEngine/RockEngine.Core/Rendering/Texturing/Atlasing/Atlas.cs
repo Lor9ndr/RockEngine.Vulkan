@@ -1,4 +1,5 @@
-﻿using RockEngine.Vulkan;
+﻿using System.Diagnostics.CodeAnalysis;
+using RockEngine.Vulkan;
 using Silk.NET.Vulkan;
 
 namespace RockEngine.Core.Rendering.Texturing.Atlasing
@@ -64,7 +65,7 @@ namespace RockEngine.Core.Rendering.Texturing.Atlasing
         /// <summary>
         /// Tries to allocate; returns false if full.
         /// </summary>
-        public bool TryAllocate(int width, int height, out AtlasRegion? region)
+        public bool TryAllocate(int width, int height, [NotNullWhen(true)] out AtlasRegion? region)
         {
             lock (_lock)
             {

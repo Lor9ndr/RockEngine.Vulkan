@@ -14,6 +14,7 @@ struct GlobalUBO
     vec3 camPos;
     vec2 screenSize;
     float farClip;
+    float nearClip;
 };
 
 #endif

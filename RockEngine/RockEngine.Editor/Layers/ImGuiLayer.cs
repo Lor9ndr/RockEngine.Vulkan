@@ -1,9 +1,7 @@
 ﻿using ImGuiNET;
 
-using RockEngine.Core;
 using RockEngine.Core.Rendering;
 using RockEngine.Core.Rendering.Commands;
-using RockEngine.Core.Synchronization;
 using RockEngine.Editor.EditorUI.ImGuiRendering;
 using RockEngine.Editor.EditorUI.UndoRedo;
 using RockEngine.Vulkan;
@@ -15,14 +13,12 @@ namespace RockEngine.Editor.Layers
     {
         private readonly ImGuiController _controller;
         private readonly WorldRenderer _renderer;
-        private readonly Application _app;
         private ImguiRenderCommand _command;
 
-        public ImGuiLayer(ImGuiController controller, WorldRenderer renderer, Application app)
+        public ImGuiLayer(ImGuiController controller, WorldRenderer renderer)
         {
             _controller = controller;
             _renderer = renderer;
-            _app = app;
             _command = new ImguiRenderCommand(controller.Render);
         }
 
@@ -37,7 +33,7 @@ namespace RockEngine.Editor.Layers
 
         public void OnImGuiRender(UploadBatch batch)
         {
-            ImGui.DockSpaceOverViewport(0, ImGui.GetWindowViewport(), ImGuiDockNodeFlags.PassthruCentralNode);
+            ImGui.DockSpaceOverViewport(0, ImGui.GetMainViewport(), ImGuiDockNodeFlags.PassthruCentralNode);
         }
 
         public void OnRender(UploadBatch batch)
@@ -57,6 +53,7 @@ namespace RockEngine.Editor.Layers
             {
                 UndoRedoService.Instance.Redo();
             }
+
 
             //}, null);
 

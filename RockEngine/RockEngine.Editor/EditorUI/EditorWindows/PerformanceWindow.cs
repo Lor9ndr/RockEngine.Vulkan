@@ -848,7 +848,7 @@ namespace RockEngine.Editor.EditorUI.EditorWindows
                             ImGui.TableSetupColumn("Open", ImGuiTableColumnFlags.WidthFixed, 80);
                             ImGui.TableHeadersRow();
 
-                            foreach (var detail in details)
+                            foreach (var detail in details.OrderByDescending(s=>s.AllocationSize))
                             {
                                 var fileInfo = ParseStackTraceForFileInfo(detail.StackTrace);
 
@@ -982,7 +982,7 @@ namespace RockEngine.Editor.EditorUI.EditorWindows
                                         ImGui.TableSetupColumn("Open Folder");
                                         ImGui.TableHeadersRow();
 
-                                        foreach (var host in hostAllocs)
+                                        foreach (var host in hostAllocs.OrderByDescending(s=> s.Size))
                                         {
                                             var fileInfo = ParseStackTraceForFileInfo(host.StackTrace);
 
@@ -1287,7 +1287,7 @@ namespace RockEngine.Editor.EditorUI.EditorWindows
                         else
                         {
                             // Try with just the relative path portion
-                            var relativeMatch = System.Text.RegularExpressions.Regex.Match(filePath, @"[\\/](?:[^\\/]+[\\/])*[^\\/]+$");
+                            var relativeMatch = Regex.Match(filePath, @"[\\/](?:[^\\/]+[\\/])*[^\\/]+$");
                             if (relativeMatch.Success)
                             {
                                 string relativePath = relativeMatch.Value.TrimStart('\\', '/');

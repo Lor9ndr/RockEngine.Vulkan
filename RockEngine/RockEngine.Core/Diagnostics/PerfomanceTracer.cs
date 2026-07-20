@@ -31,7 +31,7 @@ namespace RockEngine.Core.Diagnostics
         // Frame data
         private static PerFrameData[] _frameData = Array.Empty<PerFrameData>();
         private static float _timestampPeriod;
-        private static int _maxFramesPerFlight;
+        private static uint _maxFramesPerFlight;
         private static int _cleanupCounter;
         private static long _currentFrameCount;
 
@@ -543,7 +543,7 @@ namespace RockEngine.Core.Diagnostics
                     return;
                 }
 
-                var vk = VulkanContext.Vk;
+                var vk = VK;
                 uint queryCount = _nextQueryIndex;
 
                 // Allocate space for (timestamp, availability) pairs

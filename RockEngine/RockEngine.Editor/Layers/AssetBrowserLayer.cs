@@ -17,6 +17,7 @@ using RockEngine.Editor.EditorUI.ImGuiRendering;
 using RockEngine.Editor.EditorUI.Thumbnails;
 using RockEngine.Editor.Extensions;
 using RockEngine.Editor.Helpers;
+using RockEngine.Editor.Selection;
 using RockEngine.Vulkan;
 
 namespace RockEngine.Editor.Layers
@@ -29,6 +30,7 @@ namespace RockEngine.Editor.Layers
         private readonly IAssetSerializer _serializer;
         private readonly IThumbnailService _thumbnailService;
         private readonly ImGuiController _imGuiController;
+        private readonly ISelectionManager _selectionManager;
 
         // UI State
         private string _searchQuery = string.Empty;
@@ -215,8 +217,10 @@ namespace RockEngine.Editor.Layers
             AssetManager assetManager,
             CoroutineScheduler coroutineScheduler,
             IAssetLoader loader,
-            IAssetSerializer serializer, IThumbnailService thumbnailService,
-            ImGuiController imGuiController)
+            IAssetSerializer serializer, 
+            IThumbnailService thumbnailService,
+            ImGuiController imGuiController,
+            ISelectionManager selectionManager)
         {
             _assetManager = assetManager;
             _coroutineScheduler = coroutineScheduler;
@@ -224,6 +228,7 @@ namespace RockEngine.Editor.Layers
             _serializer = serializer;
             _thumbnailService = thumbnailService;
             _imGuiController = imGuiController;
+            _selectionManager = selectionManager;
             try
             {
                 // Subscribe to events
@@ -376,7 +381,7 @@ namespace RockEngine.Editor.Layers
             ImGui.SameLine();
             ImGui.SetNextItemWidth(200);
             ImGui.InputTextWithHint("##Search", "Search...", ref _searchQuery, 100);
-
+            
             ImGui.SameLine();
 
             // Filter by type dropdown
@@ -1620,6 +1625,23 @@ namespace RockEngine.Editor.Layers
                 _selectedItems.Clear();
                 _selectedItems.Add(item.Path);
             }
+            if (item.IsAssetFile && item.AssetHeader != null)
+            {
+                _ = SelectAssetAsync(item);
+            }
+        }
+        private async Task SelectAssetAsync(FileSystemItem item)
+        {
+            try
+            {
+                var asset = await _assetManager.GetAssetAsync<IAsset>(item.AssetHeader!.AssetID).ConfigureAwait(false);
+                // Use the unified selection manager (injected into AssetBrowserLayer)
+                _selectionManager.SelectAsset(asset, SelectionSource.AssetBrowser);
+            }
+            catch (Exception ex)
+            {
+                _logger.Error(ex, "Failed to load asset {AssetName}", item.Name);
+            }
         }
 
         private void HandleItemDoubleClick(FileSystemItem item)
@@ -1697,7 +1719,7 @@ namespace RockEngine.Editor.Layers
 
                 while (!loadTask.IsCompleted)
                 {
-                    _loadingProgress = 0.1f + (0.5f * GetEstimatedProgress(loadTask));
+                    _loadingProgress = 0.1f + (0.2f * GetEstimatedProgress(loadTask));
                     yield return new WaitForNextFrame();
                 }
 
@@ -1709,7 +1731,7 @@ namespace RockEngine.Editor.Layers
                     var loadDataTask = _assetManager.LoadAssetDataAsync(sceneAsset);
                     while (!loadDataTask.IsCompleted)
                     {
-                        _loadingProgress = 0.5f + (0.9f * GetEstimatedProgress(loadDataTask));
+                        _loadingProgress = 0.2f + (0.4f * GetEstimatedProgress(loadDataTask));
                         yield return new WaitForNextFrame();
                     }
                     yield return new WaitForTask(loadDataTask);
@@ -1721,11 +1743,16 @@ namespace RockEngine.Editor.Layers
                     yield return new WaitForNextFrame();
                     var progress = new Progress<int>(percent =>
                     {
-                        // Map percent from 0-100 to 0.6-0.95 range
-                        _loadingProgress = 0.6f + (percent / 100f) * 0.35f;
+                        // Map percent from 0-100 to 0.5-0.95 range
+                        _loadingProgress = 0.5f + (percent / 100f) * 0.35f;
                     });
+
                     var sceneInitTask = Task.Run(() => sceneAsset.InstantiateEntities(progress));
 
+                    while (!sceneInitTask.IsCompleted)
+                    {
+                        yield return new WaitForNextFrame();
+                    }
                     yield return new WaitForTask(sceneInitTask);
                     _loadingProgress = 0.95f;
 
@@ -1822,13 +1849,12 @@ namespace RockEngine.Editor.Layers
                 Vector2 center = ImGui.GetMainViewport().GetCenter();
                 ImGui.SetNextWindowPos(center, ImGuiCond.Appearing, new Vector2(0.5f, 0.5f));
 
-                if (ImGui.BeginPopupModal("Loading Scene", ref _isLoadingScene,
-                    ImGuiWindowFlags.AlwaysAutoResize | ImGuiWindowFlags.NoTitleBar))
+                if (ImGui.BeginPopupModal("Loading Scene", ref _isLoadingScene, ImGuiWindowFlags.NoSavedSettings | ImGuiWindowFlags.NoCollapse))
                 {
                     ImguiExtensions.CenteredText($"Loading: {_loadingSceneName}");
                     ImguiExtensions.CenteredProgressBar(_loadingProgress, new Vector2(200, 20));
-                    ImGui.EndPopup();
                 }
+                ImGui.EndPopup();
             }
         }
 

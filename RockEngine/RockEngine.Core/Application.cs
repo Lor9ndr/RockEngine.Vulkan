@@ -38,7 +38,8 @@ namespace RockEngine.Core
 
         private MainThreadSynchronizationContext? _mainSyncCtx;
         protected abstract Type GetContextType();
-
+        private long _updateCallCounter;
+        private long _renderCallCounter;
         protected Application()
         {
             var config = new NLog.Config.LoggingConfiguration();
@@ -64,19 +65,20 @@ namespace RockEngine.Core
 
 
             // Setup event handlers
-            // In ConfigureWindow()
-            _mainSyncCtx = MainThreadSynchronizationContext.Install();
+            //_mainSyncCtx = MainThreadSynchronizationContext.Install();
 
             _window.Load += () =>
             {
-                MainThreadSynchronizationContext.WaitOnMainThread(OnWindowLoad());
+                OnWindowLoad().GetAwaiter().GetResult();
+                //MainThreadSynchronizationContext.WaitOnMainThread(OnWindowLoad());
                 _mainSyncCtx?.ProcessAllQueuedWork(); 
             };
 
             // Update – stays synchronous, but pumps the queue while waiting
             _window.Update += (delta) =>
             {
-                MainThreadSynchronizationContext.WaitOnMainThread(OnWindowUpdate(delta));
+                OnWindowUpdate(delta).GetAwaiter().GetResult();
+                //MainThreadSynchronizationContext.WaitOnMainThread();
                 _mainSyncCtx?.ProcessAllQueuedWork(); // drain any pending work from other threads
 
             };
@@ -133,20 +135,22 @@ namespace RockEngine.Core
 
         private async Task OnWindowUpdate(double delta)
         {
+            // Log every update call (even if we later skip due to initialization/cancellation)
+            var callNum = Interlocked.Increment(ref _updateCallCounter);
+
             if (!_isInitialized || _appCts.IsCancellationRequested)
             {
+                _logger.Debug("OnWindowUpdate #{0} skipped (initialized={1}, cancelled={2})", callNum, _isInitialized, _appCts.IsCancellationRequested);
                 return;
             }
 
             try
             {
                 Time.Update(_window.Time);
-
+                _coroutineScheduler.Update();
 
                 await _context.UpdateAsync().ConfigureAwait(true);
                 _mainSyncCtx?.ProcessUpdateWork();
-
-                _coroutineScheduler.Update();
             }
             catch (Exception ex)
             {
@@ -156,20 +160,29 @@ namespace RockEngine.Core
 
         private void OnWindowRender(double delta)
         {
-            if (!_isInitialized || _appCts.IsCancellationRequested )
+            // Log every render call
+            var callNum = Interlocked.Increment(ref _renderCallCounter);
+
+            if (!_isInitialized || _appCts.IsCancellationRequested)
             {
+                _logger.Debug("OnWindowRender #{0} skipped (initialized={1}, cancelled={2})", callNum, _isInitialized, _appCts.IsCancellationRequested);
                 return;
             }
 
             PerformanceTracer.ProcessQueries(_vulkanContext, _graphicsContext.FrameIndex);
             PerformanceTracer.BeginFrame(_graphicsContext.FrameIndex);
 
-            if (_graphicsContext.BeginFrame() is null)
+            _vulkanContext.TransferSubmitContext.Submit();
+            //_vulkanContext.ComputeSubmitContext.Submit();
+
+            var batch = _graphicsContext.BeginFrame();
+            if (batch is null)
             {
-                //_graphicsContext.SubmitAndPresent();
+                _logger.Debug("OnWindowRender #{0} – BeginFrame returned null, skipping submission", callNum);
+                _vulkanContext.GraphicsSubmitContext.Submit().Wait();
+                _graphicsContext.SubmitAndPresent();
                 return;
             }
-
 
             try
             {
@@ -178,12 +191,11 @@ namespace RockEngine.Core
                     _vulkanContext.GraphicsSubmitContext,
                     _vulkanContext.TransferSubmitContext,
                     _vulkanContext.ComputeSubmitContext,
-                    _renderer);
+                    _renderer,
+                    batch);
+                _context.RenderAsync(renderContext).GetAwaiter().GetResult();
+                //MainThreadSynchronizationContext.WaitOnMainThread();
 
-                // Delegate to context for rendering
-                MainThreadSynchronizationContext.WaitOnMainThread(_context.RenderAsync(renderContext));
-
-                // All work scheduled with RunOnRender() will be executed here
                 _mainSyncCtx?.ProcessRenderWork();
                 _mainSyncCtx?.ProcessAllQueuedWork();
             }
@@ -199,10 +211,9 @@ namespace RockEngine.Core
                 }
                 catch (Exception ex)
                 {
-                    _logger.Error(ex, "Render failed.");
+                    _logger.Error(ex, "Render submission failed.");
                 }
             }
-
         }
 
         public void Run()

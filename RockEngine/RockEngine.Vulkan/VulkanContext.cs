@@ -15,11 +15,11 @@ namespace RockEngine.Vulkan
     {
         private static readonly Logger _logger = LogManager.GetCurrentClassLogger();
 
-        public static readonly Vk Vk = Vk.GetApi();
+        public static readonly Vk VK = Vk.GetApi();
         public VkLogicalDevice Device { get; }
         public VkInstance Instance { get; }
         public ISurfaceHandler Surface { get; }
-        public int MaxFramesPerFlight { get; internal set; }
+        public uint MaxFramesPerFlight { get; internal set; }
         public SamplerCache SamplerCache { get; }
         public SubmitContext GraphicsSubmitContext { get; }
         public SubmitContext ComputeSubmitContext { get; }
@@ -40,7 +40,7 @@ namespace RockEngine.Vulkan
         private readonly Stack<IDisposable> _pendingDisposals = new Stack<IDisposable>();
         private readonly DebugUtilsFunctions _debugUtilsFunctions;
         private readonly AppSettings _settings;
-        public readonly Vk Api = Vk;
+        public readonly Vk Api = VK;
 
         public VulkanContext(IWindow? window, AppSettings settings, FeatureRegistry featureRegistry)
         {
@@ -49,7 +49,7 @@ namespace RockEngine.Vulkan
             Instance = CreateInstance(window, _settings);
             Surface = window != null ? CreateSurface(window) : null!; // Surface may be null
             Device = CreateDevice(Surface, Instance, this);
-            _debugUtilsFunctions = new DebugUtilsFunctions(Vk, Device, _settings);
+            _debugUtilsFunctions = new DebugUtilsFunctions(VK, Device, _settings);
 
             Device.NameQueues();
 

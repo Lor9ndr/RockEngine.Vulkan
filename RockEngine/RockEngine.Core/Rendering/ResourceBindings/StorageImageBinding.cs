@@ -87,7 +87,7 @@ namespace RockEngine.Core.Rendering.ResourceBindings
                 };
             }
 
-            VulkanContext.Vk.UpdateDescriptorSets(context.Device, (uint)_textures.Length, writes, 0, null);
+            VK.UpdateDescriptorSets(context.Device, (uint)_textures.Length, writes, 0, null);
         }
 
         public override StorageImageBinding Clone()

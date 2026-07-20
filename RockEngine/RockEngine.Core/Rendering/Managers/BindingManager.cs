@@ -21,8 +21,6 @@ namespace RockEngine.Core.Rendering.Managers
             _context = context;
             _descriptorPoolManager = descriptorPool;
             _typeBasedResourceProvider = typeBasedResourceProvider;
-            _bindlessEnabled = featureRegistry.EnabledFeatures.Contains(new DescriptorIndexingFeature().Name);
-
         }
 
         public void BindResourcesForMaterial(

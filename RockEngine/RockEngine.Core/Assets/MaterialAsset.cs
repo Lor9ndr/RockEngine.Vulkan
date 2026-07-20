@@ -1,6 +1,6 @@
 ﻿
 using System.Collections.Concurrent;
-using MessagePack;
+using MemoryPack;
 using NLog;
 using RockEngine.Core.Attributes;
 using RockEngine.Core.DI;
@@ -15,42 +15,32 @@ using Silk.NET.Vulkan;
 
 namespace RockEngine.Core.Assets
 {
-    [MessagePackObject]
+    [MemoryPackable]
     public sealed partial class MaterialAsset : Asset<MaterialData>, IGpuResource, IResourceProvider<Material>, IDisposable
     {
-        [Key(7)]
         public override string Type => "Material";
 
         [SerializeIgnore]
-        [IgnoreMember]
         public bool GpuReady => MaterialInstance != null;
 
-        [SerializeIgnore]
-        [IgnoreMember]
+        [SerializeIgnore, MemoryPackIgnore]
         public Material? MaterialInstance { get; private set; }
 
         private static readonly Logger _logger = LogManager.GetCurrentClassLogger();
 
         [SerializeIgnore]
-        [IgnoreMember]
         private readonly ConcurrentDictionary<Guid, Texture> _loadedTextures = new();
 
         [SerializeIgnore]
-        [IgnoreMember]
         private readonly SemaphoreSlim _gpuLock = new(1, 1);
 
         [SerializeIgnore]
-        [IgnoreMember]
         private bool _disposed;
 
         // Material property accessors
-        [IgnoreMember]
         public string PipelineName => Data?.PipelineName ?? "Default";
 
-        [Key(11)]
         public Dictionary<string, AssetReference<TextureAsset>> Textures => Data.Textures;
-
-        [Key(12)]
         public Dictionary<string, object> Parameters => Data?.Parameters ?? new();
 
         

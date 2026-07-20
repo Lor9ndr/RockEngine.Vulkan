@@ -1,11 +1,7 @@
-﻿using RockEngine.Core.ECS.Components;
-
-
-
-namespace RockEngine.Core.Helpers
+﻿namespace RockEngine.Core.Helpers
 {
-    public delegate object PropertyGetter(IComponent component);
-    public delegate void PropertySetter(IComponent component, object value);
+    public delegate object PropertyGetter(object owner);
+    public delegate void PropertySetter(object owner, object value);
 
     public sealed class UIPropertyAccessor
     {

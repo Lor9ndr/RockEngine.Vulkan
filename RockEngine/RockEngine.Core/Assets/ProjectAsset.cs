@@ -1,26 +1,21 @@
-﻿using RockEngine.Assets;
+﻿using MemoryPack;
+using RockEngine.Assets;
 
 namespace RockEngine.Core.Assets
 {
 
-    public class ProjectAsset : Asset<ProjectData>, IProject
+    [MemoryPackable]
+    public partial class ProjectAsset : Asset<ProjectData>, IProject
     {
         private readonly List<Guid> _scenes;
-
 
         public IReadOnlyList<Guid> Scenes => _scenes;
 
         public Guid? MainScene { get; set; }
 
-        public DateTime CreatedAt { get; private set; }
-
-        public DateTime LastModified { get; private set; }
-
         public ProjectAsset()
         {
             _scenes = new List<Guid>();
-            CreatedAt = DateTime.UtcNow;
-            LastModified = CreatedAt;
         }
 
         public void AddScene(Guid sceneAssetId)
@@ -63,7 +58,7 @@ namespace RockEngine.Core.Assets
 
         public void MarkAsModified()
         {
-            LastModified = DateTime.UtcNow;
+            Modified = DateTime.UtcNow;
         }
 
 

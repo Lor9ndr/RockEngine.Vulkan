@@ -121,7 +121,7 @@ namespace RockEngine.Vulkan
 
         internal void SubmitUnsafe(in SubmitInfo submitInfo, VkFence? fence = null)
         {
-            VulkanContext.Vk.QueueSubmit(
+            VK.QueueSubmit(
                this,
                1,
                in submitInfo,
@@ -131,7 +131,7 @@ namespace RockEngine.Vulkan
 
         public void WaitIdle()
         {
-            VulkanContext.Vk.QueueWaitIdle(this);
+            VK.QueueWaitIdle(this);
         }
         public override void LabelObject(string name) => _context.DebugUtils.SetDebugUtilsObjectName(_vkObject, ObjectType.Queue, name);
 

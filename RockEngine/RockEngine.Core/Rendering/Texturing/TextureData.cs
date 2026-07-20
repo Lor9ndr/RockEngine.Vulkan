@@ -1,4 +1,4 @@
-﻿using MessagePack;
+﻿using MemoryPack;
 
 using RockEngine.Core.Assets;
 
@@ -66,8 +66,8 @@ namespace RockEngine.Core.Rendering.Texturing
         HostCoherent = 4,
         HostCached = 8
     }
-    [MessagePackObject]
-    public struct SamplerState
+    [MemoryPackable]
+    public partial struct SamplerState
     {
         public static SamplerState Default => new()
         {
@@ -79,50 +79,41 @@ namespace RockEngine.Core.Rendering.Texturing
             AddressModeW = TextureWrap.Repeat,
             MipLodBias = 0.0f,
             MaxAnisotropy = 1.0f,
-            CompareOp = CompareOp.Never,
+            CompareOp = CompareOp.Always,
             MinLod = 0.0f,
-            MaxLod = 16.0f,
+            MaxLod = Vk.RemainingMipLevels,
             BorderColor = BorderColor.FloatOpaqueBlack,
             UnnormalizedCoordinates = false,
-            CompareEnable = false,
-            AnisotropyEnable = false
+            CompareEnable = true,
+            AnisotropyEnable = true
         };
 
-        [Key(0)]
-        public TextureFilter MinFilter;
-        [Key(1)]
-        public TextureFilter MagFilter;
-        [Key(2)]
-        public TextureFilter MipFilter;
-        [Key(3)]
-        public TextureWrap AddressModeU;
-        [Key(4)]
-        public TextureWrap AddressModeV;
-        [Key(5)]
-        public TextureWrap AddressModeW;
-        [Key(6)]
-        public float MipLodBias;
-        [Key(7)]
-        public float MaxAnisotropy;
-        [Key(8)]
-        public CompareOp CompareOp;
-        [Key(9)]
-        public float MinLod;
-        [Key(10)]
-        public float MaxLod;
-        [Key(11)]
-        public BorderColor BorderColor;
-        [Key(12)]
-        public bool UnnormalizedCoordinates;
-        [Key(13)]
-        public bool CompareEnable;
-        [Key(14)]
-        public bool AnisotropyEnable;
+        public TextureFilter MinFilter { get; set; }
+        public TextureFilter MagFilter { get; set; }
+        public TextureFilter MipFilter { get; set; }
+        public TextureWrap AddressModeU { get; set; }
+        public TextureWrap AddressModeV { get; set; }
+        public TextureWrap AddressModeW { get; set; }
+        public float MipLodBias { get; set; }
+        public float MaxAnisotropy { get; set; }
+        public CompareOp CompareOp { get; set; }
+        public float MinLod { get; set; }
+        public float MaxLod { get;set;}
+        public BorderColor BorderColor { get; set; }
+        public bool UnnormalizedCoordinates { get; set; }
+        public bool CompareEnable { get; set; }
+        public bool AnisotropyEnable { get; set; }
+
+        internal void SetMaxLod(uint actualLoadedMipLevels)
+        {
+            MaxLod = actualLoadedMipLevels;
+        }
     }
 
-    [MessagePackObject]
-    public class TextureData : ITextureData
+    [MemoryPackable]
+    public partial class TextureData : ITextureData
     {
+        [MemoryPackConstructor]
         public TextureData(
            TextureDimension dimension,
            TextureFormat format,
@@ -193,44 +184,29 @@ namespace RockEngine.Core.Rendering.Texturing
         {
         }
 
-        [Key(0)]
         public TextureDimension Dimension { get; set; } = TextureDimension.Texture2D;
-        [Key(1)]
         public TextureFormat Format { get; set; } = TextureFormat.R8G8B8A8Unorm;
-        [Key(2)]
         public uint Width { get; set; } = 1;
-        [Key(3)]
         public uint Height { get; set; } = 1;
-        [Key(4)]
         public uint Depth { get; set; } = 1;
-        [Key(5)]
         public uint MipLevels { get; set; } = 1;
-        [Key(6)]
         public bool GenerateMipmaps { get; set; } = false;
-        [Key(7)]
         public SamplerState Sampler { get; set; } = SamplerState.Default;
-        [Key(8)]
         public TextureUsage Usage { get; set; } = TextureUsage.Sampled | TextureUsage.TransferDst | TextureUsage.TransferSrc;
-        [Key(9)]
         public MemoryFlags MemoryFlags { get; set; } = MemoryFlags.DeviceLocal;
-        [Key(10)]
         public List<string> FilePaths { get; set; } = new();
-        [Key(11)]
         public bool FlipVertically { get; set; } = false;
-        [Key(12)]
         public bool ConvertToSrgb { get; set; } = true;
-        [Key(13)]
         public uint ArrayLayers { get; set; } = 1;
 
         // Additional metadata
-        [Key(14)]
         public string Name { get; set; } = string.Empty;
 
-        [IgnoreMember]
+        
         public bool IsCubeMap => Dimension == TextureDimension.TextureCube ||
                                       Dimension == TextureDimension.TextureCubeArray;
 
-        [IgnoreMember]
+        
         public bool IsArray => Dimension == TextureDimension.TextureArray ||
                                Dimension == TextureDimension.TextureCubeArray;
 

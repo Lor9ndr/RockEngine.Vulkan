@@ -1,8 +1,7 @@
 ﻿using Microsoft.Extensions.Options;
 
 using RockEngine.Assets;
-using RockEngine.Core.DI;
-
+using RockEngine.DI;
 using SimpleInjector;
 
 namespace RockEngine.Core.Assets
@@ -25,7 +24,7 @@ namespace RockEngine.Core.Assets
 
             // Register serializers
             container.Register<IYamlSerializer, YamlDotNetSerializer>(Lifestyle.Singleton);
-            container.Register<IBinarySerializer, MessagePackBinarySerializer>(Lifestyle.Singleton);
+            container.Register<IBinarySerializer, MemoryPackBinarySerializer>(Lifestyle.Singleton);
 
 
             // Register composite serializer (main implementation)

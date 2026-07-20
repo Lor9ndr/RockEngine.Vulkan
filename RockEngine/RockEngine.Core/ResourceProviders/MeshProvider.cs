@@ -1,4 +1,4 @@
-﻿using MessagePack;
+﻿using MemoryPack;
 
 using RockEngine.Core.Assets;
 using RockEngine.Core.Attributes;
@@ -8,32 +8,29 @@ using RockEngine.Core.Rendering.Buffers;
 
 namespace RockEngine.Core.ResourceProviders
 {
-    [MessagePackObject]
-    public class MeshProvider : IResourceProvider<IMesh>
+    [MemoryPackable]
+    public partial class MeshProvider : IResourceProvider<IMesh>
     {
-        [IgnoreMember]
 
         protected readonly object _source;
-        [IgnoreMember]
+        
         protected Func<ValueTask<IMesh>> _getter;
-        [IgnoreMember]
+        
         public bool IsAssetBased => _source is AssetReference<MeshAsset>;
 
         // Helper properties for serialization
-        [Key(2)]
         public AssetReference<MeshAsset>? AssetReference => _source as AssetReference<MeshAsset>;
 
-        [SerializeIgnore]
-        [IgnoreMember]
+        [SerializeIgnore, MemoryPackIgnore]
         public virtual IMesh? DirectMesh => _source as IMesh;
 
-        
-        public MeshProvider(AssetReference<MeshAsset> assetRef)
+        [MemoryPackConstructor]
+        public MeshProvider(AssetReference<MeshAsset> assetReference)
         {
-            _source = assetRef;
+            _source = assetReference;
             _getter = async () =>
             {
-                var asset = await assetRef.GetAssetAsync().ConfigureAwait(false);
+                var asset = await assetReference.GetAssetAsync().ConfigureAwait(false);
                 return await asset.GetAsync().ConfigureAwait(false);
             };
         }

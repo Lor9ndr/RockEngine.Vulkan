@@ -3,12 +3,12 @@ using System.Numerics;
 using System.Reflection;
 using ImGuiNET;
 using RockEngine.Assets;
-using RockEngine.Core.Attributes;
 using RockEngine.Core.ECS.Components;
 using RockEngine.Core.Helpers;
 using RockEngine.Core.Rendering.Texturing;
 using RockEngine.Editor.EditorUI.ImGuiRendering.PropertyHandlers;
 using RockEngine.Editor.EditorUI.Thumbnails;
+using RockEngine.Editor.Generator;
 
 namespace RockEngine.Editor.EditorUI.ImGuiRendering
 {
@@ -16,78 +16,84 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
     {
         private readonly IAssetManager _assetManager;
         private readonly ImGuiController _imGuiController;
-        private readonly Dictionary<Type, IReadOnlyList<UIPropertyAccessor>> _propertyCache;
+        private readonly Dictionary<Type, IReadOnlyList<UIPropertyAccessor>> _componentAccessorCache = new();
+        private readonly Dictionary<Type, IReadOnlyList<UIPropertyAccessor>> _generalAccessorCache = new();
         private readonly Dictionary<Type, IPropertyHandler> _propertyHandlers;
 
         public IAssetManager AssetManager => _assetManager;
         public ImGuiController ImGuiController => _imGuiController;
-
         public IThumbnailService ThumbnailService { get; }
 
-        [RequiresUnreferencedCode("Calls System.Reflection.Assembly.GetTypes()")]
+        // Optional callback for sampler state changes
+        public System.Action<SamplerState>? OnSamplerStateChanged;
+
         public PropertyDrawer(IAssetManager assetManager, ImGuiController imGuiController, IThumbnailService thumbnailService)
         {
             _assetManager = assetManager;
             _imGuiController = imGuiController;
             ThumbnailService = thumbnailService;
-            _propertyCache = new Dictionary<Type, IReadOnlyList<UIPropertyAccessor>>();
-            _propertyHandlers = new Dictionary<Type, IPropertyHandler>();
-            InitializeHandlers();
+
+            // AOT‑safe: handler dictionary is generated at compile time
+            _propertyHandlers = new Dictionary<Type, IPropertyHandler>(HandlerRegistry.GetAllHandlers());
         }
 
-        [RequiresUnreferencedCode("Calls System.Reflection.Assembly.GetTypes()")]
-        private void InitializeHandlers()
-        {
-            // Discover and register all handlers via reflection
-            var handlerTypes = Assembly.GetExecutingAssembly()
-                .GetTypes()
-                .Where(t => typeof(IPropertyHandler).IsAssignableFrom(t) && !t.IsInterface && !t.IsAbstract);
-
-            foreach (var handlerType in handlerTypes)
-            {
-                var handler = Activator.CreateInstance(handlerType) as IPropertyHandler;
-                var attr = handlerType.GetCustomAttribute<PropertyHandlerAttribute>();
-
-                if (attr != null)
-                {
-                    foreach (var handledType in attr.HandledTypes)
-                    {
-                        _propertyHandlers[handledType] = handler;
-                    }
-                }
-            }
-        }
-
+        // Draw all properties of a component
         public void DrawComponentProperties(IComponent component)
         {
-            var accessors = GetPropertyAccessors(component.GetType());
+            IReadOnlyList<UIPropertyAccessor> accessors;
+
+            // 1) Свой компонент – интерфейс прямо на объекте
+            if (component is IUIPropertyAccessorProvider provider)
+            {
+                accessors = provider.GetUIPropertyAccessors();
+            }
+            else
+            {
+                // 2) Зависимый компонент – фабрика, сгенерированная компилятором
+                var wrapper = UIPropertyAccessorProviderFactory.GetProvider(component);
+                if (wrapper == null)
+                {
+                    throw new InvalidOperationException($"No accessor provider for {component.GetType().FullName}");
+                }
+
+                accessors = wrapper.GetUIPropertyAccessors();
+            }
 
             foreach (var accessor in accessors)
             {
                 DrawProperty(component, accessor);
             }
         }
+        // Draw properties of any object given an accessor list
+        public void DrawObjectProperties(object target, IReadOnlyList<UIPropertyAccessor> accessors)
+        {
+            foreach (var accessor in accessors)
+            {
+                DrawProperty(target, accessor);
+            }
+        }
 
-        public void DrawProperty(IComponent component, UIPropertyAccessor accessor)
+        // Draw a single property
+        public void DrawProperty(object owner, UIPropertyAccessor accessor)
         {
             if (!accessor.CanWrite)
             {
-                return;
+                ImGui.BeginDisabled();
             }
-            ImGui.PushID($"{component.GetType().Name}_{accessor.Name}");
+
+            ImGui.PushID($"{owner.GetType().Name}_{accessor.Name}");
 
             try
             {
-                var value = accessor.GetValue(component);
+                var value = accessor.GetValue((object)owner);
                 var handler = FindHandler(accessor.PropertyType);
 
                 if (handler != null)
                 {
-                    handler.Draw(component, accessor, value, this);
+                    handler.Draw(owner, accessor, value, this);
                 }
                 else
                 {
-                    // Fallback for unhandled types
                     ImGui.Text($"{accessor.DisplayName}: {value}");
                 }
             }
@@ -102,133 +108,112 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering
             }
         }
 
-        private IReadOnlyList<UIPropertyAccessor> GetPropertyAccessors([DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicMethods)] Type componentType)
+        // Get accessors for a component type (cached, uses generated method)
+        [RequiresUnreferencedCode("Calls System.Reflection.Assembly.GetType(String)")]
+        private IReadOnlyList<UIPropertyAccessor> GetComponentAccessors([DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicMethods)] Type componentType)
         {
-            if (!_propertyCache.TryGetValue(componentType, out var accessors))
+            if (_componentAccessorCache.TryGetValue(componentType, out var accessors))
             {
-                // Try to use the generated method first
-                var method = componentType.GetMethod("GetUIPropertyAccessors",
-                    BindingFlags.Public | BindingFlags.Static);
-
-                if (method != null)
-                {
-                    accessors = (IReadOnlyList<UIPropertyAccessor>)method.Invoke(null, null);
-                }
-                else
-                {
-                    // Fallback to reflection for non-generated types
-                    accessors = CreateAccessorsViaReflection(componentType);
-                }
-
-                _propertyCache[componentType] = accessors;
+                return accessors;
             }
 
+            // 1) Try own-project pattern: method directly on the component type
+            var method = componentType.GetMethod("GetUIPropertyAccessors",
+                BindingFlags.Public | BindingFlags.Static);
+            if (method != null)
+            {
+                accessors = (IReadOnlyList<UIPropertyAccessor>)method.Invoke(null, null)!;
+                _componentAccessorCache[componentType] = accessors;
+                return accessors;
+            }
+
+            // 2) Fallback: dependency pattern – search in the Editor assembly
+            // The source generator emits the helper class in the same project as PropertyDrawer.
+            var helperTypeName = $"{componentType.FullName}UIProperties";
+            var editorAssembly = typeof(PropertyDrawer).Assembly;
+            var helperType = editorAssembly.GetType(helperTypeName);
+
+            if (helperType == null)
+            {
+                throw new InvalidOperationException(
+                    $"Missing generated accessors for {componentType.FullName}. " +
+                    $"Neither a direct method nor a helper class '{helperTypeName}' was found " +
+                    $"in the Editor assembly. Ensure the source generator ran successfully.");
+            }
+
+            method = helperType.GetMethod("GetUIPropertyAccessors",
+                BindingFlags.Public | BindingFlags.Static)
+                ?? throw new InvalidOperationException(
+                    $"Helper class '{helperTypeName}' is missing the static GetUIPropertyAccessors method.");
+
+            accessors = (IReadOnlyList<UIPropertyAccessor>)method.Invoke(null, null)!;
+            _componentAccessorCache[componentType] = accessors;
+            return accessors;
+        }
+        // Get accessors for any type with [GenerateUIProperties] (cached, uses generated method)
+        public IReadOnlyList<UIPropertyAccessor> GetAccessorsForType([DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicMethods)] System.Type type)
+        {
+            if (!_generalAccessorCache.TryGetValue(type, out var accessors))
+            {
+                var method = type.GetMethod("GetUIPropertyAccessors", BindingFlags.Public | BindingFlags.Static);
+                if (method == null)
+                {
+                    throw new InvalidOperationException(
+                        $"Type '{type.FullName}' has no generated UI property accessors. " +
+                        "Apply [GenerateUIProperties] or ensure the source generator ran.");
+                }
+
+                accessors = (IReadOnlyList<UIPropertyAccessor>)method.Invoke(null, null)!;
+                _generalAccessorCache[type] = accessors;
+            }
             return accessors;
         }
 
-        private IReadOnlyList<UIPropertyAccessor> CreateAccessorsViaReflection([DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties)] Type componentType)
+        private IPropertyHandler? FindHandler([DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.Interfaces)] System.Type propertyType)
         {
-            var properties = componentType.GetProperties(BindingFlags.Public | BindingFlags.Instance)
-                .Where(p => p.CanRead &&
-                           !p.GetCustomAttributes<SerializeIgnoreAttribute>().Any() &&
-                           p.GetMethod != null);
-
-            var accessors = new List<UIPropertyAccessor>();
-
-            foreach (var property in properties)
-            {
-                var uiAttr = property.GetCustomAttribute<UIEditableAttribute>();
-                var displayName = uiAttr?.DisplayName ?? property.Name;
-
-                var getter = CreateGetterDelegate(componentType, property);
-                var setter = property.CanWrite ? CreateSetterDelegate(componentType, property) : null;
-                var attributes = property.GetCustomAttributes().ToArray();
-
-                var accessor = new UIPropertyAccessor(
-                    property.Name,
-                    displayName,
-                    property.PropertyType,
-                    getter,
-                    setter,
-                    property.CanWrite,
-                    attributes
-                );
-
-                accessors.Add(accessor);
-            }
-
-            return accessors;
-        }
-
-        private PropertyGetter CreateGetterDelegate(Type componentType, PropertyInfo property)
-        {
-            var componentParam = System.Linq.Expressions.Expression.Parameter(typeof(IComponent), "component");
-            var castComponent = System.Linq.Expressions.Expression.Convert(componentParam, componentType);
-            var propertyAccess = System.Linq.Expressions.Expression.Property(castComponent, property);
-            var castResult = System.Linq.Expressions.Expression.Convert(propertyAccess, typeof(object));
-
-            var lambda = System.Linq.Expressions.Expression.Lambda<PropertyGetter>(castResult, componentParam);
-            return lambda.Compile();
-        }
-
-        private PropertySetter CreateSetterDelegate(Type componentType, PropertyInfo property)
-        {
-            var componentParam = System.Linq.Expressions.Expression.Parameter(typeof(IComponent), "component");
-            var valueParam = System.Linq.Expressions.Expression.Parameter(typeof(object), "value");
-
-            var castComponent = System.Linq.Expressions.Expression.Convert(componentParam, componentType);
-            var castValue = System.Linq.Expressions.Expression.Convert(valueParam, property.PropertyType);
-            var propertyAccess = System.Linq.Expressions.Expression.Property(castComponent, property);
-            var assign = System.Linq.Expressions.Expression.Assign(propertyAccess, castValue);
-
-            var lambda = System.Linq.Expressions.Expression.Lambda<PropertySetter>(assign, componentParam, valueParam);
-            return lambda.Compile();
-        }
-
-        private IPropertyHandler FindHandler([DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.Interfaces)] Type propertyType)
-        {
-            // Exact type match
             if (_propertyHandlers.TryGetValue(propertyType, out var handler))
             {
                 return handler;
             }
 
-            // Generic type match (like AssetReference<>)
+            // Check generic definitions
             if (propertyType.IsGenericType)
             {
-                var genericType = propertyType.GetGenericTypeDefinition();
-                if (_propertyHandlers.TryGetValue(genericType, out handler))
+                var genericDef = propertyType.GetGenericTypeDefinition();
+                if (_propertyHandlers.TryGetValue(genericDef, out handler))
                 {
                     return handler;
                 }
             }
 
-            // Check if the type implements any handled interfaces
-            foreach (var interfaceType in propertyType.GetInterfaces())
+            // Check interfaces
+            foreach (var iface in propertyType.GetInterfaces())
             {
-                if (_propertyHandlers.TryGetValue(interfaceType, out handler))
+                if (_propertyHandlers.TryGetValue(iface, out handler))
                 {
                     return handler;
                 }
 
-                // Check for generic interfaces
-                if (interfaceType.IsGenericType)
+                if (iface.IsGenericType)
                 {
-                    var genericInterface = interfaceType.GetGenericTypeDefinition();
-                    if (_propertyHandlers.TryGetValue(genericInterface, out handler))
+                    var genericIfaceDef = iface.GetGenericTypeDefinition();
+                    if (_propertyHandlers.TryGetValue(genericIfaceDef, out handler))
                     {
                         return handler;
                     }
                 }
             }
 
-            // Base type match (like Enum)
-            foreach (var kvp in _propertyHandlers)
+            // Base class walk
+            var baseType = propertyType.BaseType;
+            while (baseType != null)
             {
-                if (kvp.Key.IsAssignableFrom(propertyType))
+                if (_propertyHandlers.TryGetValue(baseType, out handler))
                 {
-                    return kvp.Value;
+                    return handler;
                 }
+
+                baseType = baseType.BaseType;
             }
 
             return null;

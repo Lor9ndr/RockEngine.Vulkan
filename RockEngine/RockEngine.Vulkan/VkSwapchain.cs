@@ -41,7 +41,7 @@ namespace RockEngine.Vulkan
         public VkSwapchain(VulkanContext context, SwapchainKHR swapchain, KhrSwapchain khrSwapchainApi, VkImage[] images, Format format, Extent2D extent, ISurfaceHandler surface, in SwapchainCreateInfoKHR createInfo)
             : base(swapchain)
         {
-            context.MaxFramesPerFlight = images.Length;
+            context.MaxFramesPerFlight = (uint)images.Length;
 
             _swapChainImageViews = new VkImageView[images.Length];
 
@@ -111,8 +111,8 @@ namespace RockEngine.Vulkan
                 createInfo.ImageSharingMode = SharingMode.Exclusive;
             }
 
-            var swapchainApi = new KhrSwapchain(VulkanContext.Vk.Context);
-            swapchainApi.CreateSwapchain(context.Device, in createInfo, in VulkanContext.CustomAllocator<VkSwapchain>(), out var swapChain)
+            var swapchainApi = new KhrSwapchain(VK.Context);
+            swapchainApi.CreateSwapchain(context.Device, in createInfo, in CustomAllocator<VkSwapchain>(), out var swapChain)
                 .VkAssertResult("Failed to create swapchain");
 
             uint countImages = 0;
@@ -280,7 +280,7 @@ namespace RockEngine.Vulkan
             }
         }
 
-        public Result AcquireNextImage(VkSemaphore imageAvailable, VkFence fence, out uint imageIndex)
+        public Result AcquireNextImage(VkSemaphore imageAvailable, VkFence? fence, out uint imageIndex)
         {
             imageIndex = 0;
             var semaphore = imageAvailable.VkObjectNative;
@@ -423,7 +423,7 @@ namespace RockEngine.Vulkan
 
                 // Create the new swapchain
                 var result = _khrSwapchain.CreateSwapchain(_context.Device, in createInfo,
-                    in VulkanContext.CustomAllocator<VkSwapchain>(), out var swapChain);
+                    in CustomAllocator<VkSwapchain>(), out var swapChain);
 
                 if (result != Result.Success)
                 {
@@ -444,7 +444,7 @@ namespace RockEngine.Vulkan
                     _context.GraphicsSubmitContext.AddDependency(() =>
                     {
                         _khrSwapchain.DestroySwapchain(_context.Device, oldSwapchain,
-                        in VulkanContext.CustomAllocator<VkSwapchain>());
+                        in CustomAllocator<VkSwapchain>());
                     });
 
                 }
@@ -475,7 +475,7 @@ namespace RockEngine.Vulkan
                 if (imagesCount != _images.Length)
                 {
                     Console.WriteLine($"Image count changed: {_images.Length} -> {imagesCount}");
-                    _context.MaxFramesPerFlight = (int)imagesCount;
+                    _context.MaxFramesPerFlight = imagesCount;
                 }
 
                 // Recreate image views and depth resources
@@ -490,12 +490,14 @@ namespace RockEngine.Vulkan
 
         private void DisposeImagesAndViews()
         {
-            foreach (var item in _swapChainImageViews)
+            for (var i = 0; i < _swapChainImageViews.Length; i++)
             {
-                item.Dispose();
+                VkImageView? item = _swapChainImageViews[i];
+                _images[i].RemoveViewFromCache(item);
+                _context.GraphicsSubmitContext.AddDependency(item);
             }
-            _depthImage.Dispose();
-            _depthImageView.Dispose();
+            _context.GraphicsSubmitContext.AddDependency(_depthImage);
+            _context.GraphicsSubmitContext.AddDependency(_depthImageView);
         }
 
         public void CreateDepthResources()
@@ -535,6 +537,8 @@ namespace RockEngine.Vulkan
          FormatFeatureFlags.DepthStencilAttachmentBit
      );
 
+        
+
         private Format FindSupportedFormat(Format[] candidates, ImageTiling tiling, FormatFeatureFlags features)
         {
             foreach (var format in candidates)
@@ -564,8 +568,9 @@ namespace RockEngine.Vulkan
 
             DisposeImagesAndViews();
 
+            _khrSwapchain.DestroySwapchain(_context.Device, _vkObject, in CustomAllocator<VkSwapchain>());
+            Surface.Dispose();
 
-            _khrSwapchain.DestroySwapchain(_context.Device, _vkObject, in VulkanContext.CustomAllocator<VkSwapchain>());
             _vkObject = default;
             _disposed = true;
         }

@@ -22,7 +22,7 @@ namespace RockEngine.Vulkan
 
         public static unsafe VkFrameBuffer Create(VulkanContext context, in FramebufferCreateInfo framebufferCreateInfo, VkImageView[] attachments)
         {
-            VulkanContext.Vk.CreateFramebuffer(context.Device, in framebufferCreateInfo, in VulkanContext.CustomAllocator<VkFrameBuffer>(), out Framebuffer framebuffer)
+            VK.CreateFramebuffer(context.Device, in framebufferCreateInfo, in CustomAllocator<VkFrameBuffer>(), out Framebuffer framebuffer)
                     .VkAssertResult("Failed to create framebuffer.");
 
             return new VkFrameBuffer(context, framebuffer, attachments, in framebufferCreateInfo);
@@ -46,7 +46,7 @@ namespace RockEngine.Vulkan
                 _framebufferCreateInfo.Width = _width;
                 _framebufferCreateInfo.Height = _height;
 
-                VulkanContext.Vk.CreateFramebuffer(_context.Device, in _framebufferCreateInfo, null, out Framebuffer fb)
+                VK.CreateFramebuffer(_context.Device, in _framebufferCreateInfo, null, out Framebuffer fb)
                     .VkAssertResult("Failed to recreate framebuffer");
                 return fb;
             }
@@ -94,7 +94,7 @@ namespace RockEngine.Vulkan
 
         private void DisposeInternal()
         {
-            VulkanContext.Vk.DestroyFramebuffer(_context.Device, _vkObject, in VulkanContext.CustomAllocator<VkFrameBuffer>());
+            VK.DestroyFramebuffer(_context.Device, _vkObject, in CustomAllocator<VkFrameBuffer>());
         }
 
     }

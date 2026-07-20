@@ -1,14 +1,19 @@
 #version 460
+#include "include/common.glsl"
 #extension GL_ARB_separate_shader_objects : enable
-#extension GL_KHR_vulkan_glsl : enable
 #extension GL_EXT_scalar_block_layout :enable
 
-layout(input_attachment_index = 0, set = 2, binding = 0) uniform subpassInput gPosition;
-layout(input_attachment_index = 1, set = 2, binding = 1) uniform subpassInput gNormal;
-layout(input_attachment_index = 2, set = 2, binding = 2) uniform subpassInput gAlbedo;
-layout(input_attachment_index = 3, set = 2, binding = 3) uniform subpassInput gMRA;
+layout(set = 0, binding = 0) uniform GlobalUbo_Dynamic {
+   GlobalUBO ubo;
+};
+
+//layout(input_attachment_index = 0, set = 2, binding = 0) uniform subpassInput gPosition;
+layout(input_attachment_index = 0, set = 2, binding = 0) uniform subpassInput gNormal;
+layout(input_attachment_index = 1, set = 2, binding = 1) uniform subpassInput gAlbedo;
+layout(input_attachment_index = 2, set = 2, binding = 2) uniform subpassInput gDepth;
 
 layout(location = 0) in vec3 camPos;
+layout(location = 1) in vec3 viewRay;  
 
 layout(set = 3, binding = 0) uniform samplerCube irradianceMap;
 layout(set = 3, binding = 1) uniform samplerCube prefilterMap;
@@ -172,7 +177,8 @@ float calculateCSMShadow(vec3 fragPos, vec3 normal, vec3 lightDir, LightData lig
     // Improved bias calculation
     float baseBias = light.shadowParams.x;
     float normalBias = baseBias * tan(acos(clamp(dot(normal, lightDir), 0.0, 1.0)));
-    float bias = max(baseBias * 0.5, normalBias);
+    float slope = 1.0 - dot(normal, lightDir);
+    float bias = max(baseBias * slope, baseBias * 0.1);
     
     // Get the correct cascade matrix
     mat4 shadowMatrix;
@@ -182,8 +188,8 @@ float calculateCSMShadow(vec3 fragPos, vec3 normal, vec3 lightDir, LightData lig
     else shadowMatrix = csmData.cascadeMatrices[3];
     
     // Apply normal offset
-    vec3 normalOffset = normal * (bias * 2.0);
-    vec4 shadowCoord = shadowMatrix * vec4(fragPos + normalOffset, 1.0);
+    vec3 offset = lightDir * bias;   // move toward light
+    vec4 shadowCoord = shadowMatrix * vec4(fragPos + offset, 1.0);
     
     // Perspective divide
     shadowCoord.xyz /= shadowCoord.w;
@@ -192,11 +198,13 @@ float calculateCSMShadow(vec3 fragPos, vec3 normal, vec3 lightDir, LightData lig
     shadowCoord.xyz = shadowCoord.xyz * 0.5 + 0.5;
     
     // Early out if outside shadow map with small margin
-    if (any(lessThan(shadowCoord.xy, vec2(0.01))) || 
-        any(greaterThan(shadowCoord.xy, vec2(0.99))) ||
-        shadowCoord.z > 1.0) {
-        return 0.0;
-    }
+    shadowCoord.xy = clamp(shadowCoord.xy, 0.0, 1.0);
+    float edgeFade = smoothstep(0.0, 0.05, shadowCoord.x) *
+                     smoothstep(0.0, 0.05, shadowCoord.y) *
+                     (1.0 - smoothstep(0.95, 1.0, shadowCoord.x)) *
+                     (1.0 - smoothstep(0.95, 1.0, shadowCoord.y));
+    if (shadowCoord.z > 1.0) edgeFade = 0.0;
+    // multiply final shadow by edgeFade
     
     // Clamp to avoid edge artifacts
     shadowCoord.xy = clamp(shadowCoord.xy, 0.01, 0.99);
@@ -206,7 +214,7 @@ float calculateCSMShadow(vec3 fragPos, vec3 normal, vec3 lightDir, LightData lig
     
     // Improved PCF
     float shadow = 0.0;
-    vec2 texelSize = 1.0 / vec2(textureSize(shadowMaps, 0));
+    vec2 texelSize = fwidth(shadowCoord.xy) * 0.5; // conservative estimate
     float radius = 1.0;
     
     for (int x = -1; x <= 1; x++) {
@@ -215,13 +223,13 @@ float calculateCSMShadow(vec3 fragPos, vec3 normal, vec3 lightDir, LightData lig
             float closestDepth = texture(shadowMaps, vec3(sampleCoord, layer)).r;
             
             // Smooth depth comparison
-            float depthDiff = shadowCoord.z - bias - closestDepth;
+            float depthDiff = shadowCoord.z - closestDepth;
             shadow += (depthDiff > 0.0) ? smoothstep(0.0, 0.001, depthDiff) : 0.0;
         }
     }
     
     shadow /= 9.0; // 3x3 kernel
-    return shadow * light.shadowParams.y;
+    return shadow * edgeFade * light.shadowParams.y;
 }
 
 // Basic PCF for single cascade directional lights (fallback)
@@ -322,46 +330,41 @@ float calculateSpotShadow(vec3 fragPos, vec3 normal, vec3 lightDir, LightData li
 
 float calculatePointShadow(vec3 fragPos, vec3 normal, vec3 lightPos, LightData light) {
     if (light.shadowParams.z < 0.5) return 0.0;
-    
+
     int shadowIndex = int(light.shadowParams.w);
     vec3 fragToLight = fragPos - lightPos;
-    float currentDepth = length(fragToLight);
-    
-    // Early out if beyond light radius
-    if (currentDepth > light.directionAndRadius.w) {
-        return 0.0;
-    }
-    
-    vec3 lightDir = normalize(fragToLight);
-    
-    // Calculate bias based on normal and light direction
-    float bias = max(light.shadowParams.x * 0.05, light.shadowParams.x * (1.0 - dot(normal, -lightDir)));
-    
-    // Normalize current depth to [0, 1] range
-    float currentDepthNormalized = currentDepth / light.directionAndRadius.w;
-    
-    // Use fewer samples for distant fragments
-    float viewDistance = length(camPos - fragPos);
-    int samples = (viewDistance > 25.0) ? 8 : 16;
-    
+    float dist = length(fragToLight);
+    float lightRadius = light.directionAndRadius.w;
+
+    if (dist > lightRadius) return 0.0;
+
+    vec3 L = fragToLight / dist;   // direction from light to fragment
+
+    // Bias in normalized [0,1] space
+    float bias = max(0.001 * (1.0 - dot(normal, L)), 0.0002);
+    float normalizedDepth = dist / lightRadius - bias;
+
+    // Disk radius in tangent space – grows with distance
+    const float RADIUS_SCALE = 0.02;       // tune this for softness
+    float diskRadius = RADIUS_SCALE * (0.5 + normalizedDepth * 1.5);   // larger far away
+
+    // Build orthonormal basis around the light direction
+    vec3 up = abs(L.y) < 0.999 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
+    vec3 tangent = normalize(cross(up, L));
+    vec3 bitangent = cross(L, tangent);
+
     float shadow = 0.0;
-    float diskRadius = (0.015 + 0.02 * (1.0 - dot(normal, -lightDir))) * (1.0 / (currentDepthNormalized + 0.1));
-    
-    for (int i = 0; i < samples; i++) {
-        // Sample in the direction from light to fragment
-        vec3 sampleOffset = normalize(fragToLight + CUBE_OFFSETS[i] * diskRadius);
-        float closestDepth = texture(pointShadowMaps, vec4(sampleOffset, shadowIndex)).r;
-        
-        // Compare depths
-        if (currentDepthNormalized - bias > closestDepth) {
-            shadow += 1.0;
-        }
+    int samples = 16;
+    for (int i = 0; i < samples; ++i) {
+        // Use the same Poisson disk, but apply in tangent space
+        vec3 offset = CUBE_OFFSETS[i] * diskRadius;   // CUBE_OFFSETS are in [-1,1], fine as direction offsets
+        vec3 sampleDir = normalize(L + tangent * offset.x + bitangent * offset.y);
+        float closestDepth = texture(pointShadowMaps, vec4(sampleDir, shadowIndex)).r;
+        if (normalizedDepth > closestDepth) shadow += 1.0;
     }
-    
     shadow /= float(samples);
     return shadow * light.shadowParams.y;
 }
-
 // Enhanced direct lighting calculation
 vec3 calculateDirectLighting(LightData light, vec3 albedo, float metallic, 
                            float roughness, vec3 N, vec3 V, vec3 F0, vec3 fragPos, vec3 normal) {
@@ -388,7 +391,8 @@ vec3 calculateDirectLighting(LightData light, vec3 albedo, float metallic,
     else { // Point or Spot Light
         vec3 lightPos = light.positionAndType.xyz;
         vec3 toLight = lightPos - fragPos;
-        float dist = length(toLight);
+        float dist = max(length(toLight), 0.01);
+        float dist2 = dist * dist;
         float radius = light.directionAndRadius.w;
 
         if(dist > radius) return vec3(0.0);
@@ -396,7 +400,6 @@ vec3 calculateDirectLighting(LightData light, vec3 albedo, float metallic,
         L = toLight / dist;
         
         // Improved attenuation with inverse square law
-        float dist2 = dist * dist;
         float radius2 = radius * radius;
         float atten = 1.0 / (dist2 + 1e-6);
         float fade = pow(clamp(1.0 - (dist2 / radius2), 0.0, 1.0), 2.0);
@@ -473,9 +476,7 @@ vec3 calculateIBL(vec3 N, vec3 V, vec3 F0, float roughness, float metallic, floa
     // Specular IBL - improved LOD calculation
     vec3 F = fresnelSchlickRoughness(NdotV, F0, roughness);
     
-    // Sample prefiltered environment with proper LOD
-    float lod = roughness * (MAX_REFLECTION_LOD - 1.0);
-    vec3 prefilteredColor = textureLod(prefilterMap, R_rot, lod).rgb;
+    vec3 prefilteredColor = texture(prefilterMap, R_rot).rgb;
     
     // Sample BRDF LUT
     vec2 brdfSample = texture(brdfLUT, vec2(NdotV, roughness)).rg;
@@ -486,7 +487,7 @@ vec3 calculateIBL(vec3 N, vec3 V, vec3 F0, float roughness, float metallic, floa
     vec3 irradiance = texture(irradianceMap, N_rot).rgb;
     
     // Apply albedo to diffuse IBL
-    vec3 diffuseIBL = kD * irradiance * albedo;
+    vec3 diffuseIBL = kD * irradiance * albedo * (1.0 / PI);
     
     // Combine with proper intensity and AO
     vec3 ambient = (diffuseIBL + specularIBL) * ao;
@@ -515,25 +516,33 @@ vec3 tonemapFilmic(vec3 x) {
     return pow(result, vec3(2.2));
 }
 
-vec3 decodeNormal(vec2 enc) {
-    vec3 n;
-    n.z = 1.0 - abs(enc.x) - abs(enc.y);
-    n.xy = n.z >= 0.0 ? enc.xy : sign(enc.xy) * (vec2(1.0) - abs(enc.yx));
+vec3 octDecodeFullSphere(vec2 enc) {
+    vec2 fenc = enc * 2.0 - 1.0;
+    vec3 n = vec3(fenc.xy, 1.0 - abs(fenc.x) - abs(fenc.y));
+    if (n.z < 0.0) {
+        n.xy = (1.0 - abs(n.yx)) * sign(n.xy);
+    }
     return normalize(n);
 }
-
 void main() {
-    // Sample G-buffer
-    vec3 fragPos = subpassLoad(gPosition).rgb;
-    vec2 encodedNormal = subpassLoad(gNormal).rg * 2.0 - 1.0;
-    vec3 N = decodeNormal(encodedNormal);
+    vec4 normalPack = subpassLoad(gNormal);
+    vec3 N = octDecodeFullSphere(normalPack.rg);
+    float roughness = clamp(normalPack.b, MIN_ROUGHNESS, 1.0f);
+    float metallic  = clamp(normalPack.a, 0.0f, 1.0f);
     vec4 albedoData = subpassLoad(gAlbedo);
-    vec4 mra = subpassLoad(gMRA);
+    float ao = albedoData.a;   // single channel
+    ao = mix(1.0, ao, iblParams.aoStrength);
 
     vec3 albedo = albedoData.rgb;
-    float metallic = clamp(mra.r, 0.0, 1.0);
-    float roughness = clamp(mra.g, MIN_ROUGHNESS, 1.0);
-    float ao = mix(1.0, mra.b, iblParams.aoStrength);
+
+    // Use metallic, roughness from here…
+    // Reconstruct world position from depth01 and view ray
+    float deviceZ = subpassLoad(gDepth).r;
+    float linearDepth = ubo.nearClip / (1.0 - deviceZ * (1.0 - ubo.nearClip / ubo.farClip));
+    vec3 viewPos = viewRay * (linearDepth / -viewRay.z);
+    vec3 fragPos = (ubo.invView * vec4(viewPos, 1.0)).xyz;
+    
+
 
     vec3 V = normalize(camPos - fragPos);
     
@@ -560,9 +569,6 @@ void main() {
     
     // Tonemapping
     color = tonemapACES(color);
-    
-    // Gamma correction with adjustable gamma
-    color = pow(color, vec3(1.0 / iblParams.gamma));
     
     outColor = vec4(color, 1.0);
 }

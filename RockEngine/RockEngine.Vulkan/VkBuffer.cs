@@ -45,14 +45,14 @@ namespace RockEngine.Vulkan
                 SharingMode = SharingMode.Exclusive
             };
 
-            VulkanContext.Vk.CreateBuffer(context.Device, in bufferInfo, in VulkanContext.CustomAllocator<VkBuffer>(), out var bufferHandle)
+            VK.CreateBuffer(context.Device, in bufferInfo, in CustomAllocator<VkBuffer>(), out var bufferHandle)
                 .VkAssertResult("Failed to create buffer");
 
-            VulkanContext.Vk.GetBufferMemoryRequirements(context.Device, bufferHandle, out var memRequirements);
+            VK.GetBufferMemoryRequirements(context.Device, bufferHandle, out var memRequirements);
 
             var deviceMemory = VkDeviceMemory.Allocate(context, memRequirements, properties);
 
-            VulkanContext.Vk.BindBufferMemory(context.Device, bufferHandle, deviceMemory, 0);
+            VK.BindBufferMemory(context.Device, bufferHandle, deviceMemory, 0);
             VulkanAllocator.DeviceMemoryTracker.AssociateObject(
                deviceMemory,
                bufferHandle.Handle,
@@ -118,7 +118,7 @@ namespace RockEngine.Vulkan
                 Size = alignedSize
             };
 
-            VulkanContext.Vk.FlushMappedMemoryRanges(_context.Device, 1, &mappedRange)
+            VK.FlushMappedMemoryRanges(_context.Device, 1, &mappedRange)
                 .VkAssertResult("Failed to flush mapped memory ranges");
         }
 
@@ -130,7 +130,7 @@ namespace RockEngine.Vulkan
                 DstOffset = dstOffset,
                 Size = Size,
             };
-            VulkanContext.Vk.CmdCopyBuffer(batch.CommandBuffer, this, dstBuffer, 1, in copyRegion);
+            VK.CmdCopyBuffer(batch.CommandBuffer, this, dstBuffer, 1, in copyRegion);
         }
 
         public ValueTask WriteToBufferAsync<T>(T[] data, ulong size = Vk.WholeSize, ulong offset = 0) where T : unmanaged
@@ -300,7 +300,7 @@ namespace RockEngine.Vulkan
                 {
                     //_deviceMemory.Unmap();
                 }
-                VulkanContext.Vk.DestroyBuffer(_context.Device, _vkObject, in VulkanContext.CustomAllocator<VkBuffer>());
+                VK.DestroyBuffer(_context.Device, _vkObject, in CustomAllocator<VkBuffer>());
                 _deviceMemory.Dispose();
                 VulkanAllocator.DeviceMemoryTracker.DisassociateObject(_vkObject.Handle);
 

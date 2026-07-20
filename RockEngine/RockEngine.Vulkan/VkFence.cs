@@ -15,7 +15,7 @@ namespace RockEngine.Vulkan
 
         public static unsafe VkFence Create(VulkanContext context, in FenceCreateInfo fenceCreateInfo)
         {
-            VulkanContext.Vk.CreateFence(context.Device, in fenceCreateInfo, in VulkanContext.CustomAllocator<VkFence>(), out Fence fence)
+            VK.CreateFence(context.Device, in fenceCreateInfo, in CustomAllocator<VkFence>(), out Fence fence)
                 .VkAssertResult("Failed to create fence.");
             return new VkFence(context, in fence);
         }
@@ -84,7 +84,7 @@ namespace RockEngine.Vulkan
 
                 unsafe
                 {
-                    Vk.DestroyFence(_context.Device, _vkObject, in VulkanContext.CustomAllocator<VkFence>());
+                    Vk.DestroyFence(_context.Device, _vkObject, in CustomAllocator<VkFence>());
                 }
 
                 _disposed = true;

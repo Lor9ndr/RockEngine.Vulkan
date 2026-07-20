@@ -62,7 +62,7 @@ namespace RockEngine.Tests
         public void DeviceFeatures_ShouldBeEnabled()
         {
             var physicalDevice = _context.Device.PhysicalDevice;
-            var features = VulkanContext.Vk.GetPhysicalDeviceFeatures(physicalDevice);
+            var features = VulkanContext.VK.GetPhysicalDeviceFeatures(physicalDevice);
 
             Assert.AreEqual(features.SamplerAnisotropy, true);
             // Check that requested features are present (others may be false)
@@ -71,7 +71,7 @@ namespace RockEngine.Tests
         [Test]
         public unsafe void CreateBufferAndUploadData_ShouldSucceed()
         {
-            var vk = VulkanContext.Vk;
+            var vk = VulkanContext.VK;
             var device = _context.Device;
             var physicalDevice = device.PhysicalDevice;
 

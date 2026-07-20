@@ -50,10 +50,10 @@ namespace RockEngine.Vulkan
                     CodeSize = (nuint)bytes.Length,
                     PCode = (uint*)pshaderCode
                 };
-                VulkanContext.Vk.CreateShaderModule(
+                VK.CreateShaderModule(
                     context.Device,
                     in shaderModuleCreateInfo,
-                    in VulkanContext.CustomAllocator<VkShaderModule>(),
+                    in CustomAllocator<VkShaderModule>(),
                     out var shaderModule).VkAssertResult($"Failed to create shader module: {stage}");
 
                 var reflectorApi = Reflect.GetApi();
@@ -73,7 +73,7 @@ namespace RockEngine.Vulkan
                     CodeSize = (nuint)(data.Length * sizeof(uint)),
                     PCode = pshaderCode
                 };
-                VulkanContext.Vk.CreateShaderModule(context.Device, in shaderModuleCreateInfo, in VulkanContext.CustomAllocator<VkShaderModule>(), out var shaderModule)
+                VK.CreateShaderModule(context.Device, in shaderModuleCreateInfo, in CustomAllocator<VkShaderModule>(), out var shaderModule)
                     .VkAssertResult($"Failed to create shader module: {stage}");
                 var reflectorApi = Reflect.GetApi();
                 var reflected = new ReflectShaderModule(Generator.KhronosSpirvToolsAssembler);
@@ -96,7 +96,7 @@ namespace RockEngine.Vulkan
 
                 if (_vkObject.Handle != default)
                 {
-                    VulkanContext.Vk.DestroyShaderModule(_context.Device, _vkObject, in VulkanContext.CustomAllocator<VkShaderModule>());
+                    VK.DestroyShaderModule(_context.Device, _vkObject, in CustomAllocator<VkShaderModule>());
                 }
 
                 _disposed = true;

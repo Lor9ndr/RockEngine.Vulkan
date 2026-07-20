@@ -164,7 +164,7 @@ namespace RockEngine.Core.Rendering.ResourceBindings
                 writeIdx++;
             }
 
-            VulkanContext.Vk.UpdateDescriptorSets(context.Device, (uint)validCount, writes, 0, null);
+            VK.UpdateDescriptorSets(context.Device, (uint)validCount, writes, 0, null);
         }
 
         protected override void Dispose(bool disposing)

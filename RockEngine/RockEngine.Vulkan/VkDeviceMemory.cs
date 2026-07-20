@@ -41,7 +41,7 @@ namespace RockEngine.Vulkan
                 MemoryTypeIndex = FindMemoryType(context, memRequirements.MemoryTypeBits, properties)
             };
 
-            VulkanContext.Vk.AllocateMemory(context.Device, in allocInfo, in VulkanContext.CustomAllocator<VkDeviceMemory>(), out var memory)
+            VK.AllocateMemory(context.Device, in allocInfo, in CustomAllocator<VkDeviceMemory>(), out var memory)
                  .VkAssertResult("Failed to allocate memory!");
             return new VkDeviceMemory(context, memory, memRequirements.Size, properties);
         }
@@ -49,7 +49,7 @@ namespace RockEngine.Vulkan
 
         private static uint FindMemoryType(VulkanContext context, uint typeFilter, MemoryPropertyFlags properties)
         {
-            VulkanContext.Vk.GetPhysicalDeviceMemoryProperties(context.Device.PhysicalDevice, out PhysicalDeviceMemoryProperties pMemoryProperties);
+            VK.GetPhysicalDeviceMemoryProperties(context.Device.PhysicalDevice, out PhysicalDeviceMemoryProperties pMemoryProperties);
             for (uint i = 0; i < pMemoryProperties.MemoryTypeCount; i++)
             {
                 if ((typeFilter & 1 << (int)i) != 0 && (pMemoryProperties.MemoryTypes[(int)i].PropertyFlags & properties) == properties)
@@ -70,7 +70,7 @@ namespace RockEngine.Vulkan
         public unsafe void Map(ulong bufferSize, ulong offset)
         {
             void* mappedMemory = null;
-            VulkanContext.Vk.MapMemory(_context.Device, _vkObject, offset, bufferSize, 0, &mappedMemory)
+            VK.MapMemory(_context.Device, _vkObject, offset, bufferSize, 0, &mappedMemory)
                 .VkAssertResult("Failed to map memory");
             _mappedData = new nint(mappedMemory);
         }
@@ -78,7 +78,7 @@ namespace RockEngine.Vulkan
         public unsafe void Map()
         {
             void* mappedMemory = null;
-            VulkanContext.Vk.MapMemory(_context.Device, _vkObject, 0, _size, 0, &mappedMemory)
+            VK.MapMemory(_context.Device, _vkObject, 0, _size, 0, &mappedMemory)
                 .VkAssertResult("Failed to map memory");
             _mappedData = new nint(mappedMemory);
 
@@ -86,7 +86,7 @@ namespace RockEngine.Vulkan
 
         public void Unmap()
         {
-            VulkanContext.Vk.UnmapMemory(_context.Device, _vkObject);
+            VK.UnmapMemory(_context.Device, _vkObject);
             _mappedData = null;
 
         }
@@ -98,7 +98,7 @@ namespace RockEngine.Vulkan
                 return;
             }
             VulkanAllocator.DeviceMemoryTracker.UnregisterDeviceMemory(_memory);
-            VulkanContext.Vk.FreeMemory(_context.Device, _memory, in VulkanContext.CustomAllocator<VkDeviceMemory>());
+            VK.FreeMemory(_context.Device, _memory, in CustomAllocator<VkDeviceMemory>());
             _mappedData = null;
             _disposed = true;
         }

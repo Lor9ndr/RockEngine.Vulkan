@@ -16,8 +16,12 @@ namespace RockEngine.Editor.EditorUI.ImGuiRendering.PropertyHandlers
         public bool CanHandle(Type propertyType) => propertyType.IsEnum;
 
         [RequiresDynamicCode("Calls Enum.GetValues")]
-        public void Draw(IComponent component, UIPropertyAccessor accessor, object value, PropertyDrawer drawer)
+        public void Draw(object owner, UIPropertyAccessor accessor, object value, PropertyDrawer drawer)
         {
+            if (owner is not IComponent component)
+            {
+                return;
+            }
             Enum enumValue = (Enum)value;
             string controlId = $"{component.GetHashCode()}_{accessor.Name}";
 

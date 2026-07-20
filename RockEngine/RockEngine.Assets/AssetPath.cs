@@ -1,5 +1,5 @@
 ﻿using System.Diagnostics;
-using MessagePack;
+using MemoryPack;
 
 namespace RockEngine.Assets
 {
@@ -7,8 +7,8 @@ namespace RockEngine.Assets
     /// Represents a validated file path for assets with proper normalization and validation.
     /// </summary>
     [DebuggerDisplay("{FullPath} (Valid: {IsValid})")]
-    [MessagePackObject]
-    public readonly struct AssetPath : IEquatable<AssetPath>, IComparable<AssetPath>
+    [MemoryPackable]
+    public readonly partial struct AssetPath : IEquatable<AssetPath>, IComparable<AssetPath>
     {
         private readonly string _normalizedFolder;
         private readonly string _name = "EmptyAsset";
@@ -17,25 +17,21 @@ namespace RockEngine.Assets
         /// <summary>
         /// Gets the folder path (normalized and platform-independent).
         /// </summary>
-        [Key(0)]
         public string Folder => _normalizedFolder ?? string.Empty;
 
         /// <summary>
         /// Gets the file name without extension.
         /// </summary>
-        [Key(1)]
         public string Name => _name ?? string.Empty;
 
         /// <summary>
         /// Gets the file extension including the dot.
         /// </summary>
-        [Key(2)]
         public string Extension => _extension ?? ".asset";
 
         /// <summary>
         /// Gets the full normalized path.
         /// </summary>
-        [Key(3)]
         public string FullPath
         {
             get
@@ -52,7 +48,6 @@ namespace RockEngine.Assets
         /// <summary>
         /// Gets the path without extension.
         /// </summary>
-        [Key(4)]
         public string RelativePath
         {
             get
@@ -69,7 +64,6 @@ namespace RockEngine.Assets
         /// <summary>
         /// Gets a value indicating whether this asset path is valid.
         /// </summary>
-        [Key(5)]
         public bool IsValid => !string.IsNullOrWhiteSpace(Name) &&
                               !string.IsNullOrWhiteSpace(Extension) &&
                               Extension.StartsWith(".") &&
@@ -79,7 +73,6 @@ namespace RockEngine.Assets
         /// <summary>
         /// Gets the platform-specific full path.
         /// </summary>
-        [Key(6)]
         public string PlatformFullPath => Path.Combine(GetPlatformFolder(), $"{Name}{Extension}");
 
         /// <summary>
@@ -111,6 +104,7 @@ namespace RockEngine.Assets
         /// </summary>
         /// <param name="fullPath">The full path to parse.</param>
         /// <exception cref="ArgumentException">Thrown when fullPath is null or empty.</exception>
+        [MemoryPackConstructor]
         public AssetPath(string fullPath)
         {
             if (string.IsNullOrWhiteSpace(fullPath))

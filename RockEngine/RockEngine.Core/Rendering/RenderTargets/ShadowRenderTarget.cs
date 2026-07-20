@@ -132,11 +132,11 @@ namespace RockEngine.Core.Rendering.RenderTargets
         }
 
 
-        public override void PrepareForRender(UploadBatch batch)
+        public override void PrepareForRender(UploadBatch batch, uint frameIndex)
         {
         }
 
-        public override void TransitionToRead(UploadBatch batch)
+        public override void TransitionToRead(UploadBatch batch, uint frameIndex)
         {
         }
 

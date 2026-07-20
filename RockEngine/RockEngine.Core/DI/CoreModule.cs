@@ -1,7 +1,6 @@
 ﻿using RockEngine.Core.Coroutines;
 using RockEngine.Core.ECS;
 using RockEngine.Core.ECS.Components;
-using RockEngine.Core.ECS.Components.Physics;
 using RockEngine.Core.Physics;
 using RockEngine.Core.Registries;
 using RockEngine.Core.Rendering;
@@ -10,7 +9,7 @@ using RockEngine.Core.Rendering.Managers;
 using RockEngine.Core.Rendering.Objects;
 using RockEngine.Core.Rendering.Passes;
 using RockEngine.Core.Rendering.Passes.SubPasses;
-using RockEngine.Core.Rendering.Texturing.Atlasing;
+using RockEngine.DI;
 using RockEngine.ShaderPreprocessor;
 using RockEngine.Vulkan;
 using RockEngine.Vulkan.DeviceFeatures;
@@ -80,6 +79,7 @@ namespace RockEngine.Core.DI
             container.RegisterRenderSubPass<GeometryPass, DeferredPassStrategy>();
             container.RegisterRenderSubPass<LightingPass, DeferredPassStrategy>();
             container.RegisterRenderSubPass<PostLightPass, DeferredPassStrategy>();
+            container.RegisterRenderSubPass<UIPass, DeferredPassStrategy>();
 
             container.RegisterRenderSubPass<ShadowPass, ShadowPassStrategy>();
 
@@ -137,6 +137,7 @@ namespace RockEngine.Core.DI
                 var context = container.GetInstance<VulkanContext>();
                 return new GlobalGeometryBuffer(context);
             }, Lifestyle.Singleton);
+            container.Register<UIManager>();
 
 
             var registry = new FeatureRegistry();

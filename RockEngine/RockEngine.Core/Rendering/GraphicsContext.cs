@@ -1,546 +1,360 @@
-﻿using System.Diagnostics;
+﻿using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Linq;
 using RockEngine.Vulkan;
 using Silk.NET.Vulkan;
-using Silk.NET.Vulkan.Extensions.KHR;
-using Semaphore = Silk.NET.Vulkan.Semaphore;
-
 namespace RockEngine.Core.Rendering
 {
+    public static class Consts
+    {
+        public const uint NOT_ACQUIRED_IMAGE = uint.MaxValue;
+    }
+
     public sealed class GraphicsContext : IDisposable
     {
-        private readonly VulkanContext _context;
-        private readonly KhrSwapchain _swapchainApi;
-        private readonly SwapchainEntry[] _swapchains;
-        private readonly FrameState[] _frames;
-        private readonly int _frameCount;
-        private int _currentFrameIndex;
-        private int _activeSwapchainCount;
+        private readonly VulkanContext _vkContext;
+        private readonly uint _desiredMaxFramesInFlight;
+        private uint _maxFramesInFlight;
+        private readonly List<VkSwapchain> _swapchains = new();
+        private readonly Dictionary<VkSwapchain, SwapchainSyncData> _syncMap = new();
+
+        private uint _currentFlightIndex;
+        private UploadBatch? _currentFrameBatch;
+        private SubmitOperation?[] _flightOperations;   // per flight slot
         private bool _disposed;
-        private ulong _frameNumber;
-        private VkFence _transferFence;
 
-        // Pre-allocated arrays for presentation (reused each frame)
-        private readonly SwapchainKHR[] _presentSwapchains = new SwapchainKHR[16];
-        private readonly uint[] _presentImageIndices = new uint[16];
-        private readonly Semaphore[] _presentWaitSemaphores = new Semaphore[16];
+        public uint FrameIndex => _currentFlightIndex;
+        public VkSwapchain? MainSwapchain { get; private set; }
 
-        // Pool of available semaphores (to avoid allocations)
-        private readonly Queue<VkSemaphore> _availableSemaphores = new Queue<VkSemaphore>();
-        private const int SEMAPHORE_POOL_SIZE = 16;
-
-        public VkSwapchain MainSwapchain { get; private set; }
-        public uint FrameIndex => (uint)_currentFrameIndex;
-        public int MaxFramesInFlight => _frameCount;
-
-        private struct SwapchainEntry
+        // Per‑swapchain sync objects (same as before)
+        private sealed class SwapchainSyncData
         {
-            public VkSwapchain? Swapchain;
-            public bool NeedsRecreation;
-            public bool IsMain;
+            private readonly VulkanContext _context;
+            public VkSemaphore[] ImageAvailableSemaphores;
+            public VkSemaphore[] RenderFinishedSemaphores;   // per image
+            public uint[] AcquiredImageIndices;
 
-            // PER-FRAME ACQUIRE SEMAPHORES
-            public VkSemaphore[] ImageAvailableSemaphores;  // One per frame in flight
-
-            // PER-IMAGE RENDER SEMAPHORES
-            public VkSemaphore[] RenderCompleteSemaphores;  // One per swapchain image
-
-            // Track semaphore usage state
-            public bool[] ImageAvailableInUse;  // Is the frame's acquire semaphore in use?
-            public bool[] RenderCompleteInUse;  // Is the image's render semaphore in use?
-
-            // Track which frame is currently using each image
-            public int[] ImageUserFrameIndex;   // Frame index using the image, or -1 if free
-            public ulong[] ImageLastUsedFrame;  // Frame number when image was last used
-
-            // Track which image index each frame acquired
-            public uint[] FrameAcquiredImageIndex; // Image index for each frame
-        }
-
-        private sealed class FrameState : IDisposable
-        {
-            public required VkFence InFlightFence;
-            public UploadBatch? CurrentBatch;
-            public ulong FrameNumber;
-            public uint AcquiredSwapchainCount;
-
-            public readonly int[] AcquiredSwapchainIndices = new int[16];
-            public readonly uint[] AcquiredImageIndices = new uint[16];
-
-            public readonly List<VkSemaphore> SemaphoresToReturn = new List<VkSemaphore>(8);
-            public readonly List<IDisposable> Resources = new List<IDisposable>(32);
-            public SubmitOperation? FlushOperation;
-
-            public void Reset()
+            public SwapchainSyncData(uint maxFramesInFlight, uint imageCount, VulkanContext context)
             {
-                for (int i = Resources.Count - 1; i >= 0; i--)
+                ImageAvailableSemaphores = new VkSemaphore[maxFramesInFlight];
+                RenderFinishedSemaphores = new VkSemaphore[imageCount];
+                AcquiredImageIndices = new uint[maxFramesInFlight];
+
+                for (int i = 0; i < maxFramesInFlight; i++)
                 {
-                    var resource = Resources[i];
-                    if (resource is not VkSemaphore)
-                    {
-                        VulkanContext.GetCurrent().GraphicsSubmitContext.AddDependency(resource);
-                        Resources.RemoveAt(i);
-                    }
+                    ImageAvailableSemaphores[i] = VkSemaphore.Create(context);
+                    AcquiredImageIndices[i] = Consts.NOT_ACQUIRED_IMAGE;
+                }
+                for (int i = 0; i < imageCount; i++)
+                {
+                    RenderFinishedSemaphores[i] = VkSemaphore.Create(context);
                 }
 
-                AcquiredSwapchainCount = 0;
-                CurrentBatch = null;
-                FlushOperation = null;
-                SemaphoresToReturn.Clear();
+                _context = context;
             }
 
             public void Dispose()
             {
-                FlushOperation?.Dispose();
-                InFlightFence.Dispose();
-                Reset();
-            }
-        }
-
-        public GraphicsContext(VulkanContext context)
-        {
-            _context = context;
-            _swapchainApi = new KhrSwapchain(VulkanContext.Vk.Context);
-            _frameCount = context.MaxFramesPerFlight;
-
-            _swapchains = new SwapchainEntry[32];
-            _frames = new FrameState[_frameCount];
-
-            // Pre-allocate semaphore pool
-            for (int i = 0; i < SEMAPHORE_POOL_SIZE; i++)
-            {
-                _availableSemaphores.Enqueue(VkSemaphore.Create(_context));
-            }
-
-            for (int i = 0; i < _frameCount; i++)
-            {
-                _frames[i] = new FrameState
+                foreach (var s in ImageAvailableSemaphores)
                 {
-                    InFlightFence = VkFence.CreateNotSignaled(context)
-                };
+                    if(s is not null)
+                    {
+                        _context.GraphicsSubmitContext.AddDependency(s);
+                    }
+                }
+
+                foreach (var s in RenderFinishedSemaphores)
+                {
+                    if (s is not null)
+                    {
+                        _context.GraphicsSubmitContext.AddDependency(s);
+                    }
+                }
             }
-            _transferFence = VkFence.CreateNotSignaled(_context);
+
+            public void ReinitializeRenderFinishedSemaphores(uint newImageCount)
+            {
+                foreach (var s in RenderFinishedSemaphores)
+                {
+                    if (s is not null)
+                    {
+                        _context.GraphicsSubmitContext.AddDependency(s);
+                    }
+                }
+
+                RenderFinishedSemaphores = new VkSemaphore[newImageCount];
+                for (int i = 0; i < newImageCount; i++)
+                {
+                    RenderFinishedSemaphores[i] = VkSemaphore.Create(_context);
+                }
+            }
         }
 
+        public GraphicsContext(VulkanContext vkContext)
+        {
+            _vkContext = vkContext ?? throw new ArgumentNullException(nameof(vkContext));
+            _desiredMaxFramesInFlight = _vkContext.MaxFramesPerFlight;
+            _maxFramesInFlight = _vkContext.MaxFramesPerFlight;   // will be refined when swapchains are added
+            _flightOperations = new SubmitOperation[_maxFramesInFlight];
+        }
+
+        // ---------- Swapchain registration ----------
         public void AddSwapchain(VkSwapchain swapchain)
         {
-            if (_disposed)
+            ThrowDisposedIfNeeded();
+            if (_syncMap.ContainsKey(swapchain))
             {
-                ThrowDisposed();
+                return;
             }
 
-            for (int i = 0; i < _swapchains.Length; i++)
+            MainSwapchain ??= swapchain;
+
+            // Ensure maxFramesInFlight is less than the number of swapchain images
+            uint imageCount = (uint)swapchain.SwapChainImagesCount;
+            uint allowedMax = imageCount > 1 ? imageCount - 1 : 1;
+            uint newMax = Math.Min(_desiredMaxFramesInFlight, allowedMax);
+            if (newMax != _maxFramesInFlight)
             {
-                if (_swapchains[i].Swapchain == null)
+                _maxFramesInFlight = newMax;
+                // Reinitialise per‑flight array (discarding old operations after waiting)
+                foreach (var op in _flightOperations)
                 {
-                    ref var entry = ref _swapchains[i];
+                    op?.Wait();   // block until GPU finishes
+                }
 
-                    entry.Swapchain = swapchain;
-                    entry.IsMain = (MainSwapchain == null);
-
-                    // Get actual image count from swapchain
-                    int imageCount = swapchain.SwapChainImagesCount;
-
-                    // Create per-frame acquire semaphores
-                    entry.ImageAvailableSemaphores = new VkSemaphore[_frameCount];
-                    entry.ImageAvailableInUse = new bool[_frameCount];
-                    entry.FrameAcquiredImageIndex = new uint[_frameCount];
-
-                    // Create per-image render semaphores
-                    entry.RenderCompleteSemaphores = new VkSemaphore[imageCount];
-                    entry.RenderCompleteInUse = new bool[imageCount];
-                    entry.ImageUserFrameIndex = new int[imageCount];
-                    entry.ImageLastUsedFrame = new ulong[imageCount];
-
-                    // Allocate semaphores from pool
-                    for (int frameIdx = 0; frameIdx < _frameCount; frameIdx++)
-                    {
-                        entry.ImageAvailableSemaphores[frameIdx] = AllocateSemaphoreFromPool();
-                        entry.ImageAvailableInUse[frameIdx] = false;
-                        entry.FrameAcquiredImageIndex[frameIdx] = uint.MaxValue; // Mark as not acquired
-                    }
-
-                    for (int imgIdx = 0; imgIdx < imageCount; imgIdx++)
-                    {
-                        entry.RenderCompleteSemaphores[imgIdx] = AllocateSemaphoreFromPool();
-                        entry.RenderCompleteInUse[imgIdx] = false;
-                        entry.ImageUserFrameIndex[imgIdx] = -1;
-                        entry.ImageLastUsedFrame[imgIdx] = 0;
-                    }
-
-                    MainSwapchain ??= swapchain;
-                    _activeSwapchainCount = Math.Max(_activeSwapchainCount, i + 1);
-                    return;
+                _flightOperations = new SubmitOperation[_maxFramesInFlight];
+                // Recreate sync data for all existing swapchains with the new max
+                foreach (var kvp in _syncMap)
+                {
+                    kvp.Value.Dispose();
+                    var sync = new SwapchainSyncData(_maxFramesInFlight, (uint)kvp.Key.SwapChainImagesCount, _vkContext);
+                    _syncMap[kvp.Key] = sync;
                 }
             }
 
-            throw new InvalidOperationException("Maximum swapchain count reached");
+            var newSync = new SwapchainSyncData(_maxFramesInFlight, imageCount, _vkContext);
+            _syncMap[swapchain] = newSync;
+            _swapchains.Add(swapchain);
         }
 
-        private VkSemaphore AllocateSemaphoreFromPool()
+        public void RemoveSwapchain(VkSwapchain swapchain)
         {
-            if (_availableSemaphores.Count > 0)
+            if (_syncMap.TryGetValue(swapchain, out var sync))
             {
-                return _availableSemaphores.Dequeue();
-            }
-
-            // Expand pool if needed
-            Debug.WriteLine("Semaphore pool expanded - consider increasing SEMAPHORE_POOL_SIZE");
-            for (int i = 0; i < 4; i++)
-            {
-                _availableSemaphores.Enqueue(VkSemaphore.Create(_context));
-            }
-
-            return _availableSemaphores.Dequeue();
-        }
-
-        private void ReturnSemaphoreToPool(VkSemaphore semaphore)
-        {
-            if (semaphore != null && !semaphore.IsDisposed)
-            {
-                _availableSemaphores.Enqueue(semaphore);
-            }
-        }
-        public uint GetAcquiredImageIndex(VkSwapchain swapchain, uint frameIndex)
-        {
-            for (int i = 0; i < _activeSwapchainCount; i++)
-            {
-                if (_swapchains[i].Swapchain == swapchain)
+                sync.Dispose();
+                _syncMap.Remove(swapchain);
+                _swapchains.Remove(swapchain);
+                if (MainSwapchain == swapchain)
                 {
-                    return _swapchains[i].FrameAcquiredImageIndex[frameIndex];
+                    MainSwapchain = _syncMap.FirstOrDefault().Key;
                 }
             }
-            throw new InvalidOperationException($"Swapchain not found for {swapchain}");
         }
 
+        // ---------- Per‑flight image acquisition ----------
+        public uint GetAcquiredImageIndex(VkSwapchain swapchain, uint flightIndex)
+        {
+            ThrowDisposedIfNeeded();
+            if (!_syncMap.TryGetValue(swapchain, out var sync))
+            {
+                throw new InvalidOperationException("Swapchain not registered.");
+            }
+
+            flightIndex %= _maxFramesInFlight;
+            if (sync.AcquiredImageIndices[flightIndex] == Consts.NOT_ACQUIRED_IMAGE)
+            {
+                AcquireImageForFlight(swapchain, sync, flightIndex);
+            }
+
+            return sync.AcquiredImageIndices[flightIndex];
+        }
+
+        public VkSemaphore GetImageAvailableSemaphore(VkSwapchain swapchain, uint flightIndex)
+        {
+            ThrowDisposedIfNeeded();
+            flightIndex %= _maxFramesInFlight;
+            return _syncMap[swapchain].ImageAvailableSemaphores[flightIndex];
+        }
+
+        public VkSemaphore GetRenderFinishedSemaphore(VkSwapchain swapchain, uint flightIndex)
+        {
+            ThrowDisposedIfNeeded();
+            GetAcquiredImageIndex(swapchain, flightIndex);
+            uint imageIndex = _syncMap[swapchain].AcquiredImageIndices[flightIndex];
+            return _syncMap[swapchain].RenderFinishedSemaphores[imageIndex];
+        }
+
+        // ---------- Frame lifecycle (optimised non‑blocking) ----------
         public UploadBatch? BeginFrame()
         {
-            if (_disposed)
+            ThrowDisposedIfNeeded();
+
+            _currentFlightIndex = (_currentFlightIndex + 1) % _maxFramesInFlight;
+
+            // Wait for the previous submission on this slot to finish (GPU done + cleanup)
+            var previousOp = _flightOperations[_currentFlightIndex];
+            previousOp?.Wait();           // ensures GPU is idle, batches recycled, semaphores reusable
+            previousOp?.Dispose();
+            _flightOperations[_currentFlightIndex] = null;
+
+            // Acquire new images for all swapchains
+            foreach (var swapchain in _swapchains)
             {
-                ThrowDisposed();
+                var sync = _syncMap[swapchain];
+                AcquireImageForFlight(swapchain, sync, _currentFlightIndex);
             }
 
-            var frame = _frames[_currentFrameIndex];
-            frame.FrameNumber = Interlocked.Increment(ref _frameNumber);
-
-            // Wait for previous frame's flush operation to complete
-            frame.FlushOperation?.Wait();
-            // Return semaphores from previous frame to pool
-            foreach (var semaphore in frame.SemaphoresToReturn)
+            // Create a batch that waits on all image‑available semaphores and signals per‑image render‑finished
+            var batch = _vkContext.GraphicsSubmitContext.CreateBatch();
+            foreach (var swapchain in _swapchains)
             {
-                ReturnSemaphoreToPool(semaphore);
-            }
-            frame.SemaphoresToReturn.Clear();
-
-            frame.InFlightFence.Reset();
-            frame.Reset();
-
-            frame.AcquiredSwapchainCount = 0;
-            bool anySwapchainInvalid = false;
-
-            // Acquire images from all swapchains
-            for (int i = 0; i < _activeSwapchainCount; i++)
-            {
-                ref var entry = ref _swapchains[i];
-                if (entry.Swapchain == null)
-                {
-                    continue;
-                }
-
-                if (entry.NeedsRecreation)
-                {
-                    anySwapchainInvalid = true;
-                    continue;
-                }
-
-                try
-                {
-                    // Check if the frame's acquire semaphore is safe to use
-                    if (entry.ImageAvailableInUse[_currentFrameIndex])
-                    {
-                        // Wait for the frame that was using this semaphore
-                        // This should be the current frame from a previous use that wasn't cleared
-                        _frames[_currentFrameIndex].FlushOperation?.Wait();
-                        entry.ImageAvailableInUse[_currentFrameIndex] = false;
-                    }
-
-                    var semaphore = entry.ImageAvailableSemaphores[_currentFrameIndex];
-
-                    // Reset the frame's acquired image index
-                    entry.FrameAcquiredImageIndex[_currentFrameIndex] = uint.MaxValue;
-
-                    using var fence = VkFence.CreateNotSignaled(_context);
-                    var result = entry.Swapchain.AcquireNextImage(semaphore, fence, out uint imageIndex);
-                    fence.Wait();
-
-                    if (result == Result.Success || result == Result.SuboptimalKhr)
-                    {
-                        // Image acquired – store it and mark for recreation if suboptimal
-                        entry.ImageAvailableInUse[_currentFrameIndex] = true;
-                        entry.FrameAcquiredImageIndex[_currentFrameIndex] = imageIndex;
-
-                        if (entry.RenderCompleteInUse[imageIndex])
-                        {
-                            int userFrame = entry.ImageUserFrameIndex[imageIndex];
-                            if (userFrame >= 0 && userFrame != _currentFrameIndex)
-                            {
-                                _frames[userFrame].FlushOperation?.Wait();
-                                entry.RenderCompleteInUse[imageIndex] = false;
-                            }
-                        }
-
-                        entry.ImageUserFrameIndex[imageIndex] = _currentFrameIndex;
-                        entry.ImageLastUsedFrame[imageIndex] = frame.FrameNumber;
-
-                        frame.AcquiredSwapchainIndices[frame.AcquiredSwapchainCount] = i;
-                        frame.AcquiredImageIndices[frame.AcquiredSwapchainCount] = imageIndex;
-                        frame.AcquiredSwapchainCount++;
-
-                        if (result == Result.SuboptimalKhr)
-                        {
-                            entry.NeedsRecreation = true;   // recreate *later*, after presenting
-                        }
-                    }
-                    else if (result == Result.ErrorOutOfDateKhr)
-                    {
-                        entry.NeedsRecreation = true;
-                        anySwapchainInvalid = true;
-                    }
-                    else
-                    {
-                        Debug.WriteLine($"AcquireNextImage failed: {result}");
-                        entry.NeedsRecreation = true;
-                        anySwapchainInvalid = true;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Debug.WriteLine($"Failed to acquire image for swapchain {i}: {ex.Message}");
-                    entry.NeedsRecreation = true;
-                    anySwapchainInvalid = true;
-                }
+                var sync = _syncMap[swapchain];
+                uint imageIndex = sync.AcquiredImageIndices[_currentFlightIndex];
+                batch.AddWaitSemaphore(sync.ImageAvailableSemaphores[_currentFlightIndex],
+                    PipelineStageFlags.ColorAttachmentOutputBit);
+                batch.AddSignalSemaphore(sync.RenderFinishedSemaphores[imageIndex]);
             }
 
-            // Handle swapchain recreation if needed
-            if (anySwapchainInvalid)
-            {
-                RecreateInvalidSwapchains();
-            }
-            if (frame.AcquiredSwapchainCount == 0)
-            {
-                frame.CurrentBatch = null;
-                return null; 
-            }
-            // Create upload batch
-            frame.CurrentBatch = _context.GraphicsSubmitContext.CreateBatch();
-           
-
-            // Add wait semaphores for all acquired swapchains
-            for (int i = 0; i < frame.AcquiredSwapchainCount; i++)
-            {
-                int swapchainIdx = frame.AcquiredSwapchainIndices[i];
-
-                var semaphore = _swapchains[swapchainIdx].ImageAvailableSemaphores[_currentFrameIndex];
-
-                if (semaphore != null && !semaphore.IsDisposed)
-                {
-                    frame.CurrentBatch.AddWaitSemaphore(
-                        semaphore,
-                        PipelineStageFlags.ColorAttachmentOutputBit
-                    );
-                }
-            }
-
-            return frame.CurrentBatch;
+            _currentFrameBatch = batch;
+            return batch;
         }
 
         public bool SubmitAndPresent()
         {
-            if (_disposed)
+            ThrowDisposedIfNeeded();
+            if (_currentFrameBatch == null)
             {
                 return false;
             }
 
-            var frame = _frames[_currentFrameIndex];
-
-            if (frame.CurrentBatch == null)
+            // Transition images for presentation
+            foreach (var swapchain in _swapchains)
             {
-                return false;
+                TransitionSwapchainToPresent(swapchain);
             }
 
-            // Add signal semaphores for rendering completion
-            for (int i = 0; i < frame.AcquiredSwapchainCount; i++)
+            _currentFrameBatch.Submit();
+
+            // Submit all accumulated batches to the GPU – get a non‑blocking operation
+            var submitOp = _vkContext.GraphicsSubmitContext.Submit();
+            _flightOperations[_currentFlightIndex] = submitOp;   // will be waited on next time this slot is used
+
+            // Present immediately; the present engine will wait on the render‑finished semaphore
+            bool allPresentSuccessful = true;
+            foreach (var swapchain in _swapchains)
             {
-                int swapchainIdx = frame.AcquiredSwapchainIndices[i];
-                uint imageIdx = frame.AcquiredImageIndices[i];
+                var sync = _syncMap[swapchain];
+                uint imageIndex = sync.AcquiredImageIndices[_currentFlightIndex];
+                var presentResult = PresentSwapchain(swapchain, imageIndex,
+                    sync.RenderFinishedSemaphores[imageIndex]);
 
-                var semaphore = _swapchains[swapchainIdx].RenderCompleteSemaphores[imageIdx];
-
-                // The semaphore should already be checked for safety in BeginFrame
-                if (semaphore != null && !semaphore.IsDisposed)
+                if (presentResult != Result.Success)
                 {
-                    frame.CurrentBatch.AddSignalSemaphore(semaphore);
+                    allPresentSuccessful = false;
+                    if (presentResult == Result.ErrorOutOfDateKhr || presentResult == Result.SuboptimalKhr)
+                    {
+                        RecreateSwapchainOnDemand(swapchain);
+                    }
+                    else if (presentResult < 0)
+                    {
+                        Debug.Fail($"Present failed: {presentResult}");
+                    }
                 }
             }
 
-
-            _context.TransferSubmitContext.Submit();
-
-
-            // Submit the batch
-            frame.CurrentBatch.Submit();
-            // Flush with fence
-            frame.FlushOperation = _context.GraphicsSubmitContext.Submit(frame.InFlightFence);
-
-            // Present all acquired swapchains
-            bool presentSuccess = PresentFrame(frame);
-
-            // Move to next frame
-            _currentFrameIndex = (_currentFrameIndex + 1) % _frameCount;
-
-            return presentSuccess;
-        }
-
-        private unsafe bool PresentFrame(FrameState frame)
-        {
-            if (frame.AcquiredSwapchainCount == 0)
+            // Reset acquired indices for the next frame
+            foreach (var sync in _syncMap.Values)
             {
-                return false;
+                sync.AcquiredImageIndices[_currentFlightIndex] = Consts.NOT_ACQUIRED_IMAGE;
             }
 
-            // Prepare arrays for presentation
-            for (int i = 0; i < frame.AcquiredSwapchainCount; i++)
+            _currentFrameBatch = null;
+            return allPresentSuccessful;
+        }
+
+        public void TransitionSwapchainToPresent(VkSwapchain swapchain)
+        {
+            if (_currentFrameBatch == null)
             {
-                int swapchainIdx = frame.AcquiredSwapchainIndices[i];
-                uint imageIdx = frame.AcquiredImageIndices[i];
+                return;
+            }
 
-                ref var entry = ref _swapchains[swapchainIdx];
+            var sync = _syncMap[swapchain];
+            uint imageIndex = sync.AcquiredImageIndices[_currentFlightIndex];
+            var image = swapchain.VkImages[imageIndex];
 
-                _presentSwapchains[i] = entry.Swapchain.VkObjectNative;
-                _presentImageIndices[i] = imageIdx;
+            // (Ideally track actual layout; using Undefined is safe only if image hasn't been written yet)
+            image.TransitionImageLayout(_currentFrameBatch,
+                ImageLayout.Undefined, ImageLayout.PresentSrcKhr);
+        }
 
-                var semaphore = entry.RenderCompleteSemaphores[imageIdx];
-                if (semaphore == null || semaphore.IsDisposed)
+        // ---------- Helpers (unchanged except for fence removal) ----------
+        private void AcquireImageForFlight(VkSwapchain swapchain, SwapchainSyncData sync, uint flightIndex)
+        {
+            // Uses the image‑available semaphore (no fence needed)
+            var result = swapchain.AcquireNextImage(sync.ImageAvailableSemaphores[flightIndex],
+                null, out uint imageIndex);
+
+            if (result == Result.Success || result == Result.SuboptimalKhr)
+            {
+                sync.AcquiredImageIndices[flightIndex] = imageIndex;
+            }
+            else if (result == Result.ErrorOutOfDateKhr)
+            {
+                RecreateSwapchainOnDemand(swapchain);
+                result = swapchain.AcquireNextImage(sync.ImageAvailableSemaphores[flightIndex],
+                    null, out imageIndex);
+                if (result == Result.Success || result == Result.SuboptimalKhr)
                 {
-                    Debug.WriteLine($"Presentation semaphore is null or disposed for swapchain {swapchainIdx}, image {imageIdx}");
-                    _presentWaitSemaphores[i] = default;
+                    sync.AcquiredImageIndices[flightIndex] = imageIndex;
                 }
                 else
                 {
-                    _presentWaitSemaphores[i] = semaphore.VkObjectNative;
+                    throw new VulkanException(result, "Acquire image after recreation failed");
                 }
             }
-            Span<Result> results = stackalloc Result[(int)frame.AcquiredSwapchainCount];
-            fixed (SwapchainKHR* pSwapchains = _presentSwapchains)
-            fixed (uint* pImageIndices = _presentImageIndices)
-            fixed (Semaphore* pWaitSemaphores = _presentWaitSemaphores)
-            fixed (Result* pResults = results)
+            else
             {
-                var presentInfo = new PresentInfoKHR
-                {
-                    SType = StructureType.PresentInfoKhr,
-                    WaitSemaphoreCount = frame.AcquiredSwapchainCount,
-                    PWaitSemaphores = pWaitSemaphores,
-                    SwapchainCount = frame.AcquiredSwapchainCount,
-                    PSwapchains = pSwapchains,
-                    PImageIndices = pImageIndices,
-                    PResults = pResults
-                };
-
-                _swapchainApi.QueuePresent(_context.Device.PresentQueue, in presentInfo);
-
-                for (int i = 0; i < results.Length; i++)
-                {
-                    var result = results[i];
-                    if (result == Result.ErrorOutOfDateKhr || result == Result.SuboptimalKhr)
-                    {
-                        int swapchainIdx = frame.AcquiredSwapchainIndices[i];
-                        _swapchains[swapchainIdx].NeedsRecreation = true;
-                    }
-                }
-                // Handle presentation errors
-                
-                return true;
+                throw new VulkanException(result, "AcquireNextImage failed");
             }
         }
 
-        private void RecreateInvalidSwapchains()
+        private unsafe Result PresentSwapchain(VkSwapchain swapchain, uint imageIndex, VkSemaphore waitSemaphore)
         {
-            for (int i = 0; i < _frameCount; i++)
+            var semaphore = waitSemaphore.VkObjectNative;
+            var sc = swapchain.VkObjectNative;
+            var index = imageIndex;
+
+            var presentInfo = new PresentInfoKHR
             {
-                _frames[i].FlushOperation?.Wait();
-            }
+                SType = StructureType.PresentInfoKhr,
+                WaitSemaphoreCount = 1,
+                PWaitSemaphores = &semaphore,
+                SwapchainCount = 1,
+                PSwapchains = &sc,
+                PImageIndices = &index,
+                PResults = null
+            };
+            return swapchain.SwapchainApi.QueuePresent(
+                _vkContext.Device.PresentQueue!.VkObjectNative, in presentInfo);
+        }
 
-            for (int i = 0; i < _activeSwapchainCount; i++)
+        private void RecreateSwapchainOnDemand(VkSwapchain swapchain)
+        {
+            if (swapchain.RecreateSwapchain() && _syncMap.TryGetValue(swapchain, out var sync))
             {
-                ref var entry = ref _swapchains[i];
-                if (!entry.NeedsRecreation || entry.Swapchain == null)
-                {
-                    continue;
-                }
-
-                try
-                {
-                    // Return semaphores to pool before recreating
-                    if (entry.ImageAvailableSemaphores != null)
-                    {
-                        foreach (var semaphore in entry.ImageAvailableSemaphores)
-                        {
-                            ReturnSemaphoreToPool(semaphore);
-                        }
-                    }
-
-                    if (entry.RenderCompleteSemaphores != null)
-                    {
-                        foreach (var semaphore in entry.RenderCompleteSemaphores)
-                        {
-                            ReturnSemaphoreToPool(semaphore);
-                        }
-                    }
-
-
-                    // Recreate swapchain
-                    entry.NeedsRecreation = !entry.Swapchain.RecreateSwapchain();
-
-                    // cannot recreate it right now, skipping for now
-                    if (entry.NeedsRecreation)
-                    {
-                        continue;
-                    }
-
-
-                    // Get new image count
-                    int imageCount = (int)entry.Swapchain.SwapChainImagesCount;
-
-                    // Reallocate arrays
-                    entry.ImageAvailableSemaphores = new VkSemaphore[_frameCount];
-                    entry.ImageAvailableInUse = new bool[_frameCount];
-                    entry.FrameAcquiredImageIndex = new uint[_frameCount];
-                    entry.RenderCompleteSemaphores = new VkSemaphore[imageCount];
-                    entry.RenderCompleteInUse = new bool[imageCount];
-                    entry.ImageUserFrameIndex = new int[imageCount];
-                    entry.ImageLastUsedFrame = new ulong[imageCount];
-
-                    // Allocate new semaphores from pool
-                    for (int frameIdx = 0; frameIdx < _frameCount; frameIdx++)
-                    {
-                        entry.ImageAvailableSemaphores[frameIdx] = AllocateSemaphoreFromPool();
-                        entry.ImageAvailableInUse[frameIdx] = false;
-                        entry.FrameAcquiredImageIndex[frameIdx] = uint.MaxValue;
-                    }
-
-                    for (int imgIdx = 0; imgIdx < imageCount; imgIdx++)
-                    {
-                        entry.RenderCompleteSemaphores[imgIdx] = AllocateSemaphoreFromPool();
-                        entry.RenderCompleteInUse[imgIdx] = false;
-                        entry.ImageUserFrameIndex[imgIdx] = -1;
-                        entry.ImageLastUsedFrame[imgIdx] = uint.MaxValue;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Debug.WriteLine($"Failed to recreate swapchain {i}: {ex.Message}");
-                }
+                sync.ReinitializeRenderFinishedSemaphores((uint)swapchain.SwapChainImagesCount);
             }
+            else
+            {
+                Debug.WriteLine("Swapchain recreation failed");
+            }
+        }
+
+        private void ThrowDisposedIfNeeded()
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
         }
 
         public void Dispose()
@@ -552,103 +366,21 @@ namespace RockEngine.Core.Rendering
 
             _disposed = true;
 
-            // Wait for all frames to complete
-            for (int i = 0; i < _frameCount; i++)
+            // Wait for all pending flight operations and dispose them
+            foreach (var op in _flightOperations)
             {
-                _frames[i].FlushOperation?.Wait();
-                _frames[i].Dispose();
+                op?.Wait();
+                op?.Dispose();
             }
 
-            // Cleanup swapchains
-            for (int i = 0; i < _activeSwapchainCount; i++)
+            foreach (var sync in _syncMap.Values)
             {
-                ref var entry = ref _swapchains[i];
-
-                entry.Swapchain?.Dispose();
-
-                // Return semaphores to pool
-                if (entry.ImageAvailableSemaphores != null)
-                {
-                    foreach (var semaphore in entry.ImageAvailableSemaphores)
-                    {
-                        ReturnSemaphoreToPool(semaphore);
-                    }
-                }
-
-                if (entry.RenderCompleteSemaphores != null)
-                {
-                    foreach (var semaphore in entry.RenderCompleteSemaphores)
-                    {
-                        ReturnSemaphoreToPool(semaphore);
-                    }
-                }
+                sync.Dispose();
             }
 
-            // Dispose all semaphores in the pool
-            while (_availableSemaphores.Count > 0)
-            {
-                var semaphore = _availableSemaphores.Dequeue();
-                semaphore?.Dispose();
-            }
-
-            GC.SuppressFinalize(this);
-        }
-
-        private static void ThrowDisposed() =>
-            throw new ObjectDisposedException(nameof(GraphicsContext));
-
-        public void RemoveSwapchain(VkSwapchain swapchain)
-        {
-            if (_disposed)
-            {
-                return;
-            }
-
-            for (int i = 0; i < _activeSwapchainCount; i++)
-            {
-                if (_swapchains[i].Swapchain == swapchain)
-                {
-                    ref var entry = ref _swapchains[i];
-
-                    // Mark for removal
-                    entry.Swapchain = null;
-                    entry.NeedsRecreation = false;
-                    _frames[_currentFrameIndex].Resources.Add(swapchain);
-
-                    if (MainSwapchain == swapchain)
-                    {
-                        // Find new main swapchain
-                        for (int j = 0; j < _activeSwapchainCount; j++)
-                        {
-                            if (_swapchains[j].Swapchain != null)
-                            {
-                                MainSwapchain = _swapchains[j].Swapchain;
-                                _swapchains[j].IsMain = true;
-                                break;
-                            }
-                        }
-                    }
-
-                    // Return semaphores to pool
-                    if (entry.ImageAvailableSemaphores != null)
-                    {
-                        foreach (var semaphore in entry.ImageAvailableSemaphores)
-                        {
-                            ReturnSemaphoreToPool(semaphore);
-                        }
-                    }
-
-                    if (entry.RenderCompleteSemaphores != null)
-                    {
-                        foreach (var semaphore in entry.RenderCompleteSemaphores)
-                        {
-                            ReturnSemaphoreToPool(semaphore);
-                        }
-                    }
-
-                    break;
-                }
-            }
+            _syncMap.Clear();
+            _swapchains.Clear();
+            _currentFrameBatch = null;
         }
     }
 }

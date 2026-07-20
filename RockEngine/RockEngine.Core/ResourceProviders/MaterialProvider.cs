@@ -1,35 +1,30 @@
-﻿using MessagePack;
+﻿using MemoryPack;
 using RockEngine.Core.Assets;
 using RockEngine.Core.Rendering.Materials;
 
 namespace RockEngine.Core.ResourceProviders
 {
-    [MessagePackObject]
-    public class MaterialProvider : IResourceProvider<Material>
+    [MemoryPackable]
+    public partial class MaterialProvider : IResourceProvider<Material>
     {
-        [IgnoreMember]
-
         private readonly object _source;
-        [IgnoreMember]
-
         private readonly Func<ValueTask<Material>> _getter;
-        [IgnoreMember]
+        
         public bool IsAssetBased => _source is AssetReference<MaterialAsset>;
 
         // Helper properties for serialization
-        [Key(2)]
         public AssetReference<MaterialAsset>? AssetReference => _source as AssetReference<MaterialAsset>;
 
-        [IgnoreMember]
+        [MemoryPackIgnore]
         public Material? DirectMaterial => _source as Material;
 
-        // For assets
-        public MaterialProvider(AssetReference<MaterialAsset> assetRef)
+        [MemoryPackConstructor]
+        public MaterialProvider(AssetReference<MaterialAsset> assetReference)
         {
-            _source = assetRef;
+            _source = assetReference;
             _getter = async () =>
             {
-                var asset = await assetRef.GetAssetAsync().ConfigureAwait(false);
+                var asset = await assetReference.GetAssetAsync().ConfigureAwait(false);
                 return await asset.GetAsync().ConfigureAwait(false);
             };
         }

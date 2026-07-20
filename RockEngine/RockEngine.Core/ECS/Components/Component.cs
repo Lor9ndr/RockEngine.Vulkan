@@ -1,21 +1,20 @@
-﻿using MessagePack;
-
+﻿
+using MemoryPack;
 using RockEngine.Core.Attributes;
 using RockEngine.Core.Rendering;
 
 namespace RockEngine.Core.ECS.Components
 {
-    public abstract class Component : IComponent
+    public abstract partial class Component : IComponent
     {
         protected Component()
         {
         }
 
-        [SerializeIgnore]
-        [IgnoreMember]
+        [SerializeIgnore, MemoryPackIgnore]
+        
         public Entity Entity { get; private set; }
 
-        [Key(6)]
         public bool IsActive { get; protected set; } = true;
 
         public virtual void SetEntity(Entity entity)

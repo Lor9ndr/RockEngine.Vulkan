@@ -69,6 +69,7 @@ namespace RockEngine.Assets
             _innerInspector = innerInspector;
         }
 
+
         public IEnumerable<IPropertyDescriptor> GetProperties(Type type, object? container)
         {
             var descriptors = new List<IPropertyDescriptor>();
@@ -183,6 +184,16 @@ namespace RockEngine.Assets
                 return orderAttr?.Order ?? 1000;
             }
             return 1000;
+        }
+
+        public bool HasParseMethod(Type type)
+        {
+            return _innerInspector.HasParseMethod(type);
+        }
+
+        public object? Parse(string value, Type type)
+        {
+            return _innerInspector.Parse(value, type);
         }
     }
 

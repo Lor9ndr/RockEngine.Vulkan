@@ -72,7 +72,7 @@ namespace RockEngine.Core.Rendering.Materials
 
         private void InitializeDefaultBindings()
         {
-            var context = VulkanContext.GetCurrent(); // Assumes static accessor exists
+            var context = GetCurrent(); // Assumes static accessor exists
             foreach (var setInfo in ReflectionData.DescriptorSets.Values)
             {
                 foreach (var binding in setInfo.Bindings.Values)

@@ -1,21 +1,27 @@
-﻿using System.Numerics;
+﻿using System.Diagnostics.CodeAnalysis;
+using System.Numerics;
+using RockEngine.Assets;
 using RockEngine.Core.ECS;
 
 namespace RockEngine.Editor.Selection
 {
     public class SelectionContext
     {
-        public Entity PrimaryEntity { get; set; }
+        public Entity? PrimaryEntity { get; set; }
         public IReadOnlyList<Entity> SelectedEntities { get; set; } = new List<Entity>();
+        public IAsset? SelectedAsset { get; set; }
         public SelectionSource Source { get; set; }
-        public object AdditionalData { get; set; }
+        public object? AdditionalData { get; set; }
         public Vector2? ScreenPosition { get; set; }
         public Vector3? WorldPosition { get; set; }
         public DateTime Timestamp { get; set; } = DateTime.Now;
 
         public bool IsMultiSelection => SelectedEntities.Count > 1;
-        public bool HasSelection => SelectedEntities.Count > 0;
+        public bool HasEntitySelection => SelectedEntities.Count > 0;
+        public bool HasAssetSelection => SelectedAsset != null;
+        public bool HasSelection => HasEntitySelection || HasAssetSelection;
 
+        // Constructors unchanged, but we may add one for asset selection
         public SelectionContext() { }
 
         public SelectionContext(Entity entity, SelectionSource source = SelectionSource.Script)
@@ -33,6 +39,15 @@ namespace RockEngine.Editor.Selection
             Source = source;
         }
 
+        // Asset selection constructor
+        public SelectionContext(IAsset asset, SelectionSource source = SelectionSource.Script)
+        {
+            SelectedAsset = asset;
+            Source = source;
+            SelectedEntities = new List<Entity>();
+            PrimaryEntity = null;
+        }
+
         public bool ContainsEntity(Entity entity)
         {
             return SelectedEntities.Contains(entity);
@@ -43,7 +58,7 @@ namespace RockEngine.Editor.Selection
             return AdditionalData as T;
         }
 
-        public bool TryGetAdditionalData<T>(out T data) where T : class
+        public bool TryGetAdditionalData<T>([NotNullWhen(true)] out  T? data) where T : class
         {
             data = AdditionalData as T;
             return data != null;
@@ -57,5 +72,6 @@ namespace RockEngine.Editor.Selection
         ViewportPicking,
         Gizmo,
         Script,
+        AssetBrowser
     }
 }

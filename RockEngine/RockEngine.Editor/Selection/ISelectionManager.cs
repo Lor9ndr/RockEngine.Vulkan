@@ -1,5 +1,6 @@
-﻿using RockEngine.Core.ECS;
-
+﻿using RockEngine.Assets;
+using RockEngine.Core.Assets;
+using RockEngine.Core.ECS;
 
 namespace RockEngine.Editor.Selection
 {
@@ -19,8 +20,11 @@ namespace RockEngine.Editor.Selection
         void RemoveFromSelection(Entity entity, SelectionSource source = SelectionSource.Script);
         void ClearSelection(SelectionSource source = SelectionSource.Script);
         bool CanSelectEntity(Entity entity);
-        bool IsEntitySelected(Entity entity); // Renamed from IsSelected
+        bool IsEntitySelected(Entity entity);
         void UndoSelection();
         void RedoSelection();
+
+        void SelectAsset(IAsset asset, SelectionSource source = SelectionSource.Script);
+        void ClearAssetSelection(SelectionSource source = SelectionSource.Script);
     }
 }

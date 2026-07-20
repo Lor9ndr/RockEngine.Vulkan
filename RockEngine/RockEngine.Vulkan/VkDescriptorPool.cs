@@ -14,8 +14,8 @@ namespace RockEngine.Vulkan
 
         public static VkDescriptorPool Create(VulkanContext context, in DescriptorPoolCreateInfo createInfo)
         {
-            VulkanContext.Vk.CreateDescriptorPool(context.Device, in createInfo,
-                in VulkanContext.CustomAllocator<VkDescriptorPool>(), out var descriptorPool)
+            VK.CreateDescriptorPool(context.Device, in createInfo,
+                in CustomAllocator<VkDescriptorPool>(), out var descriptorPool)
                 .VkAssertResult("Failed to create descriptor pool");
 
             return new VkDescriptorPool(context, descriptorPool);
@@ -26,7 +26,7 @@ namespace RockEngine.Vulkan
         /// </summary>
         public Result AllocateDescriptorSet(VkDescriptorSetLayout setLayout, in DescriptorSetAllocateInfo allocInfo, out VkDescriptorSet set)
         {
-            var result = VulkanContext.Vk.AllocateDescriptorSets(_context.Device, in allocInfo, out var descriptorSet);
+            var result = VK.AllocateDescriptorSets(_context.Device, in allocInfo, out var descriptorSet);
             set = new VkDescriptorSet(_context, this, descriptorSet, setLayout);
             return result;
         }
@@ -38,7 +38,7 @@ namespace RockEngine.Vulkan
         public unsafe void FreeDescriptorSet(VkDescriptorSet set)
         {
             var descriptorSet = set.VkObjectNative;
-            VulkanContext.Vk.FreeDescriptorSets(_context.Device, this, 1, &descriptorSet);
+            VK.FreeDescriptorSets(_context.Device, this, 1, &descriptorSet);
         }
 
         public override void LabelObject(string name) =>
@@ -50,8 +50,8 @@ namespace RockEngine.Vulkan
             {
                 if (_vkObject.Handle != default)
                 {
-                    VulkanContext.Vk.DestroyDescriptorPool(_context.Device, _vkObject,
-                        in VulkanContext.CustomAllocator<VkDescriptorPool>());
+                    VK.DestroyDescriptorPool(_context.Device, _vkObject,
+                        in CustomAllocator<VkDescriptorPool>());
                 }
                 _disposed = true;
             }

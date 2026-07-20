@@ -38,18 +38,18 @@ namespace RockEngine.Vulkan
         public static unsafe VkPhysicalDevice Create(VkInstance instance)
         {
             uint count = 0;
-            VulkanContext.Vk.EnumeratePhysicalDevices(instance, ref count, null);
+            VK.EnumeratePhysicalDevices(instance, ref count, null);
             if (count == 0)
             {
                 throw new Exception("Failed to find GPUs with Vulkan support.");
             }
 
             Span<PhysicalDevice> devices = stackalloc PhysicalDevice[(int)count];
-            VulkanContext.Vk.EnumeratePhysicalDevices(instance, &count, devices);
+            VK.EnumeratePhysicalDevices(instance, &count, devices);
 
             PhysicalDevice selectedDevice = devices[0];
-            var properties = VulkanContext.Vk.GetPhysicalDeviceProperties(selectedDevice);
-            var features = VulkanContext.Vk.GetPhysicalDeviceFeatures(selectedDevice);
+            var properties = VK.GetPhysicalDeviceProperties(selectedDevice);
+            var features = VK.GetPhysicalDeviceFeatures(selectedDevice);
 
             // Build a feature chain to get 1.1, 1.2, 1.3 features
             var features2 = new PhysicalDeviceFeatures2
@@ -74,7 +74,7 @@ namespace RockEngine.Vulkan
             features11.PNext = &features12;
             features12.PNext = &features13;
 
-            VulkanContext.Vk.GetPhysicalDeviceFeatures2(selectedDevice, &features2);
+            VK.GetPhysicalDeviceFeatures2(selectedDevice, &features2);
 
             return new VkPhysicalDevice(
                 instance,
@@ -89,12 +89,12 @@ namespace RockEngine.Vulkan
 
         public FormatProperties GetFormatProperties(Format format)
         {
-            return VulkanContext.Vk.GetPhysicalDeviceFormatProperties(this, format);
+            return VK.GetPhysicalDeviceFormatProperties(this, format);
         }
 
         public PhysicalDeviceFeatures GetPhysicalDeviceFeatures()
         {
-            return VulkanContext.Vk.GetPhysicalDeviceFeatures(this);
+            return VK.GetPhysicalDeviceFeatures(this);
         }
         public bool IsExtensionPresent(string extension)
         {

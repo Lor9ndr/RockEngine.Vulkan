@@ -9,7 +9,7 @@ namespace RockEngine.Vulkan
     {
         public static unsafe bool IsExtensionSupported(string extension)
         {
-            var api = Vk.GetApi();
+            var api = VK;
             uint extensionCount = 0;
             api.EnumerateInstanceExtensionProperties((byte*)null, &extensionCount, null);
             ExtensionProperties[] availableExtensions = new ExtensionProperties[extensionCount];

@@ -13,7 +13,7 @@ namespace RockEngine.Vulkan.Extensions
                     SType = StructureType.BufferDeviceAddressInfo,
                     Buffer = buffer
                 };
-                return VulkanContext.Vk.GetBufferDeviceAddress(VulkanContext.GetCurrent().Device, ref info);
+                return VK.GetBufferDeviceAddress(GetCurrent().Device, ref info);
             }
         }
     }

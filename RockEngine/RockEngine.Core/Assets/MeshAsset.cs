@@ -1,5 +1,5 @@
-﻿using MessagePack;
-
+﻿
+using MemoryPack;
 using RockEngine.Core.DI;
 using RockEngine.Core.Rendering;
 using RockEngine.Core.Rendering.Buffers;
@@ -7,35 +7,20 @@ using RockEngine.Core.ResourceProviders;
 
 namespace RockEngine.Core.Assets
 {
-    [MessagePackObject]
+    [MemoryPackable]
     public sealed partial class MeshAsset : Asset<MeshData<Vertex>>, IGpuResource, IMesh, IDisposable, IResourceProvider<IMesh>
     {
         public override string Type => "Mesh";
-
-        [IgnoreMember]
-
         private Vertex[]? Vertices => Data?.Vertices;
-        [IgnoreMember]
-
         private uint[]? Indices => Data?.Indices;
-
-        [IgnoreMember]
         public bool GpuReady => _allocation is not null;
-
-        [IgnoreMember]
         public bool HasIndices => IndicesCount > 0;
-
-        [IgnoreMember]
         private GlobalGeometryBuffer.MeshAllocation? _allocation;
 
-        [IgnoreMember]
         public uint IndicesCount { get; private set; }
 
-        [IgnoreMember]
         public uint VerticesCount { get; private set; }
-        [IgnoreMember]
         private readonly SemaphoreSlim _gpuLock = new SemaphoreSlim(1, 1);
-        [IgnoreMember]
         private bool _disposed;
 
 
@@ -57,7 +42,6 @@ namespace RockEngine.Core.Assets
                 SetGeometry(Data.Vertices, Data.Indices);
             }
         }
-
         
         public async ValueTask LoadGpuResourcesAsync()
         {

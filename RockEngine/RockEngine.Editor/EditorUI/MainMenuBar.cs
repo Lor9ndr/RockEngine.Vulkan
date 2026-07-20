@@ -95,6 +95,14 @@ namespace RockEngine.Editor.EditorUI
 
                     ImGui.EndMenu();
                 }
+                if (ImGui.BeginMenu("Layout"))
+                {
+                    if (ImGui.MenuItem("Save"))
+                    {
+                        ImGui.SaveIniSettingsToDisk("imgui.ini");
+                    }
+                    ImGui.EndMenu();
+                }
 
                 if (ImGui.BeginMenu("Assets"))
                 {

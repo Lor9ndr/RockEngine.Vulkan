@@ -1,4 +1,4 @@
-﻿using MessagePack;
+﻿/*using MessagePack;
 using MessagePack.Resolvers;
 
 namespace RockEngine.Assets
@@ -13,10 +13,11 @@ namespace RockEngine.Assets
         {
             StaticCompositeResolver.Instance.Register(
                    StandardResolver.Instance,
-                   NativeGuidResolver.Instance,
+                   NativeGuidResolver.Instance,*//**//*
                    PrimitiveObjectResolver.Instance,
                    DynamicObjectResolverAllowPrivate.Instance,
-                   PolymorphicResolver.Instance
+                   PolymorphicResolver.Instance,
+                   TypelessContractlessStandardResolver.Instance
                 );
 
             var options = MessagePackSerializerOptions.Standard.WithResolver(StaticCompositeResolver.Instance);
@@ -40,3 +41,4 @@ namespace RockEngine.Assets
         }
     }
 }
+*/

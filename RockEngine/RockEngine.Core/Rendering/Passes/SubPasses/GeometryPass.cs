@@ -81,10 +81,6 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
                 var globalUboBinding = _globalUbo.GetBinding((uint)camIndex);
 
                 var drawGroups = _indirectCommands.GetDrawGroups<GeometryPass>();
-                if (drawGroups.Count == 0)
-                {
-                    return;
-                }
 
                 // Get the span of draw groups
                 var drawGroupsSpan = CollectionsMarshal.AsSpan(drawGroups);
@@ -189,7 +185,7 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
             builder.ConfigureAttachment(_graphicsEngine.MainSwapchain.DepthFormat)
                 .WithDepthOperations(
                     load: AttachmentLoadOp.Clear,
-                    store: AttachmentStoreOp.DontCare,
+                    store: AttachmentStoreOp.Store,
                     initialLayout: ImageLayout.Undefined,
                     finalLayout: ImageLayout.DepthStencilReadOnlyOptimal)
                 .Add();
@@ -240,9 +236,11 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
 
             var pipelineLayout = new CoreObjects.PipelineLayout(_context, vkShaderModuleVert, vkShaderModuleFrag);
 
-            var binding_desc = new VertexInputBindingDescription();
-            binding_desc.Stride = (uint)Unsafe.SizeOf<Vertex>();
-            binding_desc.InputRate = VertexInputRate.Vertex;
+            var binding_desc = new VertexInputBindingDescription
+            {
+                Stride = (uint)Unsafe.SizeOf<Vertex>(),
+                InputRate = VertexInputRate.Vertex
+            };
 
             var colorBlendAttachments = new PipelineColorBlendAttachmentState[GBuffer.ColorAttachmentFormats.Length];
             for (int i = 0; i < GBuffer.ColorAttachmentFormats.Length; i++)
@@ -286,7 +284,7 @@ namespace RockEngine.Core.Rendering.Passes.SubPasses
                      SType = StructureType.PipelineDepthStencilStateCreateInfo,
                      DepthTestEnable = true,
                      DepthWriteEnable = true,
-                     DepthCompareOp = CompareOp.Less,
+                     DepthCompareOp = CompareOp.LessOrEqual,
                      DepthBoundsTestEnable = false,
                      MinDepthBounds = 0.0f,
                      MaxDepthBounds = 1.0f,

@@ -65,7 +65,7 @@ namespace RockEngine.Core.Rendering.Buffers
         /// <param name="isDynamic">If set to <c>true</c>, indicates this buffer will be used with dynamic offsets.</param>
         
         public UniformBuffer(ulong size, bool isDynamic = false)
-            : this(VulkanContext.GetCurrent(), size, isDynamic)
+            : this(GetCurrent(), size, isDynamic)
         {
         }
 

@@ -1,22 +1,17 @@
 ﻿using System.Numerics;
 using System.Runtime.InteropServices;
-using MessagePack;
+using MemoryPack;
 using Silk.NET.Vulkan;
 
 namespace RockEngine.Core
 {
-    [MessagePackObject]
-    public struct Vertex : IVertex
+    [MemoryPackable]
+    public partial struct Vertex : IVertex
     {
-        [Key(0)]
         public Vector4 Position;
-        [Key(1)]
         public Vector4 Normal;
-        [Key(2)]
         public Vector2 TexCoord;
-        [Key(3)]
         public Vector4 Tangent;
-        [Key(4)]
         public Vector4 Bitangent;
 
         public static float Size = Marshal.SizeOf<Vertex>();
@@ -56,10 +51,9 @@ namespace RockEngine.Core
     }
 
     [StructLayout(LayoutKind.Sequential, Pack = 16)]
-    [MessagePackObject]
-    public struct PositionVertex : IVertex
+    [MemoryPackable]
+    public partial struct PositionVertex : IVertex
     {
-        [Key(0)]
         public Vector4 Position;
 
         public static float Size = Marshal.SizeOf<Vertex>();

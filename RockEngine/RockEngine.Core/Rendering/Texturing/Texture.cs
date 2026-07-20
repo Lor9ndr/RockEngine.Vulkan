@@ -12,7 +12,7 @@ namespace RockEngine.Core.Rendering.Texturing
         protected VkSemaphore _completionSemaphore;
 
         private bool _disposed;
-        private uint _loadedMipLevels;
+        private uint _loadedMipLevels = 1;
 
         public VkImage Image => _image;
         public uint LoadedMipLevels { get => _loadedMipLevels; protected set => _loadedMipLevels = value; }
@@ -50,7 +50,6 @@ namespace RockEngine.Core.Rendering.Texturing
             _context = context;
             _image = image;
             _sampler = sampler;
-            LoadedMipLevels = 1;
 
             // Подписка на изменения изображения (ресайз) через новый механизм
             _imageObserver = new ImageObserver(this);
@@ -96,7 +95,7 @@ namespace RockEngine.Core.Rendering.Texturing
                 AddressModeV = SamplerAddressMode.Repeat,
                 AddressModeW = SamplerAddressMode.Repeat,
                 MipLodBias = 0.0f,
-                AnisotropyEnable = Vk.False,
+                AnisotropyEnable = context.Device.PhysicalDevice.Features.SamplerAnisotropy ? Vk.True : Vk.False,
                 MaxAnisotropy = context.Device.PhysicalDevice.Properties.Limits.MaxSamplerAnisotropy,
                 CompareEnable = Vk.False,
                 CompareOp = CompareOp.Always,
@@ -150,7 +149,28 @@ namespace RockEngine.Core.Rendering.Texturing
 
         public DescriptorImageInfo GetDescriptorInfo()
         {
-            return new DescriptorImageInfo(CreateSampler(_context, TotalMipLevels), Image.GetMipView(_loadedMipLevels));
+            // Default: all loaded mips, all array layers
+            return GetDescriptorInfo(
+                baseMipLevel: 0,
+                levelCount: LoadedMipLevels,
+                baseArrayLayer: 0,
+                layerCount: _image.ArrayLayers);
+        }
+        public DescriptorImageInfo GetDescriptorInfo(
+            uint baseMipLevel,
+            uint levelCount,
+            uint baseArrayLayer,
+            uint layerCount)
+        {
+            // Use the texture’s own sampler (created at texture construction)
+            // and a view that exactly matches the requested sub‑range
+            return new DescriptorImageInfo(
+                _sampler,
+                _image.GetView(
+                    baseMipLevel,
+                    levelCount,
+                    baseArrayLayer,
+                    layerCount));
         }
     }
 }

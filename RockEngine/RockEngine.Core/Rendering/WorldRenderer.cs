@@ -176,7 +176,9 @@ namespace RockEngine.Core.Rendering
                             InvViewProj = invViewProj,
                             CamPos = s.Entity.Transform.Position.AsVector4(),
                             ScreenSize = new Vector2(s.RenderTarget.Viewport.Width, s.RenderTarget.Viewport.Height),
-                            FarClip = s.FarClip
+                            FarClip = s.FarClip,
+                            NearClip = s.NearClip,
+                            
                         };
                     }).ToArray()).ConfigureAwait(false);
             }

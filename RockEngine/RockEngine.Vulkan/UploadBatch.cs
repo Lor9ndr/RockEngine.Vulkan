@@ -268,7 +268,7 @@ namespace RockEngine.Vulkan
                 Size = size
             };
 
-            VulkanContext.Vk.CmdCopyBuffer(
+            VK.CmdCopyBuffer(
                 _commandBuffer,
                 srcBuffer,
                 dstBuffer,
@@ -279,7 +279,7 @@ namespace RockEngine.Vulkan
 
         public void CopyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, in BufferCopy copyRegion)
         {
-            VulkanContext.Vk.CmdCopyBuffer(
+            VK.CmdCopyBuffer(
                 _commandBuffer,
                 srcBuffer,
                 dstBuffer,
@@ -357,7 +357,7 @@ namespace RockEngine.Vulkan
             };
 
             // Perform the image copy
-            VulkanContext.Vk.CmdCopyImage(
+            VK.CmdCopyImage(
                 _commandBuffer,
                 source,
                 srcLayout,
@@ -386,7 +386,7 @@ namespace RockEngine.Vulkan
             };
 
             // Perform the image copy
-            VulkanContext.Vk.CmdCopyImage(
+            VK.CmdCopyImage(
                 _commandBuffer,
                 source,
                 srcLayout,
@@ -399,7 +399,7 @@ namespace RockEngine.Vulkan
 
         public void WriteTimestamp(PipelineStageFlags2 pipelineStage, VkQueryPool queryPool, uint query)
         {
-            VulkanContext.Vk.CmdWriteTimestamp2(_commandBuffer, pipelineStage, queryPool, query);
+            VK.CmdWriteTimestamp2(_commandBuffer, pipelineStage, queryPool, query);
         }
 
         public void LabelObject(string label)

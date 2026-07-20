@@ -1,13 +1,12 @@
-﻿using MessagePack;
+﻿using MemoryPack;
 
 using RockEngine.Core.ECS;
 
 namespace RockEngine.Core.Assets
 {
-    [MessagePackObject]
-    public class SceneData
+    [MemoryPackable]
+    public partial class SceneData
     {
-        [Key(0)]
         public List<Entity> Entities { get; set; } = new List<Entity>();
     }
 }

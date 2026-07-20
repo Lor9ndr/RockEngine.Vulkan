@@ -25,7 +25,7 @@ namespace RockEngine.ShaderSyntax
     /// </para>
     /// </remarks>
     [PackageRegistration(UseManagedResourcesOnly = true, AllowsBackgroundLoading = true)]
-    [Guid(ShaderSyntaxPackage.PackageGuidString)]
+    [Guid(PackageGuidString)]
     [ProvideLanguageExtension(typeof(ShaderSyntaxPackage), ".vert")]
     [ProvideLanguageExtension(typeof(ShaderSyntaxPackage), ".frag")]
     [ProvideLanguageExtension(typeof(ShaderSyntaxPackage), ".glsl")]
